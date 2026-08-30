@@ -1,21 +1,25 @@
-import { Application, Container, Graphics } from "pixi.js";
+import { Application, Container, Graphics, type FederatedPointerEvent } from "pixi.js";
 import ELK from "elkjs/lib/elk.bundled.js";
 import {
   buildGraph,
   CollapseState,
   createLayoutEngine,
+  DEFAULT_METRICS,
   type DataGraphConfig,
   type Diagnostic,
   type Graph,
+  type GraphNode,
   type LayoutEngine,
   type LayoutResult,
   type NodeId,
   type Rect,
+  type RefEdge,
   type SearchResult,
 } from "@defsquare/data-graph-core";
 import { resolveTheme, type Theme, type ThemeOverride } from "./theme.js";
 import { Camera, type Size } from "./camera.js";
-import { drawEdges, drawNode, lodForScale, type Lod } from "./draw.js";
+import { drawEdgeHitAreas, drawEdges, drawNode, drawSelectionOverlay, lodForScale, type Lod } from "./draw.js";
+import { Emitter } from "./events.js";
 
 export interface DataGraphOptions {
   data: unknown;
@@ -25,6 +29,11 @@ export interface DataGraphOptions {
 }
 
 export type DataGraphEvent = "select" | "followRef";
+
+type DataGraphEvents = {
+  select: GraphNode;
+  followRef: RefEdge;
+};
 
 export interface DataGraph {
   ready: Promise<void>;
@@ -41,6 +50,12 @@ export interface DataGraph {
   diagnostics(): Diagnostic[];
   destroy(): void;
 }
+
+// Movement (in screen px) tolerated between pointerdown and pointertap before
+// a gesture is treated as a drag/pan rather than a click.
+const TAP_THRESHOLD = 4;
+// Duration of the expand/collapse node-position transition.
+const TRANSITION_MS = 200;
 
 function boundsOf(positions: Map<NodeId, Rect>): Rect {
   let minX = Infinity;
@@ -68,6 +83,29 @@ function buildLayoutEngine(elkWorkerUrl: string | URL | undefined): LayoutEngine
 }
 
 /**
+ * Wires a display object for click interaction: `eventMode = "static"`,
+ * a pointer cursor, and a `pointertap` handler gated by a `TAP_THRESHOLD`px
+ * movement check against the matching `pointerdown` (so a drag-to-pan
+ * gesture that starts/ends over the object never fires `onTap`).
+ */
+function attachTap(target: Container, onTap: (event: FederatedPointerEvent) => void): void {
+  target.eventMode = "static";
+  target.cursor = "pointer";
+  let downX = 0;
+  let downY = 0;
+  target.on("pointerdown", (event: FederatedPointerEvent) => {
+    downX = event.global.x;
+    downY = event.global.y;
+  });
+  target.on("pointertap", (event: FederatedPointerEvent) => {
+    const dx = event.global.x - downX;
+    const dy = event.global.y - downY;
+    if (Math.hypot(dx, dy) > TAP_THRESHOLD) return;
+    onTap(event);
+  });
+}
+
+/**
  * Creates a DataGraph instance: builds the graph from `data`/`config`,
  * initializes Pixi (async), lays out the initially-visible nodes, and
  * renders them. Returns immediately; await `.ready` before calling `fit()`
@@ -79,23 +117,69 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   const app = new Application();
   const world = new Container();
   let edgesGraphics = new Graphics();
+  const edgeHitLayer = new Container();
   const nodesLayer = new Container();
-  world.addChild(edgesGraphics, nodesLayer);
+  let overlayGraphics = new Graphics();
+  world.addChild(edgesGraphics, edgeHitLayer, nodesLayer, overlayGraphics);
 
   let camera: Camera | null = null;
   let graph: Graph | undefined;
   let collapseState: CollapseState | undefined;
   let layoutResult: LayoutResult | undefined;
+  let engine: LayoutEngine | undefined;
   let currentLod: Lod = 0;
+  let selectedId: NodeId | null = null;
   let destroyed = false;
   // BitmapText's canvas-fallback rendering path is unreliable (see draw.ts);
   // use plain Text there instead. Resolved once renderer type is known.
   let useBitmapText = true;
 
-  const listeners = new Map<DataGraphEvent, Set<(payload: any) => void>>();
+  // Node id -> its currently rendered container, so an expand/collapse can
+  // interpolate each surviving node from its old to its new position.
+  const nodeViews = new Map<NodeId, Container>();
+
+  const emitter = new Emitter<DataGraphEvents>();
 
   function viewport(): Size {
     return { width: app.renderer?.width ?? 0, height: app.renderer?.height ?? 0 };
+  }
+
+  /** Animates every node present in both `prevPositions` and `nextPositions`
+   * (i.e. every node that survived the expand/collapse) from its old rect to
+   * its new one over `TRANSITION_MS`, via the Pixi ticker. Nodes that are
+   * newly visible or about to disappear are left at whatever `rebuild()`
+   * already set (their final position, or removed entirely). */
+  function animatePositions(prevPositions: Map<NodeId, Rect>, nextPositions: Map<NodeId, Rect>): void {
+    const anims: { view: Container; fromX: number; fromY: number; toX: number; toY: number }[] = [];
+    for (const [id, view] of nodeViews) {
+      const from = prevPositions.get(id);
+      const to = nextPositions.get(id);
+      if (!from || !to) continue;
+      if (from.x === to.x && from.y === to.y) continue;
+      view.position.set(from.x, from.y);
+      anims.push({ view, fromX: from.x, fromY: from.y, toX: to.x, toY: to.y });
+    }
+    if (anims.length === 0) return;
+
+    const start = performance.now();
+    const tick = (): void => {
+      const t = Math.min(1, (performance.now() - start) / TRANSITION_MS);
+      const eased = 1 - (1 - t) * (1 - t); // ease-out quad
+      for (const a of anims) {
+        a.view.position.set(a.fromX + (a.toX - a.fromX) * eased, a.fromY + (a.toY - a.fromY) * eased);
+      }
+      if (t >= 1) app.ticker.remove(tick);
+    };
+    app.ticker.add(tick);
+  }
+
+  function redrawOverlay(): void {
+    overlayGraphics.destroy();
+    overlayGraphics =
+      graph && layoutResult
+        ? drawSelectionOverlay(graph, layoutResult.positions, theme, selectedId)
+        : new Graphics();
+    world.addChild(overlayGraphics);
   }
 
   function rebuild(): void {
@@ -103,9 +187,17 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     currentLod = lodForScale(camera ? camera.scale() : 1);
 
     for (const child of nodesLayer.removeChildren()) child.destroy({ children: true });
+    nodeViews.clear();
+    for (const child of edgeHitLayer.removeChildren()) child.destroy();
+
     edgesGraphics.destroy();
     edgesGraphics = drawEdges(graph, layoutResult.positions, theme, currentLod);
     world.addChildAt(edgesGraphics, 0);
+
+    for (const hit of drawEdgeHitAreas(graph, layoutResult.positions)) {
+      attachTap(hit.graphics, () => followRef(hit.edge));
+      edgeHitLayer.addChild(hit.graphics);
+    }
 
     const visible = collapseState.visibleNodeIds();
     for (const id of visible) {
@@ -114,13 +206,114 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       if (!node || !rect) continue;
       const nodeView = drawNode(node, rect, theme, currentLod, useBitmapText);
       nodeView.position.set(rect.x, rect.y);
+      attachTap(nodeView, (event) => handleNodeTap(node, nodeView, event));
       nodesLayer.addChild(nodeView);
+      nodeViews.set(id, nodeView);
     }
+
+    redrawOverlay();
   }
 
   function fitInternal(): void {
     if (!camera || !layoutResult) return;
     camera.fitTo(boundsOf(layoutResult.positions), viewport());
+  }
+
+  /** Header click on a node with children toggles expand/collapse; a header
+   * click on a childless node, or a body click that isn't a ref-field row,
+   * selects the node; a click on a row backed by an outgoing ref edge
+   * follows that reference. Only meaningful at LOD 0 (the only LOD that
+   * renders a header/rows distinction) — anywhere else, tapping the node
+   * just selects it. */
+  function handleNodeTap(node: GraphNode, view: Container, event: FederatedPointerEvent): void {
+    if (!graph) return;
+    if (currentLod === 0) {
+      const local = view.toLocal(event.global);
+      if (local.y < DEFAULT_METRICS.headerHeight) {
+        if (node.childIds.length > 0) {
+          toggleExpand(node.id);
+          return;
+        }
+      } else {
+        const rowIndex = Math.floor((local.y - DEFAULT_METRICS.headerHeight) / DEFAULT_METRICS.rowHeight);
+        const row = node.rows[rowIndex];
+        if (row) {
+          const edge = graph.refEdges.find((e) => e.from === node.id && e.field === row.key);
+          if (edge) {
+            followRef(edge);
+            return;
+          }
+        }
+      }
+    }
+    doSelect(node.id);
+  }
+
+  function toggleExpand(id: NodeId): void {
+    if (!collapseState) return;
+    if (collapseState.isExpanded(id)) doCollapse(id);
+    else void doExpand(id);
+  }
+
+  async function doExpand(id: NodeId): Promise<void> {
+    if (!graph || !collapseState || !layoutResult || !engine) return;
+    if (!graph.nodes.has(id) || collapseState.isExpanded(id)) return;
+    collapseState.expand(id);
+    const visible = collapseState.visibleNodeIds();
+    const prevPositions = new Map(layoutResult.positions);
+    layoutResult = await engine.layoutAfterExpand(layoutResult, graph, id, visible);
+    if (destroyed) return;
+    rebuild();
+    animatePositions(prevPositions, layoutResult.positions);
+  }
+
+  function doCollapse(id: NodeId): void {
+    if (!graph || !collapseState || !layoutResult || !engine) return;
+    if (!collapseState.isExpanded(id)) return;
+    collapseState.collapse(id);
+    const visible = collapseState.visibleNodeIds();
+    const prevPositions = new Map(layoutResult.positions);
+    layoutResult = engine.layoutAfterCollapse(layoutResult, graph, id, visible);
+    rebuild();
+    animatePositions(prevPositions, layoutResult.positions);
+  }
+
+  function doSelect(id: NodeId): void {
+    if (!graph) return;
+    const node = graph.nodes.get(id);
+    if (!node) return;
+    selectedId = id;
+    redrawOverlay();
+    emitter.emit("select", node);
+  }
+
+  /** Always emits "followRef" (even for a dangling edge, so a host can show
+   * feedback), but only selects+focuses the target when `edge.to` resolves —
+   * a dangling edge never navigates anywhere. */
+  function followRef(edge: RefEdge): void {
+    emitter.emit("followRef", edge);
+    if (edge.to !== null) {
+      doSelect(edge.to);
+      void focusOn(edge.to);
+    }
+  }
+
+  async function focusOn(id: NodeId): Promise<void> {
+    if (!graph || !collapseState || !layoutResult || !engine || !camera) return;
+    if (!graph.nodes.has(id)) return;
+
+    if (!collapseState.visibleNodeIds().has(id)) {
+      const newlyExpanded = collapseState.expandPathTo(id);
+      for (const ancestorId of newlyExpanded) {
+        const nowVisible = collapseState.visibleNodeIds();
+        layoutResult = await engine.layoutAfterExpand(layoutResult, graph, ancestorId, nowVisible);
+        if (destroyed) return;
+      }
+      rebuild();
+    }
+
+    const rect = layoutResult.positions.get(id);
+    if (rect) camera.centerOn(rect, viewport(), 1);
   }
 
   const ready = (async () => {
@@ -143,7 +336,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     graph = buildGraph(options.data, options.config);
     collapseState = new CollapseState(graph);
 
-    let engine = buildLayoutEngine(options.elkWorkerUrl);
+    engine = buildLayoutEngine(options.elkWorkerUrl);
     const visible = collapseState.visibleNodeIds();
     try {
       layoutResult = await engine.layout(graph, visible);
@@ -174,11 +367,23 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       fitInternal();
     },
 
-    // Stubbed pending Task 12 (expand/collapse) and Task 13 (search/select/focus).
-    async expand(_id: NodeId): Promise<void> {},
-    async collapse(_id: NodeId): Promise<void> {},
-    focus(_id: NodeId): void {},
-    select(_id: NodeId): void {},
+    async expand(id: NodeId): Promise<void> {
+      await doExpand(id);
+    },
+
+    async collapse(id: NodeId): Promise<void> {
+      doCollapse(id);
+    },
+
+    focus(id: NodeId): void {
+      void focusOn(id);
+    },
+
+    select(id: NodeId): void {
+      doSelect(id);
+    },
+
+    // Stubbed pending Task 13 (search).
     search(_query: string): SearchResult[] {
       return [];
     },
@@ -190,15 +395,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     },
 
     on(event: DataGraphEvent, callback: (payload: any) => void): () => void {
-      let set = listeners.get(event);
-      if (!set) {
-        set = new Set();
-        listeners.set(event, set);
-      }
-      set.add(callback);
-      return () => {
-        set.delete(callback);
-      };
+      return emitter.on(event, callback);
     },
 
     async setData(_data: unknown, _config?: DataGraphConfig): Promise<void> {},
@@ -210,7 +407,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     destroy(): void {
       destroyed = true;
       camera?.dispose();
-      listeners.clear();
+      emitter.clear();
       // `ready` may still be in flight (destroy() called before app.init()
       // resolved); guard so we never throw on a half-initialized renderer.
       if (app.renderer) app.destroy(true, { children: true });

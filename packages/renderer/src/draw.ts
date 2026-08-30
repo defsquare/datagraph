@@ -1,5 +1,12 @@
 import { BitmapFont, BitmapFontManager, BitmapText, Container, Graphics, Rectangle, Text } from "pixi.js";
-import { DEFAULT_METRICS, type Graph, type GraphNode, type NodeId, type Rect } from "@defsquare/data-graph-core";
+import {
+  DEFAULT_METRICS,
+  type Graph,
+  type GraphNode,
+  type NodeId,
+  type Rect,
+  type RefEdge,
+} from "@defsquare/data-graph-core";
 import type { Theme } from "./theme.js";
 
 export type Lod = 0 | 1 | 2;
@@ -267,6 +274,112 @@ export function drawEdges(graph: Graph, positions: Map<NodeId, Rect>, theme: The
     hasDangling = true;
   }
   if (hasDangling) g.stroke({ width: 1.5, color: theme.colors.danglingRef });
+
+  return g;
+}
+
+export interface EdgeHit {
+  edge: RefEdge;
+  graphics: Graphics;
+}
+
+const REF_HIT_WIDTH = 14;
+
+/**
+ * Builds one invisible, thickened (14px) hit-area Graphics per currently
+ * visible ref edge — a resolved line to its target or, for a dangling ref,
+ * the same stub drawn by `drawEdges`. Purely geometric: the caller sets
+ * `eventMode`/`cursor` and wires up tap handling (e.g. to emit
+ * "followRef"). Alpha is 0 (invisible) but Graphics hit-testing is
+ * geometry-based, so the shape stays clickable.
+ */
+export function drawEdgeHitAreas(graph: Graph, positions: Map<NodeId, Rect>): EdgeHit[] {
+  const hits: EdgeHit[] = [];
+  for (const edge of graph.refEdges) {
+    const from = positions.get(edge.from);
+    if (!from) continue;
+    const x1 = from.x + from.width;
+    const y1 = from.y + from.height / 2;
+    let x2: number;
+    let y2: number;
+    if (edge.to !== null && !edge.dangling) {
+      const to = positions.get(edge.to);
+      if (!to) continue;
+      x2 = to.x;
+      y2 = to.y + to.height / 2;
+    } else {
+      x2 = x1 + DANGLING_STUB_LENGTH;
+      y2 = y1;
+    }
+    const g = new Graphics();
+    g.moveTo(x1, y1)
+      .lineTo(x2, y2)
+      .stroke({ width: REF_HIT_WIDTH, color: 0xffffff, alpha: 0, cap: "round" });
+    hits.push({ edge, graphics: g });
+  }
+  return hits;
+}
+
+const SELECTION_STROKE_WIDTH = 3;
+
+/**
+ * Draws the selection highlight for `selectedId`: a thickened
+ * `selection`-colored outline on the node itself, on its contain-edge chain
+ * up to the root, and on its outgoing ref edges (dangling stubs included).
+ * Returns an empty Graphics when nothing is selected or the selected node
+ * isn't currently visible (not present in `positions`).
+ */
+export function drawSelectionOverlay(
+  graph: Graph,
+  positions: Map<NodeId, Rect>,
+  theme: Theme,
+  selectedId: NodeId | null,
+): Graphics {
+  const g = new Graphics();
+  if (!selectedId) return g;
+  const rect = positions.get(selectedId);
+  if (!rect) return g;
+
+  g.roundRect(rect.x, rect.y, rect.width, rect.height, RADIUS).stroke({
+    width: SELECTION_STROKE_WIDTH,
+    color: theme.colors.selection,
+  });
+
+  let hasChain = false;
+  let node = graph.nodes.get(selectedId);
+  while (node && node.parentId !== null) {
+    const childRect = positions.get(node.id);
+    const parentRect = positions.get(node.parentId);
+    if (childRect && parentRect) {
+      const x1 = parentRect.x + parentRect.width;
+      const y1 = parentRect.y + parentRect.height / 2;
+      const x2 = childRect.x;
+      const y2 = childRect.y + childRect.height / 2;
+      const dx = Math.max(24, (x2 - x1) / 2);
+      g.moveTo(x1, y1).bezierCurveTo(x1 + dx, y1, x2 - dx, y2, x2, y2);
+      hasChain = true;
+    }
+    node = graph.nodes.get(node.parentId);
+  }
+  if (hasChain) g.stroke({ width: SELECTION_STROKE_WIDTH, color: theme.colors.selection });
+
+  let hasRefs = false;
+  for (const edge of graph.refEdges) {
+    if (edge.from !== selectedId) continue;
+    const from = positions.get(edge.from);
+    if (!from) continue;
+    const x1 = from.x + from.width;
+    const y1 = from.y + from.height / 2;
+    if (edge.to !== null && !edge.dangling) {
+      const to = positions.get(edge.to);
+      if (!to) continue;
+      dashedLine(g, x1, y1, to.x, to.y + to.height / 2);
+    } else {
+      dashedLine(g, x1, y1, x1 + DANGLING_STUB_LENGTH, y1);
+    }
+    hasRefs = true;
+  }
+  if (hasRefs) g.stroke({ width: SELECTION_STROKE_WIDTH, color: theme.colors.selection });
 
   return g;
 }
