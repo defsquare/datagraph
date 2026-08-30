@@ -1,7 +1,27 @@
 {
   "name": "@defsquare/data-graph-core",
   "version": "0.1.0",
+  "description": "Headless graph engine for data-graph: builds an entity/reference graph from arbitrary JSON, plus search indexing and ELK-based layout — no rendering dependency.",
+  "keywords": [
+    "graph",
+    "json",
+    "visualization",
+    "ddd",
+    "aggregate",
+    "entity",
+    "layout",
+    "elk",
+    "search-index",
+    "jsoncrack"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/defsquare/data-graph",
+    "directory": "packages/core"
+  },
   "type": "module",
+  "sideEffects": false,
   "engines": {
     "node": ">=20"
   },
@@ -14,15 +34,18 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "bench": "tsx bench/bench.ts"
   },
   "devDependencies": {
     "tsup": "^8.5.1",
+    "tsx": "^4.23.13",
     "vitest": "^4.1.11"
   },
   "dependencies": {

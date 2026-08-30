@@ -1,7 +1,27 @@
 {
   "name": "@defsquare/data-graph",
   "version": "0.1.0",
+  "description": "jsoncrack-style visualization for complex objects (aggregates/entities) with real reference edges — Pixi.js renderer, expand/collapse, search, and theming, on top of @defsquare/data-graph-core.",
+  "keywords": [
+    "visualization",
+    "graph",
+    "json",
+    "ddd",
+    "aggregate",
+    "entity",
+    "pixi",
+    "pixi.js",
+    "jsoncrack",
+    "canvas"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/defsquare/data-graph",
+    "directory": "packages/renderer"
+  },
   "type": "module",
+  "sideEffects": false,
   "engines": {
     "node": ">=20"
   },
@@ -14,7 +34,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts",
