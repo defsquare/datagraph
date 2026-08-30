@@ -4,6 +4,7 @@ export { parseSelector, matchesPath, ConfigError, type PathSegment } from "./sel
 export { validateConfig, type EntityConfig, type DataGraphConfig, type ValidatedConfig } from "./config.js"
 
 export { buildGraph } from "./build.js"
+export { CollapseState } from "./collapse.js"
 export {
   GraphTooLargeError,
   type NodeId,
