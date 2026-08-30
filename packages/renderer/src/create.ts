@@ -130,6 +130,16 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   let currentLod: Lod = 0;
   let selectedId: NodeId | null = null;
   let destroyed = false;
+  // Bumped by every mutating operation (doExpand/doCollapse/focusOn's expand
+  // cascade) before it awaits a layout; after each await the operation
+  // compares its captured value against the current counter and bails if
+  // some other operation ran (and thus already applied its own layout)
+  // in the meantime — prevents a stale async result from clobbering
+  // layoutResult/collapseState sync (see task-12 fix report).
+  let opGen = 0;
+  // The single in-flight position-transition ticker callback, if any —
+  // only one expand/collapse animation runs at a time (see cancelAnimation).
+  let activeAnimTick: (() => void) | null = null;
   // BitmapText's canvas-fallback rendering path is unreliable (see draw.ts);
   // use plain Text there instead. Resolved once renderer type is known.
   let useBitmapText = true;
@@ -144,12 +154,28 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     return { width: app.renderer?.width ?? 0, height: app.renderer?.height ?? 0 };
   }
 
+  /** Unregisters the currently in-flight animation tick (if any). Must be
+   * called before any rebuild that may destroy the containers a running
+   * animation is holding onto — otherwise the next tick would try to set
+   * `.position` on a destroyed Container (whose `.position` is null,
+   * per Container.destroy()) and throw every frame forever, since the throw
+   * happens before the tick's own `app.ticker.remove(tick)` call. */
+  function cancelAnimation(): void {
+    if (activeAnimTick) {
+      app.ticker.remove(activeAnimTick);
+      activeAnimTick = null;
+    }
+  }
+
   /** Animates every node present in both `prevPositions` and `nextPositions`
    * (i.e. every node that survived the expand/collapse) from its old rect to
    * its new one over `TRANSITION_MS`, via the Pixi ticker. Nodes that are
    * newly visible or about to disappear are left at whatever `rebuild()`
-   * already set (their final position, or removed entirely). */
+   * already set (their final position, or removed entirely). Only one
+   * animation is ever in flight: starting a new one cancels any previous. */
   function animatePositions(prevPositions: Map<NodeId, Rect>, nextPositions: Map<NodeId, Rect>): void {
+    cancelAnimation();
+
     const anims: { view: Container; fromX: number; fromY: number; toX: number; toY: number }[] = [];
     for (const [id, view] of nodeViews) {
       const from = prevPositions.get(id);
@@ -166,10 +192,19 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       const t = Math.min(1, (performance.now() - start) / TRANSITION_MS);
       const eased = 1 - (1 - t) * (1 - t); // ease-out quad
       for (const a of anims) {
+        // Liveness guard: a straggler tick (one that survives despite
+        // cancelAnimation()'s best effort, e.g. a re-entrant rebuild from
+        // within a ticker callback) must self-skip destroyed containers
+        // instead of throwing on a null `.position`.
+        if (a.view.destroyed) continue;
         a.view.position.set(a.fromX + (a.toX - a.fromX) * eased, a.fromY + (a.toY - a.fromY) * eased);
       }
-      if (t >= 1) app.ticker.remove(tick);
+      if (t >= 1) {
+        app.ticker.remove(tick);
+        if (activeAnimTick === tick) activeAnimTick = null;
+      }
     };
+    activeAnimTick = tick;
     app.ticker.add(tick);
   }
 
@@ -184,6 +219,10 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
 
   function rebuild(): void {
     if (!graph || !collapseState || !layoutResult) return;
+    // Any in-flight position animation is about to have its containers
+    // destroyed below — cancel it first so its next tick can't run against
+    // stale/destroyed Containers.
+    cancelAnimation();
     currentLod = lodForScale(camera ? camera.scale() : 1);
 
     for (const child of nodesLayer.removeChildren()) child.destroy({ children: true });
@@ -258,11 +297,16 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   async function doExpand(id: NodeId): Promise<void> {
     if (!graph || !collapseState || !layoutResult || !engine) return;
     if (!graph.nodes.has(id) || collapseState.isExpanded(id)) return;
+    const gen = ++opGen;
     collapseState.expand(id);
     const visible = collapseState.visibleNodeIds();
     const prevPositions = new Map(layoutResult.positions);
-    layoutResult = await engine.layoutAfterExpand(layoutResult, graph, id, visible);
-    if (destroyed) return;
+    const next = await engine.layoutAfterExpand(layoutResult, graph, id, visible);
+    // A concurrent doCollapse/doExpand/focusOn ran while we were awaiting
+    // (bumping opGen) and already applied its own layoutResult — applying
+    // this stale one now would silently revert that operation. Bail.
+    if (destroyed || gen !== opGen) return;
+    layoutResult = next;
     rebuild();
     animatePositions(prevPositions, layoutResult.positions);
   }
@@ -270,6 +314,9 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   function doCollapse(id: NodeId): void {
     if (!graph || !collapseState || !layoutResult || !engine) return;
     if (!collapseState.isExpanded(id)) return;
+    // Synchronous, but still bumps the generation counter so any in-flight
+    // async doExpand/focusOn awaiting a layout notices it's been superseded.
+    ++opGen;
     collapseState.collapse(id);
     const visible = collapseState.visibleNodeIds();
     const prevPositions = new Map(layoutResult.positions);
@@ -303,11 +350,15 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     if (!graph.nodes.has(id)) return;
 
     if (!collapseState.visibleNodeIds().has(id)) {
+      const gen = ++opGen;
       const newlyExpanded = collapseState.expandPathTo(id);
       for (const ancestorId of newlyExpanded) {
         const nowVisible = collapseState.visibleNodeIds();
-        layoutResult = await engine.layoutAfterExpand(layoutResult, graph, ancestorId, nowVisible);
-        if (destroyed) return;
+        const next = await engine.layoutAfterExpand(layoutResult, graph, ancestorId, nowVisible);
+        // Same race as doExpand: bail if superseded mid-cascade so we never
+        // clobber a concurrent operation's already-applied layoutResult.
+        if (destroyed || gen !== opGen) return;
+        layoutResult = next;
       }
       rebuild();
     }
