@@ -5,6 +5,7 @@ export { validateConfig, type EntityConfig, type DataGraphConfig, type Validated
 
 export { buildGraph } from "./build.js"
 export { CollapseState } from "./collapse.js"
+export { buildSearchIndex, type SearchResult } from "./search.js"
 export {
   GraphTooLargeError,
   type NodeId,
