@@ -2,3 +2,19 @@ export const VERSION = "0.1.0"
 
 export { parseSelector, matchesPath, ConfigError, type PathSegment } from "./selector.js"
 export { validateConfig, type EntityConfig, type DataGraphConfig, type ValidatedConfig } from "./config.js"
+
+export { buildGraph } from "./build.js"
+export {
+  GraphTooLargeError,
+  type NodeId,
+  type ScalarRow,
+  type BaseNode,
+  type EntityNode,
+  type ObjectNode,
+  type ArrayNode,
+  type GraphNode,
+  type ContainEdge,
+  type RefEdge,
+  type Diagnostic,
+  type Graph,
+} from "./model.js"
