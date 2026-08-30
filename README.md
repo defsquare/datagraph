@@ -177,10 +177,10 @@ package's README for the latest numbers and any documented deviation.
 ```
 data-graph/
 ├── packages/
-│   ├── core/            @defsquare/data-graph-core — graph model, layout, search
-│   └── renderer/         @defsquare/data-graph — Pixi.js renderer, themes
+│   ├── core/      @defsquare/data-graph-core — graph model, layout, search
+│   └── renderer/  @defsquare/data-graph — Pixi.js renderer, themes
 ├── apps/
-│   └── demo/             Vite app demonstrating the renderer + Playwright e2e
+│   └── demo/      Vite app demonstrating the renderer + Playwright e2e
 ├── LICENSE
 └── README.md
 ```

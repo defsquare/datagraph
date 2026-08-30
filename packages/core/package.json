@@ -17,7 +17,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/defsquare/data-graph",
+    "url": "git+https://github.com/defsquare/data-graph.git",
     "directory": "packages/core"
   },
   "type": "module",
