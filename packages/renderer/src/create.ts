@@ -350,14 +350,37 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     if (!graph.nodes.has(id)) return;
 
     if (!collapseState.visibleNodeIds().has(id)) {
+      // Collect the collapsed ancestors WITHOUT mutating collapseState yet
+      // (unlike expandPathTo, which mutates the whole path upfront) —
+      // mutation must happen one ancestor at a time, in lockstep with the
+      // layout that actually gets applied for it. Otherwise an abort
+      // mid-cascade (gen mismatch) leaves collapseState reporting nodes as
+      // expanded/visible that have no entry in layoutResult.positions: they
+      // silently never render, and that partially-merged layoutResult goes
+      // on to corrupt the next operation as its `prev`.
+      const ancestors: NodeId[] = [];
+      let node = graph.nodes.get(id);
+      let parentId = node?.parentId ?? null;
+      while (parentId !== null) {
+        if (!collapseState.isExpanded(parentId)) ancestors.push(parentId);
+        node = graph.nodes.get(parentId);
+        parentId = node?.parentId ?? null;
+      }
+      ancestors.reverse(); // root-first
+
       const gen = ++opGen;
-      const newlyExpanded = collapseState.expandPathTo(id);
-      for (const ancestorId of newlyExpanded) {
-        const nowVisible = collapseState.visibleNodeIds();
-        const next = await engine.layoutAfterExpand(layoutResult, graph, ancestorId, nowVisible);
-        // Same race as doExpand: bail if superseded mid-cascade so we never
-        // clobber a concurrent operation's already-applied layoutResult.
+      for (const ancestorId of ancestors) {
         if (destroyed || gen !== opGen) return;
+        collapseState.expand(ancestorId);
+        const next = await engine.layoutAfterExpand(layoutResult, graph, ancestorId, collapseState.visibleNodeIds());
+        if (destroyed) return;
+        if (gen !== opGen) {
+          // Superseded mid-cascade: revert ONLY this not-yet-applied step so
+          // collapseState never gets ahead of layoutResult by more than one
+          // in-flight ancestor.
+          collapseState.collapse(ancestorId);
+          return;
+        }
         layoutResult = next;
       }
       rebuild();
