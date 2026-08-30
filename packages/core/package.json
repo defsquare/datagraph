@@ -24,5 +24,8 @@
   "devDependencies": {
     "tsup": "^8.5.1",
     "vitest": "^4.1.11"
+  },
+  "dependencies": {
+    "elkjs": "^0.12.0"
   }
 }
