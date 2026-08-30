@@ -19,11 +19,11 @@ export interface Theme {
   byEntityType?: Record<string, { accent: string }>;
 }
 
-export type DeepPartial<T> = T extends object
-  ? {
-      [P in keyof T]?: DeepPartial<T[P]>;
-    }
-  : T;
+export interface ThemeOverride {
+  fonts?: Partial<Theme["fonts"]>;
+  colors?: Partial<Theme["colors"]>;
+  byEntityType?: Theme["byEntityType"];
+}
 
 export const defsquareTheme: Theme = {
   fonts: {
@@ -85,61 +85,11 @@ export const neutralDarkTheme: Theme = {
   },
 };
 
-export function resolveTheme(partial?: DeepPartial<Theme>): Theme {
-  if (!partial) {
-    return JSON.parse(JSON.stringify(defsquareTheme));
-  }
-
-  const result: Theme = JSON.parse(JSON.stringify(defsquareTheme));
-
-  if (partial.fonts) {
-    if (partial.fonts.body !== undefined) {
-      result.fonts.body = partial.fonts.body;
-    }
-    if (partial.fonts.mono !== undefined) {
-      result.fonts.mono = partial.fonts.mono;
-    }
-  }
-
-  if (partial.colors) {
-    if (partial.colors.background !== undefined) {
-      result.colors.background = partial.colors.background;
-    }
-    if (partial.colors.nodeFill !== undefined) {
-      result.colors.nodeFill = partial.colors.nodeFill;
-    }
-    if (partial.colors.nodeStroke !== undefined) {
-      result.colors.nodeStroke = partial.colors.nodeStroke;
-    }
-    if (partial.colors.text !== undefined) {
-      result.colors.text = partial.colors.text;
-    }
-    if (partial.colors.textMuted !== undefined) {
-      result.colors.textMuted = partial.colors.textMuted;
-    }
-    if (partial.colors.entity !== undefined) {
-      result.colors.entity = partial.colors.entity;
-    }
-    if (partial.colors.refEdge !== undefined) {
-      result.colors.refEdge = partial.colors.refEdge;
-    }
-    if (partial.colors.containEdge !== undefined) {
-      result.colors.containEdge = partial.colors.containEdge;
-    }
-    if (partial.colors.selection !== undefined) {
-      result.colors.selection = partial.colors.selection;
-    }
-    if (partial.colors.searchHighlight !== undefined) {
-      result.colors.searchHighlight = partial.colors.searchHighlight;
-    }
-    if (partial.colors.danglingRef !== undefined) {
-      result.colors.danglingRef = partial.colors.danglingRef;
-    }
-  }
-
-  if (partial.byEntityType !== undefined) {
-    result.byEntityType = partial.byEntityType as Record<string, { accent: string }>;
-  }
-
-  return result;
+export function resolveTheme(partial?: ThemeOverride): Theme {
+  const base = defsquareTheme;
+  return {
+    fonts: { ...base.fonts, ...partial?.fonts },
+    colors: { ...base.colors, ...partial?.colors },
+    ...(partial?.byEntityType ? { byEntityType: { ...partial.byEntityType } } : {}),
+  };
 }

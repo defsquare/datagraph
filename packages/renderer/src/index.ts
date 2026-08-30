@@ -1,8 +1,2 @@
-export {
-  Theme,
-  DeepPartial,
-  defsquareTheme,
-  neutralLightTheme,
-  neutralDarkTheme,
-  resolveTheme,
-} from "./theme.js";
+export { resolveTheme, defsquareTheme, neutralLightTheme, neutralDarkTheme } from "./theme.js";
+export type { Theme, ThemeOverride } from "./theme.js";

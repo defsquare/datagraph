@@ -31,6 +31,15 @@ describe("theme", () => {
     expect(custom.fonts.mono).toBe(defsquareTheme.fonts.mono);
   });
 
+  it("resolveTheme({ byEntityType: { Customer: { accent: '#ff0000' } } }) should include byEntityType AND keep colors/fonts from defsquareTheme", () => {
+    const custom = resolveTheme({
+      byEntityType: { Customer: { accent: "#ff0000" } },
+    });
+    expect(custom.byEntityType).toEqual({ Customer: { accent: "#ff0000" } });
+    expect(custom.colors).toEqual(defsquareTheme.colors);
+    expect(custom.fonts).toEqual(defsquareTheme.fonts);
+  });
+
   it("all three themes should have exactly the same keys", () => {
     const defsquareKeys = {
       fonts: Object.keys(defsquareTheme.fonts).sort(),
