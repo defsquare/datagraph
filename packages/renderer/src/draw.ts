@@ -1,4 +1,4 @@
-import { BitmapFont, BitmapFontManager, BitmapText, Container, Graphics, Rectangle } from "pixi.js";
+import { BitmapFont, BitmapFontManager, BitmapText, Container, Graphics, Rectangle, Text } from "pixi.js";
 import { DEFAULT_METRICS, type Graph, type GraphNode, type NodeId, type Rect } from "@defsquare/data-graph-core";
 import type { Theme } from "./theme.js";
 
@@ -50,6 +50,33 @@ function ensureFonts(theme: Theme): void {
   }
 }
 
+/**
+ * BitmapText's canvas-renderer path (glyphs drawn via a Graphics "texture"
+ * instruction) does not reliably rasterize under Pixi v8's software canvas
+ * fallback renderer (`app.renderer.name === "canvas"`, used when neither
+ * WebGL nor WebGPU is available) — verified empirically: plain Graphics
+ * shapes render fine there, but every BitmapText stayed blank. Regular
+ * `Text` goes through a different, canvas-fallback-safe path, so callers
+ * pass `useBitmapText: false` there and this module renders with `Text`
+ * instead (real font family + `fill`, no tint/BitmapFont involved).
+ */
+function createLabel(
+  text: string,
+  theme: Theme,
+  family: "body" | "mono",
+  color: string,
+  useBitmapText: boolean,
+): BitmapText | Text {
+  if (useBitmapText) {
+    const bitmapFontName = family === "body" ? BODY_FONT : MONO_FONT;
+    const t = new BitmapText({ text, style: { fontFamily: bitmapFontName, fontSize: 14 } });
+    t.tint = color;
+    return t;
+  }
+  const fontFamily = family === "body" ? theme.fonts.body : theme.fonts.mono;
+  return new Text({ text, style: { fontFamily, fontSize: 14, fill: color } });
+}
+
 function truncateToWidth(text: string, maxWidth: number, charWidth: number): string {
   if (maxWidth <= 0) return "";
   const maxChars = Math.max(1, Math.floor(maxWidth / charWidth));
@@ -71,8 +98,14 @@ function nodeAccent(node: GraphNode, theme: Theme): string {
  * rounded card with a colored header and key/value rows; LOD 1 renders the
  * box with a truncated label only; LOD 2 renders a flat colored rectangle.
  */
-export function drawNode(node: GraphNode, rect: Rect, theme: Theme, lod: Lod): Container {
-  ensureFonts(theme);
+export function drawNode(
+  node: GraphNode,
+  rect: Rect,
+  theme: Theme,
+  lod: Lod,
+  useBitmapText: boolean,
+): Container {
+  if (useBitmapText) ensureFonts(theme);
 
   const container = new Container();
   container.cullable = true;
@@ -100,8 +133,7 @@ export function drawNode(node: GraphNode, rect: Rect, theme: Theme, lod: Lod): C
       rect.width - 2 * DEFAULT_METRICS.paddingX,
       DEFAULT_METRICS.charWidth,
     );
-    const text = new BitmapText({ text: label, style: { fontFamily: BODY_FONT, fontSize: 14 } });
-    text.tint = theme.colors.text;
+    const text = createLabel(label, theme, "body", theme.colors.text, useBitmapText);
     text.position.set(DEFAULT_METRICS.paddingX, rect.height / 2 - text.height / 2);
     container.addChild(text);
     return container;
@@ -120,8 +152,7 @@ export function drawNode(node: GraphNode, rect: Rect, theme: Theme, lod: Lod): C
     rect.width - 2 * DEFAULT_METRICS.paddingX,
     DEFAULT_METRICS.charWidth,
   );
-  const headerText = new BitmapText({ text: label, style: { fontFamily: BODY_FONT, fontSize: 14 } });
-  headerText.tint = theme.colors.nodeFill;
+  const headerText = createLabel(label, theme, "body", theme.colors.nodeFill, useBitmapText);
   headerText.position.set(DEFAULT_METRICS.paddingX, headerHeight / 2 - headerText.height / 2);
   container.addChild(headerText);
 
@@ -129,15 +160,13 @@ export function drawNode(node: GraphNode, rect: Rect, theme: Theme, lod: Lod): C
   node.rows.forEach((row, index) => {
     const y = headerHeight + index * DEFAULT_METRICS.rowHeight + DEFAULT_METRICS.rowHeight / 2;
 
-    const keyText = new BitmapText({ text: `${row.key}:`, style: { fontFamily: BODY_FONT, fontSize: 14 } });
-    keyText.tint = theme.colors.textMuted;
+    const keyText = createLabel(`${row.key}:`, theme, "body", theme.colors.textMuted, useBitmapText);
     keyText.position.set(DEFAULT_METRICS.paddingX, y - keyText.height / 2);
     container.addChild(keyText);
 
     const valueMaxWidth = Math.max(0, rowWidth - keyText.width - 6);
     const valueStr = truncateToWidth(String(row.value), valueMaxWidth, DEFAULT_METRICS.charWidth);
-    const valueText = new BitmapText({ text: valueStr, style: { fontFamily: MONO_FONT, fontSize: 14 } });
-    valueText.tint = theme.colors.text;
+    const valueText = createLabel(valueStr, theme, "mono", theme.colors.text, useBitmapText);
     valueText.position.set(DEFAULT_METRICS.paddingX + keyText.width + 6, y - valueText.height / 2);
     container.addChild(valueText);
   });

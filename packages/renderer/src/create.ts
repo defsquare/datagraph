@@ -88,6 +88,9 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   let layoutResult: LayoutResult | undefined;
   let currentLod: Lod = 0;
   let destroyed = false;
+  // BitmapText's canvas-fallback rendering path is unreliable (see draw.ts);
+  // use plain Text there instead. Resolved once renderer type is known.
+  let useBitmapText = true;
 
   const listeners = new Map<DataGraphEvent, Set<(payload: any) => void>>();
 
@@ -109,7 +112,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       const node = graph.nodes.get(id);
       const rect = layoutResult.positions.get(id);
       if (!node || !rect) continue;
-      const nodeView = drawNode(node, rect, theme, currentLod);
+      const nodeView = drawNode(node, rect, theme, currentLod, useBitmapText);
       nodeView.position.set(rect.x, rect.y);
       nodesLayer.addChild(nodeView);
     }
@@ -127,6 +130,11 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       antialias: true,
     });
     if (destroyed) return;
+
+    // Pixi v8's BitmapText only rasterizes reliably on WebGL/WebGPU; its
+    // software "canvas" fallback renderer (used when neither is available)
+    // leaves BitmapText blank, so use plain Text there (see draw.ts).
+    useBitmapText = app.renderer.name !== "canvas";
 
     container.appendChild(app.canvas);
     app.stage.addChild(world);
@@ -148,6 +156,9 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
 
     rebuild();
     fitInternal();
+    // Force one immediate, synchronous frame so the first paint is
+    // deterministic instead of waiting on the ticker's next scheduled tick.
+    app.render();
 
     app.ticker.add(() => {
       if (destroyed || !camera) return;
