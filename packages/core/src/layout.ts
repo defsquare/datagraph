@@ -50,9 +50,9 @@ export function createLayoutEngine(opts?: { elkFactory?: ElkFactory }): LayoutEn
   const elkFactory: ElkFactory = opts?.elkFactory ?? (() => new ELK())
 
   // Private engine state: for each node expanded via layoutAfterExpand, the
-  // vertical shift (delta) applied to nodes below it, so the matching
-  // layoutAfterCollapse call can undo it precisely.
-  const expansionDeltas: Map<NodeId, number> = new Map()
+  // vertical shift (delta) applied to nodes below its midline (thresholdY),
+  // so a matching layoutAfterCollapse call can undo it precisely.
+  const expansionDeltas: Map<NodeId, { delta: number; thresholdY: number }> = new Map()
 
   return {
     async layout(
@@ -116,7 +116,13 @@ export function createLayoutEngine(opts?: { elkFactory?: ElkFactory }): LayoutEn
       const newlyVisible = [...visible].filter((id) => !prev.positions.has(id))
 
       if (!anchor || newlyVisible.length === 0) {
-        expansionDeltas.set(expandedId, 0)
+        // Repeated/no-op expand of an already-expanded node: do NOT clobber a
+        // previously recorded real delta (a later collapse still needs it to
+        // undo the earlier shift). Only seed a zero entry when none exists yet.
+        if (!expansionDeltas.has(expandedId)) {
+          const thresholdY = anchor ? anchor.y + anchor.height / 2 : -Infinity
+          expansionDeltas.set(expandedId, { delta: 0, thresholdY })
+        }
         return { positions }
       }
 
@@ -198,8 +204,9 @@ export function createLayoutEngine(opts?: { elkFactory?: ElkFactory }): LayoutEn
         }
       }
 
-      // Step 4: remember delta so a matching collapse can undo the shift.
-      expansionDeltas.set(expandedId, delta)
+      // Step 4: remember delta (and the threshold it was applied above) so a
+      // matching collapse can undo the shift.
+      expansionDeltas.set(expandedId, { delta, thresholdY: threshold })
 
       return { positions }
     },
@@ -211,23 +218,43 @@ export function createLayoutEngine(opts?: { elkFactory?: ElkFactory }): LayoutEn
       visible: Set<NodeId>,
     ): LayoutResult {
       const positions = new Map<NodeId, Rect>()
+      const nowInvisible: NodeId[] = []
       for (const [id, rect] of prev.positions) {
-        if (!visible.has(id)) continue
+        if (!visible.has(id)) {
+          nowInvisible.push(id)
+          continue
+        }
         positions.set(id, { ...rect })
       }
 
-      const delta = expansionDeltas.get(collapsedId) ?? 0
-      expansionDeltas.delete(collapsedId)
+      // Undo the shift recorded for collapsedId itself, plus the shift
+      // recorded for any node that becomes invisible as a side effect of
+      // this collapse (e.g. a descendant that had independently been
+      // expanded while nested under collapsedId — its own downward shift
+      // would otherwise be left stale on the remaining, still-visible
+      // siblings). Applying each recorded shift independently is a faithful
+      // inverse in the nominal case (one expand undone by its matching
+      // collapse); when several nested expansions are collapsed together in
+      // a single call, undoing each shift independently rather than solving
+      // for the exact composition of overlapping shifts is an accepted
+      // approximation for incremental layout.
+      const idsToUndo = new Set<NodeId>([collapsedId, ...nowInvisible])
+      const entries: { delta: number; thresholdY: number }[] = []
+      for (const id of idsToUndo) {
+        const entry = expansionDeltas.get(id)
+        if (entry) entries.push(entry)
+      }
 
-      if (delta > 0) {
-        const anchor = prev.positions.get(collapsedId)
-        const threshold = anchor ? anchor.y + anchor.height / 2 : -Infinity
+      for (const entry of entries) {
+        if (entry.delta === 0) continue
         for (const [id, rect] of positions) {
-          if (rect.y > threshold) {
-            positions.set(id, { ...rect, y: rect.y - delta })
+          if (rect.y > entry.thresholdY) {
+            positions.set(id, { ...rect, y: rect.y - entry.delta })
           }
         }
       }
+
+      for (const id of idsToUndo) expansionDeltas.delete(id)
 
       return { positions }
     },
