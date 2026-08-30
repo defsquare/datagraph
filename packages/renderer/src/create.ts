@@ -2,6 +2,7 @@ import { Application, Container, Graphics, type FederatedPointerEvent } from "pi
 import ELK from "elkjs/lib/elk.bundled.js";
 import {
   buildGraph,
+  buildSearchIndex,
   CollapseState,
   createLayoutEngine,
   DEFAULT_METRICS,
@@ -14,11 +15,20 @@ import {
   type NodeId,
   type Rect,
   type RefEdge,
+  type SearchIndex,
   type SearchResult,
 } from "@defsquare/data-graph-core";
 import { resolveTheme, type Theme, type ThemeOverride } from "./theme.js";
 import { Camera, type Size } from "./camera.js";
-import { drawEdgeHitAreas, drawEdges, drawNode, drawSelectionOverlay, lodForScale, type Lod } from "./draw.js";
+import {
+  drawEdgeHitAreas,
+  drawEdges,
+  drawNode,
+  drawSearchHighlights,
+  drawSelectionOverlay,
+  lodForScale,
+  type Lod,
+} from "./draw.js";
 import { Emitter } from "./events.js";
 
 export interface DataGraphOptions {
@@ -119,7 +129,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   let edgesGraphics = new Graphics();
   const edgeHitLayer = new Container();
   const nodesLayer = new Container();
-  let overlayGraphics = new Graphics();
+  let overlayGraphics = new Container();
   world.addChild(edgesGraphics, edgeHitLayer, nodesLayer, overlayGraphics);
 
   let camera: Camera | null = null;
@@ -127,8 +137,19 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   let collapseState: CollapseState | undefined;
   let layoutResult: LayoutResult | undefined;
   let engine: LayoutEngine | undefined;
+  let searchIndex: SearchIndex | undefined;
+  // The config currently in effect — `options.config` initially, replaced by
+  // whatever setData() was last called with. setData(data) (config omitted)
+  // reuses this rather than re-reading options.config, so a second setData
+  // without a config keeps whatever the *previous* setData installed.
+  let currentConfig: DataGraphConfig = options.config;
   let currentLod: Lod = 0;
   let selectedId: NodeId | null = null;
+  // Current search() results, and the nextMatch/prevMatch cursor into them
+  // (-1 = no current match, i.e. right after a fresh search() or before any
+  // search has run). Reset to [] / -1 by search("") and by setData().
+  let searchResults: SearchResult[] = [];
+  let searchCursor = -1;
   let destroyed = false;
   // Bumped by every mutating operation (doExpand/doCollapse/focusOn's expand
   // cascade) before it awaits a layout; after each await the operation
@@ -208,12 +229,24 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     app.ticker.add(tick);
   }
 
+  /** Node ids from `searchResults` that are currently visible — the set
+   * `search()`/`nextMatch()`/`prevMatch()` highlight is drawn over. Recomputed
+   * on every redraw (rather than cached) since visibility can change
+   * independently of the search state, e.g. an expand/collapse elsewhere. */
+  function visibleMatchIds(): NodeId[] {
+    if (!collapseState || searchResults.length === 0) return [];
+    const visible = collapseState.visibleNodeIds();
+    return searchResults.map((r) => r.nodeId).filter((id) => visible.has(id));
+  }
+
   function redrawOverlay(): void {
-    overlayGraphics.destroy();
-    overlayGraphics =
-      graph && layoutResult
-        ? drawSelectionOverlay(graph, layoutResult.positions, theme, selectedId)
-        : new Graphics();
+    overlayGraphics.destroy({ children: true });
+    overlayGraphics = new Container();
+    if (graph && layoutResult) {
+      overlayGraphics.addChild(drawSelectionOverlay(graph, layoutResult.positions, theme, selectedId));
+      const currentId = searchResults[searchCursor]?.nodeId ?? null;
+      overlayGraphics.addChild(drawSearchHighlights(layoutResult.positions, theme, visibleMatchIds(), currentId));
+    }
     world.addChild(overlayGraphics);
   }
 
@@ -390,6 +423,41 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     if (rect) camera.centerOn(rect, viewport(), 1);
   }
 
+  /** Queries `searchIndex`, resets the nextMatch/prevMatch cursor to -1, and
+   * redraws the (visible-only) search highlight. `query === ""` yields an
+   * empty result set (SearchIndex.search's own behavior), which clears the
+   * highlight/state as a side effect of the same codepath. */
+  function doSearch(query: string): SearchResult[] {
+    searchResults = searchIndex ? searchIndex.search(query) : [];
+    searchCursor = -1;
+    redrawOverlay();
+    return searchResults;
+  }
+
+  /** Shared by nextMatch (`direction: 1`) / prevMatch (`direction: -1`):
+   * advances the circular cursor, focuses (auto-expand included) the
+   * resulting match and reinforces its highlight; returns null without
+   * moving the cursor when there are no results.
+   *
+   * The `-1` sentinel (no current match yet) is handled as a special case
+   * rather than folded into the generic `(cursor + direction + count) %
+   * count` wrap: that formula treats -1 as "already one step before 0", so
+   * stepping -1 again would land on `count - 2`, not the last result — not
+   * the intended "first prevMatch from a fresh search jumps to the last
+   * match" behavior. From -1, next goes to the first match (0) and prev
+   * goes to the last (`count - 1`); from any real cursor position the plain
+   * modular wrap applies. */
+  function stepMatch(direction: 1 | -1): SearchResult | null {
+    const count = searchResults.length;
+    if (count === 0) return null;
+    searchCursor =
+      searchCursor === -1 ? (direction === 1 ? 0 : count - 1) : (searchCursor + direction + count) % count;
+    const result = searchResults[searchCursor]!;
+    void focusOn(result.nodeId);
+    redrawOverlay();
+    return result;
+  }
+
   const ready = (async () => {
     await app.init({
       background: theme.colors.background,
@@ -407,8 +475,10 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     app.stage.addChild(world);
     camera = new Camera(world, app.canvas);
 
-    graph = buildGraph(options.data, options.config);
+    currentConfig = options.config;
+    graph = buildGraph(options.data, currentConfig);
     collapseState = new CollapseState(graph);
+    searchIndex = buildSearchIndex(graph);
 
     engine = buildLayoutEngine(options.elkWorkerUrl);
     const visible = collapseState.visibleNodeIds();
@@ -434,6 +504,58 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     });
   })();
 
+  /** Re-runs the full pipeline (buildGraph → CollapseState → SearchIndex →
+   * initial layout → rebuild → fit) against new `data`, reusing
+   * `currentConfig` when `configOverride` is omitted. Search/selection state
+   * is reset. Uses a fresh LayoutEngine (rather than reusing `engine`) so the
+   * new graph never inherits the old one's `expansionDeltas` bookkeeping,
+   * which is keyed by NodeId (a JSON pointer) and could otherwise collide
+   * with an unrelated node at the same path in the new dataset.
+   *
+   * Awaits `ready` first so a setData() called before initial init has
+   * finished (camera/app not yet available) queues behind it instead of
+   * being a silent no-op; guarded by the same opGen/destroyed machinery as
+   * every other mutating operation so a concurrent setData/expand/collapse/
+   * focus started after this one wins. */
+  async function doSetData(data: unknown, configOverride?: DataGraphConfig): Promise<void> {
+    await ready;
+    if (destroyed) return;
+    const gen = ++opGen;
+
+    const config = configOverride ?? currentConfig;
+    const newGraph = buildGraph(data, config);
+    const newCollapseState = new CollapseState(newGraph);
+    const newSearchIndex = buildSearchIndex(newGraph);
+    const visible = newCollapseState.visibleNodeIds();
+
+    let newEngine = buildLayoutEngine(options.elkWorkerUrl);
+    let newLayout: LayoutResult;
+    try {
+      newLayout = await newEngine.layout(newGraph, visible);
+    } catch (err) {
+      console.warn("[data-graph] layout via elkWorkerUrl failed, falling back to in-process elk", err);
+      newEngine = createLayoutEngine();
+      newLayout = await newEngine.layout(newGraph, visible);
+    }
+    // A concurrent setData/doExpand/doCollapse/focusOn ran while we were
+    // awaiting the layout (bumping opGen) and already applied its own
+    // state — applying this stale one now would silently revert it. Bail.
+    if (destroyed || gen !== opGen) return;
+
+    graph = newGraph;
+    collapseState = newCollapseState;
+    searchIndex = newSearchIndex;
+    engine = newEngine;
+    layoutResult = newLayout;
+    currentConfig = config;
+    selectedId = null;
+    searchResults = [];
+    searchCursor = -1;
+
+    rebuild();
+    fitInternal();
+  }
+
   return {
     ready,
 
@@ -457,22 +579,23 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       doSelect(id);
     },
 
-    // Stubbed pending Task 13 (search).
-    search(_query: string): SearchResult[] {
-      return [];
+    search(query: string): SearchResult[] {
+      return doSearch(query);
     },
     nextMatch(): SearchResult | null {
-      return null;
+      return stepMatch(1);
     },
     prevMatch(): SearchResult | null {
-      return null;
+      return stepMatch(-1);
     },
 
     on(event: DataGraphEvent, callback: (payload: any) => void): () => void {
       return emitter.on(event, callback);
     },
 
-    async setData(_data: unknown, _config?: DataGraphConfig): Promise<void> {},
+    async setData(data: unknown, config?: DataGraphConfig): Promise<void> {
+      await doSetData(data, config);
+    },
 
     diagnostics(): Diagnostic[] {
       return graph ? graph.diagnostics : [];

@@ -383,3 +383,45 @@ export function drawSelectionOverlay(
 
   return g;
 }
+
+const SEARCH_STROKE_WIDTH = 2;
+const SEARCH_CURRENT_STROKE_WIDTH = 4;
+
+/**
+ * Draws a `searchHighlight`-colored outline on every currently visible
+ * matched node (`matchedIds`), plus a thicker "reinforced" outline on
+ * `currentId` (drawn last, on top, so it wins visually over the plain
+ * outline when both would otherwise overlap). A node id present in
+ * `matchedIds`/`currentId` that isn't in `positions` (i.e. not currently
+ * visible) is silently skipped — callers are expected to have already
+ * filtered to visible ids, but this is a defensive no-op either way.
+ */
+export function drawSearchHighlights(
+  positions: Map<NodeId, Rect>,
+  theme: Theme,
+  matchedIds: Iterable<NodeId>,
+  currentId: NodeId | null,
+): Graphics {
+  const g = new Graphics();
+  for (const id of matchedIds) {
+    if (id === currentId) continue; // drawn separately below, on top
+    const rect = positions.get(id);
+    if (!rect) continue;
+    g.roundRect(rect.x, rect.y, rect.width, rect.height, RADIUS).stroke({
+      width: SEARCH_STROKE_WIDTH,
+      color: theme.colors.searchHighlight,
+    });
+  }
+
+  if (currentId !== null) {
+    const rect = positions.get(currentId);
+    if (rect) {
+      g.roundRect(rect.x, rect.y, rect.width, rect.height, RADIUS).stroke({
+        width: SEARCH_CURRENT_STROKE_WIDTH,
+        color: theme.colors.searchHighlight,
+      });
+    }
+  }
+
+  return g;
+}

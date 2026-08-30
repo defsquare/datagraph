@@ -14,10 +14,49 @@
         overflow: hidden;
         font-family: system-ui, sans-serif;
       }
-      #layout {
+      #page {
         display: flex;
+        flex-direction: column;
         width: 100vw;
         height: 100vh;
+      }
+      #toolbar {
+        flex: none;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-bottom: 1px solid #e5e7eb;
+        background: #ffffff;
+        font-size: 13px;
+      }
+      #search {
+        width: 220px;
+        padding: 4px 8px;
+        font-size: 13px;
+        border: 1px solid #d1d5db;
+        border-radius: 4px;
+      }
+      #toolbar button {
+        font-size: 13px;
+        padding: 4px 8px;
+        border: 1px solid #d1d5db;
+        border-radius: 4px;
+        background: #f9fafb;
+        cursor: pointer;
+      }
+      #match-counter {
+        min-width: 3.5em;
+        color: #4b5563;
+        font-family: monospace;
+      }
+      #toggle-dataset {
+        margin-left: auto;
+      }
+      #layout {
+        display: flex;
+        flex: 1;
+        min-height: 0;
       }
       #app {
         flex: 1;
@@ -61,14 +100,23 @@
     </style>
   </head>
   <body>
-    <div id="layout">
-      <div id="app"></div>
-      <aside id="detail-panel">
-        <h2>Node detail</h2>
-        <p id="selection-label">Click a node to see details.</p>
-        <p id="selection-path"></p>
-        <ul id="selection-rows"></ul>
-      </aside>
+    <div id="page">
+      <div id="toolbar">
+        <input type="search" id="search" placeholder="Search…" autocomplete="off" />
+        <button id="prev-match" title="Previous match (Shift+Enter)">↑</button>
+        <button id="next-match" title="Next match (Enter)">↓</button>
+        <span id="match-counter"></span>
+        <button id="toggle-dataset">Load big dataset (2000)</button>
+      </div>
+      <div id="layout">
+        <div id="app"></div>
+        <aside id="detail-panel">
+          <h2>Node detail</h2>
+          <p id="selection-label">Click a node to see details.</p>
+          <p id="selection-path"></p>
+          <ul id="selection-rows"></ul>
+        </aside>
+      </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

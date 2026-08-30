@@ -12,6 +12,7 @@ export {
   drawEdges,
   drawEdgeHitAreas,
   drawSelectionOverlay,
+  drawSearchHighlights,
   lodForScale,
   LOD0_MIN_SCALE,
   LOD1_MIN_SCALE,
