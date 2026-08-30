@@ -25,4 +25,24 @@ describe("SearchIndex", () => {
     big.search("client 42")
     expect(performance.now() - t0).toBeLessThan(50)
   })
+  it("deduplicates multiple row keys matching the same query", () => {
+    const results = idx.search("id")
+    // Should find both "id" field and "customerId" field on /orders/0
+    expect(results).toContainEqual(
+      { nodeId: "/orders/0", field: "id", matched: "id" })
+    expect(results).toContainEqual(
+      { nodeId: "/orders/0", field: "customerId", matched: "customerId" })
+  })
+  it("returns one result when row key and value both match query", () => {
+    // Create a graph with { items: [{ id: "x", name: "name" }] }
+    const data = { items: [{ id: "x", name: "name" }] }
+    const config = { entities: { Item: { match: "$.items[*]", id: "id" } }, references: {} }
+    const testIdx = buildSearchIndex(buildGraph(data, config))
+    const results = testIdx.search("name")
+    // Should return exactly ONE result for /items/0 field "name" (key and value deduplicate)
+    const nameMatches = results.filter(
+      (r) => r.nodeId === "/items/0" && r.field === "name")
+    expect(nameMatches).toHaveLength(1)
+    expect(nameMatches[0]).toEqual({ nodeId: "/items/0", field: "name", matched: "name" })
+  })
 })

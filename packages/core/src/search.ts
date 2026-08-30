@@ -76,15 +76,15 @@ export function buildSearchIndex(graph: Graph): SearchIndex {
 
     // Add each row key and value
     for (const row of node.rows) {
-      // Add row key (field: null)
+      // Add row key with field set to row key (same dedup bucket as value)
       entries.push({
         nodeId: node.id,
-        field: null,
+        field: row.key,
         text: row.key,
         lower: row.key.toLowerCase(),
       })
 
-      // Add row value with field set to row key
+      // Add row value with field set to row key (same dedup bucket as key)
       const valueStr = String(row.value)
       entries.push({
         nodeId: node.id,
