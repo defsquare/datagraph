@@ -1,0 +1,177 @@
+/* Defsquare DS chrome for the data-graph demo.
+   Sober page shell around the canvas — the canvas stays the hero. */
+
+:root {
+  --ds-bg: #f7f7f8;
+  --ds-surface: #ffffff;
+  --ds-ink: #172741;
+  --ds-text: #070f19;
+  --ds-muted: #4b5563;
+  --ds-accent: #f65e5e;
+  --ds-primary: #1e416e;
+  --ds-border: #e5e7eb;
+  --ds-radius: 6px;
+  --shadow-md:
+    0 4px 6px -1px rgb(0 0 0 / 0.1),
+    0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --ds-transition: 200ms ease-in-out;
+  --ds-font-body: "IBM Plex Sans Condensed", "IBM Plex Sans", system-ui, sans-serif;
+  --ds-font-mono: "Fira Code", "SF Mono", Menlo, Consolas, monospace;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--ds-bg);
+  color: var(--ds-text);
+  font-family: var(--ds-font-body);
+}
+
+#page {
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
+  height: 100vh;
+}
+
+#toolbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--ds-border);
+  background: var(--ds-surface);
+  font-size: 13px;
+}
+
+#toolbar h1 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ds-ink);
+  white-space: nowrap;
+}
+
+#search {
+  width: 220px;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--ds-text);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  background: var(--ds-bg);
+  transition:
+    border-color var(--ds-transition),
+    box-shadow var(--ds-transition);
+}
+
+#search:focus {
+  outline: none;
+  border-color: var(--ds-primary);
+  box-shadow: 0 0 0 2px rgb(30 65 110 / 0.15);
+}
+
+#toolbar button {
+  font-family: inherit;
+  font-size: 13px;
+  padding: 6px 10px;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  background: var(--ds-surface);
+  color: var(--ds-text);
+  cursor: pointer;
+  transition:
+    background-color var(--ds-transition),
+    border-color var(--ds-transition);
+}
+
+#toolbar button:hover {
+  border-color: var(--ds-primary);
+  color: var(--ds-primary);
+}
+
+#toolbar button:active {
+  background: var(--ds-bg);
+}
+
+#match-counter {
+  min-width: 3.5em;
+  color: var(--ds-muted);
+  font-family: var(--ds-font-mono);
+}
+
+#toggle-dataset {
+  margin-left: auto;
+  border-color: var(--ds-accent);
+  color: var(--ds-accent);
+}
+
+#toggle-dataset:hover {
+  background: var(--ds-accent);
+  color: var(--ds-surface);
+}
+
+#layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+#app {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: block;
+  background: var(--ds-bg);
+}
+
+#detail {
+  width: 300px;
+  flex: none;
+  overflow-y: auto;
+  padding: 16px 20px;
+  box-sizing: border-box;
+  background: var(--ds-surface);
+  border-radius: var(--ds-radius) 0 0 var(--ds-radius);
+  box-shadow: var(--shadow-md);
+  font-size: 13px;
+}
+
+#detail h2 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ds-ink);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+#selection-label {
+  font-weight: 600;
+  color: var(--ds-ink);
+  margin: 0 0 4px;
+}
+
+#selection-path {
+  margin: 0 0 12px;
+  color: var(--ds-muted);
+  font-family: var(--ds-font-mono);
+  word-break: break-all;
+}
+
+#selection-rows {
+  margin: 0;
+  padding-left: 16px;
+}
+
+#selection-rows li {
+  font-family: var(--ds-font-mono);
+  margin-bottom: 2px;
+  word-break: break-all;
+}
