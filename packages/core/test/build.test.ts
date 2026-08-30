@@ -41,4 +41,19 @@ describe("buildGraph", () => {
     expect(big.logicalNodeCount).toBeGreaterThan(9_000)
     expect(performance.now() - t0).toBeLessThan(1000)
   })
+  it("handles a null root document without crashing", () => {
+    const g2 = buildGraph(null, shopConfig)
+    expect(g2.nodes.size).toBe(1)
+    const root = g2.nodes.get("/")!
+    expect(root.kind).toBe("object")
+    expect(root.label).toBe("$")
+    expect(root.rows).toEqual([{ key: "$value", value: null, valueType: "null" }])
+  })
+  it("handles a scalar root document without crashing", () => {
+    const g2 = buildGraph(42, shopConfig)
+    expect(g2.nodes.size).toBe(1)
+    const root = g2.nodes.get("/")!
+    expect(root.kind).toBe("object")
+    expect(root.rows).toEqual([{ key: "$value", value: 42, valueType: "number" }])
+  })
 })

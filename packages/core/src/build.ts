@@ -74,6 +74,24 @@ export function buildGraph(data: unknown, config: DataGraphConfig): Graph {
     parentNode: GraphNode | null,
   ): NodeId {
     const id = pointerOf(path)
+
+    // A scalar (including null) can only reach visitValue as the root document:
+    // every recursive call site already filters scalars out via isScalar() before recursing.
+    if (isScalar(value)) {
+      const rootNode: ObjectNode = {
+        kind: "object",
+        id,
+        path: [...path],
+        label: "$",
+        rows: [{ key: "$value", value, valueType: scalarValueType(value) }],
+        parentId,
+        childIds: [],
+      }
+      graph.nodes.set(id, rootNode)
+      countLogical(1)
+      return id
+    }
+
     const isArray = Array.isArray(value)
     const entityMatch = !isArray ? findEntityMatch(path) : null
 
@@ -192,6 +210,35 @@ export function buildGraph(data: unknown, config: DataGraphConfig): Graph {
   }
 
   visitValue(data, [], null, null)
+
+  for (const node of graph.nodes.values()) {
+    if (node.kind !== "entity") continue
+    const refs = validated.references.get(node.entityType)
+    if (!refs) continue
+    for (const [field, targetType] of refs) {
+      const row = node.rows.find((r) => r.key === field)
+      if (!row) continue
+      const targetId = String(row.value)
+      const to = graph.entityIndex.get(targetType)?.get(targetId) ?? null
+      const dangling = to === null
+      graph.refEdges.push({
+        kind: "ref",
+        from: node.id,
+        to,
+        field,
+        targetType,
+        targetId,
+        dangling,
+      })
+      if (dangling) {
+        graph.diagnostics.push({
+          code: "dangling-ref",
+          path: node.id,
+          message: `Reference "${field}" on ${node.entityType} at ${node.id} targets unknown ${targetType} "${targetId}"`,
+        })
+      }
+    }
+  }
 
   return graph
 }
