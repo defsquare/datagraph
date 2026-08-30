@@ -145,19 +145,28 @@ subset of colors/fonts per instance:
 | `neutralDarkTheme` | Generic dark theme. |
 
 ```ts
-import { createDataGraph, neutralDarkTheme, type ThemeOverride } from "@defsquare/data-graph";
+import { createDataGraph, neutralDarkTheme } from "@defsquare/data-graph";
 
-const override: ThemeOverride = {
-  colors: { entity: "#22c55e" },
-  byEntityType: { Order: { accent: "#f59e0b" } },
-};
-
-createDataGraph(container, { data, config, theme: { ...neutralDarkTheme, ...override } });
+createDataGraph(container, {
+  data,
+  config,
+  theme: {
+    fonts: neutralDarkTheme.fonts,
+    colors: { ...neutralDarkTheme.colors, entity: "#22c55e" },
+    byEntityType: { Order: { accent: "#f59e0b" } },
+  },
+});
 ```
 
 `ThemeOverride` accepts a partial `fonts` object, a partial `colors` object,
 and an optional `byEntityType` map for per-entity-type accent colors; any
-field left out falls back to `defsquareTheme`'s value.
+field left out falls back to `defsquareTheme`'s value. When starting from a
+built-in theme like `neutralDarkTheme`, merge its `colors` object explicitly
+(`{ ...neutralDarkTheme.colors, ... }`) rather than spreading the whole theme
+alongside your override — spreading both at the top level lets a partial
+`colors` override replace the base theme's `colors` entirely, and any gaps
+left in that replaced object would then fall back to `defsquareTheme`'s
+colors instead of `neutralDarkTheme`'s.
 
 ## Performance budgets
 

@@ -27,7 +27,7 @@ export const DEFAULT_METRICS: NodeMetrics = {
  * maxTextChars), height scales with the row count.
  */
 export function measureNode(node: GraphNode, metrics: NodeMetrics = DEFAULT_METRICS): Size {
-  let longest = 0
+  let longest = node.label.length
   for (const row of node.rows) {
     const line = `${row.key}: ${row.value}`
     if (line.length > longest) longest = line.length

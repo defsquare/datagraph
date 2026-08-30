@@ -217,7 +217,7 @@ export function buildGraph(data: unknown, config: DataGraphConfig): Graph {
     if (!refs) continue
     for (const [field, targetType] of refs) {
       const row = node.rows.find((r) => r.key === field)
-      if (!row) continue
+      if (!row || row.value === null) continue
       const targetId = String(row.value)
       const to = graph.entityIndex.get(targetType)?.get(targetId) ?? null
       const dangling = to === null

@@ -6,6 +6,7 @@ import {
   CollapseState,
   createLayoutEngine,
   DEFAULT_METRICS,
+  validateConfig,
   type DataGraphConfig,
   type Diagnostic,
   type Graph,
@@ -122,6 +123,12 @@ function attachTap(target: Container, onTap: (event: FederatedPointerEvent) => v
  * or other methods that need the graph/layout to be available.
  */
 export function createDataGraph(container: HTMLElement, options: DataGraphOptions): DataGraph {
+  // Fail fast: an invalid config must throw synchronously here, before the
+  // Pixi Application is even created, rather than surfacing later as a
+  // rejection of `ready`. validateConfig is idempotent — buildGraph (in the
+  // `ready` IIFE below) calls it again on the same config.
+  validateConfig(options.config);
+
   const theme: Theme = resolveTheme(options.theme);
 
   const app = new Application();
@@ -464,7 +471,15 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       resizeTo: container,
       antialias: true,
     });
-    if (destroyed) return;
+    if (destroyed) {
+      // destroy() may have run while app.init() was still in flight — at
+      // that point app.renderer didn't exist yet, so destroy()'s own
+      // `if (app.renderer) app.destroy(...)` guard skipped it, leaving this
+      // now-initialized Application (and its renderer/canvas) never torn
+      // down. Finish the job here instead of silently leaking it.
+      app.destroy(true, { children: true });
+      return;
+    }
 
     // Pixi v8's BitmapText only rasterizes reliably on WebGL/WebGPU; its
     // software "canvas" fallback renderer (used when neither is available)
@@ -518,6 +533,13 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
    * every other mutating operation so a concurrent setData/expand/collapse/
    * focus started after this one wins. */
   async function doSetData(data: unknown, configOverride?: DataGraphConfig): Promise<void> {
+    // Fail fast, same as createDataGraph: validate a newly-passed config
+    // before touching any state (including `await ready` and `opGen`) so an
+    // invalid config rejects immediately instead of after a wasted
+    // build/layout pass. validateConfig is idempotent — buildGraph below
+    // calls it again on the same config.
+    if (configOverride) validateConfig(configOverride);
+
     await ready;
     if (destroyed) return;
     const gen = ++opGen;
