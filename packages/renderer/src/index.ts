@@ -28,7 +28,7 @@ export {
 } from "./draw.js";
 export type { Lod, EdgeHit, TextRole } from "./draw.js";
 
-export { measureFontMetrics } from "./font-metrics.js";
+export { measureFontMetrics, fontsReady } from "./font-metrics.js";
 
 export { Emitter } from "./events.js";
 

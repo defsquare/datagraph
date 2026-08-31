@@ -69,9 +69,9 @@ per-instance customization.
 import { createDataGraph, defsquareDark, resolveTheme } from "@defsquare/data-graph";
 
 // Partial override: any token not mentioned comes from defsquareLight.
-const graph = createDataGraph(el, {
-  data,
-  config,
+const graph = createDataGraph(container, {
+  data: shopData,
+  config: shopConfig,
   theme: {
     accent: { selection: "#0ea5e9" },
     byEntityType: { Customer: { accent: "#3dbf9e" } },
@@ -86,9 +86,9 @@ graph.setTheme(resolveTheme({ surface: { canvas: "#000000" } }, defsquareDark));
 ```
 
 `Theme` is grouped by role rather than a flat color bag: `surface.{canvas,card,cardMuted}`,
-`ink.{primary,muted,subtle,onAccent}`, `accent.{entity,selection,match,matchStroke,danger}`,
+`ink.{primary,muted,subtle}`, `accent.{entity,selection,match,matchStroke}`,
 `edge.{contain,ref,dangling,hairline,border}`, `typography.{header,badge,key,value}`
-(each a `{family,size,weight,tracking?}`), `radii.{card,badge}`,
+(each a `{family,size,weight,tracking?}`), `radii.{card}`,
 `strokes.{border,edge,selection,match,matchCurrent}`, `entityPalette: string[]`,
 an optional `byEntityType: Record<string, { accent: string }>`, and `fonts.{body,mono}`.
 `theme` in `createDataGraph`'s options is a `ThemeOverride` — any subset of

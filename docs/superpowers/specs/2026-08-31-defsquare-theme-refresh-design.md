@@ -270,7 +270,11 @@ export interface NodeMetrics {
   rowHeight: number         // 19
   paddingX: number          // 12
   paddingBottom: number     // 7
-  railWidth: number         // 3
+  railWidth: number         // 4 — largeur de la bande d'accent AVANT que la bordure de
+                             // la carte ne la recouvre (elle est centrée sur le tracé
+                             // extérieur et repeint le 1px le plus à gauche de la bande),
+                             // donc le rail effectivement visible mesure
+                             // railWidth - strokes.border = 4 - 1 = 3px
   gapKeyValue: number       // 16
   chevronWidth: number      // 14
   headerCharWidth: number   // 6.5   body 13px/600

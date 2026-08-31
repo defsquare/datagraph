@@ -10,6 +10,10 @@ export interface NodeMetrics {
   rowHeight: number
   paddingX: number
   paddingBottom: number
+  /** Largeur de la bande d'accent AVANT que la bordure de la carte ne la
+   * recouvre : la bordure est centrée sur le tracé extérieur et repeint les
+   * `strokes.border` px les plus à gauche de cette bande, donc le rail
+   * effectivement visible mesure `railWidth - strokes.border`. */
   railWidth: number
   gapKeyValue: number
   chevronWidth: number

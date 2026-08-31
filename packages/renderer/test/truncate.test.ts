@@ -42,4 +42,30 @@ describe("accord mesure / troncature", () => {
     expect(truncateToWidth("abc", 0, 6)).toBe("");
     expect(truncateToWidth("abc", 6, 6)).toBe("…");
   });
+
+  // Régression finding A (revue finale) : une clé d'environ 49+ caractères à
+  // `maxWidth` 340 consommait `inner` en entier, rendait `valueBudget`
+  // négatif, et `truncateToWidth` renvoyait "" pour la valeur — qui
+  // disparaissait silencieusement de la carte. Ce test reproduit exactement
+  // le calcul de `drawNode` (draw.ts, boucle des lignes) : la clé est
+  // d'abord tronquée à un budget plafonné à `inner - gapKeyValue - <largeur
+  // d'un caractère de valeur>`, avant que `valueBudget` ne soit dérivé de la
+  // largeur de la clé TRONQUÉE.
+  it("une cle tres longue (~60 caracteres) ne fait pas disparaitre la valeur", () => {
+    const m = DEFAULT_METRICS;
+    const inner = m.maxWidth - m.railWidth - 2 * m.paddingX;
+
+    const longKey = "a".repeat(60);
+    const value = "42";
+
+    const valueCharWidth = charWidthFor("value", m);
+    const keyCharWidth = charWidthFor("key", m);
+    const keyBudget = Math.max(0, inner - m.gapKeyValue - valueCharWidth);
+    const keyStr = truncateToWidth(longKey, keyBudget, keyCharWidth);
+    const keyWidth = keyStr.length * keyCharWidth;
+    const valueBudget = inner - keyWidth - m.gapKeyValue;
+    const valueStr = truncateToWidth(value, valueBudget, valueCharWidth);
+
+    expect(valueStr.length).toBeGreaterThan(0);
+  });
 });

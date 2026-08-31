@@ -72,7 +72,10 @@ const installed = new Map<TextRole, string>();
 function styleKey(theme: Theme, role: TextRole): string {
   const s = theme.typography[role];
   const family = s.family === "body" ? theme.fonts.body : theme.fonts.mono;
-  return `${family}|${s.size}|${s.weight}`;
+  // `tracking` doit faire partie de la clé : `ensureFonts` le cuit dans
+  // l'atlas via `letterSpacing`, donc deux thèmes qui ne diffèrent que par
+  // `typography.*.tracking` partageraient sinon un atlas obsolète.
+  return `${family}|${s.size}|${s.weight}|${s.tracking ?? 0}`;
 }
 
 function ensureFonts(theme: Theme): void {
@@ -268,13 +271,24 @@ export function drawNode(
   node.rows.forEach((row, index) => {
     const y = metrics.headerHeight + index * metrics.rowHeight + metrics.rowHeight / 2;
 
-    const keyText = createLabel(row.key, theme, "key", theme.ink.muted, useBitmapText);
+    // Le key doit lui aussi être tronqué : sans plafond, une clé d'environ
+    // 49+ caractères (à `maxWidth` 340) consomme `inner` en entier, rend
+    // `valueBudget` négatif, et `truncateToWidth` renvoie "" pour la valeur —
+    // qui disparaît alors silencieusement de la carte. On réserve donc à la
+    // clé au plus `inner - gapKeyValue - <largeur d'un caractère de valeur>`,
+    // ce qui garantit à la valeur un budget plancher d'au moins un caractère.
+    const valueCharWidth = charWidthFor("value", metrics);
+    const keyCharWidth = charWidthFor("key", metrics);
+    const keyBudget = Math.max(0, inner - metrics.gapKeyValue - valueCharWidth);
+    const keyStr = truncateToWidth(row.key, keyBudget, keyCharWidth);
+
+    const keyText = createLabel(keyStr, theme, "key", theme.ink.muted, useBitmapText);
     keyText.position.set(contentX, Math.round(y - keyText.height / 2));
     container.addChild(keyText);
 
-    const keyWidth = row.key.length * charWidthFor("key", metrics);
+    const keyWidth = keyStr.length * keyCharWidth;
     const valueBudget = inner - keyWidth - metrics.gapKeyValue;
-    const valueStr = truncateToWidth(String(row.value), valueBudget, charWidthFor("value", metrics));
+    const valueStr = truncateToWidth(String(row.value), valueBudget, valueCharWidth);
     if (valueStr.length === 0) return;
 
     const valueText = createLabel(valueStr, theme, "value", theme.ink.primary, useBitmapText);

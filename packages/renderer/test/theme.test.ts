@@ -19,15 +19,15 @@ const ALL: [string, Theme][] = [
 describe("contrat de theme", () => {
   it.each(ALL)("%s definit chaque groupe et chaque token", (_name, theme) => {
     expect(Object.keys(theme.surface).sort()).toEqual(["canvas", "card", "cardMuted"]);
-    expect(Object.keys(theme.ink).sort()).toEqual(["muted", "onAccent", "primary", "subtle"]);
+    expect(Object.keys(theme.ink).sort()).toEqual(["muted", "primary", "subtle"]);
     expect(Object.keys(theme.accent).sort()).toEqual([
-      "danger", "entity", "match", "matchStroke", "selection",
+      "entity", "match", "matchStroke", "selection",
     ]);
     expect(Object.keys(theme.edge).sort()).toEqual([
       "border", "contain", "dangling", "hairline", "ref",
     ]);
     expect(Object.keys(theme.typography).sort()).toEqual(["badge", "header", "key", "value"]);
-    expect(Object.keys(theme.radii).sort()).toEqual(["badge", "card"]);
+    expect(Object.keys(theme.radii).sort()).toEqual(["card"]);
     expect(Object.keys(theme.strokes).sort()).toEqual([
       "border", "edge", "match", "matchCurrent", "selection",
     ]);
@@ -57,7 +57,7 @@ describe("resolveTheme", () => {
     const custom = resolveTheme({ accent: { selection: "#000000" } });
     expect(custom.accent.selection).toBe("#000000");
     expect(custom.accent.entity).toBe(defsquareLight.accent.entity);
-    expect(custom.accent.danger).toBe(defsquareLight.accent.danger);
+    expect(custom.accent.matchStroke).toBe(defsquareLight.accent.matchStroke);
     expect(custom.surface).toEqual(defsquareLight.surface);
     expect(custom.typography).toEqual(defsquareLight.typography);
   });

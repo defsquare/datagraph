@@ -559,7 +559,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     // soit prête figerait celles de la pile de repli pour toute la session, et
     // les largeurs de cartes varieraient d'un chargement à l'autre. Le timeout
     // borne l'attente : un service de polices lent ne doit pas bloquer le rendu.
-    await fontsReady(1500);
+    await fontsReady(theme, 1500);
     if (destroyed) return;
     metrics = measureFontMetrics(theme, DEFAULT_METRICS);
     refreshEntityAccents(currentConfig);

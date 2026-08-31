@@ -9,14 +9,13 @@ export interface TypeStyle {
 export interface Theme {
   fonts: { body: string; mono: string };
   surface: { canvas: string; card: string; cardMuted: string };
-  ink: { primary: string; muted: string; subtle: string; onAccent: string };
+  ink: { primary: string; muted: string; subtle: string };
   accent: {
     /** Rail de repli quand `entityPalette` est vide. */
     entity: string;
     selection: string;
     match: string;
     matchStroke: string;
-    danger: string;
   };
   edge: {
     contain: string;
@@ -26,7 +25,7 @@ export interface Theme {
     border: string;
   };
   typography: { header: TypeStyle; badge: TypeStyle; key: TypeStyle; value: TypeStyle };
-  radii: { card: number; badge: number };
+  radii: { card: number };
   strokes: {
     border: number;
     edge: number;
@@ -68,7 +67,7 @@ const TYPOGRAPHY: Theme["typography"] = {
   value: { family: "mono", size: 12, weight: 400 },
 };
 
-const RADII: Theme["radii"] = { card: 6, badge: 3 };
+const RADII: Theme["radii"] = { card: 6 };
 
 const STROKES: Theme["strokes"] = {
   border: 1,
@@ -81,13 +80,12 @@ const STROKES: Theme["strokes"] = {
 export const defsquareLight: Theme = {
   fonts: DEFSQUARE_FONTS,
   surface: { canvas: "#eef0f3", card: "#ffffff", cardMuted: "#f7f7f8" },
-  ink: { primary: "#172741", muted: "#4b5563", subtle: "#9ca3af", onAccent: "#ffffff" },
+  ink: { primary: "#172741", muted: "#4b5563", subtle: "#9ca3af" },
   accent: {
     entity: "#1e416e",
     selection: "#f65e5e",
     match: "#ede2cf",
     matchStroke: "#8d7e63",
-    danger: "#f65e5e",
   },
   edge: {
     contain: "#c7cdd6",
@@ -105,13 +103,12 @@ export const defsquareLight: Theme = {
 export const defsquareDark: Theme = {
   fonts: DEFSQUARE_FONTS,
   surface: { canvas: "#161a2c", card: "#1e2335", cardMuted: "#1a1f30" },
-  ink: { primary: "#f0f5fc", muted: "#9bb2d9", subtle: "#6b7794", onAccent: "#ffffff" },
+  ink: { primary: "#f0f5fc", muted: "#9bb2d9", subtle: "#6b7794" },
   accent: {
     entity: "#3573c3",
     selection: "#f65e5e",
     match: "#3a3323",
     matchStroke: "#e2ca9e",
-    danger: "#f65e5e",
   },
   edge: {
     contain: "#3a4159",
@@ -132,13 +129,12 @@ const NEUTRAL_PALETTE = ["#2563eb", "#7c3aed", "#059669", "#d97706", "#0891b2", 
 export const neutralLight: Theme = {
   fonts: NEUTRAL_FONTS,
   surface: { canvas: "#f4f4f5", card: "#ffffff", cardMuted: "#fafafa" },
-  ink: { primary: "#18181b", muted: "#52525b", subtle: "#a1a1aa", onAccent: "#ffffff" },
+  ink: { primary: "#18181b", muted: "#52525b", subtle: "#a1a1aa" },
   accent: {
     entity: "#2563eb",
     selection: "#2563eb",
     match: "#fef9c3",
     matchStroke: "#a16207",
-    danger: "#dc2626",
   },
   edge: {
     contain: "#d4d4d8",
@@ -156,13 +152,12 @@ export const neutralLight: Theme = {
 export const neutralDark: Theme = {
   fonts: NEUTRAL_FONTS,
   surface: { canvas: "#18181b", card: "#27272a", cardMuted: "#212124" },
-  ink: { primary: "#fafafa", muted: "#a1a1aa", subtle: "#71717a", onAccent: "#ffffff" },
+  ink: { primary: "#fafafa", muted: "#a1a1aa", subtle: "#71717a" },
   accent: {
     entity: "#60a5fa",
     selection: "#60a5fa",
     match: "#422006",
     matchStroke: "#ca8a04",
-    danger: "#f87171",
   },
   edge: {
     contain: "#52525b",

@@ -57,14 +57,35 @@ function createContext(): CanvasRenderingContext2D | null {
 }
 
 /**
- * Attend que les polices web déclarées par la page aient fini de charger (ou
+ * Attend que les polices web dont `theme` a besoin aient fini de charger (ou
  * `timeoutMs`, au premier des deux) avant de rendre la main. Sans DOM (Node,
  * test) ou sans `document.fonts`, résout immédiatement — il n'y a rien à
  * attendre. Le timeout borne l'attente : un service de polices lent ou
  * indisponible ne doit jamais bloquer indéfiniment l'initialisation.
+ *
+ * `document.fonts.ready` seul ne suffit PAS : il ne règle que les
+ * chargements déjà déclenchés par la page. Une famille déclarée en
+ * `@font-face` mais qu'aucun nœud DOM rendu n'utilise encore n'est jamais
+ * requise — `ready` se résout alors immédiatement et `measureFontMetrics`
+ * mesure la pile de repli, silencieusement (c'est exactement le bug que
+ * `fontsReady` existe pour empêcher). On force donc explicitement, via
+ * `document.fonts.load()`, le chargement de chacun des quatre rôles
+ * typographiques du thème avant de courir contre `ready`/le timeout ; un
+ * rejet de `load()` (police introuvable, réseau) est toléré, `ready`/le
+ * timeout restent le filet de sécurité.
  */
-export async function fontsReady(timeoutMs: number): Promise<void> {
-  const fonts = (globalThis as { document?: { fonts?: { ready?: Promise<unknown> } } }).document?.fonts;
+export async function fontsReady(theme: Theme, timeoutMs: number): Promise<void> {
+  const fonts = (globalThis as { document?: { fonts?: FontFaceSet } }).document?.fonts;
   if (!fonts?.ready) return;
+
+  const roles: (keyof Theme["typography"])[] = ["header", "badge", "key", "value"];
+  await Promise.all(
+    roles.map((role) => {
+      const s = theme.typography[role];
+      const family = s.family === "body" ? theme.fonts.body : theme.fonts.mono;
+      return fonts.load(`${s.weight} ${s.size}px ${family}`).catch(() => undefined);
+    }),
+  );
+
   await Promise.race([fonts.ready, new Promise((r) => setTimeout(r, timeoutMs))]);
 }
