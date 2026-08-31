@@ -6,7 +6,7 @@ export { validateConfig, type EntityConfig, type DataGraphConfig, type Validated
 export { buildGraph } from "./build.js"
 export { CollapseState } from "./collapse.js"
 export { buildSearchIndex, SearchIndex, type SearchResult } from "./search.js"
-export { measureNode, DEFAULT_METRICS, type Size, type NodeMetrics } from "./measure.js"
+export { measureNode, badgeTextFor, headerTextFor, DEFAULT_METRICS, type Size, type NodeMetrics } from "./measure.js"
 export {
   createLayoutEngine,
   type Rect,

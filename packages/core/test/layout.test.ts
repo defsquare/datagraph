@@ -10,7 +10,9 @@ describe("measureNode", () => {
     const g = buildGraph(shopData, shopConfig)
     const c1 = g.nodes.get("/customers/0")!
     const s = measureNode(c1)
-    expect(s.height).toBe(DEFAULT_METRICS.headerHeight + 3 * DEFAULT_METRICS.rowHeight)
+    expect(s.height).toBe(
+      DEFAULT_METRICS.headerHeight + 3 * DEFAULT_METRICS.rowHeight + DEFAULT_METRICS.paddingBottom,
+    )
     expect(s.width).toBeGreaterThan(100)
     expect(measureNode(c1)).toEqual(s)
   })
