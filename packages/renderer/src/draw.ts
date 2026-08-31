@@ -7,6 +7,7 @@ import {
   type GraphNode,
   type NodeId,
   type NodeMetrics,
+  type Point,
   type Rect,
   type RefEdge,
 } from "@defsquare/data-graph-core";
@@ -532,5 +533,26 @@ export function drawSearchHighlights(
     }
   }
 
+  return g;
+}
+
+/**
+ * Peint les enveloppes d'agrégats : remplissage translucide plus contour, dans
+ * la couleur d'accent du type de la racine. Le calque qui les reçoit est le
+ * plus bas du monde, donc elles passent derrière les arêtes et les cartes.
+ *
+ * Un polygone de moins de trois points n'est pas une surface et est ignoré.
+ */
+export function drawHulls(hulls: { polygon: Point[]; color: string }[], theme: Theme): Graphics {
+  const g = new Graphics();
+  for (const hull of hulls) {
+    if (hull.polygon.length < 3) continue;
+    const [first, ...rest] = hull.polygon;
+    g.moveTo(first!.x, first!.y);
+    for (const point of rest) g.lineTo(point.x, point.y);
+    g.closePath();
+    g.fill({ color: hull.color, alpha: 0.08 });
+    g.stroke({ width: 1.5, color: hull.color, alpha: 0.35 });
+  }
   return g;
 }
