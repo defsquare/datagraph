@@ -146,110 +146,133 @@ function computeClusters(
 export function createGraphLayoutEngine(opts: GraphLayoutOptions = {}): GraphLayoutEngine {
   const options: Required<GraphLayoutOptions> = { ...DEFAULTS, ...opts }
 
-  return {
-    async layout(graph, aggregates, visible, metrics = DEFAULT_METRICS) {
-      const sizes = new Map<NodeId, { width: number; height: number }>()
-      const elements: cytoscape.ElementDefinition[] = []
+  // Corps commun à `layout` et `layoutAfterExpand`. `pinned`, quand fourni,
+  // fixe la position de départ ET finale des nœuds déjà placés — c'est
+  // l'unique différence entre un premier layout et un relayout incrémental.
+  async function run(
+    graph: Graph,
+    aggregates: AggregateIndex,
+    visible: Set<NodeId>,
+    metrics: NodeMetrics,
+    pinned?: Map<NodeId, Point>,
+  ): Promise<GraphLayoutResult> {
+    const sizes = new Map<NodeId, { width: number; height: number }>()
+    const elements: cytoscape.ElementDefinition[] = []
 
-      // Sommets : les entités visibles, et rien d'autre. Les nœuds structurels
-      // (racine, tableaux, objets) n'existent pas dans cette vue.
-      const entityIds: NodeId[] = []
-      for (const id of visible) {
-        const node = graph.nodes.get(id)
-        if (!node || node.kind !== "entity") continue
-        entityIds.push(id)
-      }
-      entityIds.sort() // ordre stable, condition du déterminisme
+    // Sommets : les entités visibles, et rien d'autre. Les nœuds structurels
+    // (racine, tableaux, objets) n'existent pas dans cette vue.
+    const entityIds: NodeId[] = []
+    for (const id of visible) {
+      const node = graph.nodes.get(id)
+      if (!node || node.kind !== "entity") continue
+      entityIds.push(id)
+    }
+    entityIds.sort() // ordre stable, condition du déterminisme
 
-      const radius = Math.sqrt(Math.max(1, entityIds.length)) * 220
-      for (const id of entityIds) {
-        const node = graph.nodes.get(id)!
-        const size = measureNode(node, metrics)
-        sizes.set(id, size)
-        elements.push({
-          group: "nodes",
-          data: { id, w: size.width, h: size.height },
-          position: seedPosition(id, radius),
-        })
-      }
-
-      // Arêtes : les références non cassées dont les deux bouts sont visibles.
-      const entitySet = new Set(entityIds)
-      for (const edge of graph.refEdges) {
-        if (edge.to === null || edge.dangling) continue
-        if (!entitySet.has(edge.from) || !entitySet.has(edge.to)) continue
-        elements.push({
-          group: "edges",
-          data: { id: `r:${edge.from}->${edge.to}:${edge.field}`, source: edge.from, target: edge.to },
-        })
-      }
-
-      // `styleEnabled: true` est indispensable en headless : sans lui cytoscape
-      // ne calcule aucune dimension et fcose traite les cartes comme des points
-      // de taille nulle — elles se recouvrent alors massivement.
-      const cy = cytoscape({
-        headless: true,
-        styleEnabled: true,
-        elements,
-        style: [{ selector: "node", style: { width: "data(w)", height: "data(h)" } }],
+    const radius = Math.sqrt(Math.max(1, entityIds.length)) * 220
+    for (const id of entityIds) {
+      const node = graph.nodes.get(id)!
+      const size = measureNode(node, metrics)
+      sizes.set(id, size)
+      // Un nœud épinglé démarre à sa position connue (centre), pas au
+      // hachage : fcose n'a besoin de le déplacer que si une force l'y
+      // contraint, ce qui ne devrait plus arriver une fois `fixedNodeConstraint`
+      // posé plus bas.
+      const pin = pinned?.get(id)
+      elements.push({
+        group: "nodes",
+        data: { id, w: size.width, h: size.height },
+        position: pin ? { x: pin.x, y: pin.y } : seedPosition(id, radius),
       })
+    }
 
-      const layout = cy.layout({
-        name: "fcose",
-        randomize: false,
-        animate: false,
-        fit: false,
-        nodeDimensionsIncludeLabels: false,
-        // Les défauts de fcose sont calibrés pour des nœuds ponctuels : une
-        // longueur d'arête idéale de 50 px est absurde entre deux cartes de
-        // 140–340 px de large. On la dérive de la taille des deux boîtes.
-        //
-        // IMPORTANT — piège déjà mesuré une fois, à ne pas réintroduire : si
-        // un jour une autre arête synthétique s'ajoute ici (un nœud qui
-        // n'existe pas dans `graph`, comme l'ancien centre virtuel
-        // d'agrégat — voir la note au-dessus de `computeClusters`), NE PAS
-        // lui donner une longueur idéale différente de celle des arêtes de
-        // référence. fcose recalibre son échelle interne de répulsion
-        // (`DEFAULT_EDGE_LENGTH`, dont dérivent `MIN_REPULSION_DIST` et
-        // `DEFAULT_RADIAL_SEPARATION`) sur la MOYENNE de `idealLength` de
-        // TOUTES les arêtes du graphe — une seule échelle globale, pas une
-        // par composante. Mélanger des arêtes courtes et des arêtes de la
-        // largeur d'une carte tire cette moyenne vers le bas et,
-        // `packComponents` étant inerte ici, resserre anormalement des
-        // COMPOSANTES DISJOINTES qui ne partagent pourtant aucune arête —
-        // c'est ce qui a fait régresser un test de la Task 6 quand les
-        // centres d'agrégat existaient encore. La distance à laquelle une
-        // arête veut se poser (`idealEdgeLength`) et la force avec laquelle
-        // elle tire (`edgeElasticity`) sont deux réglages distincts ; ne pas
-        // les confondre pour obtenir une attraction plus forte.
-        idealEdgeLength: (edge: cytoscape.EdgeSingular) => {
-          const s = sizes.get(edge.source().id()) ?? { width: 160, height: 40 }
-          const t = sizes.get(edge.target().id()) ?? { width: 160, height: 40 }
-          return (s.width + t.width) / 2 + options.separationMargin * 2
-        },
-      } as cytoscape.LayoutOptions)
+    // Arêtes : les références non cassées dont les deux bouts sont visibles.
+    const entitySet = new Set(entityIds)
+    for (const edge of graph.refEdges) {
+      if (edge.to === null || edge.dangling) continue
+      if (!entitySet.has(edge.from) || !entitySet.has(edge.to)) continue
+      elements.push({
+        group: "edges",
+        data: { id: `r:${edge.from}->${edge.to}:${edge.field}`, source: edge.from, target: edge.to },
+      })
+    }
 
-      const done = layout.promiseOn("layoutstop")
-      layout.run()
-      await done
+    // `styleEnabled: true` est indispensable en headless : sans lui cytoscape
+    // ne calcule aucune dimension et fcose traite les cartes comme des points
+    // de taille nulle — elles se recouvrent alors massivement.
+    const cy = cytoscape({
+      headless: true,
+      styleEnabled: true,
+      elements,
+      style: [{ selector: "node", style: { width: "data(w)", height: "data(h)" } }],
+    })
 
-      const positions = new Map<NodeId, Rect>()
-      for (const id of entityIds) {
-        const size = sizes.get(id)!
-        const pos = cy.getElementById(id).position()
-        // cytoscape positionne par le centre ; `Rect` est un coin haut-gauche.
-        positions.set(id, {
-          x: pos.x - size.width / 2,
-          y: pos.y - size.height / 2,
-          width: size.width,
-          height: size.height,
-        })
-      }
-      cy.destroy()
+    const layout = cy.layout({
+      name: "fcose",
+      randomize: false,
+      animate: false,
+      fit: false,
+      nodeDimensionsIncludeLabels: false,
+      // Les défauts de fcose sont calibrés pour des nœuds ponctuels : une
+      // longueur d'arête idéale de 50 px est absurde entre deux cartes de
+      // 140–340 px de large. On la dérive de la taille des deux boîtes.
+      //
+      // IMPORTANT — piège déjà mesuré une fois, à ne pas réintroduire : si
+      // un jour une autre arête synthétique s'ajoute ici (un nœud qui
+      // n'existe pas dans `graph`, comme l'ancien centre virtuel
+      // d'agrégat — voir la note au-dessus de `computeClusters`), NE PAS
+      // lui donner une longueur idéale différente de celle des arêtes de
+      // référence. fcose recalibre son échelle interne de répulsion
+      // (`DEFAULT_EDGE_LENGTH`, dont dérivent `MIN_REPULSION_DIST` et
+      // `DEFAULT_RADIAL_SEPARATION`) sur la MOYENNE de `idealLength` de
+      // TOUTES les arêtes du graphe — une seule échelle globale, pas une
+      // par composante. Mélanger des arêtes courtes et des arêtes de la
+      // largeur d'une carte tire cette moyenne vers le bas et,
+      // `packComponents` étant inerte ici, resserre anormalement des
+      // COMPOSANTES DISJOINTES qui ne partagent pourtant aucune arête —
+      // c'est ce qui a fait régresser un test de la Task 6 quand les
+      // centres d'agrégat existaient encore. La distance à laquelle une
+      // arête veut se poser (`idealEdgeLength`) et la force avec laquelle
+      // elle tire (`edgeElasticity`) sont deux réglages distincts ; ne pas
+      // les confondre pour obtenir une attraction plus forte.
+      idealEdgeLength: (edge: cytoscape.EdgeSingular) => {
+        const s = sizes.get(edge.source().id()) ?? { width: 160, height: 40 }
+        const t = sizes.get(edge.target().id()) ?? { width: 160, height: 40 }
+        return (s.width + t.width) / 2 + options.separationMargin * 2
+      },
+      // Épingle les entités déjà placées : seuls les nœuds nouvellement
+      // révélés sont relaxés. C'est ce qui annule la dérive globale d'une
+      // force-layout — la carte que l'utilisateur regardait ne bouge plus.
+      fixedNodeConstraint: pinned
+        ? [...pinned].map(([nodeId, position]) => ({ nodeId, position }))
+        : undefined,
+    } as cytoscape.LayoutOptions)
 
-      separateOverlaps(positions, options.separationMargin, options.separationIterations)
+    const done = layout.promiseOn("layoutstop")
+    layout.run()
+    await done
 
-      // Normalisation : le coin haut-gauche de la bbox à l'origine.
+    const positions = new Map<NodeId, Rect>()
+    for (const id of entityIds) {
+      const size = sizes.get(id)!
+      const pos = cy.getElementById(id).position()
+      // cytoscape positionne par le centre ; `Rect` est un coin haut-gauche.
+      positions.set(id, {
+        x: pos.x - size.width / 2,
+        y: pos.y - size.height / 2,
+        width: size.width,
+        height: size.height,
+      })
+    }
+    cy.destroy()
+
+    separateOverlaps(positions, options.separationMargin, options.separationIterations)
+
+    // Normalisation : le coin haut-gauche de la bbox à l'origine. Sous
+    // épinglage, cette translation déplacerait UNIFORMÉMENT tous les nœuds
+    // épinglés — exactement la dérive que l'épinglage doit annuler. On la
+    // saute donc entièrement quand `pinned` est fourni.
+    if (!pinned) {
       let minX = Infinity
       let minY = Infinity
       for (const rect of positions.values()) {
@@ -262,22 +285,50 @@ export function createGraphLayoutEngine(opts: GraphLayoutOptions = {}): GraphLay
           rect.y -= minY
         }
       }
+    }
 
-      // Enveloppes, calculées APRÈS la normalisation pour être dans le même
-      // repère que les positions.
+    // Enveloppes, calculées APRÈS la normalisation pour être dans le même
+    // repère que les positions.
+    const clusters = computeClusters(aggregates, positions, options.hullPadding)
+
+    return { positions, clusters }
+  }
+
+  return {
+    async layout(graph, aggregates, visible, metrics = DEFAULT_METRICS) {
+      return run(graph, aggregates, visible, metrics)
+    },
+
+    // Task 8 : relayout incrémental après expansion d'un agrégat. Seules les
+    // entités nouvellement révélées sont relaxées ; tout ce qui était déjà
+    // visible reste épinglé à sa position actuelle.
+    async layoutAfterExpand(prev, graph, aggregates, _expandedAggId, visible, metrics = DEFAULT_METRICS) {
+      // Toutes les entités déjà positionnées ET toujours visibles sont
+      // épinglées à leur centre actuel ; les nouvelles seules sont relaxées.
+      const pinned = new Map<NodeId, Point>()
+      for (const [id, rect] of prev.positions) {
+        if (!visible.has(id)) continue
+        pinned.set(id, { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 })
+      }
+      return run(graph, aggregates, visible, metrics, pinned)
+    },
+
+    // Task 8 : relayout incrémental après réduction d'un agrégat. Synchrone :
+    // on ne fait que retirer des nœuds et recalculer les enveloppes, sans
+    // relancer aucune force.
+    layoutAfterCollapse(prev, _graph, aggregates, _collapsedAggId, visible) {
+      // Synchrone par contrat : on retire les nœuds devenus invisibles et on
+      // recalcule les enveloppes sur ce qui reste. Aucune force ne tourne, donc
+      // le trou laissé ne se referme pas jusqu'au prochain dépliage — c'est un
+      // compromis assumé, cohérent avec l'épinglage.
+      const positions = new Map<NodeId, Rect>()
+      for (const [id, rect] of prev.positions) {
+        if (visible.has(id)) positions.set(id, { ...rect })
+      }
+
       const clusters = computeClusters(aggregates, positions, options.hullPadding)
 
       return { positions, clusters }
-    },
-
-    // Task 8 : relayout incrémental après expansion d'un agrégat.
-    async layoutAfterExpand() {
-      throw new Error("layoutAfterExpand n'est pas encore implémenté (Task 8)")
-    },
-
-    // Task 8 : relayout incrémental après réduction d'un agrégat.
-    layoutAfterCollapse() {
-      throw new Error("layoutAfterCollapse n'est pas encore implémenté (Task 8)")
     },
   }
 }

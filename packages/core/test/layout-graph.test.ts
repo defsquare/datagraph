@@ -216,3 +216,55 @@ describe("cluster shapes", () => {
     }
   })
 })
+
+describe("incremental relayout", () => {
+  it("leaves already-placed entities where they were on expand", async () => {
+    const { graph, aggregates } = setup()
+    const engine = createGraphLayoutEngine()
+    const collapsed = new Set(["/customers/0", "/customers/1"])
+    const before = await engine.layout(graph, aggregates, collapsed)
+
+    const expanded = new Set([...collapsed, "/orders/0"])
+    const after = await engine.layoutAfterExpand(before, graph, aggregates, "Customer#c1", expanded)
+
+    for (const [id, rect] of before.positions) {
+      const moved = after.positions.get(id)!
+      // La passe de séparation peut encore écarter un nœud épinglé qui se fait
+      // mordre : la tolérance vaut la marge de séparation, pas zéro.
+      expect(Math.hypot(moved.x - rect.x, moved.y - rect.y)).toBeLessThanOrEqual(40)
+    }
+    expect(after.positions.has("/orders/0")).toBe(true)
+  })
+
+  it("drops hidden entities on collapse without re-running any force", () => {
+    const engine = createGraphLayoutEngine()
+    const prev = {
+      positions: new Map([
+        ["/customers/0", { x: 0, y: 0, width: 100, height: 40 }],
+        ["/orders/0", { x: 300, y: 0, width: 100, height: 40 }],
+      ]),
+      clusters: [],
+    }
+    const { graph, aggregates } = setup()
+    const after = engine.layoutAfterCollapse(prev, graph, aggregates, "Customer#c1", new Set(["/customers/0"]))
+    expect([...after.positions.keys()]).toEqual(["/customers/0"])
+    // Le nœud restant n'a pas bougé : aucune force n'a tourné.
+    expect(after.positions.get("/customers/0")).toEqual({ x: 0, y: 0, width: 100, height: 40 })
+  })
+
+  it("recomputes hulls after a collapse", () => {
+    const engine = createGraphLayoutEngine()
+    const prev = {
+      positions: new Map([
+        ["/customers/0", { x: 0, y: 0, width: 100, height: 40 }],
+        ["/orders/0", { x: 300, y: 0, width: 100, height: 40 }],
+      ]),
+      clusters: [],
+    }
+    const { graph, aggregates } = setup()
+    const after = engine.layoutAfterCollapse(prev, graph, aggregates, "Customer#c1", new Set(["/customers/0"]))
+    const hull = after.clusters.find((c) => c.aggregateId === "Customer#c1")!
+    // L'enveloppe ne doit plus englober la carte disparue.
+    expect(Math.max(...hull.polygon.map((p) => p.x))).toBeLessThan(300)
+  })
+})
