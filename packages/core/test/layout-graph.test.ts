@@ -3,7 +3,7 @@ import { buildGraph } from "../src/build.js"
 import { buildAggregates } from "../src/aggregate.js"
 import { validateConfig } from "../src/config.js"
 import { createGraphLayoutEngine } from "../src/layout-graph.js"
-import { shopData, shopConfig, bigShop } from "./fixtures.js"
+import { shopData, shopConfig, bigShop, twoRootsData, twoRootsConfig } from "./fixtures.js"
 
 const config = { ...shopConfig, aggregates: ["Customer"] }
 
@@ -101,6 +101,70 @@ describe("createGraphLayoutEngine", () => {
         const oy = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y)
         expect(ox > 1e-6 && oy > 1e-6).toBe(false)
       }
+    }
+  })
+})
+
+describe("cluster shapes", () => {
+  it("emits one hull per aggregate that has a visible member", async () => {
+    const { graph, aggregates, visible } = setup()
+    const result = await createGraphLayoutEngine().layout(graph, aggregates, visible)
+    expect(result.clusters.map((c) => c.aggregateId).sort()).toEqual(["Customer#c1", "Customer#c2"])
+  })
+
+  it("wraps every member rect inside its aggregate hull", async () => {
+    const { graph, aggregates, visible } = setup()
+    const result = await createGraphLayoutEngine().layout(graph, aggregates, visible)
+
+    const inside = (poly: { x: number; y: number }[], p: { x: number; y: number }) => {
+      let sign = 0
+      for (let i = 0; i < poly.length; i++) {
+        const a = poly[i]!
+        const b = poly[(i + 1) % poly.length]!
+        const cross = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)
+        if (Math.abs(cross) < 1e-6) continue
+        const s = cross > 0 ? 1 : -1
+        if (sign === 0) sign = s
+        else if (s !== sign) return false
+      }
+      return true
+    }
+
+    for (const cluster of result.clusters) {
+      const members = aggregates.aggregates.get(cluster.aggregateId)!.memberIds
+      for (const id of members) {
+        const r = result.positions.get(id)
+        if (!r) continue
+        for (const c of [
+          { x: r.x, y: r.y },
+          { x: r.x + r.width, y: r.y },
+          { x: r.x, y: r.y + r.height },
+          { x: r.x + r.width, y: r.y + r.height },
+        ]) {
+          expect(inside(cluster.polygon, c)).toBe(true)
+        }
+      }
+    }
+  })
+
+  it("emits no hull for an aggregate with no visible member", async () => {
+    const { graph, aggregates } = setup()
+    // Seule /customers/0 est visible : l'agrégat Customer#c2 n'a aucun membre.
+    const visible = new Set(["/customers/0"])
+    const result = await createGraphLayoutEngine().layout(graph, aggregates, visible)
+    expect(result.clusters.map((c) => c.aggregateId)).toEqual(["Customer#c1"])
+  })
+
+  it("gives a shared entity a place inside both hulls", async () => {
+    const graph = buildGraph(twoRootsData, twoRootsConfig)
+    const aggregates = buildAggregates(graph, validateConfig(twoRootsConfig))
+    const visible = new Set(
+      [...graph.nodes.values()].filter((n) => n.kind === "entity").map((n) => n.id),
+    )
+    const result = await createGraphLayoutEngine().layout(graph, aggregates, visible)
+    expect(result.clusters).toHaveLength(2)
+    for (const cluster of result.clusters) {
+      expect(aggregates.aggregates.get(cluster.aggregateId)!.memberIds.has("/orders/0")).toBe(true)
     }
   })
 })

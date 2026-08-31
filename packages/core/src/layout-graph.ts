@@ -4,6 +4,7 @@ import type { AggregateIndex } from "./aggregate.js"
 import type { Graph, NodeId } from "./model.js"
 import type { LayoutResult, Rect } from "./layout.js"
 import type { Point } from "./hull.js"
+import { paddedHull } from "./hull.js"
 import { measureNode, DEFAULT_METRICS, type NodeMetrics } from "./measure.js"
 import { separateOverlaps } from "./separate.js"
 
@@ -94,11 +95,40 @@ function seedPosition(id: string, radius: number): Point {
   return { x: r * Math.cos(angle), y: r * Math.sin(angle) }
 }
 
+/**
+ * Une enveloppe par agrégat ayant au moins un membre positionné, dans le
+ * repère de `positions`. Ordre stable : celui de `aggregates`, qui suit
+ * lui-même l'ordre de déclaration de la config. Extrait ici pour être
+ * réutilisé tel quel par `layoutAfterCollapse` (Task 8), qui recalcule les
+ * enveloppes sans relancer tout le layout.
+ */
+function computeClusters(
+  aggregates: AggregateIndex,
+  positions: Map<NodeId, Rect>,
+  hullPadding: number,
+): ClusterShape[] {
+  const clusters: ClusterShape[] = []
+  for (const aggregate of aggregates.aggregates.values()) {
+    const rects: Rect[] = []
+    for (const memberId of aggregate.memberIds) {
+      const rect = positions.get(memberId)
+      if (rect) rects.push(rect)
+    }
+    if (rects.length === 0) continue
+    clusters.push({
+      aggregateId: aggregate.id,
+      rootId: aggregate.rootId,
+      polygon: paddedHull(rects, hullPadding),
+    })
+  }
+  return clusters
+}
+
 export function createGraphLayoutEngine(opts: GraphLayoutOptions = {}): GraphLayoutEngine {
   const options: Required<GraphLayoutOptions> = { ...DEFAULTS, ...opts }
 
   return {
-    async layout(graph, _aggregates, visible, metrics = DEFAULT_METRICS) {
+    async layout(graph, aggregates, visible, metrics = DEFAULT_METRICS) {
       const sizes = new Map<NodeId, { width: number; height: number }>()
       const elements: cytoscape.ElementDefinition[] = []
 
@@ -135,6 +165,32 @@ export function createGraphLayoutEngine(opts: GraphLayoutOptions = {}): GraphLay
         })
       }
 
+      // Regroupement : un nœud invisible de taille nulle par agrégat, relié à
+      // chacun de ses membres visibles. Les membres d'un même agrégat se
+      // regroupent mécaniquement ; une entité qui appartient à DEUX agrégats
+      // est tirée par deux centres et se pose entre eux — c'est exactement le
+      // comportement voulu sous chevauchement, et c'est pourquoi ce montage
+      // supporte l'appartenance multiple là où des boîtes compound ne le
+      // pourraient pas (cytoscape n'accepte qu'un parent par nœud).
+      const centreIds: string[] = []
+      for (const aggregate of aggregates.aggregates.values()) {
+        const members = [...aggregate.memberIds].filter((id) => entitySet.has(id)).sort()
+        if (members.length === 0) continue
+        const centreId = `__agg:${aggregate.id}`
+        centreIds.push(centreId)
+        elements.push({
+          group: "nodes",
+          data: { id: centreId, w: 1, h: 1 },
+          position: seedPosition(centreId, radius),
+        })
+        for (const memberId of members) {
+          elements.push({
+            group: "edges",
+            data: { id: `a:${centreId}->${memberId}`, source: centreId, target: memberId },
+          })
+        }
+      }
+
       // `styleEnabled: true` est indispensable en headless : sans lui cytoscape
       // ne calcule aucune dimension et fcose traite les cartes comme des points
       // de taille nulle — elles se recouvrent alors massivement.
@@ -157,7 +213,9 @@ export function createGraphLayoutEngine(opts: GraphLayoutOptions = {}): GraphLay
         idealEdgeLength: (edge: cytoscape.EdgeSingular) => {
           const s = sizes.get(edge.source().id()) ?? { width: 160, height: 40 }
           const t = sizes.get(edge.target().id()) ?? { width: 160, height: 40 }
-          return (s.width + t.width) / 2 + options.separationMargin * 2
+          const base = (s.width + t.width) / 2 + options.separationMargin * 2
+          // Une arête d'agrégat (source `__agg:`) tire plus fort, donc plus court.
+          return edge.source().id().startsWith("__agg:") ? base / options.clusterPull : base
         },
       } as cytoscape.LayoutOptions)
 
@@ -195,7 +253,11 @@ export function createGraphLayoutEngine(opts: GraphLayoutOptions = {}): GraphLay
         }
       }
 
-      return { positions, clusters: [] }
+      // Enveloppes, calculées APRÈS la normalisation pour être dans le même
+      // repère que les positions.
+      const clusters = computeClusters(aggregates, positions, options.hullPadding)
+
+      return { positions, clusters }
     },
 
     // Task 8 : relayout incrémental après expansion d'un agrégat.
