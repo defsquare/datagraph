@@ -100,7 +100,7 @@ test("setTheme accepte une surcharge partielle de palette sans planter", async (
   await expect(page.locator("#selection-label")).toContainText("Customer #c1")
 })
 
-test("bascule en vue graphe et n'y place que des entites", async ({ page }) => {
+test("le bouton de bascule declenche un vrai setView et son libelle suit", async ({ page }) => {
   await gotoReady(page)
 
   await page.getByRole("button", { name: "Vue graphe" }).click()

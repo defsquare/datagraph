@@ -217,13 +217,22 @@ package's README for the latest numbers and any documented deviation.
 | --- | --- | --- |
 | Card overlap after layout | Zero — every pair of cards separated by at least `separationMargin` | `packages/core/test/layout-graph.test.ts` |
 | Determinism | Pixel-identical positions across two runs on the same input | `packages/core/test/layout-graph.test.ts` |
-| Position drift on already-placed cards when expanding an aggregate | 0.00 px median (was 1084 px median before pinning) | `packages/core/test/layout-graph.test.ts` (pinning) |
+| Median drift on already-placed cards when expanding an aggregate | ≤ 1e-6 px (measured 0px on 167 cards, floating-point noise aside) | `packages/core/test/layout-graph.test.ts` ("keeps median drift … at scale") |
 | `@defsquare/data-graph` bundle purity | `cytoscape` (~178 kB gzip) never enters a consumer's bundle unless it calls `setView("graph")` — the structure view alone doesn't pull it in | `packages/core/test/bundle-purity.test.ts` |
 
 The graph view's organic layout (fcose) is seeded deterministically from node
 ids rather than left to its default randomization, and cards already placed
-before an `expand()` are pinned in place during relayout — that pinning is
-what took the median drift on unrelated cards from 1084 px down to 0.00 px.
+before an `expand()` are pinned in place during relayout. On a 167-card
+fixture (one isolated customer/order pair per aggregate, expanding a single
+aggregate to reveal its one order), the committed test measures a **median
+drift of 0px** across the 167 already-placed cards, with a **max of ~56px**
+on the rare card that a newly-inserted one lands on top of (`separateOverlaps`
+has no notion of "pinned," so it can still nudge one) — both figures are
+asserted, not just observed. Before pinning existed, a full relayout on every
+expand measured a **1084px median** drift on the same kind of fixture; that
+number is historical (from an ad hoc, uncommitted measurement during
+development) and no longer guarded by anything, since the pinned code path
+replaced the unpinned one rather than coexisting with it.
 Switching to the graph view for the first time dynamically imports
 `cytoscape` and its `fcose` layout plugin; a Vite production build of
 [`apps/demo`](./apps/demo) emits that as its own ~178 kB gzip chunk

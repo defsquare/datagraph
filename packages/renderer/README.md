@@ -141,9 +141,14 @@ nearest entity ancestor rather than dropping it.
 **Determinism.** The graph-view layout is deterministic to the pixel: two
 runs on identical input produce identical positions (seeded from node ids,
 not left to fcose's default randomization). Expanding an aggregate pins every
-already-placed card so the rest of the layout doesn't drift — median drift on
-unrelated cards is 0.00 px with pinning, versus 1084 px median without it.
-See the [root README's performance budgets](https://github.com/defsquare/data-graph#performance-budgets)
+already-placed card so the rest of the layout doesn't drift — a committed
+test measures a **median drift of 0px** (max ~56px on the rare card a
+newly-inserted one lands on, since `separateOverlaps` doesn't know about
+pins) across 167 already-placed cards on a single-aggregate expand. Before
+pinning existed, an unpinned full relayout measured 1084px median drift on
+the same kind of fixture — a historical, no-longer-guarded number, since that
+code path was replaced rather than kept around. See the
+[root README's performance budgets](https://github.com/defsquare/data-graph#performance-budgets)
 for the full table.
 
 ## Themes
