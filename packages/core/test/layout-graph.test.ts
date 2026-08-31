@@ -3,7 +3,15 @@ import { buildGraph } from "../src/build.js"
 import { buildAggregates } from "../src/aggregate.js"
 import { validateConfig } from "../src/config.js"
 import { createGraphLayoutEngine } from "../src/layout-graph.js"
-import { shopData, shopConfig, bigShop, twoRootsData, twoRootsConfig } from "./fixtures.js"
+import {
+  shopData,
+  shopConfig,
+  bigShop,
+  twoRootsData,
+  twoRootsConfig,
+  bigShopWithReviews,
+  bigShopReviewsConfig,
+} from "./fixtures.js"
 
 const config = { ...shopConfig, aggregates: ["Customer"] }
 
@@ -87,6 +95,42 @@ describe("createGraphLayoutEngine", () => {
     const unrelated = distanceBetween("/orders/0", `/customers/${last}`)
 
     expect(linked).toBeLessThan(unrelated * 0.5)
+  })
+
+  it("pulls two members of the same aggregate closer than an entity from another aggregate", async () => {
+    // Le test précédent ne prouve rien sur le centre virtuel : order_i et
+    // customer_i sont DÉJÀ reliés par une arête de référence directe, donc
+    // même sans agrégat ils se rapprocheraient. Ici order_i et review_i sont
+    // FRÈRES — tous deux référencent customer_i, mais aucune arête ne les
+    // relie entre eux — donc leur seule attraction directe possible vient du
+    // centre virtuel de l'agrégat. bigShopWithReviews produit N triplets
+    // indépendants, chacun sa propre composante connexe.
+    const data = bigShopWithReviews(150)
+    const graph = buildGraph(data, bigShopReviewsConfig)
+    const aggregates = buildAggregates(graph, validateConfig(bigShopReviewsConfig))
+    const visible = new Set(
+      [...graph.nodes.values()].filter((n) => n.kind === "entity").map((n) => n.id),
+    )
+    const result = await createGraphLayoutEngine().layout(graph, aggregates, visible)
+
+    const centreOf = (id: string) => {
+      const r = result.positions.get(id)!
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 }
+    }
+    const distanceBetween = (a: string, b: string) => {
+      const p = centreOf(a)
+      const q = centreOf(b)
+      return Math.hypot(p.x - q.x, p.y - q.y)
+    }
+
+    // /orders/0 et /reviews/0 partagent l'agrégat Customer#c0 (via le centre
+    // virtuel) sans arête directe entre eux. /orders/<dernier> est un Order
+    // d'un AUTRE agrégat, sans lien direct ni indirect avec /orders/0.
+    const last = data.customers.length - 1
+    const sameAggregate = distanceBetween("/orders/0", "/reviews/0")
+    const otherAggregate = distanceBetween("/orders/0", `/orders/${last}`)
+
+    expect(sameAggregate).toBeLessThan(otherAggregate * 0.5)
   })
 
   it("leaves no overlapping cards", async () => {

@@ -75,3 +75,36 @@ export function bigShop(n: number) {
   }
   return { customers, orders }
 }
+
+/**
+ * N triplets indépendants customer_i / order_i / review_i : order_i et
+ * review_i référencent tous deux customer_i, mais AUCUNE arête ne les relie
+ * l'un à l'autre — ce sont des frères, pas une chaîne. Sert à isoler
+ * l'attraction du centre virtuel d'agrégat (qui relie chaque membre au même
+ * centre) de la simple attraction par arête de référence directe : sans
+ * centre, order_i et review_i ne se rapprocheraient que par le
+ * voisin partagé customer_i, un effet transitif bien plus faible.
+ */
+export function bigShopWithReviews(n: number) {
+  const customers = [], orders = [], reviews = []
+  for (let i = 0; customers.length * 8 + orders.length * 6 + reviews.length * 6 < n; i++) {
+    customers.push({ id: `c${i}`, name: `Client ${i}`, email: `c${i}@x.fr`,
+      address: { street: `${i} rue X`, city: "Lyon" } })
+    orders.push({ id: `o${i}`, customerId: `c${i}`, total: i })
+    reviews.push({ id: `r${i}`, customerId: `c${i}`, stars: (i % 5) + 1 })
+  }
+  return { customers, orders, reviews }
+}
+
+export const bigShopReviewsConfig: DataGraphConfig = {
+  entities: {
+    Customer: { match: "$.customers[*]", id: "id" },
+    Order: { match: "$.orders[*]", id: "id" },
+    Review: { match: "$.reviews[*]", id: "id" },
+  },
+  references: {
+    Order: { customerId: "Customer" },
+    Review: { customerId: "Customer" },
+  },
+  aggregates: ["Customer"],
+}

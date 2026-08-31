@@ -11,7 +11,13 @@ import { separateOverlaps } from "./separate.js"
 cytoscape.use(fcose as cytoscape.Ext)
 
 export interface GraphLayoutOptions {
-  /** Poids d'attraction d'un membre vers le centre virtuel de son agrégat. */
+  /**
+   * Multiplicateur d'élasticité d'une arête vers le centre virtuel d'un
+   * agrégat, par rapport à une arête de référence. Une valeur plus grande
+   * tire plus fort vers le centre — mais ne raccourcit PAS la distance visée
+   * ; voir le commentaire au site de `idealEdgeLength`/`edgeElasticity` pour
+   * pourquoi les deux sont volontairement découplés.
+   */
   clusterPull?: number
   /** Marge entre une carte et le bord de l'enveloppe de son agrégat. */
   hullPadding?: number
@@ -210,12 +216,32 @@ export function createGraphLayoutEngine(opts: GraphLayoutOptions = {}): GraphLay
         // Les défauts de fcose sont calibrés pour des nœuds ponctuels : une
         // longueur d'arête idéale de 50 px est absurde entre deux cartes de
         // 140–340 px de large. On la dérive de la taille des deux boîtes.
+        //
+        // IMPORTANT — piège déjà tombé dedans une fois : NE PAS raccourcir
+        // `idealEdgeLength` pour les arêtes de centre d'agrégat. fcose
+        // recalibre son échelle interne de répulsion (`DEFAULT_EDGE_LENGTH`,
+        // dont dérivent `MIN_REPULSION_DIST` et `DEFAULT_RADIAL_SEPARATION`)
+        // sur la MOYENNE de `idealLength` de TOUTES les arêtes du graphe —
+        // une seule échelle globale, pas une par composante. Mélanger des
+        // arêtes courtes (agrégat) et des arêtes de la largeur d'une carte
+        // (référence) tire cette moyenne vers le bas et, `packComponents`
+        // étant inerte ici, resserre anormalement des COMPOSANTES DISJOINTES
+        // qui ne partagent pourtant aucune arête. Toute arête garde donc la
+        // même longueur idéale ; l'attraction vers le centre se règle
+        // uniquement par `edgeElasticity`, ci-dessous.
         idealEdgeLength: (edge: cytoscape.EdgeSingular) => {
           const s = sizes.get(edge.source().id()) ?? { width: 160, height: 40 }
           const t = sizes.get(edge.target().id()) ?? { width: 160, height: 40 }
-          const base = (s.width + t.width) / 2 + options.separationMargin * 2
-          // Une arête d'agrégat (source `__agg:`) tire plus fort, donc plus court.
-          return edge.source().id().startsWith("__agg:") ? base / options.clusterPull : base
+          return (s.width + t.width) / 2 + options.separationMargin * 2
+        },
+        // Une arête d'agrégat (source `__agg:`) tire plus fort vers son
+        // centre, sans viser une distance plus courte : `clusterPull` multiplie
+        // l'élasticité par défaut de fcose (0.45), pas la longueur cible.
+        edgeElasticity: (edge: cytoscape.EdgeSingular) => {
+          const DEFAULT_ELASTICITY = 0.45
+          return edge.source().id().startsWith("__agg:")
+            ? DEFAULT_ELASTICITY * options.clusterPull
+            : DEFAULT_ELASTICITY
         },
       } as cytoscape.LayoutOptions)
 
