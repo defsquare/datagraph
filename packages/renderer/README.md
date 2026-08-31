@@ -54,8 +54,8 @@ graph.on("select", (node) => console.log("selected:", node.label));
 
 `createDataGraph` returns a `DataGraph` handle with `fit`, `expand`,
 `collapse`, `focus`, `select`, `search`, `nextMatch`, `prevMatch`, `on`,
-`setData`, `diagnostics`, `stats`, `refEdges`, `setTheme`, and `destroy` —
-full descriptions in the
+`setData`, `diagnostics`, `stats`, `refEdges`, `setTheme`, `setView`,
+`currentView`, and `destroy` — full descriptions in the
 [root README's API table](https://github.com/defsquare/data-graph#public-api--datagraph).
 
 ## Navigation
@@ -86,6 +86,65 @@ selection colour on the topmost layer, where they run over everything.
 Zoom is bounded to `[0.02, 3]`. `fit()` never scales past `1` — magnifying a
 bitmap-font atlas baked at its nominal size is what made text look soft — so a
 graph smaller than the viewport is centred rather than blown up.
+
+## Graph view
+
+`createDataGraph` supports two views, chosen with `DataGraphOptions.view?:
+"structure" | "graph"` (default `"structure"`) and switched at runtime with
+`setView(view): Promise<void>` / `currentView(): "structure" | "graph"`:
+
+- **`"structure"`** (default) lays out the containment tree — parent/child
+  structure, ELK layered. This is everything described above and elsewhere in
+  this README.
+- **`"graph"`** lays out entities as vertices and references as edges,
+  grouped into the DDD aggregates declared in `config.aggregates` (see the
+  [core package README](https://github.com/defsquare/data-graph/tree/main/packages/core#aggregates)
+  for the membership rule) and drawn as convex envelopes around each
+  aggregate's cards.
+
+```ts
+const graph = createDataGraph(container, {
+  data: shopData,
+  config: { ...shopConfig, aggregates: ["Customer"] },
+  // Omit `view` to start in "structure" (the default) and switch later.
+  view: "graph",
+});
+
+await graph.ready;
+graph.currentView(); // -> "graph"
+
+await graph.setView("structure"); // switch back at runtime
+await graph.setView("graph");     // and switch again
+```
+
+**Dynamic import.** The first switch to `"graph"` dynamically imports the
+organic layout engine (`cytoscape` + its `fcose` layout plugin), which is why
+`setView` returns a promise. That import is isolated behind the dynamic
+`import()`: in a Vite production build (see [`apps/demo`](../../apps/demo)),
+it lands in its own chunk — roughly **178 kB gzip** — and never enters the
+bundle of a consumer that only ever uses the structure view. A test walking
+the built chunk closure (`packages/core/test/bundle-purity.test.ts`) guards
+this so a careless barrel export can't regress it.
+
+**Folding.** `expand`/`collapse` are structure-view operations (see the
+[root README's API table](https://github.com/defsquare/data-graph#public-api--datagraph));
+they act on the containment tree and have no visible effect in the graph
+view. There is **no public API** to fold an aggregate. Instead, clicking an
+aggregate root card's header chevron folds or unfolds that aggregate's
+members directly on the canvas.
+
+**Selection carry-over.** The graph view only knows entities — a structure
+node nested under one (e.g. an address object) has no counterpart there.
+Switching views while such a node is selected reassigns the selection to its
+nearest entity ancestor rather than dropping it.
+
+**Determinism.** The graph-view layout is deterministic to the pixel: two
+runs on identical input produce identical positions (seeded from node ids,
+not left to fcose's default randomization). Expanding an aggregate pins every
+already-placed card so the rest of the layout doesn't drift — median drift on
+unrelated cards is 0.00 px with pinning, versus 1084 px median without it.
+See the [root README's performance budgets](https://github.com/defsquare/data-graph#performance-budgets)
+for the full table.
 
 ## Themes
 

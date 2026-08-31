@@ -18,6 +18,12 @@ renders only what's expanded, so a 10,000-node dataset stays smooth: pan,
 zoom, expand/collapse, click a reference to jump to its target, and search
 across every field.
 
+Two views are built in. The default **structure view** lays out the
+containment tree (parent/child, ELK layered). An optional **graph view**
+switches the canvas to entities-as-vertices, references-as-edges, grouped
+into DDD aggregates drawn as convex envelopes — see [`config.aggregates`](#entityreference-configuration)
+and [the renderer's graph view docs](./packages/renderer/README.md#graph-view).
+
 <!-- demo GIF placeholder: replace this comment with an actual GIF/screen
      recording of apps/demo (pan/zoom, expand/collapse, search, follow-ref)
      before publishing, e.g. ![data-graph demo](./docs/demo.gif) -->
@@ -112,6 +118,9 @@ doesn't exist).
 - `entities.<Type>.match` — selector for where instances of `<Type>` live in the document.
 - `entities.<Type>.id` — the field on each matched object that holds its unique id.
 - `references.<Type>.<field>` — declares `<Type>.<field>` as a foreign key pointing at another configured entity type.
+- `aggregates` — entity type names that are DDD aggregate roots, in declaration order. See
+  [the core package README](./packages/core/README.md#aggregates) for the membership rule and the
+  [graph view](./packages/renderer/README.md#graph-view) it powers.
 - `maxNodes` — optional safety cap (default `50000`); `buildGraph` throws `GraphTooLargeError` past it.
 - `rootLabel` — label shown on the root node (default `"$"`, the root symbol of
   the same selector syntax `match` uses). Set it to something your users
@@ -126,8 +135,8 @@ Returned by `createDataGraph(container, options)`.
 | --- | --- |
 | `ready: Promise<void>` | Resolves once Pixi has initialized, the graph has been built, and the initial layout has been rendered. Await before calling other methods. |
 | `fit()` | Frames the camera to fit every currently laid-out node in the viewport. |
-| `expand(id): Promise<void>` | Expands a node (reveals its children), re-lays-out, and animates the transition. |
-| `collapse(id): Promise<void>` | Collapses a node (hides its children) and animates the transition. |
+| `expand(id): Promise<void>` | **Structure-view operation.** Expands a node (reveals its children), re-lays-out, and animates the transition. In the graph view it updates the (invisible) containment state but has no visible effect — see [graph view](./packages/renderer/README.md#graph-view). |
+| `collapse(id): Promise<void>` | **Structure-view operation.** Collapses a node (hides its children) and animates the transition. Same graph-view caveat as `expand`. |
 | `focus(id)` | Expands every collapsed ancestor of `id` as needed, then centers the camera on it. |
 | `select(id)` | Marks a node as selected (drawn with a selection overlay) and emits a `select` event. |
 | `search(query): SearchResult[]` | Full-text search across every node label, entity id, and row key/value; returns all matches and resets the next/prev cursor. |
@@ -139,7 +148,14 @@ Returned by `createDataGraph(container, options)`.
 | `stats(): { logicalNodeCount, visibleNodeCount }` | Counters for a host status bar: `logicalNodeCount` is every node in the built graph, `visibleNodeCount` is how many are currently expanded/rendered. |
 | `refEdges(from): RefEdge[]` | The outgoing reference edges of node `from`, so a host can offer "follow reference" affordances without knowing graph internals. |
 | `setTheme(theme)` | Replaces the theme and redraws, without rerunning layout or re-measuring fonts. Accepts a full `Theme` or a `ThemeOverride`, merged via `resolveTheme` against the theme currently in effect — a `byEntityType` set earlier survives a plain theme swap. Safe for toggling between themes that share the same `typography`/`fonts` (e.g. a light/dark pair); changing those two groups needs a fresh `createDataGraph`. |
+| `setView(view): Promise<void>` | Switches between `"structure"` and `"graph"`. The first switch to `"graph"` dynamically imports the graph-view engine and computes aggregates, hence the promise — see [performance budgets](#performance-budgets) and the [renderer's graph view docs](./packages/renderer/README.md#graph-view). The current selection is carried over onto the nearest entity ancestor, since the graph view only knows entities. |
+| `currentView(): DataGraphView` | Returns `"structure"` or `"graph"`, whichever is active. |
 | `destroy()` | Tears down the Pixi application and releases all resources. |
+
+`DataGraphOptions.view?: "structure" \| "graph"` (default `"structure"`) picks the initial view at
+`createDataGraph` time; `setView`/`currentView` switch and query it afterwards. Folding an aggregate
+in the graph view is done by clicking its root card's header chevron — there is no public API for it,
+unlike `expand`/`collapse` which are structure-view-only.
 
 ## Themes
 
@@ -194,6 +210,25 @@ the full token list and more examples.
 These are the budgets `packages/core/bench/bench.ts` checks on every run
 (via `pnpm bench`) against a synthetic `bigShop(10_000)` fixture — see that
 package's README for the latest numbers and any documented deviation.
+
+### Graph view
+
+| Property | Budget | Enforced by |
+| --- | --- | --- |
+| Card overlap after layout | Zero — every pair of cards separated by at least `separationMargin` | `packages/core/test/layout-graph.test.ts` |
+| Determinism | Pixel-identical positions across two runs on the same input | `packages/core/test/layout-graph.test.ts` |
+| Position drift on already-placed cards when expanding an aggregate | 0.00 px median (was 1084 px median before pinning) | `packages/core/test/layout-graph.test.ts` (pinning) |
+| `@defsquare/data-graph` bundle purity | `cytoscape` (~178 kB gzip) never enters a consumer's bundle unless it calls `setView("graph")` — the structure view alone doesn't pull it in | `packages/core/test/bundle-purity.test.ts` |
+
+The graph view's organic layout (fcose) is seeded deterministically from node
+ids rather than left to its default randomization, and cards already placed
+before an `expand()` are pinned in place during relayout — that pinning is
+what took the median drift on unrelated cards from 1084 px down to 0.00 px.
+Switching to the graph view for the first time dynamically imports
+`cytoscape` and its `fcose` layout plugin; a Vite production build of
+[`apps/demo`](./apps/demo) emits that as its own ~178 kB gzip chunk
+(`graph-layout-*.js`), separate from the main bundle, so a consumer who only
+ever uses the structure view never downloads it.
 
 ## Monorepo layout
 
