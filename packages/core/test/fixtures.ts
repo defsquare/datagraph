@@ -79,11 +79,11 @@ export function bigShop(n: number) {
 /**
  * N triplets indépendants customer_i / order_i / review_i : order_i et
  * review_i référencent tous deux customer_i, mais AUCUNE arête ne les relie
- * l'un à l'autre — ce sont des frères, pas une chaîne. Sert à isoler
- * l'attraction du centre virtuel d'agrégat (qui relie chaque membre au même
- * centre) de la simple attraction par arête de référence directe : sans
- * centre, order_i et review_i ne se rapprocheraient que par le
- * voisin partagé customer_i, un effet transitif bien plus faible.
+ * l'un à l'autre — ce sont des frères, pas une chaîne. Sert à vérifier que le
+ * regroupement visuel d'un agrégat n'a besoin d'aucun montage particulier :
+ * order_i et review_i se rapprochent simplement parce qu'ils sont tous deux
+ * tirés vers le même voisin partagé, customer_i, par leur propre arête de
+ * référence.
  */
 export function bigShopWithReviews(n: number) {
   const customers = [], orders = [], reviews = []

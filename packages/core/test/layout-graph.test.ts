@@ -98,13 +98,17 @@ describe("createGraphLayoutEngine", () => {
   })
 
   it("pulls two members of the same aggregate closer than an entity from another aggregate", async () => {
-    // Le test précédent ne prouve rien sur le centre virtuel : order_i et
-    // customer_i sont DÉJÀ reliés par une arête de référence directe, donc
-    // même sans agrégat ils se rapprocheraient. Ici order_i et review_i sont
-    // FRÈRES — tous deux référencent customer_i, mais aucune arête ne les
-    // relie entre eux — donc leur seule attraction directe possible vient du
-    // centre virtuel de l'agrégat. bigShopWithReviews produit N triplets
-    // indépendants, chacun sa propre composante connexe.
+    // order_i et customer_i (test précédent) sont DÉJÀ reliés par une arête
+    // de référence directe, donc ce test-là ne dit rien sur le regroupement
+    // par agrégat spécifiquement. Ici order_i et review_i sont FRÈRES — tous
+    // deux référencent customer_i, mais aucune arête ne les relie entre eux
+    // — donc leur seule attraction possible passe par le voisin partagé
+    // customer_i, tiré des deux côtés par une arête de référence. C'est ce
+    // mécanisme, et lui seul (il n'y a pas de centre virtuel d'agrégat —
+    // mesuré et retiré, voir la note dans layout-graph.ts), qui doit
+    // rapprocher order_i et review_i plus qu'une entité d'un autre agrégat.
+    // bigShopWithReviews produit N triplets indépendants, chacun sa propre
+    // composante connexe.
     const data = bigShopWithReviews(150)
     const graph = buildGraph(data, bigShopReviewsConfig)
     const aggregates = buildAggregates(graph, validateConfig(bigShopReviewsConfig))
@@ -123,9 +127,9 @@ describe("createGraphLayoutEngine", () => {
       return Math.hypot(p.x - q.x, p.y - q.y)
     }
 
-    // /orders/0 et /reviews/0 partagent l'agrégat Customer#c0 (via le centre
-    // virtuel) sans arête directe entre eux. /orders/<dernier> est un Order
-    // d'un AUTRE agrégat, sans lien direct ni indirect avec /orders/0.
+    // /orders/0 et /reviews/0 partagent l'agrégat Customer#c0 — tous deux
+    // référencent /customers/0 — sans arête directe entre eux. /orders/<dernier>
+    // est un Order d'un AUTRE agrégat, sans lien direct ni indirect avec /orders/0.
     const last = data.customers.length - 1
     const sameAggregate = distanceBetween("/orders/0", "/reviews/0")
     const otherAggregate = distanceBetween("/orders/0", `/orders/${last}`)

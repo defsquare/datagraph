@@ -11,14 +11,6 @@ import { separateOverlaps } from "./separate.js"
 cytoscape.use(fcose as cytoscape.Ext)
 
 export interface GraphLayoutOptions {
-  /**
-   * Multiplicateur d'élasticité d'une arête vers le centre virtuel d'un
-   * agrégat, par rapport à une arête de référence. Une valeur plus grande
-   * tire plus fort vers le centre — mais ne raccourcit PAS la distance visée
-   * ; voir le commentaire au site de `idealEdgeLength`/`edgeElasticity` pour
-   * pourquoi les deux sont volontairement découplés.
-   */
-  clusterPull?: number
   /** Marge entre une carte et le bord de l'enveloppe de son agrégat. */
   hullPadding?: number
   /** Marge garantie entre deux cartes par la passe de séparation. */
@@ -61,7 +53,6 @@ export interface GraphLayoutEngine {
 }
 
 const DEFAULTS: Required<GraphLayoutOptions> = {
-  clusterPull: 3,
   hullPadding: 18,
   separationMargin: 16,
   // `iterations` est un PLAFOND, pas un coût fixe : `separateOverlaps` sort dès
@@ -101,12 +92,34 @@ function seedPosition(id: string, radius: number): Point {
   return { x: r * Math.cos(angle), y: r * Math.sin(angle) }
 }
 
+// Regroupement visuel : PAS de nœud virtuel de centre par agrégat. Une
+// version antérieure en ajoutait un (relié à chaque membre visible par une
+// arête plus courte/élastique) pour tirer les membres d'un agrégat les uns
+// vers les autres. Mesuré sur trois formes de graphe (membres à 1 saut de la
+// racine, à 2 sauts, et éventail large sous une racine) : les centres
+// rapprochaient les composantes DISJOINTES entre elles (une seule échelle de
+// répulsion globale chez fcose, non décomposée par composante connexe) plus
+// qu'ils ne rapprochaient les membres d'un même agrégat — les co-membres se
+// retrouvaient 2,2 à 2,4× PLUS ÉLOIGNÉS avec centre que sans, aux profondeurs
+// 1 et 2, pour un gain non mesurable sur l'éventail large. L'appartenance à
+// un agrégat est par construction une accessibilité par arêtes de référence
+// (voir aggregate.ts) : cette arête existe déjà dans le layout, le centre ne
+// faisait que la doubler. Le regroupement visuel vient donc uniquement des
+// arêtes de référence déjà posées ci-dessus ; seule l'enveloppe, tracée
+// après coup à partir des positions obtenues, reste propre à l'agrégat.
+
 /**
  * Une enveloppe par agrégat ayant au moins un membre positionné, dans le
  * repère de `positions`. Ordre stable : celui de `aggregates`, qui suit
  * lui-même l'ordre de déclaration de la config. Extrait ici pour être
  * réutilisé tel quel par `layoutAfterCollapse` (Task 8), qui recalcule les
  * enveloppes sans relancer tout le layout.
+ *
+ * Le chevauchement (une entité membre de plusieurs agrégats) n'a pas besoin
+ * d'un montage particulier ici : chaque agrégat calcule son enveloppe
+ * indépendamment à partir des positions de SES membres, donc une entité
+ * partagée tombe naturellement dans les deux polygones — tirée vers ses deux
+ * racines par ses propres arêtes de référence pendant le layout.
  */
 function computeClusters(
   aggregates: AggregateIndex,
@@ -171,30 +184,6 @@ export function createGraphLayoutEngine(opts: GraphLayoutOptions = {}): GraphLay
         })
       }
 
-      // Regroupement : un nœud invisible de taille nulle par agrégat, relié à
-      // chacun de ses membres visibles. Les membres d'un même agrégat se
-      // regroupent mécaniquement ; une entité qui appartient à DEUX agrégats
-      // est tirée par deux centres et se pose entre eux — c'est exactement le
-      // comportement voulu sous chevauchement, et c'est pourquoi ce montage
-      // supporte l'appartenance multiple là où des boîtes compound ne le
-      // pourraient pas (cytoscape n'accepte qu'un parent par nœud).
-      for (const aggregate of aggregates.aggregates.values()) {
-        const members = [...aggregate.memberIds].filter((id) => entitySet.has(id)).sort()
-        if (members.length === 0) continue
-        const centreId = `__agg:${aggregate.id}`
-        elements.push({
-          group: "nodes",
-          data: { id: centreId, w: 1, h: 1 },
-          position: seedPosition(centreId, radius),
-        })
-        for (const memberId of members) {
-          elements.push({
-            group: "edges",
-            data: { id: `a:${centreId}->${memberId}`, source: centreId, target: memberId },
-          })
-        }
-      }
-
       // `styleEnabled: true` est indispensable en headless : sans lui cytoscape
       // ne calcule aucune dimension et fcose traite les cartes comme des points
       // de taille nulle — elles se recouvrent alors massivement.
@@ -215,31 +204,28 @@ export function createGraphLayoutEngine(opts: GraphLayoutOptions = {}): GraphLay
         // longueur d'arête idéale de 50 px est absurde entre deux cartes de
         // 140–340 px de large. On la dérive de la taille des deux boîtes.
         //
-        // IMPORTANT — piège déjà tombé dedans une fois : NE PAS raccourcir
-        // `idealEdgeLength` pour les arêtes de centre d'agrégat. fcose
-        // recalibre son échelle interne de répulsion (`DEFAULT_EDGE_LENGTH`,
-        // dont dérivent `MIN_REPULSION_DIST` et `DEFAULT_RADIAL_SEPARATION`)
-        // sur la MOYENNE de `idealLength` de TOUTES les arêtes du graphe —
-        // une seule échelle globale, pas une par composante. Mélanger des
-        // arêtes courtes (agrégat) et des arêtes de la largeur d'une carte
-        // (référence) tire cette moyenne vers le bas et, `packComponents`
-        // étant inerte ici, resserre anormalement des COMPOSANTES DISJOINTES
-        // qui ne partagent pourtant aucune arête. Toute arête garde donc la
-        // même longueur idéale ; l'attraction vers le centre se règle
-        // uniquement par `edgeElasticity`, ci-dessous.
+        // IMPORTANT — piège déjà mesuré une fois, à ne pas réintroduire : si
+        // un jour une autre arête synthétique s'ajoute ici (un nœud qui
+        // n'existe pas dans `graph`, comme l'ancien centre virtuel
+        // d'agrégat — voir la note au-dessus de `computeClusters`), NE PAS
+        // lui donner une longueur idéale différente de celle des arêtes de
+        // référence. fcose recalibre son échelle interne de répulsion
+        // (`DEFAULT_EDGE_LENGTH`, dont dérivent `MIN_REPULSION_DIST` et
+        // `DEFAULT_RADIAL_SEPARATION`) sur la MOYENNE de `idealLength` de
+        // TOUTES les arêtes du graphe — une seule échelle globale, pas une
+        // par composante. Mélanger des arêtes courtes et des arêtes de la
+        // largeur d'une carte tire cette moyenne vers le bas et,
+        // `packComponents` étant inerte ici, resserre anormalement des
+        // COMPOSANTES DISJOINTES qui ne partagent pourtant aucune arête —
+        // c'est ce qui a fait régresser un test de la Task 6 quand les
+        // centres d'agrégat existaient encore. La distance à laquelle une
+        // arête veut se poser (`idealEdgeLength`) et la force avec laquelle
+        // elle tire (`edgeElasticity`) sont deux réglages distincts ; ne pas
+        // les confondre pour obtenir une attraction plus forte.
         idealEdgeLength: (edge: cytoscape.EdgeSingular) => {
           const s = sizes.get(edge.source().id()) ?? { width: 160, height: 40 }
           const t = sizes.get(edge.target().id()) ?? { width: 160, height: 40 }
           return (s.width + t.width) / 2 + options.separationMargin * 2
-        },
-        // Une arête d'agrégat (source `__agg:`) tire plus fort vers son
-        // centre, sans viser une distance plus courte : `clusterPull` multiplie
-        // l'élasticité par défaut de fcose (0.45), pas la longueur cible.
-        edgeElasticity: (edge: cytoscape.EdgeSingular) => {
-          const DEFAULT_ELASTICITY = 0.45
-          return edge.source().id().startsWith("__agg:")
-            ? DEFAULT_ELASTICITY * options.clusterPull
-            : DEFAULT_ELASTICITY
         },
       } as cytoscape.LayoutOptions)
 
