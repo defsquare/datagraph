@@ -1,5 +1,12 @@
-export { resolveTheme, defsquareTheme, neutralLightTheme, neutralDarkTheme } from "./theme.js";
-export type { Theme, ThemeOverride } from "./theme.js";
+export {
+  resolveTheme,
+  entityAccentMap,
+  defsquareLight,
+  defsquareDark,
+  neutralLight,
+  neutralDark,
+} from "./theme.js";
+export type { Theme, ThemeOverride, TypeStyle } from "./theme.js";
 
 export { createDataGraph } from "./create.js";
 export type { DataGraph, DataGraphOptions, DataGraphEvent } from "./create.js";
