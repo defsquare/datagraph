@@ -270,7 +270,18 @@ toggleViewBtn?.addEventListener("click", () => {
     try {
       const next = graph.currentView() === "graph" ? "structure" : "graph";
       await graph.setView(next);
-      toggleViewBtn.textContent = next === "graph" ? "Vue structure" : "Vue graphe";
+      // Le libellé est dérivé de la vue RÉELLEMENT active, jamais de celle
+      // qu'on a demandée : `setView` avale deux échecs sans rejeter — l'import
+      // dynamique du moteur de la vue graphe qui échoue (réseau, chunk absent)
+      // et le cas où un `setData` concurrent a déjà pris la main. Dans les deux
+      // cas la promesse se résout alors que la vue n'a pas bougé, et un libellé
+      // posé depuis `next` annoncerait une vue qui n'est pas à l'écran.
+      const active = graph.currentView();
+      toggleViewBtn.textContent = active === "graph" ? "Vue structure" : "Vue graphe";
+      // La bascule change le nombre de nœuds affichés (l'arbre entier d'un
+      // côté, les seules entités de l'autre) : sans ce rafraîchissement, le
+      // compteur de la barre d'état reste sur la valeur de l'autre vue.
+      updateStatus();
     } finally {
       toggleViewBtn.disabled = false;
     }

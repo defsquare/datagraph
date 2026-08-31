@@ -17,8 +17,11 @@ async function gotoReady(page: Page): Promise<void> {
   await page.evaluate(() => (window as any).__graph.ready)
 }
 
-// La config de la demo ne declare pas encore d'agregats : on injecte par
-// `setData` un jeu minimal qui en a. Deux agregats (un par Customer), cinq
+// La config de la demo declare bien `aggregates: ["Customer"]` (voir
+// `src/sample-data.ts`), mais son jeu par defaut ne compte que 4 entites : les
+// tests ci-dessous injectent par `setData` des jeux calibres pour ce qu'ils
+// prouvent. Le dernier test du fichier, lui, travaille sur le jeu etendu reel
+// de la demo, sans injection. Deux agregats (un par Customer), cinq
 // entites au total ; replier celui de c1 doit retirer o1 et o2 et n'en laisser
 // que trois : c1 (racine, toujours visible), c2 et o3.
 const data = {
@@ -170,6 +173,68 @@ test("un setData concurrent d'un setView laisse des compteurs coherents", async 
   // 13 noeuds d'arbre en vue structure (racine + 2 tableaux + 10 entites),
   // 10 entites en vue graphe. Avant correction : 5, herites du graphe precedent.
   expect(out.stats.visibleNodeCount).toBe(out.view === "graph" ? 10 : 13)
+  expect(errors).toEqual([])
+})
+
+test("la vue graphe tient sur le jeu de donnees etendu de la demo", async ({ page }) => {
+  const errors: string[] = []
+  page.on("pageerror", e => errors.push(String(e)))
+  page.on("console", m => {
+    if (m.type() === "error") errors.push(m.text())
+  })
+
+  await gotoReady(page)
+
+  // Les autres tests de ce fichier injectent des jeux minuscules (5 et 12
+  // entites) : aucun ne met la vue graphe sous charge. C'est pourtant le jeu
+  // etendu qui motive toute cette vue — c'est son rapport de bbox de 1:21 en
+  // vue structure qu'elle existe pour corriger — et c'est le seul endroit ou la
+  // passe de separation, le recouvrement des enveloppes et le temps de mise en
+  // page travaillent pour de vrai. La config de la demo declare deja
+  // `aggregates: ["Customer"]`, donc il suffit du bouton de bascule de jeu.
+  await page.click("#toggle-dataset")
+  // Le clic ne fait que lancer un gestionnaire async. On attend le compteur
+  // plutot que le libelle du bouton : c'est la preuve que `setData` a fini de
+  // construire ET de mettre en page le nouveau jeu, et ca ne depend d'aucune
+  // chaine d'interface.
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__graph.stats().logicalNodeCount), {
+      timeout: 30_000,
+    })
+    // 1638 noeuds logiques, contre une vingtaine pour le jeu reduit : le seuil
+    // separe les deux sans coller au chiffre exact du fixture.
+    .toBeGreaterThan(1000)
+  const logical = await page.evaluate(() => (window as any).__graph.stats().logicalNodeCount)
+
+  const ms = await page.evaluate(async () => {
+    const t0 = performance.now()
+    await (window as any).__graph.setView("graph")
+    return performance.now() - t0
+  })
+
+  expect(await page.evaluate(() => (window as any).__graph.currentView())).toBe("graph")
+
+  // `bigShop(2000)` de la demo produit 53 clients et 158 commandes : 211
+  // entites, toutes visibles puisque les agregats naissent deplies et que
+  // chaque commande reference son client. La vue graphe ne montre QUE des
+  // entites, donc c'est exactement le compte attendu — un chiffre exact plutot
+  // qu'une borne, pour que toute derive du fixture se voie.
+  expect(await visibleCount(page)).toBe(211)
+
+  // Recadrage et rendu sous charge : le canvas doit rester peint, et rien ne
+  // doit avoir ete jete dans la console.
+  await expect(page.locator("canvas")).toBeVisible()
+  expect(errors).toEqual([])
+
+  // Temps mesure au passage (import dynamique + fcose + separation + rendu).
+  // Pas d'assertion serree : la machine de CI n'est pas celle du developpeur.
+  // Le plafond large n'attrape qu'un effondrement franc.
+  expect(ms).toBeLessThan(30_000)
+  console.log(`[e2e] setView("graph") sur ${logical} noeuds logiques / 211 entites : ${ms.toFixed(0)} ms`)
+
+  // Retour en vue structure : la bascule doit rester reversible a cette echelle.
+  await page.evaluate(() => (window as any).__graph.setView("structure"))
+  expect(await page.evaluate(() => (window as any).__graph.currentView())).toBe("structure")
   expect(errors).toEqual([])
 })
 
