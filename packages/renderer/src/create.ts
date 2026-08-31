@@ -14,12 +14,14 @@ import {
   type LayoutEngine,
   type LayoutResult,
   type NodeId,
+  type NodeMetrics,
   type Rect,
   type RefEdge,
   type SearchIndex,
   type SearchResult,
 } from "@defsquare/data-graph-core";
-import { resolveTheme, type Theme, type ThemeOverride } from "./theme.js";
+import { entityAccentMap, resolveTheme, type Theme, type ThemeOverride } from "./theme.js";
+import { measureFontMetrics } from "./font-metrics.js";
 import { Camera, type Size } from "./camera.js";
 import {
   drawEdgeHitAreas,
@@ -59,6 +61,10 @@ export interface DataGraph {
   on(event: DataGraphEvent, callback: (payload: any) => void): () => void;
   setData(data: unknown, config?: DataGraphConfig): Promise<void>;
   diagnostics(): Diagnostic[];
+  /** Remplace le thème et redessine, sans relancer le layout : les
+   * `NodeMetrics` ne dépendent pas du thème, donc les positions restent
+   * valides. */
+  setTheme(theme: Theme | ThemeOverride): void;
   destroy(): void;
 }
 
@@ -129,7 +135,9 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   // `ready` IIFE below) calls it again on the same config.
   validateConfig(options.config);
 
-  const theme: Theme = resolveTheme(options.theme);
+  let theme: Theme = resolveTheme(options.theme);
+  let metrics: NodeMetrics = DEFAULT_METRICS;
+  let entityAccents = new Map<string, string>();
 
   const app = new Application();
   const world = new Container();
@@ -178,8 +186,24 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
 
   const emitter = new Emitter<DataGraphEvents>();
 
+  /** Recalcule la table type d'entité → couleur de rail. L'ordre vient des
+   * clés de `config.entities` : déterministe et sous contrôle de l'auteur de
+   * la config, contrairement à l'ordre d'apparition dans les données. */
+  function refreshEntityAccents(config: DataGraphConfig): void {
+    entityAccents = entityAccentMap(Object.keys(config.entities), theme);
+  }
+
+  function accentFor(node: GraphNode): string {
+    if (node.kind !== "entity") return theme.edge.contain;
+    return entityAccents.get(node.entityType) ?? theme.accent.entity;
+  }
+
   function viewport(): Size {
-    return { width: app.renderer?.width ?? 0, height: app.renderer?.height ?? 0 };
+    // `renderer.screen` est en pixels CSS, comme le `stage`. `renderer.width`
+    // est en pixels device dès qu'`autoDensity` est actif et casserait donc
+    // `fitTo`/`centerOn` sur écran Retina.
+    const screen = app.renderer?.screen;
+    return { width: screen?.width ?? 0, height: screen?.height ?? 0 };
   }
 
   /** Unregisters the currently in-flight animation tick (if any). Must be
@@ -283,7 +307,16 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       const node = graph.nodes.get(id);
       const rect = layoutResult.positions.get(id);
       if (!node || !rect) continue;
-      const nodeView = drawNode(node, rect, theme, currentLod, useBitmapText);
+      const nodeView = drawNode(
+        node,
+        rect,
+        theme,
+        currentLod,
+        useBitmapText,
+        accentFor(node),
+        metrics,
+        collapseState.isExpanded(id),
+      );
       nodeView.position.set(rect.x, rect.y);
       attachTap(nodeView, (event) => handleNodeTap(node, nodeView, event));
       nodesLayer.addChild(nodeView);
@@ -308,14 +341,15 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     if (!graph) return;
     if (currentLod === 0) {
       const local = view.toLocal(event.global);
-      if (local.y < DEFAULT_METRICS.headerHeight) {
+      if (local.y < metrics.headerHeight) {
         if (node.childIds.length > 0) {
           toggleExpand(node.id);
           return;
         }
       } else {
-        const rowIndex = Math.floor((local.y - DEFAULT_METRICS.headerHeight) / DEFAULT_METRICS.rowHeight);
-        const row = node.rows[rowIndex];
+        const rowIndex = Math.floor((local.y - metrics.headerHeight) / metrics.rowHeight);
+        // Un clic dans le padding bas ne tombe sur aucune ligne.
+        const row = rowIndex < node.rows.length ? node.rows[rowIndex] : undefined;
         if (row) {
           const edge = graph.refEdges.find((e) => e.from === node.id && e.field === row.key);
           if (edge) {
@@ -341,7 +375,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     collapseState.expand(id);
     const visible = collapseState.visibleNodeIds();
     const prevPositions = new Map(layoutResult.positions);
-    const next = await engine.layoutAfterExpand(layoutResult, graph, id, visible);
+    const next = await engine.layoutAfterExpand(layoutResult, graph, id, visible, metrics);
     // A concurrent doCollapse/doExpand/focusOn ran while we were awaiting
     // (bumping opGen) and already applied its own layoutResult — applying
     // this stale one now would silently revert that operation. Bail.
@@ -412,7 +446,13 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       for (const ancestorId of ancestors) {
         if (destroyed || gen !== opGen) return;
         collapseState.expand(ancestorId);
-        const next = await engine.layoutAfterExpand(layoutResult, graph, ancestorId, collapseState.visibleNodeIds());
+        const next = await engine.layoutAfterExpand(
+          layoutResult,
+          graph,
+          ancestorId,
+          collapseState.visibleNodeIds(),
+          metrics,
+        );
         if (destroyed) return;
         if (gen !== opGen) {
           // Superseded mid-cascade: revert ONLY this not-yet-applied step so
@@ -467,9 +507,13 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
 
   const ready = (async () => {
     await app.init({
-      background: theme.colors.background,
+      background: theme.surface.canvas,
       resizeTo: container,
       antialias: true,
+      // Sans ces deux options, le canvas est rendu en 1x puis étiré par le CSS
+      // sur tout écran à forte densité — la cause principale du flou.
+      resolution: Math.min(globalThis.devicePixelRatio ?? 1, 2),
+      autoDensity: true,
     });
     if (destroyed) {
       // destroy() may have run while app.init() was still in flight — at
@@ -492,17 +536,19 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
 
     currentConfig = options.config;
     graph = buildGraph(options.data, currentConfig);
+    metrics = measureFontMetrics(theme, DEFAULT_METRICS);
+    refreshEntityAccents(currentConfig);
     collapseState = new CollapseState(graph);
     searchIndex = buildSearchIndex(graph);
 
     engine = buildLayoutEngine(options.elkWorkerUrl);
     const visible = collapseState.visibleNodeIds();
     try {
-      layoutResult = await engine.layout(graph, visible);
+      layoutResult = await engine.layout(graph, visible, metrics);
     } catch (err) {
       console.warn("[data-graph] layout via elkWorkerUrl failed, falling back to in-process elk", err);
       engine = createLayoutEngine();
-      layoutResult = await engine.layout(graph, visible);
+      layoutResult = await engine.layout(graph, visible, metrics);
     }
     if (destroyed) return;
 
@@ -553,11 +599,11 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     let newEngine = buildLayoutEngine(options.elkWorkerUrl);
     let newLayout: LayoutResult;
     try {
-      newLayout = await newEngine.layout(newGraph, visible);
+      newLayout = await newEngine.layout(newGraph, visible, metrics);
     } catch (err) {
       console.warn("[data-graph] layout via elkWorkerUrl failed, falling back to in-process elk", err);
       newEngine = createLayoutEngine();
-      newLayout = await newEngine.layout(newGraph, visible);
+      newLayout = await newEngine.layout(newGraph, visible, metrics);
     }
     // A concurrent setData/doExpand/doCollapse/focusOn ran while we were
     // awaiting the layout (bumping opGen) and already applied its own
@@ -570,6 +616,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     engine = newEngine;
     layoutResult = newLayout;
     currentConfig = config;
+    refreshEntityAccents(config);
     selectedId = null;
     searchResults = [];
     searchCursor = -1;
@@ -621,6 +668,19 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
 
     diagnostics(): Diagnostic[] {
       return graph ? graph.diagnostics : [];
+    },
+
+    setTheme(next: Theme | ThemeOverride): void {
+      if (destroyed) return;
+      // Un Theme complet est reconnaissable à la présence de `entityPalette` ;
+      // une surcharge partielle est fusionnée sur le thème courant.
+      theme =
+        "entityPalette" in next && Array.isArray(next.entityPalette)
+          ? (next as Theme)
+          : resolveTheme(next as ThemeOverride, theme);
+      refreshEntityAccents(currentConfig);
+      if (app.renderer) app.renderer.background.color = theme.surface.canvas;
+      rebuild();
     },
 
     destroy(): void {

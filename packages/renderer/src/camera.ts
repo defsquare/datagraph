@@ -8,6 +8,10 @@ export interface Size {
 
 const MIN_SCALE = 0.02;
 const MAX_SCALE = 3;
+// fitTo ne grossit jamais au-delà de la taille native : agrandir un atlas de
+// police cuit à sa taille nominale est exactement ce qui rendait le texte
+// cotonneux au premier rendu. Le zoom molette, lui, garde MAX_SCALE.
+const MAX_FIT_SCALE = 1;
 const FIT_PADDING = 40;
 
 function clamp(value: number, min: number, max: number): number {
@@ -44,7 +48,7 @@ export class Camera {
     const availableH = Math.max(1, viewport.height - FIT_PADDING * 2);
     let scale = Math.min(availableW / Math.max(bounds.width, 1), availableH / Math.max(bounds.height, 1));
     if (!Number.isFinite(scale) || scale <= 0) scale = 1;
-    scale = clamp(scale, MIN_SCALE, MAX_SCALE);
+    scale = clamp(scale, MIN_SCALE, MAX_FIT_SCALE);
     this.applyScaleAndCenter(bounds, viewport, scale);
   }
 

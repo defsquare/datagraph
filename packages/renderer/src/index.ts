@@ -23,8 +23,12 @@ export {
   lodForScale,
   LOD0_MIN_SCALE,
   LOD1_MIN_SCALE,
+  charWidthFor,
+  truncateToWidth,
 } from "./draw.js";
-export type { Lod, EdgeHit } from "./draw.js";
+export type { Lod, EdgeHit, TextRole } from "./draw.js";
+
+export { measureFontMetrics } from "./font-metrics.js";
 
 export { Emitter } from "./events.js";
 
