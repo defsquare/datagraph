@@ -58,6 +58,28 @@ graph.on("select", (node) => console.log("selected:", node.label));
 full descriptions in the
 [root README's API table](https://github.com/defsquare/data-graph#public-api--datagraph).
 
+## Navigation
+
+| Gesture | Action |
+| --- | --- |
+| Two-finger swipe (trackpad) | Pan |
+| Pinch (trackpad) | Zoom at the cursor |
+| Mouse wheel | Zoom at the cursor |
+| <kbd>Ctrl</kbd> + wheel | Zoom at the cursor |
+| Click and drag | Pan |
+
+Trackpad pinch and <kbd>Ctrl</kbd>+wheel are the same browser event, so both
+are always recognised as zoom. Telling a plain mouse wheel apart from a
+two-finger swipe is a heuristic — a wheel arrives as large, whole-numbered,
+purely vertical steps, a swipe as a stream of small and often fractional
+deltas with some horizontal component. A very fast, perfectly vertical swipe
+can therefore be read as a wheel and zoom instead of panning. The threshold is
+deliberately set high so this stays rare.
+
+Zoom is bounded to `[0.02, 3]`. `fit()` never scales past `1` — magnifying a
+bitmap-font atlas baked at its nominal size is what made text look soft — so a
+graph smaller than the viewport is centred rather than blown up.
+
 ## Themes
 
 Ships four built-in themes — `defsquareLight` (default), `defsquareDark`,

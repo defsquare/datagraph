@@ -14,14 +14,74 @@ const MAX_SCALE = 3;
 const MAX_FIT_SCALE = 1;
 const FIT_PADDING = 40;
 
+// Conversions de `deltaMode` vers des pixels. Sans elles, un même geste va de
+// « inutilisable » à « correct » selon le navigateur : Firefox rapporte les
+// crans de molette en lignes (deltaY = 3), Chrome les convertit lui-même en
+// ~100px. Tout le reste du calcul suppose des pixels.
+const LINE_HEIGHT_PX = 16;
+const PAGE_HEIGHT_PX = 400;
+
+// Au-delà de ce pas, un événement purement vertical et entier est une molette
+// et non un balayage trackpad. Le seuil est volontairement haut : se tromper
+// vers le déplacement est bien moins désagréable que se tromper vers le zoom.
+const MOUSE_WHEEL_MIN_STEP = 40;
+
+// Gains distincts parce que pincement et molette n'envoient pas la même
+// échelle de deltas. 0.002 donne ~1.22x par cran de 100px (trois crans pour
+// doubler) ; 0.012 rend le pincement franc sans être nerveux.
+const ZOOM_GAIN_WHEEL = 0.002;
+const ZOOM_GAIN_PINCH = 0.012;
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+/** Les seuls champs de `WheelEvent` que la classification lit. */
+export interface WheelSignal {
+  deltaX: number;
+  deltaY: number;
+  deltaMode: number;
+  ctrlKey: boolean;
+}
+
+/** Ramène un delta de molette en pixels, quel que soit le `deltaMode`. */
+export function normalizeWheelDelta(delta: number, deltaMode: number): number {
+  if (deltaMode === 1) return delta * LINE_HEIGHT_PX;
+  if (deltaMode === 2) return delta * PAGE_HEIGHT_PX;
+  return delta;
+}
+
+/**
+ * Décide si un événement `wheel` doit zoomer ou déplacer.
+ *
+ * `ctrlKey` est fiable à 100% : macOS le synthétise pour le pincement
+ * trackpad, et Ctrl+molette est la convention navigateur universelle. Un
+ * `deltaMode` non pixel l'est tout autant — seule une vraie molette en
+ * produit. Le troisième cas est une heuristique : en mode pixel, une molette
+ * arrive par pas francs, entiers et purement verticaux, là où un balayage
+ * trackpad arrive en flux de petits deltas souvent fractionnaires et presque
+ * toujours accompagnés d'une composante horizontale.
+ *
+ * L'heuristique n'est pas infaillible : un balayage très rapide, entier et
+ * parfaitement vertical zoomera. C'est le compromis assumé du seuil.
+ */
+export function classifyWheel(event: WheelSignal): "zoom" | "pan" {
+  if (event.ctrlKey) return "zoom";
+  if (event.deltaMode !== 0) return "zoom";
+  if (
+    event.deltaX === 0 &&
+    Number.isInteger(event.deltaY) &&
+    Math.abs(event.deltaY) >= MOUSE_WHEEL_MIN_STEP
+  ) {
+    return "zoom";
+  }
+  return "pan";
+}
+
 /**
  * Owns pan/zoom for the world `stage` container: drag-to-pan via pointer
- * events, wheel-to-zoom centered on the cursor, and programmatic
- * fit/center helpers. Bounds scale to [0.02, 3].
+ * events, two-finger swipe to pan, pinch and mouse wheel to zoom centered on
+ * the cursor, and programmatic fit/center helpers. Bounds scale to [0.02, 3].
  */
 export class Camera {
   private readonly stage: Container;
@@ -100,11 +160,21 @@ export class Camera {
 
   private readonly handleWheel = (event: WheelEvent): void => {
     event.preventDefault();
+
+    const dx = normalizeWheelDelta(event.deltaX, event.deltaMode);
+    const dy = normalizeWheelDelta(event.deltaY, event.deltaMode);
+
+    if (classifyWheel(event) === "pan") {
+      this.stage.position.set(this.stage.position.x - dx, this.stage.position.y - dy);
+      return;
+    }
+
     const bounds = this.canvas.getBoundingClientRect();
     const pointerX = event.clientX - bounds.left;
     const pointerY = event.clientY - bounds.top;
 
-    const zoomFactor = Math.exp(-event.deltaY * 0.001);
+    const gain = event.ctrlKey ? ZOOM_GAIN_PINCH : ZOOM_GAIN_WHEEL;
+    const zoomFactor = Math.exp(-dy * gain);
     const nextScale = clamp(this.currentScale * zoomFactor, MIN_SCALE, MAX_SCALE);
     if (nextScale === this.currentScale) return;
 
