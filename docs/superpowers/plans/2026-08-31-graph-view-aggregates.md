@@ -1211,7 +1211,9 @@ import { separateOverlaps } from "./separate.js"
 cytoscape.use(fcose as cytoscape.Ext)
 
 export interface GraphLayoutOptions {
-  /** Poids d'attraction d'un membre vers le centre virtuel de son agrégat. */
+  /** Multiplicateur d'ÉLASTICITÉ des arêtes vers le centre virtuel d'un
+   * agrégat — pas un raccourcissement de leur longueur idéale. Les deux ne
+   * sont pas interchangeables : voir la note sur `edgeElasticity` plus bas. */
   clusterPull?: number
   /** Marge entre une carte et le bord de l'enveloppe de son agrégat. */
   hullPadding?: number
@@ -1583,13 +1585,24 @@ Dans `layout-graph.ts`, renommer le paramètre `_aggregates` en `aggregates`, im
 L'attraction est réglée par `idealEdgeLength` : une arête vers un centre doit être **plus courte** qu'une arête de référence. Remplacer le corps de `idealEdgeLength` par :
 
 ```ts
+        // ⚠️ Piège mesuré, ne pas « optimiser » en sens inverse : la longueur
+        // idéale est la même pour TOUTES les arêtes, y compris celles d'agrégat.
+        // fcose calibre son échelle d'espacement interne sur la longueur idéale
+        // MOYENNE de toutes les arêtes ; raccourcir les arêtes d'agrégat fait
+        // chuter cette moyenne, contracte l'échelle globale, et affaiblit la
+        // séparation entre composantes disjointes — au point de détruire le
+        // signal de proximité que les références sont censées produire.
+        //
+        // La distance à laquelle une arête veut se poser et la FORCE avec
+        // laquelle elle tire sont deux choses distinctes. L'attraction
+        // d'agrégat s'exprime en élasticité, ci-dessous.
         idealEdgeLength: (edge: cytoscape.EdgeSingular) => {
           const s = sizes.get(edge.source().id()) ?? { width: 160, height: 40 }
           const t = sizes.get(edge.target().id()) ?? { width: 160, height: 40 }
-          const base = (s.width + t.width) / 2 + options.separationMargin * 2
-          // Une arête d'agrégat (source `__agg:`) tire plus fort, donc plus court.
-          return edge.source().id().startsWith("__agg:") ? base / options.clusterPull : base
+          return (s.width + t.width) / 2 + options.separationMargin * 2
         },
+        edgeElasticity: (edge: cytoscape.EdgeSingular) =>
+          edge.source().id().startsWith("__agg:") ? 0.45 * options.clusterPull : 0.45,
 ```
 
 Les centres n'apparaissent jamais dans le résultat : la boucle de relecture des positions itère sur `entityIds`, qui ne les contient pas. Rien à retirer.

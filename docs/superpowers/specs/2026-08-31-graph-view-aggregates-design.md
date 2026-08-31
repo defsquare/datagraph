@@ -194,8 +194,6 @@ export interface GraphLayoutEngine {
 }
 
 export interface GraphLayoutOptions {
-  /** Poids d'attraction d'un membre vers le centre virtuel de son agrégat. */
-  clusterPull?: number
   /** Marge entre une carte et le bord de l'enveloppe de son agrégat. */
   hullPadding?: number
   /** Marge garantie entre deux cartes par la passe de séparation. */
@@ -216,12 +214,25 @@ Le moteur, sur cytoscape + fcose (le couple validé par la sonde) :
    `visible`.
 2. **Arêtes** : `graph.refEdges` non cassées, dont les deux extrémités sont
    visibles.
-3. **Regroupement par centres virtuels** : un nœud invisible de taille nulle
-   par agrégat (id préfixé `__agg:`), relié à chacun de ses membres visibles
-   par une arête courte de poids `clusterPull`. Les membres d'un même agrégat
-   se regroupent mécaniquement ; une entité partagée est tirée par deux centres
-   et se pose entre eux, ce qui est le comportement voulu. Les centres sont
-   **retirés du résultat** — ils ne sont ni positionnés ni dessinés.
+3. **Regroupement : rien de plus que les références.** L'appartenance à un
+   agrégat est *définie* par l'accessibilité le long des `refEdges`, donc tout
+   membre est déjà relié à sa racine par un chemin de références présent dans
+   le layout. Les membres d'un même agrégat se regroupent d'eux-mêmes.
+
+   > **Mesuré, pas supposé.** Une première version ajoutait un nœud-centre
+   > invisible par agrégat, relié à chacun de ses membres, pour renforcer le
+   > regroupement. La mesure dit l'inverse : le centre ré-encode une information
+   > que le graphe porte déjà, et occupe de la place entre les membres mêmes
+   > qu'il devait rassembler. Les co-membres finissent **2,2 à 2,4× plus
+   > éloignés** à profondeur 1 et 2, pour un gain nul — dans le bruit — sur les
+   > fan-outs larges. Le mécanisme a été retiré. Ne pas le réintroduire sans
+   > mesure contraire.
+
+   Le chevauchement ne dépend pas de ce mécanisme, et c'est ce qui a permis de
+   le retirer : une entité appartenant à deux agrégats est tirée vers ses deux
+   racines par ses propres références, et les enveloppes étant calculées par
+   agrégat à partir des positions de ses membres, elle tombe dans les deux
+   polygones.
 4. **Amorçage déterministe** : la position initiale de chaque sommet est
    dérivée d'un hachage de son `NodeId`, projetée sur un disque, et fcose
    tourne avec `randomize: false`. Le placement spectral aléatoire de fcose est
