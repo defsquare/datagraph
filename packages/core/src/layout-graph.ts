@@ -178,12 +178,10 @@ export function createGraphLayoutEngine(opts: GraphLayoutOptions = {}): GraphLay
       // comportement voulu sous chevauchement, et c'est pourquoi ce montage
       // supporte l'appartenance multiple là où des boîtes compound ne le
       // pourraient pas (cytoscape n'accepte qu'un parent par nœud).
-      const centreIds: string[] = []
       for (const aggregate of aggregates.aggregates.values()) {
         const members = [...aggregate.memberIds].filter((id) => entitySet.has(id)).sort()
         if (members.length === 0) continue
         const centreId = `__agg:${aggregate.id}`
-        centreIds.push(centreId)
         elements.push({
           group: "nodes",
           data: { id: centreId, w: 1, h: 1 },
