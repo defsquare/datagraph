@@ -21,6 +21,49 @@ export const shopConfig: DataGraphConfig = {
   references: { Order: { customerId: "Customer" } },
 }
 
+/** Un Order référence à la fois un Customer et un Product, les deux racines :
+ * égalité de distance, donc chevauchement. */
+export const twoRootsData = {
+  customers: [{ id: "c1", name: "Dupont" }],
+  products: [{ id: "p9", name: "Vis" }],
+  orders: [{ id: "o3", customerId: "c1", productId: "p9" }],
+}
+
+export const twoRootsConfig: DataGraphConfig = {
+  entities: {
+    Customer: { match: "$.customers[*]", id: "id" },
+    Product: { match: "$.products[*]", id: "id" },
+    Order: { match: "$.orders[*]", id: "id" },
+  },
+  references: { Order: { customerId: "Customer", productId: "Product" } },
+  aggregates: ["Customer", "Product"],
+}
+
+/** Chaîne LineItem -> Order -> Customer : appartenance transitive à 2 sauts.
+ * Et Customer -> Country, Country racine elle aussi : c'est le cas « hub »,
+ * qui doit rester borné. */
+export const chainData = {
+  countries: [{ id: "fr", name: "France" }],
+  customers: [{ id: "c1", name: "Dupont", countryId: "fr" }],
+  orders: [{ id: "o1", customerId: "c1" }],
+  lines: [{ id: "l1", orderId: "o1" }],
+}
+
+export const chainConfig: DataGraphConfig = {
+  entities: {
+    Country: { match: "$.countries[*]", id: "id" },
+    Customer: { match: "$.customers[*]", id: "id" },
+    Order: { match: "$.orders[*]", id: "id" },
+    LineItem: { match: "$.lines[*]", id: "id" },
+  },
+  references: {
+    Customer: { countryId: "Country" },
+    Order: { customerId: "Customer" },
+    LineItem: { orderId: "Order" },
+  },
+  aggregates: ["Customer", "Country"],
+}
+
 /** Génère ~`n` nœuds logiques pour les tests de perf/échelle. */
 export function bigShop(n: number) {
   const customers = [], orders = []
