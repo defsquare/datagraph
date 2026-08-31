@@ -9,7 +9,7 @@ export {
 export type { Theme, ThemeOverride, TypeStyle } from "./theme.js";
 
 export { createDataGraph } from "./create.js";
-export type { DataGraph, DataGraphOptions, DataGraphEvent } from "./create.js";
+export type { DataGraph, DataGraphOptions, DataGraphEvent, DataGraphView } from "./create.js";
 
 export { Camera } from "./camera.js";
 export type { Size } from "./camera.js";
@@ -18,6 +18,7 @@ export {
   drawNode,
   drawEdges,
   drawEdgeHitAreas,
+  drawHulls,
   drawSelectionOverlay,
   drawSearchHighlights,
   lodForScale,
@@ -26,7 +27,7 @@ export {
   charWidthFor,
   truncateToWidth,
 } from "./draw.js";
-export type { Lod, EdgeHit, TextRole } from "./draw.js";
+export type { Lod, EdgeHit, EdgeMode, TextRole } from "./draw.js";
 
 export { measureFontMetrics, fontsReady } from "./font-metrics.js";
 
