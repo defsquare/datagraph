@@ -54,14 +54,59 @@ graph.on("select", (node) => console.log("selected:", node.label));
 
 `createDataGraph` returns a `DataGraph` handle with `fit`, `expand`,
 `collapse`, `focus`, `select`, `search`, `nextMatch`, `prevMatch`, `on`,
-`setData`, `diagnostics`, and `destroy` — full descriptions in the
+`setData`, `diagnostics`, `stats`, `refEdges`, `setTheme`, and `destroy` —
+full descriptions in the
 [root README's API table](https://github.com/defsquare/data-graph#public-api--datagraph).
 
 ## Themes
 
-Ships `defsquareTheme` (default), `neutralLightTheme`, `neutralDarkTheme`,
-and a `ThemeOverride` type for per-instance customization. See the
-[root README](https://github.com/defsquare/data-graph#themes) for details.
+Ships four built-in themes — `defsquareLight` (default), `defsquareDark`,
+`neutralLight`, `neutralDark` — plus `resolveTheme(partial?, base?)`,
+`entityAccentMap(entityTypes, theme)`, and a `ThemeOverride` type for
+per-instance customization.
+
+```ts
+import { createDataGraph, defsquareDark, resolveTheme } from "@defsquare/data-graph";
+
+// Partial override: any token not mentioned comes from defsquareLight.
+const graph = createDataGraph(el, {
+  data,
+  config,
+  theme: {
+    accent: { selection: "#0ea5e9" },
+    byEntityType: { Customer: { accent: "#3dbf9e" } },
+  },
+});
+
+// Full swap to the dark theme, live.
+graph.setTheme(defsquareDark);
+
+// Or a variant of the dark theme.
+graph.setTheme(resolveTheme({ surface: { canvas: "#000000" } }, defsquareDark));
+```
+
+`Theme` is grouped by role rather than a flat color bag: `surface.{canvas,card,cardMuted}`,
+`ink.{primary,muted,subtle,onAccent}`, `accent.{entity,selection,match,matchStroke,danger}`,
+`edge.{contain,ref,dangling,hairline,border}`, `typography.{header,badge,key,value}`
+(each a `{family,size,weight,tracking?}`), `radii.{card,badge}`,
+`strokes.{border,edge,selection,match,matchCurrent}`, `entityPalette: string[]`,
+an optional `byEntityType: Record<string, { accent: string }>`, and `fonts.{body,mono}`.
+`theme` in `createDataGraph`'s options is a `ThemeOverride` — any subset of
+that shape. `resolveTheme(partial?, base?)` performs the merge (one level
+deep per group, onto `base`, default `defsquareLight`); it's what
+`createDataGraph` and `setTheme` call internally, and you can call it
+yourself to build a variant of a specific built-in theme, as above.
+
+`setTheme(theme)` swaps the theme on a live instance and redraws
+immediately. It does **not** re-run layout or re-measure fonts — safe for
+toggling between themes that share `typography`/`fonts` (any light/dark pair
+shipped here), but not for changing those two groups themselves; that
+requires a fresh `createDataGraph`. It merges through `resolveTheme` against
+the theme currently in effect, so a `byEntityType` set earlier survives a
+plain light/dark swap unless the new call overrides it.
+
+See the [root README](https://github.com/defsquare/data-graph#themes) for
+more on the theme/config relationship.
 
 ## License
 

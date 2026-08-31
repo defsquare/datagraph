@@ -131,42 +131,51 @@ Returned by `createDataGraph(container, options)`.
 | `on(event, callback): () => void` | Subscribes to `"select"` (`GraphNode`) or `"followRef"` (`RefEdge`); returns an unsubscribe function. |
 | `setData(data, config?): Promise<void>` | Rebuilds the whole graph against new data (and optionally a new config), resetting search/selection state. |
 | `diagnostics(): Diagnostic[]` | Returns build-time diagnostics: dangling references, duplicate ids, missing id fields. |
+| `stats(): { logicalNodeCount, visibleNodeCount }` | Counters for a host status bar: `logicalNodeCount` is every node in the built graph, `visibleNodeCount` is how many are currently expanded/rendered. |
+| `refEdges(from): RefEdge[]` | The outgoing reference edges of node `from`, so a host can offer "follow reference" affordances without knowing graph internals. |
+| `setTheme(theme)` | Replaces the theme and redraws, without rerunning layout or re-measuring fonts. Accepts a full `Theme` or a `ThemeOverride`, merged via `resolveTheme` against the theme currently in effect — a `byEntityType` set earlier survives a plain theme swap. Safe for toggling between themes that share the same `typography`/`fonts` (e.g. a light/dark pair); changing those two groups needs a fresh `createDataGraph`. |
 | `destroy()` | Tears down the Pixi application and releases all resources. |
 
 ## Themes
 
-`@defsquare/data-graph` ships three built-in themes and lets you override any
-subset of colors/fonts per instance:
+`@defsquare/data-graph` ships four built-in themes and lets you override any
+subset of theme tokens per instance:
 
 | Theme | Description |
 | --- | --- |
-| `defsquareTheme` | Default — light background, Defsquare brand colors. Used automatically when no `theme` option is passed. |
-| `neutralLightTheme` | Generic light theme with no brand styling. |
-| `neutralDarkTheme` | Generic dark theme. |
+| `defsquareLight` | Default — light background, Defsquare brand colors. Used automatically when no `theme` option is passed. |
+| `defsquareDark` | Defsquare brand colors on a dark background. |
+| `neutralLight` | Generic light theme with no brand styling. |
+| `neutralDark` | Generic dark theme. |
 
 ```ts
-import { createDataGraph, neutralDarkTheme } from "@defsquare/data-graph";
+import { createDataGraph, defsquareDark } from "@defsquare/data-graph";
 
-createDataGraph(container, {
+const graph = createDataGraph(container, {
   data,
   config,
   theme: {
-    fonts: neutralDarkTheme.fonts,
-    colors: { ...neutralDarkTheme.colors, entity: "#22c55e" },
+    accent: { selection: "#0ea5e9" },
     byEntityType: { Order: { accent: "#f59e0b" } },
   },
 });
+
+// Swap to the dark theme at runtime, in place — no relayout, no re-measuring
+// fonts, so this is safe for a light/dark toggle.
+graph.setTheme(defsquareDark);
 ```
 
-`ThemeOverride` accepts a partial `fonts` object, a partial `colors` object,
-and an optional `byEntityType` map for per-entity-type accent colors; any
-field left out falls back to `defsquareTheme`'s value. When starting from a
-built-in theme like `neutralDarkTheme`, merge its `colors` object explicitly
-(`{ ...neutralDarkTheme.colors, ... }`) rather than spreading the whole theme
-alongside your override — spreading both at the top level lets a partial
-`colors` override replace the base theme's `colors` entirely, and any gaps
-left in that replaced object would then fall back to `defsquareTheme`'s
-colors instead of `neutralDarkTheme`'s.
+A `Theme` is grouped by role rather than a flat color bag: `surface`,
+`ink`, `accent`, `edge`, `typography`, `radii`, `strokes`, `entityPalette`,
+an optional `byEntityType`, and `fonts` — see
+[`packages/renderer/src/theme.ts`](./packages/renderer/src/theme.ts) for the
+full shape. `theme` in `createDataGraph`'s options is a `ThemeOverride`: any
+subset of that shape, deep-merged one level per group onto `defsquareLight`.
+That merge is `resolveTheme(partial?, base?)`, exported alongside the themes
+so you can build your own variant of any built-in theme (`resolveTheme(partial,
+defsquareDark)`) or call it yourself before passing the result to `setTheme`.
+See the [renderer package README](./packages/renderer/README.md#themes) for
+the full token list and more examples.
 
 ## Performance budgets
 
