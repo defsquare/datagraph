@@ -70,22 +70,30 @@ function createContext(): CanvasRenderingContext2D | null {
  * mesure la pile de repli, silencieusement (c'est exactement le bug que
  * `fontsReady` existe pour empêcher). On force donc explicitement, via
  * `document.fonts.load()`, le chargement de chacun des quatre rôles
- * typographiques du thème avant de courir contre `ready`/le timeout ; un
- * rejet de `load()` (police introuvable, réseau) est toléré, `ready`/le
- * timeout restent le filet de sécurité.
+ * typographiques du thème ; un rejet de `load()` (police introuvable,
+ * réseau) est toléré pour qu'une seule police manquante n'empoisonne pas le
+ * lot.
+ *
+ * Le `Promise.all` des `load()` PUIS `ready` doivent courir ENSEMBLE contre
+ * le timeout, dans un seul `Promise.race` — pas le timeout après eux. Un
+ * `load()` dont la promesse ne se règle jamais (fetch de police bloqué,
+ * connexion en rade) ferait sinon pendre le `Promise.all` indéfiniment, le
+ * `race` ne serait jamais atteint, et l'initialisation de `createDataGraph`
+ * bloquerait pour toujours — pire que l'absence de `load()` d'avant, qui
+ * était toujours bornée par le timeout. C'est le piège que cette forme évite.
  */
 export async function fontsReady(theme: Theme, timeoutMs: number): Promise<void> {
   const fonts = (globalThis as { document?: { fonts?: FontFaceSet } }).document?.fonts;
   if (!fonts?.ready) return;
 
   const roles: (keyof Theme["typography"])[] = ["header", "badge", "key", "value"];
-  await Promise.all(
+  const warm = Promise.all(
     roles.map((role) => {
       const s = theme.typography[role];
       const family = s.family === "body" ? theme.fonts.body : theme.fonts.mono;
       return fonts.load(`${s.weight} ${s.size}px ${family}`).catch(() => undefined);
     }),
-  );
+  ).then(() => fonts.ready);
 
-  await Promise.race([fonts.ready, new Promise((r) => setTimeout(r, timeoutMs))]);
+  await Promise.race([warm, new Promise((r) => setTimeout(r, timeoutMs))]);
 }

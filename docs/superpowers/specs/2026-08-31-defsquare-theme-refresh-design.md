@@ -88,7 +88,6 @@ export interface Theme {
     primary: string     // libellés, valeurs
     muted: string       // clés
     subtle: string      // compteurs, méta
-    onAccent: string    // texte posé sur un aplat d'accent
   }
 
   accent: {
@@ -96,7 +95,6 @@ export interface Theme {
     selection: string
     match: string         // remplissage lavé des résultats de recherche
     matchStroke: string
-    danger: string
   }
 
   edge: {
@@ -114,7 +112,7 @@ export interface Theme {
     value: TypeStyle
   }
 
-  radii: { card: number; badge: number }
+  radii: { card: number }
 
   strokes: {
     border: number      // 1
@@ -150,12 +148,10 @@ uniquement au contraste — bordure 1px nette sur un canvas plus sourd — et le
 | `ink.primary` | `#172741` | `--color-ink` |
 | `ink.muted` | `#4b5563` | `--color-fg-muted` |
 | `ink.subtle` | `#9ca3af` | `--color-fg-subtle` |
-| `ink.onAccent` | `#ffffff` | `--color-bg` |
 | `accent.entity` | `#1e416e` | `--color-primary-400` |
 | `accent.selection` | `#f65e5e` | `--color-accent` |
 | `accent.match` | `#EDE2CF` | `--color-beige-soft` |
 | `accent.matchStroke` | `#8d7e63` | `--color-beige-deep` |
-| `accent.danger` | `#f65e5e` | `--color-danger` |
 | `edge.contain` | `#c7cdd6` | **dérivé** (entre `--color-border` et `--color-fg-subtle`) |
 | `edge.ref` | `#2a5a98` | `--color-primary-500` |
 | `edge.dangling` | `#d97706` | `--color-warning` |
@@ -172,12 +168,10 @@ uniquement au contraste — bordure 1px nette sur un canvas plus sourd — et le
 | `ink.primary` | `#f0f5fc` | `--color-primary-50` |
 | `ink.muted` | `#9BB2D9` | `--color-blue-soft` |
 | `ink.subtle` | `#6b7794` | **dérivé** |
-| `ink.onAccent` | `#ffffff` | `--color-bg` |
 | `accent.entity` | `#3573c3` | `--color-primary-600` |
 | `accent.selection` | `#f65e5e` | `--color-accent` |
 | `accent.match` | `#3a3323` | **dérivé** (beige désaturé pour fond sombre) |
 | `accent.matchStroke` | `#E2CA9E` | `--color-beige` |
-| `accent.danger` | `#f65e5e` | `--color-danger` |
 | `edge.contain` | `#3a4159` | **dérivé** |
 | `edge.ref` | `#3573c3` | `--color-primary-600` |
 | `edge.dangling` | `#e0932e` | **dérivé** (`--color-warning` éclairci) |
@@ -427,3 +421,25 @@ Les thèmes `neutralLightTheme` et `neutralDarkTheme` sont portés vers le nouve
 sans redesign — ils restent des points de départ neutres pour les consommateurs qui ne
 veulent pas de la marque defsquare. Aucun travail sur l'export, l'édition, ou les
 performances au-delà de la vérification de non-régression au bench.
+
+## Amendements
+
+Écarts entre ce document et l'implémentation livrée, constatés en revue finale et corrigés
+ici pour que le contrat décrit soit celui qui existe réellement.
+
+- **`railWidth` : 3 → 4.** La bordure de la carte est tracée centrée sur le tracé
+  extérieur et repeint donc `strokes.border` px (1px) du bord gauche de la bande d'accent.
+  `railWidth` doit valoir la largeur de la bande AVANT ce repeint pour que le rail
+  effectivement visible fasse les 3px voulus : `railWidth - strokes.border` = `4 - 1` = `3`.
+- **`radii.badge`, `accent.danger` et `ink.onAccent` retirés du contrat.** Aucun site
+  d'appel ne les lisait. Sur une première publication, ajouter un token plus tard n'est pas
+  une rupture, alors qu'en retirer un l'est — d'où leur suppression avant plutôt qu'après
+  publication.
+- **La pastille de type est du texte tracké en capitales, pas une puce remplie.** C'est la
+  raison structurelle pour laquelle `radii.badge` n'avait aucun lecteur : rien dans
+  `drawNode` ne dessine de fond arrondi derrière le texte de la pastille.
+- **API publique élargie au-delà de ce document** : `setTheme`, `stats()` et
+  `refEdges(from)` ont été ajoutés à `DataGraph`. `fontsReady` et `measureFontMetrics` sont
+  exportés du renderer pour qu'un consommateur qui alimente le moteur de layout du core
+  avec ses propres mesures de police puisse attendre le chargement des polices web avant de
+  mesurer.
