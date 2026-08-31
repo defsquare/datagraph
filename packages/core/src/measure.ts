@@ -30,7 +30,7 @@ export const DEFAULT_METRICS: NodeMetrics = {
   rowHeight: 19,
   paddingX: 12,
   paddingBottom: 7,
-  railWidth: 3,
+  railWidth: 4,
   gapKeyValue: 16,
   chevronWidth: 14,
   headerCharWidth: 6.5,
