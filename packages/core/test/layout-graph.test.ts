@@ -311,12 +311,12 @@ describe("cluster separation", () => {
     60_000,
   )
 
-  it("exempts two aggregates that share a member entity", async () => {
+  it("merges two aggregates that share a member entity into one rigid block", async () => {
     // /orders/0 est à distance égale de Customer#c1 et Product#p9 : il
-    // appartient aux DEUX agrégats. Leurs enveloppes se recouvrent donc par
-    // construction — les écarter reviendrait à déchirer la carte partagée. La
-    // passe laisse ce couple tranquille, et c'est le seul cas où deux
-    // enveloppes ont le droit de se croiser.
+    // appartient aux DEUX agrégats. Les écarter reviendrait à déchirer la
+    // carte partagée, donc la passe les FUSIONNE en un super-cluster qui se
+    // déplace d'un bloc. Leurs enveloppes se croisent alors par construction —
+    // c'est le seul cas où deux enveloppes ont le droit de se croiser.
     const graph = buildGraph(twoRootsData, twoRootsConfig)
     const aggregates = buildAggregates(graph, validateConfig(twoRootsConfig))
     const visible = new Set(
@@ -328,11 +328,12 @@ describe("cluster separation", () => {
     const [a, b] = result.clusters
     expect(boxesOverlap(boxOf(a!.polygon), boxOf(b!.polygon))).toBe(true)
 
-    // Cette assertion-là ne suffit PAS à prouver l'exemption : les deux
+    // Cette assertion-là ne suffit PAS à prouver la fusion : les deux
     // enveloppes contiennent la carte partagée, donc elles se croisent même si
-    // la passe les a écartées. On compare donc aux positions obtenues avec la
-    // passe désactivée : sur ce fixture, tous les clusters sont exemptés, donc
-    // la passe ne doit RIEN déplacer.
+    // la passe les avait écartées. On compare donc aux positions obtenues avec
+    // la passe désactivée : sur ce fixture les deux agrégats couvrent toutes
+    // les entités et fusionnent en UN super-cluster, donc il ne reste rien à
+    // écarter et la passe ne doit RIEN déplacer.
     const untouched = await createGraphLayoutEngine({ clusterGap: 0 }).layout(graph, aggregates, visible)
     expect([...result.positions.entries()]).toEqual([...untouched.positions.entries()])
   })

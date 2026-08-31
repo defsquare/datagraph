@@ -29,7 +29,16 @@ import {
 // d'exécution vers le moteur est l'`import()` dynamique de `ensureGraphEngine`.
 // `test/bundle-purity.test.ts` (côté renderer) garde ces deux lignes : le test
 // du cœur ne couvre que le `dist/` du cœur, pas ce fichier-ci.
-import type { GraphLayoutEngine, GraphLayoutResult } from "@defsquare/data-graph-core/graph-layout";
+import type {
+  GraphLayoutEngine,
+  GraphLayoutOptions,
+  GraphLayoutResult,
+} from "@defsquare/data-graph-core/graph-layout";
+// Relais et non réexport : `export … from "<ce specifier>"` est interdit par
+// `test/bundle-purity.test.ts`, y compris sous forme type-only. Réexporter le
+// symbole déjà importé ci-dessus donne le même service aux consommateurs sans
+// écrire la forme interdite.
+export type { GraphLayoutOptions };
 import { entityAccentMap, resolveTheme, type Theme, type ThemeOverride } from "./theme.js";
 import { pixiFontRegistry } from "./font-registry.js";
 import { fontsReady, measureFontMetrics } from "./font-metrics.js";
@@ -66,6 +75,14 @@ export interface DataGraphOptions {
    * `"graph"` met en page les entités et leurs références, groupées par
    * agrégat. */
   view?: DataGraphView;
+  /** Réglages de la mise en page de la vue graphe, passés tels quels à
+   * `createGraphLayoutEngine`. Le plus utile est `clusterGap` (160 px par
+   * défaut), l'écart ouvert entre deux enveloppes d'agrégats : c'est un
+   * réglage d'œil, qui dépend de la densité des données et de la taille de
+   * l'écran, et il doit pouvoir se régler sans toucher au cœur. Les valeurs
+   * sont lues au premier passage en vue graphe ; les changer après coup
+   * demande de recréer l'instance. */
+  graphLayoutOptions?: GraphLayoutOptions;
 }
 
 export type DataGraphEvent = "select" | "followRef";
@@ -299,7 +316,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   async function ensureGraphEngine(): Promise<GraphLayoutEngine> {
     if (!graphEngine) {
       const mod = await import("@defsquare/data-graph-core/graph-layout");
-      graphEngine = mod.createGraphLayoutEngine();
+      graphEngine = mod.createGraphLayoutEngine(options.graphLayoutOptions);
     }
     return graphEngine;
   }

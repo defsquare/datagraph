@@ -1,5 +1,13 @@
 # Vue graphe (entités, références, agrégats) — plan d'implémentation
 
+> **Note postérieure — ce plan décrit du code partiellement retiré depuis.** Le
+> pli d'agrégat, le chevron de la carte racine et l'épinglage (`layoutAfterExpand`
+> / `layoutAfterCollapse`, `AggregateCollapseState`) ont été supprimés après
+> coup ; un écartement des agrégats (`cluster-separate.ts`) a été ajouté. Le
+> corps du plan reste tel qu'écrit, comme trace datée ; l'état courant est décrit
+> dans `docs/superpowers/specs/2026-08-31-graph-view-aggregates-design.md`, dont
+> les sections concernées sont annotées RETIRÉ.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ajouter une seconde vue « graphe » où les sommets sont les entités, les arêtes les références, et les entités regroupées en agrégats déclarés — la vue structure existante restant strictement inchangée.

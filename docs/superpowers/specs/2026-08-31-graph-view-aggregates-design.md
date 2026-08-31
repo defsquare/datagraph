@@ -290,17 +290,53 @@ proche voisin. Cette passe-ci reprend la même mécanique de relaxation à la
 granularité du cluster : boîte englobante par agrégat, poussée le long de l'axe
 de moindre pénétration jusqu'à `clusterGap`, puis **translation rigide** de
 chaque membre par le déplacement total de son cluster. C'est la rigidité qui la
-rend sûre : la géométrie interne d'un agrégat est préservée au bit près.
+rend sûre : la géométrie interne d'un agrégat traverse la passe intacte, et
+comme rien ne relance `separateOverlaps` derrière, c'est aussi ce qui garantit
+qu'aucun recouvrement de cartes n'y apparaît.
 
-Trois cas particuliers : une entité de plusieurs agrégats reçoit la MOYENNE des
-translations de ses clusters ; deux agrégats partageant un membre sont exemptés
-(les écarter n'aurait pas de sens et la passe ne convergerait pas) ; une entité
-sans agrégat forme un cluster d'un seul, pour être poussée hors des enveloppes
-voisines. La sortie anticipée compare à une épsilon et non à zéro : elle se
-déclenche vraiment, contrairement à celle de `separateOverlaps`.
+Deux cas particuliers. Une entité sans agrégat forme un cluster d'un seul, pour
+être poussée hors des enveloppes voisines. Et **les agrégats qui partagent une
+entité fusionnent** en un super-cluster, par union-find, avant la relaxation :
+une entité partagée est membre à part entière de chacun de ses agrégats, donc
+lui donner un déplacement propre la détacherait de ses co-membres. Des agrégats
+tricotés par une entité commune ne se séparent pas sans la déchirer ; ils se
+déplacent ensemble, et leurs enveloppes continuent de se croiser.
 
-`clusterGap` vaut 240 px par défaut, **calibré par mesure** — le balayage
-complet est dans `DEFAULTS` (`layout-graph.ts`). À NE PAS refaire en allongeant
+> **Mesuré, pas supposé.** Une première version donnait à l'entité partagée la
+> MOYENNE des translations de ses agrégats, et se contentait d'exempter la
+> paire d'agrégats qui la partage. Cette exemption ne protège que d'une poussée
+> ENTRE ces deux-là : dès qu'un TIERS cluster pousse l'un des deux, les deux
+> déplacements diffèrent, la moyenne détache la carte partagée de ses
+> co-membres, et des cartes se recouvrent — reproduit sur un cas à trois
+> clusters : distances intra-agrégat 120 → 62,50 px et 60 → 2,50 px, une paire
+> de cartes en recouvrement. Aucun fixture du dépôt ne pouvait le voir : tous
+> ceux qui ont des membres partagés n'ont que DEUX clusters, tous deux exemptés,
+> donc rien ne bougeait. La fusion supprime le cas au lieu de le rattraper, et
+> rend moyenne comme exemption inutiles. Une note de garde, à ne pas perdre :
+> la boucle de relaxation ne voyait jamais l'entité partagée (boîtes calculées
+> avant, moyenne appliquée après), donc retirer l'exemption n'aurait PAS empêché
+> la convergence — c'est justement en croyant les deux couplés qu'on a manqué le
+> défaut.
+
+**Coût de la fusion, mesuré.** Elle est transitive : A partage avec B, B avec C,
+donc les trois n'en font qu'un. Sur une racine unique (le cas du dépôt et de la
+démo) il n'y a aucun partage, donc aucune fusion. Sur deux racines dont chaque
+commande référence son client ET son produit : 334 agrégats → 167 super-clusters
+de 3 cartes, sans effet visible. Mais avec un CATALOGUE partagé, la fusion
+dégénère : 20 produits → 20 super-clusters (le plus gros 19 cartes), 3 produits
+→ 3 super-clusters (le plus gros 113 cartes, 33 % du graphe), 1 produit → un
+seul super-cluster couvrant 100 % du graphe, où la passe ne peut plus rien
+écarter. C'est sémantiquement correct — ces agrégats sont réellement inséparables
+— mais l'effet pratique est que l'écartement ne s'applique pas à ces données-là.
+À savoir avant de compter dessus sur un modèle à hub.
+
+La sortie anticipée compare à une épsilon et non à zéro : elle se déclenche
+vraiment, contrairement à celle de `separateOverlaps`.
+
+`clusterGap` vaut 160 px par défaut, **calibré par mesure** — le balayage
+complet est dans `DEFAULTS` (`layout-graph.ts`) — et se règle depuis
+`createDataGraph` via `graphLayoutOptions`, puisque c'est un réglage d'œil. À NE
+PAS refaire en allongeant
 `idealEdgeLength` des arêtes inter-agrégats : fcose calibre son échelle de
 répulsion sur la MOYENNE des longueurs idéales, donc allonger un sous-ensemble
 gonfle toute la mise en page au lieu d'ouvrir les couloirs. C'était déjà essayé
@@ -467,7 +503,7 @@ d'entités qui est plus petit et bien moins dense :
 | | valeur attendue |
 |---|---|
 | Ratio de bbox | ~1:1,5 (contre 1:21 aujourd'hui) |
-| Remplissage | ~45 % (contre 2,5 %) |
+| ~~Remplissage~~ | RÉVISÉ : ~43 % atteint sans écartement des clusters, mais **7,9 %** au `clusterGap` de 160 px — prix assumé de l'écartement demandé, `fit()` recadrant de toute façon |
 | Chevauchement de cartes | 0 |
 | `layout()` initial | < 3 s à 1000 entités |
 | Écart entre deux runs identiques | **0 px** (exigence, pas budget) |

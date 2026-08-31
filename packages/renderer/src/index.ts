@@ -9,7 +9,18 @@ export {
 export type { Theme, ThemeOverride, TypeStyle } from "./theme.js";
 
 export { createDataGraph } from "./create.js";
-export type { DataGraph, DataGraphOptions, DataGraphEvent, DataGraphView } from "./create.js";
+export type {
+  DataGraph,
+  DataGraphOptions,
+  DataGraphEvent,
+  DataGraphView,
+  // Relayé par `create.ts` et non réexporté directement depuis
+  // `@defsquare/data-graph-core/graph-layout` : `test/bundle-purity.test.ts`
+  // interdit toute forme `export … from` vers ce specifier, y compris
+  // type-only. Passer par `create.ts`, qui en fait déjà un `import type`,
+  // donne le type aux consommateurs sans toucher à cette garde.
+  GraphLayoutOptions,
+} from "./create.js";
 
 export { Camera } from "./camera.js";
 export type { Size } from "./camera.js";

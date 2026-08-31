@@ -140,10 +140,29 @@ from that chevron; it was removed.
 
 **Cluster spacing.** Aggregate envelopes are spaced apart by a dedicated pass
 (`separateClusters`, core-side) that translates each cluster rigidly, so
-nothing inside an aggregate moves relative to anything else in it. The gap is
-`clusterGap`, 240 px by default and calibrated by measurement — see the
+nothing inside an aggregate moves relative to anything else in it. Aggregates
+sharing an entity are merged into one rigid block rather than pulled apart.
+The gap is `clusterGap`, **160 px** by default and calibrated by measurement —
+see the
 [root README's graph-view budgets](https://github.com/defsquare/data-graph#graph-view)
-for the numbers.
+for the numbers and for what the merge costs on hub-shaped data.
+
+How wide the corridors should be is a matter of eye, screen size and data
+density, so it is settable per instance rather than baked into core:
+
+```ts
+const graph = createDataGraph(container, {
+  data,
+  config,
+  view: "graph",
+  // Any GraphLayoutOptions field: clusterGap, hullPadding, separationMargin,
+  // separationIterations. Read once, when the graph view is first built.
+  graphLayoutOptions: { clusterGap: 240 },
+});
+```
+
+`GraphLayoutOptions` is re-exported from this package, so you can type the
+object without depending on `@defsquare/data-graph-core` directly.
 
 **Selection carry-over.** The graph view only knows entities — a structure
 node nested under one (e.g. an address object) has no counterpart there.

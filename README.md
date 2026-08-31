@@ -217,8 +217,8 @@ package's README for the latest numbers and any documented deviation.
 | --- | --- | --- |
 | Card overlap after layout | Zero overlapping pairs, always. The stronger `separationMargin` gap between every pair is measured and asserted at 334 cards; past ~450 the iteration cap can leave a few pairs closer than the margin (still never overlapping) — see the note below | `packages/core/test/layout-graph.test.ts` |
 | Determinism | Pixel-identical positions across two runs on the same input | `packages/core/test/layout-graph.test.ts` |
-| Aggregate envelope overlap after layout | Zero overlapping pairs at 167 aggregates, with one exemption: two aggregates that genuinely share a member entity are left interlocking, since neither can move without tearing the shared card | `packages/core/test/layout-graph.test.ts` ("leaves no two aggregate envelopes overlapping" / "exempts two aggregates that share a member entity") |
-| Intra-aggregate geometry under cluster separation | Bit-exact — the pass only translates whole clusters, so pairwise distances inside an aggregate are unchanged, asserted with strict equality rather than a tolerance | `packages/core/test/cluster-separate.test.ts` |
+| Aggregate envelope overlap after layout | Zero overlapping pairs at 167 aggregates. Aggregates that genuinely share a member entity are merged into one rigid block instead of being separated, so their envelopes still cross — that is the intended behavior, not an exception to the budget | `packages/core/test/layout-graph.test.ts` ("leaves no two aggregate envelopes overlapping" / "merges two aggregates that share a member entity into one rigid block") |
+| Intra-aggregate geometry under cluster separation | Exact to floating-point representation — a uniform per-cluster translation, asserted with strict equality rather than a tolerance | `packages/core/test/cluster-separate.test.ts` |
 | `@defsquare/data-graph` bundle purity | `cytoscape` (~178 kB gzip) never enters a consumer's bundle unless it calls `setView("graph")` — the structure view alone doesn't pull it in | `packages/core/test/bundle-purity.test.ts` (core half) + `packages/renderer/test/bundle-purity.test.ts` (renderer half) |
 
 **Separation, measured.** After fcose runs, a relaxation pass (`separateOverlaps`)
@@ -243,23 +243,42 @@ superimposed, and the mean gap to a cluster's nearest neighbour is **0.7 px**.
 So a second relaxation (`separateClusters`) runs after it, at cluster
 granularity: it computes each aggregate's bounding box, pushes boxes closer
 than `clusterGap` apart along their axis of least penetration, and then
-translates each cluster's members **rigidly** by its box's total displacement,
-which is what makes it safe — intra-aggregate geometry survives bit-exact. An
-entity in several aggregates gets the average of their translations; an entity
-in none is its own singleton cluster, so it is pushed out of a neighbour's
-envelope instead of being left inside it. Unlike `separateOverlaps`, its early
-exit compares against an epsilon rather than zero, so it actually converges and
-stops.
+translates each cluster's members **rigidly** by its box's total displacement.
+That rigidity is what makes it safe: intra-aggregate geometry comes through
+untouched, and since nothing re-runs `separateOverlaps` afterwards, it is also
+what guarantees the pass introduces no card overlap. An entity in no aggregate
+is its own singleton cluster, so it is pushed out of a neighbour's envelope
+instead of being left inside it. Unlike `separateOverlaps`, its early exit
+compares against an epsilon rather than zero, so it actually converges and stops.
 
-`clusterGap` defaults to **240 px**, chosen by measurement rather than taste —
-the sweep is recorded in `DEFAULTS` in `packages/core/src/layout-graph.ts`. On
-`bigShop(3000)`: nearest-neighbour gap 0.7 px → 240.2 px, overlapping envelope
-pairs 310 → 0, overall bbox 3494×2969 → 7987×9879 (7.6× the area). On the
-demo's extended dataset: 0.0 → 241.2 px, 138 → 0 overlapping pairs, area 6.5×.
-Card overlap stays at zero throughout. Going further costs canvas fast for a
-diminishing visual gain (320 px is +25% area, 400 px is double 240 px on the
-core fixture), and canvas fill drops from ~43% to ~6% — the accepted price of
-the spacing.
+**Aggregates that share an entity are merged** into a single rigid super-cluster
+(union-find) before the relaxation, rather than being separated. A shared entity
+is a full member of each of its aggregates, so giving it a displacement of its
+own — the average of its aggregates', in an earlier version — detaches it from
+its co-members as soon as a *third* cluster pushes one of them harder than the
+other; that version measurably broke rigidity (intra-aggregate distances 120 →
+62.5 px) and produced card overlaps. Merging removes the case rather than
+patching it. The merge is transitive, and on hub-shaped data it can swallow the
+graph: with a shared catalogue of 3 products across 167 customers, 170
+aggregates collapse into 3 super-clusters (the largest 33% of all cards), and
+with a single shared product into one, where the pass has nothing left to
+separate. That is semantically right — those aggregates cannot be pulled apart
+without tearing a card — but it does mean cluster spacing is a no-op on such
+data. Single-root configurations (this repo's fixtures and the demo) share
+nothing and are unaffected.
+
+`clusterGap` defaults to **160 px**, chosen by measurement rather than taste —
+the sweep is recorded in `DEFAULTS` in `packages/core/src/layout-graph.ts`, and
+the value is settable per instance via `graphLayoutOptions` (see the renderer
+README). Correctness — zero overlapping envelope pairs — is already reached at
+80 px; everything above that buys corridor width, not correctness. On
+`bigShop(3000)` at 160 px: nearest-neighbour gap 0.7 px → 160.0 px, overlapping
+envelope pairs 310 → 0, overall bbox 3494×2969 → 6778×8171 (5.3× the area),
+fill 42.4% → 7.9%. Card overlap stays at zero at every value tested. Going
+further costs canvas faster than it buys legibility: 160 → 240 px is +42% area
+to move fill from 7.9% to 5.6%, and forces `fit()` to zoom out ~2.8×, so cards
+render around a third of their former size at overview and drop to a coarser
+LOD sooner.
 
 Note what this pass is **not**: it is not longer `idealEdgeLength` on
 cross-aggregate edges. That was tried and failed — fcose calibrates its

@@ -101,15 +101,25 @@ const DEFAULTS: Required<GraphLayoutOptions> = {
   // Aucun recouvrement de CARTES à aucune valeur, y compris 0 : la passe de
   // séparation garde son contrat, celle-ci ne fait que translater des blocs.
   //
-  // 240 retenu. Sans la passe, les enveloppes se touchent (0,7 px d'écart
+  // 160 retenu. Sans la passe, les enveloppes se touchent (0,7 px d'écart
   // moyen au plus proche voisin, 310 paires franchement superposées) : elles
-  // sont illisibles. 240 px valent 15× `separationMargin` et environ deux
-  // hauteurs de carte, donc l'écart se voit sans zoom. Au-delà, le gain visuel
-  // s'émousse pendant que la toile enfle vite : 320 coûte déjà +25 % d'aire et
-  // 400 le double de 240 sur le fixture du cœur, pour un couloir à peine plus
-  // large à l'œil. Le remplissage tombe de 43 % à ~6 % — c'est le prix assumé
-  // de l'écartement demandé, et `fit()` recadre de toute façon.
-  clusterGap: 240,
+  // sont illisibles. La CORRECTION — plus aucune paire d'enveloppes en
+  // recouvrement — est déjà acquise à 80 px ; tout ce qui est au-dessus achète
+  // de la largeur de couloir, pas de la justesse. 160 px valent 10×
+  // `separationMargin` et une hauteur et demie de carte : l'écart se voit sans
+  // zoomer, pour ×5,3 d'aire et 7,9 % de remplissage.
+  //
+  // Au-delà, le coût grimpe plus vite que le bénéfice : 160 → 240 coûte +42 %
+  // d'aire pour faire passer le remplissage de 7,9 % à 5,6 %, soit plus près
+  // des 2,5 % de la mise en page que cette vue REMPLACE que des ~43 % d'où
+  // elle part. `fit()` doit alors dézoomer d'un facteur √7,6 ≈ 2,8, donc les
+  // cartes s'affichent au tiers de leur taille en vue d'ensemble et tombent
+  // plus tôt dans les LOD dégradés.
+  //
+  // C'est un réglage d'œil, pas de correction : il est exposé jusque dans
+  // `createDataGraph` via `graphLayoutOptions`, pour se régler sans toucher au
+  // cœur ni reconstruire.
+  clusterGap: 160,
 }
 
 /** Hachage FNV-1a de l'id, base de l'amorçage déterministe des positions. */

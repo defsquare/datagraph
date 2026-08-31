@@ -14,8 +14,8 @@ import type { NodeId } from "./model.js"
  */
 const EPSILON = 1e-6
 
-interface Cluster {
-  /** Membres positionnés, dans l'ordre de `memberIds` puis de `positions`. */
+interface SuperCluster {
+  /** Membres positionnés, dans un ordre stable. */
   members: NodeId[]
   /** Boîte englobante, déplacée en place par la relaxation. */
   box: Rect
@@ -24,7 +24,7 @@ interface Cluster {
   originY: number
 }
 
-function boundingBox(positions: Map<NodeId, Rect>, members: NodeId[]): Rect {
+function boundingBox(positions: Map<NodeId, Rect>, members: Iterable<NodeId>): Rect {
   let minX = Infinity
   let minY = Infinity
   let maxX = -Infinity
@@ -51,19 +51,27 @@ function boundingBox(positions: Map<NodeId, Rect>, members: NodeId[]): Rect {
  * autre, celle-ci ouvre les couloirs entre agrégats pour que les enveloppes se
  * lisent.
  *
- * Trois règles font toute la sûreté de la passe :
+ * Deux règles font toute la sûreté de la passe :
  *
- * 1. **Translation rigide.** Chaque membre encaisse la translation totale de
- *    son cluster, donc la géométrie interne d'un agrégat — les distances entre
- *    ses cartes, le travail de fcose et de la passe de séparation — est
- *    préservée EXACTEMENT, pas à une tolérance près.
- * 2. **Entité partagée : moyenne.** Une entité membre de plusieurs agrégats ne
- *    peut pas suivre deux clusters rigidement ; elle reçoit la MOYENNE des
- *    translations de ses clusters. Corollaire : deux agrégats qui partagent un
- *    membre s'interpénètrent par construction, les écarter n'aurait pas de
- *    sens (et la passe ne convergerait pas), donc ces paires-là sont exemptées.
- * 3. **Entité sans agrégat : cluster d'un seul.** Sans quoi elle resterait
- *    posée à l'intérieur de l'enveloppe d'un voisin qui ne la contient pas.
+ * 1. **Translation rigide.** Chaque carte encaisse la translation de son
+ *    cluster, et une seule, donc la géométrie interne — les distances entre
+ *    cartes, le travail de fcose et de la passe de séparation — traverse la
+ *    passe intacte. Comme rien ne relance `separateOverlaps` derrière, c'est
+ *    aussi ce qui garantit qu'aucun recouvrement de cartes n'apparaît ici.
+ * 2. **Les agrégats qui partagent une entité fusionnent** en un seul
+ *    super-cluster, par union-find, AVANT la relaxation. Une entité partagée
+ *    est membre à part entière de chacun de ses agrégats : lui donner un
+ *    déplacement à elle (la moyenne de ceux de ses agrégats, dans une version
+ *    antérieure) la détache de ses co-membres dès qu'un TIERS pousse l'un des
+ *    agrégats plus que l'autre — la rigidité tombe et des cartes se
+ *    recouvrent. Fusionner est la formulation correcte : des agrégats tricotés
+ *    par une entité commune ne peuvent pas être séparés sans déchirer cette
+ *    carte, donc ils se déplacent ensemble. Leurs enveloppes continuent de se
+ *    croiser, ce qui est le comportement voulu.
+ *
+ * Une entité hors de tout agrégat forme un cluster d'un seul : sans quoi elle
+ * resterait posée à l'intérieur de l'enveloppe d'un voisin qui ne la contient
+ * pas.
  */
 export function separateClusters(
   positions: Map<NodeId, Rect>,
@@ -73,49 +81,85 @@ export function separateClusters(
 ): void {
   if (positions.size < 2 || gap <= 0) return
 
-  // 1. Les clusters, dans un ordre stable : les agrégats d'abord (ordre de
-  //    `aggregates`, qui suit la déclaration de la config), puis les entités
-  //    hors de tout agrégat (ordre de `positions`, lui-même trié par id).
-  const clusters: Cluster[] = []
+  // 1. Les groupes de départ, dans un ordre stable : les agrégats d'abord
+  //    (ordre de `aggregates`, qui suit la déclaration de la config), puis les
+  //    entités hors de tout agrégat (ordre de `positions`, lui-même trié par
+  //    id).
+  const groups: NodeId[][] = []
   for (const aggregate of aggregates.aggregates.values()) {
     const members: NodeId[] = []
     for (const id of aggregate.memberIds) {
       if (positions.has(id)) members.push(id)
     }
-    if (members.length === 0) continue
-    const box = boundingBox(positions, members)
-    clusters.push({ members, box, originX: box.x, originY: box.y })
+    if (members.length > 0) groups.push(members)
   }
-  for (const [id, rect] of positions) {
+  for (const id of positions.keys()) {
     if ((aggregates.byNode.get(id)?.length ?? 0) > 0) continue
-    const box = { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
-    clusters.push({ members: [id], box, originX: box.x, originY: box.y })
+    groups.push([id])
   }
-  if (clusters.length < 2) return
+  if (groups.length < 2) return
 
-  // 2. Entité -> clusters qui la portent, d'où se déduisent les paires
-  //    exemptées (celles qui partagent au moins un membre).
-  const owners = new Map<NodeId, number[]>()
-  clusters.forEach((cluster, index) => {
-    for (const id of cluster.members) {
-      const list = owners.get(id)
-      if (list) list.push(index)
-      else owners.set(id, [index])
+  // 2. Union-find : deux groupes qui partagent une entité n'en font qu'un.
+  //    La fusion est TRANSITIVE — A partage avec B, B avec C, donc les trois
+  //    se déplacent ensemble.
+  const parent = groups.map((_, i) => i)
+  const find = (i: number): number => {
+    let root = i
+    while (parent[root] !== root) root = parent[root]!
+    // Compression de chemin, sans effet sur le résultat mais sur le coût.
+    while (parent[i] !== root) {
+      const next = parent[i]!
+      parent[i] = root
+      i = next
+    }
+    return root
+  }
+  const union = (a: number, b: number): void => {
+    const ra = find(a)
+    const rb = find(b)
+    // Toujours vers le plus petit indice : la fusion ne dépend pas de l'ordre
+    // de découverte, donc le résultat reste déterministe.
+    if (ra === rb) return
+    if (ra < rb) parent[rb] = ra
+    else parent[ra] = rb
+  }
+
+  const firstGroupOf = new Map<NodeId, number>()
+  groups.forEach((members, index) => {
+    for (const id of members) {
+      const seen = firstGroupOf.get(id)
+      if (seen === undefined) firstGroupOf.set(id, index)
+      else union(seen, index)
     }
   })
-  const shared = new Set<string>()
-  for (const list of owners.values()) {
-    if (list.length < 2) continue
-    for (let i = 0; i < list.length; i++) {
-      for (let j = i + 1; j < list.length; j++) {
-        const a = list[i]!
-        const b = list[j]!
-        shared.add(a < b ? `${a} ${b}` : `${b} ${a}`)
-      }
+
+  // 3. Matérialisation des super-clusters, dans l'ordre de leur plus petit
+  //    groupe d'origine. Une entité n'appartient plus qu'à UN seul d'entre eux,
+  //    donc sa translation est sans ambiguïté.
+  const byRoot = new Map<number, SuperCluster>()
+  const clusterOf = new Map<NodeId, SuperCluster>()
+  groups.forEach((members, index) => {
+    const root = find(index)
+    let cluster = byRoot.get(root)
+    if (!cluster) {
+      cluster = { members: [], box: { x: 0, y: 0, width: 0, height: 0 }, originX: 0, originY: 0 }
+      byRoot.set(root, cluster)
     }
+    for (const id of members) {
+      if (clusterOf.has(id)) continue // déjà compté via un autre groupe fusionné
+      clusterOf.set(id, cluster)
+      cluster.members.push(id)
+    }
+  })
+  const clusters = [...byRoot.values()]
+  if (clusters.length < 2) return
+  for (const cluster of clusters) {
+    cluster.box = boundingBox(positions, cluster.members)
+    cluster.originX = cluster.box.x
+    cluster.originY = cluster.box.y
   }
 
-  // 3. Relaxation sur les boîtes. Maille de la grille : la plus grande boîte
+  // 4. Relaxation sur les boîtes. Maille de la grille : la plus grande boîte
   //    augmentée de `gap`, donc toute paire trop proche tombe dans des cellules
   //    adjacentes.
   let cell = 0
@@ -147,8 +191,6 @@ export function separateClusters(
             const pair = index < other ? `${index} ${other}` : `${other} ${index}`
             if (seen.has(pair)) continue
             seen.add(pair)
-            // Deux agrégats qui partagent une entité ne se séparent pas.
-            if (shared.has(pair)) continue
 
             const b = clusters[other]!.box
             const ox = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x) + gap
@@ -172,18 +214,11 @@ export function separateClusters(
     if (!moved) break
   }
 
-  // 4. Report sur les cartes : translation rigide du cluster, moyennée pour une
-  //    entité qui en a plusieurs.
-  for (const [id, indices] of owners) {
-    let sumX = 0
-    let sumY = 0
-    for (const index of indices) {
-      const cluster = clusters[index]!
-      sumX += cluster.box.x - cluster.originX
-      sumY += cluster.box.y - cluster.originY
-    }
+  // 5. Report sur les cartes : une translation par carte, celle de son
+  //    super-cluster, donc rigide pour tout le monde.
+  for (const [id, cluster] of clusterOf) {
     const rect = positions.get(id)!
-    rect.x += sumX / indices.length
-    rect.y += sumY / indices.length
+    rect.x += cluster.box.x - cluster.originX
+    rect.y += cluster.box.y - cluster.originY
   }
 }
