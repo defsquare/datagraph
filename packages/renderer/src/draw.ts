@@ -1,18 +1,21 @@
 import { BitmapFont, BitmapFontManager, BitmapText, Container, Graphics, Rectangle, Text } from "pixi.js";
 import {
+  badgeTextFor,
+  headerTextFor,
   DEFAULT_METRICS,
   type Graph,
   type GraphNode,
   type NodeId,
+  type NodeMetrics,
   type Rect,
   type RefEdge,
 } from "@defsquare/data-graph-core";
-import type { Theme } from "./theme.js";
+import type { Theme, TypeStyle } from "./theme.js";
 
 export type Lod = 0 | 1 | 2;
 
-/** scale >= LOD0_MIN: full card (header + rows). LOD1_MIN <= scale < LOD0_MIN: box + label.
- * scale < LOD1_MIN: flat colored rectangle, no text. */
+/** scale >= LOD0_MIN: carte complète (en-tête + lignes). LOD1_MIN <= scale <
+ * LOD0_MIN: carte + rail + libellé. scale < LOD1_MIN: rectangle plein. */
 export const LOD0_MIN_SCALE = 0.5;
 export const LOD1_MIN_SCALE = 0.15;
 
@@ -22,88 +25,141 @@ export function lodForScale(scale: number): Lod {
   return 2;
 }
 
+// Rayon de coin utilisé par le surlignage de sélection/recherche plus bas
+// dans ce fichier (drawSelectionOverlay, drawSearchHighlights) : ce bloc
+// n'est pas encore converti vers `theme.radii.card` (tâche 4), donc cette
+// constante reste nécessaire pour que le fichier compile.
 const RADIUS = 6; // --radius-md
-const BODY_FONT = "dg-body";
-const MONO_FONT = "dg-mono";
 
-let installedBodyFamily: string | null = null;
-let installedMonoFamily: string | null = null;
+export type TextRole = "header" | "badge" | "key" | "value";
 
-/**
- * Installs (or reinstalls, if the theme's font family changed) the two
- * bitmap fonts used for node text. Fonts are baked white with dynamicFill
- * so a single texture can be tinted per-use (key vs value vs header colors).
- */
-function ensureFonts(theme: Theme): void {
-  if (installedBodyFamily !== theme.fonts.body) {
-    if (installedBodyFamily) BitmapFont.uninstall(BODY_FONT);
-    BitmapFont.install({
-      name: BODY_FONT,
-      style: { fontFamily: theme.fonts.body, fontSize: 14, fill: "#ffffff" },
-      chars: BitmapFontManager.ASCII,
-      dynamicFill: true,
-    });
-    installedBodyFamily = theme.fonts.body;
+/** L'avance à utiliser pour tronquer un rôle donné. DOIT rester alignée sur
+ * ce que `measureNode` a budgété pour ce même rôle : c'est l'invariant que
+ * l'ancienne implémentation violait (une seule avance pour deux polices), d'où
+ * les valeurs qui débordaient de leur carte. */
+export function charWidthFor(role: TextRole, metrics: NodeMetrics): number {
+  switch (role) {
+    case "header":
+      return metrics.headerCharWidth;
+    case "badge":
+      return metrics.badgeCharWidth;
+    case "key":
+      return metrics.keyCharWidth;
+    case "value":
+      return metrics.valueCharWidth;
   }
-  if (installedMonoFamily !== theme.fonts.mono) {
-    if (installedMonoFamily) BitmapFont.uninstall(MONO_FONT);
+}
+
+export function truncateToWidth(text: string, maxWidth: number, charWidth: number): string {
+  if (maxWidth <= 0) return "";
+  const maxChars = Math.floor(maxWidth / charWidth);
+  if (maxChars <= 0) return "";
+  if (text.length <= maxChars) return text;
+  if (maxChars === 1) return "…";
+  return `${text.slice(0, maxChars - 1)}…`;
+}
+
+// Une police bitmap par rôle : les quatre diffèrent en famille, taille ou
+// graisse, et BitmapFont cuit un atlas par combinaison.
+const FONT_NAMES: Record<TextRole, string> = {
+  header: "dg-header",
+  badge: "dg-badge",
+  key: "dg-key",
+  value: "dg-value",
+};
+
+// Résolution 2 : le texte reste net jusqu'à 2x de zoom au lieu de baver dès
+// que la caméra dépasse 1x.
+const FONT_RESOLUTION = 2;
+
+/** Signature d'un rôle, pour ne réinstaller un atlas que si son style change. */
+const installed = new Map<TextRole, string>();
+
+function styleKey(theme: Theme, role: TextRole): string {
+  const s = theme.typography[role];
+  const family = s.family === "body" ? theme.fonts.body : theme.fonts.mono;
+  return `${family}|${s.size}|${s.weight}`;
+}
+
+function ensureFonts(theme: Theme): void {
+  for (const role of ["header", "badge", "key", "value"] as TextRole[]) {
+    const key = styleKey(theme, role);
+    if (installed.get(role) === key) continue;
+    if (installed.has(role)) BitmapFont.uninstall(FONT_NAMES[role]);
+    const s = theme.typography[role];
     BitmapFont.install({
-      name: MONO_FONT,
-      style: { fontFamily: theme.fonts.mono, fontSize: 14, fill: "#ffffff" },
+      name: FONT_NAMES[role],
+      style: {
+        fontFamily: s.family === "body" ? theme.fonts.body : theme.fonts.mono,
+        fontSize: s.size,
+        fontWeight: String(s.weight) as never,
+        letterSpacing: (s.tracking ?? 0) * s.size,
+        fill: "#ffffff",
+      },
       chars: BitmapFontManager.ASCII,
+      resolution: FONT_RESOLUTION,
       dynamicFill: true,
     });
-    installedMonoFamily = theme.fonts.mono;
+    installed.set(role, key);
   }
 }
 
 /**
- * BitmapText's canvas-renderer path (glyphs drawn via a Graphics "texture"
- * instruction) does not reliably rasterize under Pixi v8's software canvas
- * fallback renderer (`app.renderer.name === "canvas"`, used when neither
- * WebGL nor WebGPU is available) — verified empirically: plain Graphics
- * shapes render fine there, but every BitmapText stayed blank. Regular
- * `Text` goes through a different, canvas-fallback-safe path, so callers
- * pass `useBitmapText: false` there and this module renders with `Text`
- * instead (real font family + `fill`, no tint/BitmapFont involved).
+ * BitmapText ne se rastérise pas de façon fiable sous le renderer canvas
+ * logiciel de Pixi v8 (`app.renderer.name === "canvas"`, utilisé quand ni
+ * WebGL ni WebGPU ne sont disponibles) : vérifié empiriquement, les Graphics
+ * s'affichent mais les BitmapText restent vides. Text passe par un autre
+ * chemin, sûr en fallback canvas, d'où le `useBitmapText: false` des appelants
+ * dans ce cas.
  */
 function createLabel(
   text: string,
   theme: Theme,
-  family: "body" | "mono",
+  role: TextRole,
   color: string,
   useBitmapText: boolean,
 ): BitmapText | Text {
+  const s: TypeStyle = theme.typography[role];
   if (useBitmapText) {
-    const bitmapFontName = family === "body" ? BODY_FONT : MONO_FONT;
-    const t = new BitmapText({ text, style: { fontFamily: bitmapFontName, fontSize: 14 } });
+    const t = new BitmapText({ text, style: { fontFamily: FONT_NAMES[role], fontSize: s.size } });
     t.tint = color;
     return t;
   }
-  const fontFamily = family === "body" ? theme.fonts.body : theme.fonts.mono;
-  return new Text({ text, style: { fontFamily, fontSize: 14, fill: color } });
+  return new Text({
+    text,
+    style: {
+      fontFamily: s.family === "body" ? theme.fonts.body : theme.fonts.mono,
+      fontSize: s.size,
+      fontWeight: String(s.weight) as never,
+      letterSpacing: (s.tracking ?? 0) * s.size,
+      fill: color,
+    },
+  });
 }
 
-function truncateToWidth(text: string, maxWidth: number, charWidth: number): string {
-  if (maxWidth <= 0) return "";
-  const maxChars = Math.max(1, Math.floor(maxWidth / charWidth));
-  if (text.length <= maxChars) return text;
-  if (maxChars <= 1) return "…";
-  return `${text.slice(0, maxChars - 1)}…`;
-}
-
-function nodeAccent(node: GraphNode, theme: Theme): string {
-  if (node.kind === "entity") {
-    return theme.byEntityType?.[node.entityType]?.accent ?? theme.colors.entity;
+/** Chevron « ▸ » (replié) ou « ▾ » (déplié), dessiné en Graphics plutôt qu'en
+ * glyphe : l'atlas ASCII ne contient pas ces caractères. */
+function drawChevron(g: Graphics, x: number, y: number, expanded: boolean, color: string): void {
+  const r = 3.5;
+  if (expanded) {
+    g.moveTo(x - r, y - r * 0.6).lineTo(x + r, y - r * 0.6).lineTo(x, y + r * 0.9);
+  } else {
+    g.moveTo(x - r * 0.6, y - r).lineTo(x + r * 0.9, y).lineTo(x - r * 0.6, y + r);
   }
-  return theme.colors.containEdge;
+  g.fill(color);
 }
 
 /**
- * Draws a single node's visual as a Container positioned at (0,0) in local
- * space (the caller positions it at `rect.x`/`rect.y`). LOD 0 renders a
- * rounded card with a colored header and key/value rows; LOD 1 renders the
- * box with a truncated label only; LOD 2 renders a flat colored rectangle.
+ * Dessine le visuel d'un nœud, positionné en (0,0) dans son espace local
+ * (l'appelant le place à `rect.x`/`rect.y`).
+ *
+ * LOD 0 : carte + rail de type + en-tête (chevron, libellé, pastille) + lignes
+ * clé/valeur, valeur alignée à droite. LOD 1 : carte + rail + libellé complet
+ * tronqué. LOD 2 : rectangle plein dans la couleur de type.
+ *
+ * `accent` est la couleur de rail résolue par l'appelant via `entityAccentMap`
+ * — `drawNode` ne peut pas la déduire de `node` et `theme` seuls, puisque
+ * l'assignation dépend de l'ordre de déclaration des types dans la config.
  */
 export function drawNode(
   node: GraphNode,
@@ -111,6 +167,9 @@ export function drawNode(
   theme: Theme,
   lod: Lod,
   useBitmapText: boolean,
+  accent: string,
+  metrics: NodeMetrics = DEFAULT_METRICS,
+  expanded = false,
 ): Container {
   if (useBitmapText) ensureFonts(theme);
 
@@ -118,63 +177,117 @@ export function drawNode(
   container.cullable = true;
   container.cullArea = new Rectangle(0, 0, rect.width, rect.height);
 
-  const accent = nodeAccent(node, theme);
+  const isEntity = node.kind === "entity";
+  const radius = theme.radii.card;
 
   if (lod === 2) {
     const g = new Graphics();
-    g.rect(0, 0, rect.width, rect.height).fill(accent);
+    g.rect(0, 0, rect.width, rect.height).fill(isEntity ? accent : theme.edge.contain);
     container.addChild(g);
     return container;
   }
 
+  // Carte + rail, dans un seul Graphics et dans cet ordre précis :
+  //   1. un fond accent qui occupe TOUTE la carte,
+  //   2. le corps par-dessus, décalé de railWidth vers la droite — ne laisse
+  //      donc voir l'accent que sur une bande de railWidth px à gauche,
+  //   3. la bordure extérieure, tracée en dernier sur le contour complet.
+  // Le corps a ses coins gauches recarrés par un rect, sinon le roundRect
+  // laisserait l'accent s'élargir en haut et en bas et le rail ne serait pas
+  // d'épaisseur constante.
+  const half = theme.strokes.border / 2;
+  const innerW = rect.width - theme.strokes.border;
+  const innerH = rect.height - theme.strokes.border;
+  const surface = isEntity ? theme.surface.card : theme.surface.cardMuted;
+
   const box = new Graphics();
-  box.roundRect(0, 0, rect.width, rect.height, RADIUS).fill(theme.colors.nodeFill).stroke({
-    width: 1,
-    color: theme.colors.nodeStroke,
-  });
+  if (isEntity) {
+    box.roundRect(half, half, innerW, innerH, radius).fill(accent);
+    const bodyX = metrics.railWidth;
+    box.roundRect(bodyX, half, rect.width - bodyX - half, innerH, radius).fill(surface);
+    box.rect(bodyX, half, radius, innerH).fill(surface);
+  } else {
+    box.roundRect(half, half, innerW, innerH, radius).fill(surface);
+  }
+  box
+    .roundRect(half, half, innerW, innerH, radius)
+    .stroke({ width: theme.strokes.border, color: theme.edge.border });
   container.addChild(box);
 
+  const contentX = metrics.railWidth + metrics.paddingX;
+  const contentRight = rect.width - metrics.paddingX;
+  const inner = contentRight - contentX;
+
   if (lod === 1) {
-    const label = truncateToWidth(
-      node.label,
-      rect.width - 2 * DEFAULT_METRICS.paddingX,
-      DEFAULT_METRICS.charWidth,
-    );
-    const text = createLabel(label, theme, "body", theme.colors.text, useBitmapText);
-    text.position.set(DEFAULT_METRICS.paddingX, rect.height / 2 - text.height / 2);
+    const label = truncateToWidth(node.label, inner, charWidthFor("header", metrics));
+    const text = createLabel(label, theme, "header", theme.ink.primary, useBitmapText);
+    text.position.set(contentX, Math.round(rect.height / 2 - text.height / 2));
     container.addChild(text);
     return container;
   }
 
-  // lod === 0: header (rounded top corners, flat bottom) + label + rows.
-  const headerHeight = DEFAULT_METRICS.headerHeight;
-  const header = new Graphics();
-  header.roundRect(0, 0, rect.width, headerHeight + RADIUS, RADIUS);
-  header.rect(0, headerHeight, rect.width, RADIUS);
-  header.fill(accent);
-  container.addChild(header);
+  // --- LOD 0 : en-tête ---
+  const headerY = metrics.headerHeight / 2;
+  let cursorX = contentX;
 
-  const label = truncateToWidth(
-    node.label,
-    rect.width - 2 * DEFAULT_METRICS.paddingX,
-    DEFAULT_METRICS.charWidth,
+  if (node.childIds.length > 0) {
+    const chevron = new Graphics();
+    drawChevron(chevron, cursorX + 5, headerY, expanded, theme.ink.subtle);
+    container.addChild(chevron);
+    cursorX += metrics.chevronWidth;
+  }
+
+  const badge = badgeTextFor(node);
+  const badgeWidth = badge.length > 0 ? badge.length * charWidthFor("badge", metrics) : 0;
+  const headerBudget = contentRight - cursorX - (badge.length > 0 ? badgeWidth + metrics.gapKeyValue : 0);
+
+  const headerLabel = truncateToWidth(
+    headerTextFor(node),
+    headerBudget,
+    charWidthFor("header", metrics),
   );
-  const headerText = createLabel(label, theme, "body", theme.colors.nodeFill, useBitmapText);
-  headerText.position.set(DEFAULT_METRICS.paddingX, headerHeight / 2 - headerText.height / 2);
+  const headerText = createLabel(headerLabel, theme, "header", theme.ink.primary, useBitmapText);
+  headerText.position.set(cursorX, Math.round(headerY - headerText.height / 2));
   container.addChild(headerText);
 
-  const rowWidth = rect.width - 2 * DEFAULT_METRICS.paddingX;
-  node.rows.forEach((row, index) => {
-    const y = headerHeight + index * DEFAULT_METRICS.rowHeight + DEFAULT_METRICS.rowHeight / 2;
+  if (badge.length > 0) {
+    const badgeColor = isEntity ? accent : theme.ink.subtle;
+    const badgeText = createLabel(badge, theme, "badge", badgeColor, useBitmapText);
+    badgeText.position.set(
+      Math.round(contentRight - badgeText.width),
+      Math.round(headerY - badgeText.height / 2),
+    );
+    container.addChild(badgeText);
+  }
 
-    const keyText = createLabel(`${row.key}:`, theme, "body", theme.colors.textMuted, useBitmapText);
-    keyText.position.set(DEFAULT_METRICS.paddingX, y - keyText.height / 2);
+  // Filet de séparation sous l'en-tête.
+  if (node.rows.length > 0) {
+    const hairline = new Graphics();
+    hairline
+      .moveTo(metrics.railWidth, metrics.headerHeight)
+      .lineTo(rect.width, metrics.headerHeight)
+      .stroke({ width: 1, color: theme.edge.hairline });
+    container.addChild(hairline);
+  }
+
+  // --- LOD 0 : lignes, valeur alignée à droite ---
+  node.rows.forEach((row, index) => {
+    const y = metrics.headerHeight + index * metrics.rowHeight + metrics.rowHeight / 2;
+
+    const keyText = createLabel(row.key, theme, "key", theme.ink.muted, useBitmapText);
+    keyText.position.set(contentX, Math.round(y - keyText.height / 2));
     container.addChild(keyText);
 
-    const valueMaxWidth = Math.max(0, rowWidth - keyText.width - 6);
-    const valueStr = truncateToWidth(String(row.value), valueMaxWidth, DEFAULT_METRICS.charWidth);
-    const valueText = createLabel(valueStr, theme, "mono", theme.colors.text, useBitmapText);
-    valueText.position.set(DEFAULT_METRICS.paddingX + keyText.width + 6, y - valueText.height / 2);
+    const keyWidth = row.key.length * charWidthFor("key", metrics);
+    const valueBudget = inner - keyWidth - metrics.gapKeyValue;
+    const valueStr = truncateToWidth(String(row.value), valueBudget, charWidthFor("value", metrics));
+    if (valueStr.length === 0) return;
+
+    const valueText = createLabel(valueStr, theme, "value", theme.ink.primary, useBitmapText);
+    valueText.position.set(
+      Math.round(contentRight - valueText.width),
+      Math.round(y - valueText.height / 2),
+    );
     container.addChild(valueText);
   });
 
