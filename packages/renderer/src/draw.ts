@@ -25,12 +25,6 @@ export function lodForScale(scale: number): Lod {
   return 2;
 }
 
-// Rayon de coin utilisé par le surlignage de sélection/recherche plus bas
-// dans ce fichier (drawSelectionOverlay, drawSearchHighlights) : ce bloc
-// n'est pas encore converti vers `theme.radii.card` (tâche 4), donc cette
-// constante reste nécessaire pour que le fichier compile.
-const RADIUS = 6; // --radius-md
-
 export type TextRole = "header" | "badge" | "key" | "value";
 
 /** L'avance à utiliser pour tronquer un rôle donné. DOIT rester alignée sur
@@ -324,15 +318,43 @@ function dashedLine(g: Graphics, x1: number, y1: number, x2: number, y2: number)
   }
 }
 
+const ARROW_LENGTH = 7;
+const ARROW_HALF_WIDTH = 3.5;
+
+/** Triangle plein pointant de (x1,y1) vers (x2,y2), sa pointe en (x2,y2). */
+function arrowHead(g: Graphics, x1: number, y1: number, x2: number, y2: number): void {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len = Math.hypot(dx, dy);
+  if (len === 0) return;
+  const ux = dx / len;
+  const uy = dy / len;
+  const bx = x2 - ux * ARROW_LENGTH;
+  const by = y2 - uy * ARROW_LENGTH;
+  // Normale unitaire.
+  const nx = -uy;
+  const ny = ux;
+  g.moveTo(x2, y2)
+    .lineTo(bx + nx * ARROW_HALF_WIDTH, by + ny * ARROW_HALF_WIDTH)
+    .lineTo(bx - nx * ARROW_HALF_WIDTH, by - ny * ARROW_HALF_WIDTH)
+    .closePath();
+}
+
 const DANGLING_STUB_LENGTH = 32;
 const DANGLING_CROSS_RADIUS = 4;
 
 /**
- * Draws every contain and reference edge between currently visible nodes
- * (per `positions`) into a single Graphics, batched by style: contain edges
- * as solid horizontal beziers, resolved refs as dashed lines, dangling refs
- * as a dashed stub with a terminal cross. Returns an empty Graphics at
- * LOD 2 (edges are not legible/worth the draw calls when fully zoomed out).
+ * Dessine toutes les arêtes entre nœuds visibles dans un seul Graphics,
+ * groupées par style : contenance en béziers horizontales pleines, références
+ * résolues en pointillés terminés par une tête de flèche, références cassées
+ * en moignon pointillé barré d'une croix.
+ *
+ * Les têtes de flèche sont des triangles pleins : elles ne peuvent pas
+ * partager l'appel `stroke()` des pointillés, d'où un `fill()` distinct émis
+ * après lui, sur le même Graphics.
+ *
+ * Renvoie un Graphics vide en LOD 2 (les arêtes ne sont ni lisibles ni
+ * rentables à ce niveau de dézoom).
  */
 export function drawEdges(graph: Graph, positions: Map<NodeId, Rect>, theme: Theme, lod: Lod): Graphics {
   const g = new Graphics();
@@ -352,9 +374,10 @@ export function drawEdges(graph: Graph, positions: Map<NodeId, Rect>, theme: The
     g.bezierCurveTo(x1 + dx, y1, x2 - dx, y2, x2, y2);
     hasContain = true;
   }
-  if (hasContain) g.stroke({ width: 1.5, color: theme.colors.containEdge });
+  if (hasContain) g.stroke({ width: theme.strokes.edge, color: theme.edge.contain });
 
   let hasRef = false;
+  const resolved: { x1: number; y1: number; x2: number; y2: number }[] = [];
   for (const edge of graph.refEdges) {
     if (edge.dangling || edge.to === null) continue;
     const from = positions.get(edge.from);
@@ -364,10 +387,18 @@ export function drawEdges(graph: Graph, positions: Map<NodeId, Rect>, theme: The
     const y1 = from.y + from.height / 2;
     const x2 = to.x;
     const y2 = to.y + to.height / 2;
-    dashedLine(g, x1, y1, x2, y2);
+    // La ligne s'arrête au pied de la flèche pour ne pas la traverser.
+    const len = Math.hypot(x2 - x1, y2 - y1);
+    const t = len > ARROW_LENGTH ? (len - ARROW_LENGTH) / len : 1;
+    dashedLine(g, x1, y1, x1 + (x2 - x1) * t, y1 + (y2 - y1) * t);
+    resolved.push({ x1, y1, x2, y2 });
     hasRef = true;
   }
-  if (hasRef) g.stroke({ width: 1.5, color: theme.colors.refEdge });
+  if (hasRef) {
+    g.stroke({ width: theme.strokes.edge, color: theme.edge.ref });
+    for (const r of resolved) arrowHead(g, r.x1, r.y1, r.x2, r.y2);
+    g.fill(theme.edge.ref);
+  }
 
   let hasDangling = false;
   for (const edge of graph.refEdges) {
@@ -386,7 +417,7 @@ export function drawEdges(graph: Graph, positions: Map<NodeId, Rect>, theme: The
     g.lineTo(x2 - r, y2 + r);
     hasDangling = true;
   }
-  if (hasDangling) g.stroke({ width: 1.5, color: theme.colors.danglingRef });
+  if (hasDangling) g.stroke({ width: theme.strokes.edge, color: theme.edge.dangling });
 
   return g;
 }
@@ -399,12 +430,10 @@ export interface EdgeHit {
 const REF_HIT_WIDTH = 14;
 
 /**
- * Builds one invisible, thickened (14px) hit-area Graphics per currently
- * visible ref edge — a resolved line to its target or, for a dangling ref,
- * the same stub drawn by `drawEdges`. Purely geometric: the caller sets
- * `eventMode`/`cursor` and wires up tap handling (e.g. to emit
- * "followRef"). Alpha is 0 (invisible) but Graphics hit-testing is
- * geometry-based, so the shape stays clickable.
+ * Une zone de clic invisible et épaissie (14px) par arête de référence
+ * visible. Purement géométrique : l'appelant règle `eventMode`/`cursor` et
+ * branche le tap. L'alpha est 0, mais le hit-test des Graphics étant
+ * géométrique, la forme reste cliquable.
  */
 export function drawEdgeHitAreas(graph: Graph, positions: Map<NodeId, Rect>): EdgeHit[] {
   const hits: EdgeHit[] = [];
@@ -433,14 +462,14 @@ export function drawEdgeHitAreas(graph: Graph, positions: Map<NodeId, Rect>): Ed
   return hits;
 }
 
-const SELECTION_STROKE_WIDTH = 3;
-
 /**
- * Draws the selection highlight for `selectedId`: a thickened
- * `selection`-colored outline on the node itself, on its contain-edge chain
- * up to the root, and on its outgoing ref edges (dangling stubs included).
- * Returns an empty Graphics when nothing is selected or the selected node
- * isn't currently visible (not present in `positions`).
+ * Surlignage de sélection : contour sur le nœud, sur sa chaîne de parenté
+ * jusqu'à la racine, et sur ses références sortantes (moignons cassés
+ * inclus). Renvoie un Graphics vide si rien n'est sélectionné ou si le nœud
+ * sélectionné n'est pas visible.
+ *
+ * C'est le seul endroit, avec les références cassées, où le rouge apparaît :
+ * comme plus rien d'autre n'est rouge, la sélection se lit immédiatement.
  */
 export function drawSelectionOverlay(
   graph: Graph,
@@ -453,9 +482,9 @@ export function drawSelectionOverlay(
   const rect = positions.get(selectedId);
   if (!rect) return g;
 
-  g.roundRect(rect.x, rect.y, rect.width, rect.height, RADIUS).stroke({
-    width: SELECTION_STROKE_WIDTH,
-    color: theme.colors.selection,
+  g.roundRect(rect.x, rect.y, rect.width, rect.height, theme.radii.card).stroke({
+    width: theme.strokes.selection,
+    color: theme.accent.selection,
   });
 
   let hasChain = false;
@@ -474,7 +503,7 @@ export function drawSelectionOverlay(
     }
     node = graph.nodes.get(node.parentId);
   }
-  if (hasChain) g.stroke({ width: SELECTION_STROKE_WIDTH, color: theme.colors.selection });
+  if (hasChain) g.stroke({ width: theme.strokes.selection, color: theme.accent.selection });
 
   let hasRefs = false;
   for (const edge of graph.refEdges) {
@@ -492,22 +521,16 @@ export function drawSelectionOverlay(
     }
     hasRefs = true;
   }
-  if (hasRefs) g.stroke({ width: SELECTION_STROKE_WIDTH, color: theme.colors.selection });
+  if (hasRefs) g.stroke({ width: theme.strokes.selection, color: theme.accent.selection });
 
   return g;
 }
 
-const SEARCH_STROKE_WIDTH = 2;
-const SEARCH_CURRENT_STROKE_WIDTH = 4;
-
 /**
- * Draws a `searchHighlight`-colored outline on every currently visible
- * matched node (`matchedIds`), plus a thicker "reinforced" outline on
- * `currentId` (drawn last, on top, so it wins visually over the plain
- * outline when both would otherwise overlap). A node id present in
- * `matchedIds`/`currentId` that isn't in `positions` (i.e. not currently
- * visible) is silently skipped — callers are expected to have already
- * filtered to visible ids, but this is a defensive no-op either way.
+ * Surlignage de recherche : remplissage lavé plus contour sur chaque résultat
+ * visible, et un contour renforcé dans la couleur de sélection sur le résultat
+ * courant, dessiné en dernier pour passer au-dessus. Un id absent de
+ * `positions` est ignoré sans bruit.
  */
 export function drawSearchHighlights(
   positions: Map<NodeId, Rect>,
@@ -517,22 +540,20 @@ export function drawSearchHighlights(
 ): Graphics {
   const g = new Graphics();
   for (const id of matchedIds) {
-    if (id === currentId) continue; // drawn separately below, on top
+    if (id === currentId) continue; // dessiné ci-dessous, au-dessus
     const rect = positions.get(id);
     if (!rect) continue;
-    g.roundRect(rect.x, rect.y, rect.width, rect.height, RADIUS).stroke({
-      width: SEARCH_STROKE_WIDTH,
-      color: theme.colors.searchHighlight,
-    });
+    g.roundRect(rect.x, rect.y, rect.width, rect.height, theme.radii.card)
+      .fill({ color: theme.accent.match, alpha: 0.55 })
+      .stroke({ width: theme.strokes.match, color: theme.accent.matchStroke });
   }
 
   if (currentId !== null) {
     const rect = positions.get(currentId);
     if (rect) {
-      g.roundRect(rect.x, rect.y, rect.width, rect.height, RADIUS).stroke({
-        width: SEARCH_CURRENT_STROKE_WIDTH,
-        color: theme.colors.searchHighlight,
-      });
+      g.roundRect(rect.x, rect.y, rect.width, rect.height, theme.radii.card)
+        .fill({ color: theme.accent.match, alpha: 0.55 })
+        .stroke({ width: theme.strokes.matchCurrent, color: theme.accent.selection });
     }
   }
 
