@@ -1,4 +1,10 @@
-import { createDataGraph, type GraphNode } from "@defsquare/data-graph";
+import {
+  createDataGraph,
+  defsquareLight,
+  defsquareDark,
+  type GraphNode,
+  type RefEdge,
+} from "@defsquare/data-graph";
 import { shopData, shopConfig, bigShopData } from "./sample-data";
 
 const container = document.getElementById("app");
@@ -23,25 +29,81 @@ window.__graph = graph;
 
 // Proof that the renderer's public "select" event is enough to build a
 // detail panel entirely outside the library: plain DOM, no lib internals.
+const typeEl = document.getElementById("selection-type");
+const emptyEl = document.getElementById("selection-empty");
 const labelEl = document.getElementById("selection-label");
 const pathEl = document.getElementById("selection-path");
 const rowsEl = document.getElementById("selection-rows");
 
-function renderSelection(node: GraphNode): void {
-  if (labelEl) labelEl.textContent = node.label;
-  if (pathEl) pathEl.textContent = node.path.length > 0 ? `/${node.path.join("/")}` : "/";
-  if (rowsEl) {
-    rowsEl.replaceChildren(
-      ...node.rows.map((row) => {
-        const li = document.createElement("li");
-        li.textContent = `${row.key}: ${row.value}`;
-        return li;
-      }),
-    );
-  }
+/** Les arêtes de référence sortantes du nœud, indexées par champ source —
+ * c'est ce qui permet au panneau d'afficher un bouton « suivre » sur les
+ * bonnes lignes, sans connaître les internes de la lib. */
+function outgoingRefs(nodeId: string): Map<string, RefEdge> {
+  const map = new Map<string, RefEdge>();
+  for (const edge of graph.refEdges(nodeId)) map.set(edge.field, edge);
+  return map;
 }
 
-graph.on("select", (node: GraphNode) => renderSelection(node));
+function clearSelection(): void {
+  emptyEl?.removeAttribute("hidden");
+  for (const el of [typeEl, labelEl, pathEl]) el?.setAttribute("hidden", "");
+  rowsEl?.replaceChildren();
+}
+
+function renderSelection(node: GraphNode): void {
+  emptyEl?.setAttribute("hidden", "");
+  for (const el of [labelEl, pathEl]) el?.removeAttribute("hidden");
+
+  if (typeEl) {
+    if (node.kind === "entity") {
+      typeEl.textContent = node.entityType.toUpperCase();
+      typeEl.removeAttribute("hidden");
+    } else {
+      typeEl.setAttribute("hidden", "");
+    }
+  }
+  if (labelEl) labelEl.textContent = node.label;
+  if (pathEl) pathEl.textContent = node.path.length > 0 ? `/${node.path.join("/")}` : "/";
+
+  if (!rowsEl) return;
+  const refs = outgoingRefs(node.id);
+  rowsEl.replaceChildren(
+    ...node.rows.flatMap((row) => {
+      const wrapper = document.createElement("div");
+      wrapper.className = "row";
+
+      const dt = document.createElement("dt");
+      dt.textContent = row.key;
+      const dd = document.createElement("dd");
+      dd.textContent = String(row.value);
+      wrapper.append(dt, dd);
+
+      const ref = refs.get(row.key);
+      if (ref) {
+        const btn = document.createElement("button");
+        btn.className = "ref-btn";
+        btn.textContent = "→";
+        if (ref.to === null || ref.dangling) {
+          btn.disabled = true;
+          btn.title = `Référence cassée : ${ref.targetType}#${ref.targetId}`;
+        } else {
+          btn.title = `Aller à ${ref.targetType}#${ref.targetId}`;
+          btn.addEventListener("click", () => {
+            graph.select(ref.to!);
+            graph.focus(ref.to!);
+          });
+        }
+        wrapper.append(btn);
+      }
+      return [wrapper];
+    }),
+  );
+}
+
+graph.on("select", (node: GraphNode) => {
+  renderSelection(node);
+  updateStatus();
+});
 
 graph.on("followRef", (edge) => {
   if (edge.dangling) console.warn(`[demo] dangling ref: ${edge.field} -> ${edge.targetType}#${edge.targetId}`);
@@ -120,6 +182,30 @@ if (searchInput) {
 nextMatchBtn?.addEventListener("click", goToNextMatch);
 prevMatchBtn?.addEventListener("click", goToPrevMatch);
 
+// --- Barre d'état : compteurs et diagnostics.
+const statNodesEl = document.getElementById("stat-nodes");
+const statVisibleEl = document.getElementById("stat-visible");
+const statDiagEl = document.getElementById("stat-diagnostics");
+
+function updateStatus(): void {
+  const stats = graph.stats();
+  if (statNodesEl) statNodesEl.textContent = String(stats.logicalNodeCount);
+  if (statVisibleEl) statVisibleEl.textContent = String(stats.visibleNodeCount);
+
+  const diagnostics = graph.diagnostics();
+  if (!statDiagEl) return;
+  if (diagnostics.length === 0) {
+    statDiagEl.setAttribute("hidden", "");
+    return;
+  }
+  statDiagEl.removeAttribute("hidden");
+  statDiagEl.textContent = `${diagnostics.length} diagnostic${diagnostics.length > 1 ? "s" : ""}`;
+}
+
+statDiagEl?.addEventListener("click", () => {
+  for (const d of graph.diagnostics()) console.warn(`[data-graph] ${d.code} @ ${d.path}: ${d.message}`);
+});
+
 // --- Dataset swap: exercises setData() with the small `shopData` fixture vs.
 // a ~2000-logical-node `bigShopData` generated fixture. Config is the same
 // for both, so this deliberately calls setData(data) without a config,
@@ -134,16 +220,15 @@ if (toggleDatasetBtn) {
       try {
         usingBigDataset = !usingBigDataset;
         await graph.setData(usingBigDataset ? bigShopData : shopData);
-        toggleDatasetBtn.textContent = usingBigDataset ? "Load small dataset" : "Load big dataset (2000)";
+        toggleDatasetBtn.textContent = usingBigDataset ? "Jeu de données réduit" : "Jeu de données étendu (2000)";
         // setData() resets the renderer's own search/selection state; mirror
         // that in the demo's local UI state too.
         if (searchInput) searchInput.value = "";
         matchTotal = 0;
         matchCursor = -1;
         updateMatchCounter();
-        if (labelEl) labelEl.textContent = "Click a node to see details.";
-        if (pathEl) pathEl.textContent = "";
-        if (rowsEl) rowsEl.replaceChildren();
+        clearSelection();
+        updateStatus();
       } finally {
         toggleDatasetBtn.disabled = false;
       }
@@ -151,7 +236,36 @@ if (toggleDatasetBtn) {
   });
 }
 
+// --- Thème : la lib et le shell DOM basculent ensemble.
+const themeBtn = document.getElementById("toggle-theme");
+const logoEl = document.getElementById("logo") as HTMLImageElement | null;
+let dark = false;
+
+declare global {
+  interface Window {
+    __theme?: string;
+  }
+}
+
+function applyTheme(): void {
+  document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+  if (logoEl) {
+    logoEl.src = dark ? "/defsquare-short-white-red.svg" : "/defsquare-short-dark-red.svg";
+  }
+  graph.setTheme(dark ? defsquareDark : defsquareLight);
+  window.__theme = dark ? "dark" : "light";
+}
+
+themeBtn?.addEventListener("click", () => {
+  dark = !dark;
+  applyTheme();
+});
+
+document.getElementById("fit")?.addEventListener("click", () => graph.fit());
+
 void (async () => {
   await graph.ready;
   graph.fit();
+  applyTheme();
+  updateStatus();
 })();

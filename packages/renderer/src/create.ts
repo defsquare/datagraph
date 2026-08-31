@@ -61,6 +61,11 @@ export interface DataGraph {
   on(event: DataGraphEvent, callback: (payload: any) => void): () => void;
   setData(data: unknown, config?: DataGraphConfig): Promise<void>;
   diagnostics(): Diagnostic[];
+  /** Compteurs pour une barre d'état hôte. */
+  stats(): { logicalNodeCount: number; visibleNodeCount: number };
+  /** Les arêtes de référence sortantes d'un nœud, pour qu'un hôte puisse
+   * proposer « suivre la référence » sans connaître les internes. */
+  refEdges(from: NodeId): RefEdge[];
   /** Remplace le thème et redessine, sans relancer le layout ni remesurer les
    * polices. Ceci n'est sûr que si `typography` et `fonts` ne changent pas —
    * c'est le cas pour un couple de thèmes clair/sombre, qui ne diffèrent que
@@ -688,6 +693,17 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
 
     diagnostics(): Diagnostic[] {
       return graph ? graph.diagnostics : [];
+    },
+
+    stats(): { logicalNodeCount: number; visibleNodeCount: number } {
+      return {
+        logicalNodeCount: graph?.logicalNodeCount ?? 0,
+        visibleNodeCount: collapseState?.visibleNodeIds().size ?? 0,
+      };
+    },
+
+    refEdges(from: NodeId): RefEdge[] {
+      return graph ? graph.refEdges.filter((e) => e.from === from) : [];
     },
 
     setTheme(next: Theme | ThemeOverride): void {
