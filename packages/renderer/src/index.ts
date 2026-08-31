@@ -16,8 +16,7 @@ export type { Size } from "./camera.js";
 
 export {
   drawNode,
-  drawContainEdges,
-  drawRefEdges,
+  drawEdges,
   drawEdgeHitAreas,
   drawSelectionOverlay,
   drawSearchHighlights,

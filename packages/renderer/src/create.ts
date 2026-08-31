@@ -26,8 +26,7 @@ import { fontsReady, measureFontMetrics } from "./font-metrics.js";
 import { Camera, type Size } from "./camera.js";
 import {
   drawEdgeHitAreas,
-  drawContainEdges,
-  drawRefEdges,
+  drawEdges,
   drawNode,
   drawSearchHighlights,
   drawSelectionOverlay,
@@ -154,16 +153,17 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
 
   const app = new Application();
   const world = new Container();
-  let containEdges = new Graphics();
+  let edgesGraphics = new Graphics();
   const edgeHitLayer = new Container();
   const nodesLayer = new Container();
-  // Les références passent AU-DESSUS des cartes : elles remontent souvent vers
-  // la gauche et traversent alors les cartes qui les séparent de leur cible.
-  // Les zones de clic restent sous les cartes, pour qu'un clic sur une carte
-  // l'emporte toujours sur un clic sur une arête qui la survole.
-  let refEdges = new Graphics();
+  // Les arêtes restent SOUS les cartes, au repos : une référence remonte
+  // souvent vers la gauche et traverserait les cartes qui la séparent de sa
+  // cible, ce qui surchargerait la lecture pour un gain nul la plupart du
+  // temps. C'est la sélection qui la révèle — `drawSelectionOverlay` redessine
+  // les références sortantes du nœud sélectionné dans `overlayGraphics`, le
+  // calque le plus haut, où elles passent donc par-dessus tout.
   let overlayGraphics = new Container();
-  world.addChild(containEdges, edgeHitLayer, nodesLayer, refEdges, overlayGraphics);
+  world.addChild(edgesGraphics, edgeHitLayer, nodesLayer, overlayGraphics);
 
   // Le bail d'atlas de cette instance. Les atlas Pixi sont globaux par nom,
   // donc partagés entre instances ; le registre les compte par référence et ne
@@ -322,14 +322,9 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     // Les atlas doivent exister avant que `drawNode` n'en dérive les noms.
     if (useBitmapText) fontLease.sync(theme);
 
-    containEdges.destroy();
-    containEdges = drawContainEdges(graph, layoutResult.positions, theme, currentLod);
-    world.addChildAt(containEdges, 0);
-
-    refEdges.destroy();
-    refEdges = drawRefEdges(graph, layoutResult.positions, theme, currentLod);
-    // Juste au-dessus des cartes, juste en dessous des surlignages.
-    world.addChildAt(refEdges, world.getChildIndex(nodesLayer) + 1);
+    edgesGraphics.destroy();
+    edgesGraphics = drawEdges(graph, layoutResult.positions, theme, currentLod);
+    world.addChildAt(edgesGraphics, 0);
 
     for (const hit of drawEdgeHitAreas(graph, layoutResult.positions)) {
       attachTap(hit.graphics, () => followRef(hit.edge));

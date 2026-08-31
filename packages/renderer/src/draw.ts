@@ -331,12 +331,7 @@ const DANGLING_CROSS_RADIUS = 4;
  * Renvoie un Graphics vide en LOD 2 (les arêtes ne sont ni lisibles ni
  * rentables à ce niveau de dézoom).
  */
-export function drawContainEdges(
-  graph: Graph,
-  positions: Map<NodeId, Rect>,
-  theme: Theme,
-  lod: Lod,
-): Graphics {
+export function drawEdges(graph: Graph, positions: Map<NodeId, Rect>, theme: Theme, lod: Lod): Graphics {
   const g = new Graphics();
   if (lod === 2) return g;
 
@@ -355,30 +350,6 @@ export function drawContainEdges(
     hasContain = true;
   }
   if (hasContain) g.stroke({ width: theme.strokes.edge, color: theme.edge.contain });
-
-  return g;
-}
-
-/**
- * Dessine les arêtes de référence : résolues en pointillés terminés par une
- * tête de flèche, cassées en moignon barré d'une croix.
- *
- * Séparé de `drawContainEdges` parce que les deux ne vivent pas dans le même
- * calque. Une référence remonte souvent vers la gauche et traverse alors les
- * cartes qui la séparent de sa cible ; dessinée sous elles, elle était
- * invisible sur presque toute sa longueur. Les arêtes de contenance, elles,
- * relient le bord droit d'un parent au bord gauche d'un enfant et ne
- * traversent rien — elles restent donc sous les cartes, où elles ne
- * surchargent pas la lecture.
- */
-export function drawRefEdges(
-  graph: Graph,
-  positions: Map<NodeId, Rect>,
-  theme: Theme,
-  lod: Lod,
-): Graphics {
-  const g = new Graphics();
-  if (lod === 2) return g;
 
   let hasRef = false;
   const resolved: { x1: number; y1: number; x2: number; y2: number }[] = [];
