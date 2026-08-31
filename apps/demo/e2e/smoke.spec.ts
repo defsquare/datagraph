@@ -1,21 +1,39 @@
-import { test, expect } from "@playwright/test"
+import { test, expect, type Page } from "@playwright/test"
 
-test("loads and renders collapsed roots", async ({ page }) => {
+/**
+ * Navigates to the demo and waits for the graph to be truly ready.
+ *
+ * `window.__graph` is assigned SYNCHRONOUSLY at module load in main.ts, long
+ * before `createDataGraph`'s async init (buildGraph, fontsReady, layout,
+ * first rebuild/render) has finished — so `waitForFunction(() =>
+ * window.__graph !== undefined)` alone only proves the handle exists, not
+ * that the graph is built/laid out/drawn. A `select()`/`expand()`/etc. call
+ * that races ahead of that init returns early with no effect (e.g. `doSelect`
+ * bails silently before the graph is set), which is exactly what let this
+ * suite pass by luck for nine tests until `fontsReady`'s added `await`
+ * widened the window enough to make the race reproducible. Awaiting the
+ * public `ready` promise (via `page.evaluate`, which awaits a returned
+ * promise) is the actual readiness signal.
+ */
+async function gotoReady(page: Page): Promise<void> {
   await page.goto("/")
   await page.waitForFunction(() => (window as any).__graph !== undefined)
+  await page.evaluate(() => (window as any).__graph.ready)
+}
+
+test("loads and renders collapsed roots", async ({ page }) => {
+  await gotoReady(page)
   await expect(page.locator("canvas")).toBeVisible()
 })
 
 test("select event reaches the host detail panel", async ({ page }) => {
-  await page.goto("/")
-  await page.waitForFunction(() => (window as any).__graph !== undefined)
+  await gotoReady(page)
   await page.evaluate(() => (window as any).__graph.select("/customers/0"))
   await expect(page.locator("#selection-label")).toContainText("Customer #c1")
 })
 
 test("search navigates and auto-expands to a hidden match", async ({ page }) => {
-  await page.goto("/")
-  await page.waitForFunction(() => (window as any).__graph !== undefined)
+  await gotoReady(page)
   await page.fill("#search", "rue de la paix")
   await page.press("#search", "Enter") // nextMatch
   const focused = await page.evaluate(() => (window as any).__graph.nextMatch()?.nodeId ?? null)
@@ -23,8 +41,7 @@ test("search navigates and auto-expands to a hidden match", async ({ page }) => 
 })
 
 test("expand/collapse via API changes visible node count", async ({ page }) => {
-  await page.goto("/")
-  await page.waitForFunction(() => (window as any).__graph !== undefined)
+  await gotoReady(page)
   await page.evaluate(() => (window as any).__graph.expand("/orders/0"))
   // pas d'assertion pixel : on vérifie l'absence d'erreur console
   const errors: string[] = []
@@ -34,15 +51,13 @@ test("expand/collapse via API changes visible node count", async ({ page }) => {
 })
 
 test("la barre d'etat affiche des compteurs non nuls", async ({ page }) => {
-  await page.goto("/")
-  await page.waitForFunction(() => (window as any).__graph !== undefined)
+  await gotoReady(page)
   await expect(page.locator("#stat-nodes")).not.toHaveText("0")
   await expect(page.locator("#stat-visible")).not.toHaveText("0")
 })
 
 test("le bouton de theme bascule clair et sombre", async ({ page }) => {
-  await page.goto("/")
-  await page.waitForFunction(() => (window as any).__graph !== undefined)
+  await gotoReady(page)
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light")
   await page.click("#toggle-theme")
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark")
@@ -55,8 +70,7 @@ test("le bouton de theme bascule clair et sombre", async ({ page }) => {
 })
 
 test("le panneau de detail montre le type et permet de suivre une reference", async ({ page }) => {
-  await page.goto("/")
-  await page.waitForFunction(() => (window as any).__graph !== undefined)
+  await gotoReady(page)
   // Regression guard: #selection-type must stay display:none while [hidden]
   // (an id rule in style.css previously outranked the UA's [hidden] rule and
   // left an empty navy pill visible under the panel's initial empty state).
@@ -70,15 +84,13 @@ test("le panneau de detail montre le type et permet de suivre une reference", as
 })
 
 test("une reference cassee est signalee dans la barre d'etat", async ({ page }) => {
-  await page.goto("/")
-  await page.waitForFunction(() => (window as any).__graph !== undefined)
+  await gotoReady(page)
   await expect(page.locator("#stat-diagnostics")).toBeVisible()
   await expect(page.locator("#stat-diagnostics")).toContainText("1")
 })
 
 test("setTheme accepte une surcharge partielle de palette sans planter", async ({ page }) => {
-  await page.goto("/")
-  await page.waitForFunction(() => (window as any).__graph !== undefined)
+  await gotoReady(page)
   const errors: string[] = []
   page.on("pageerror", e => errors.push(String(e)))
   await page.evaluate(() => (window as any).__graph.setTheme({ entityPalette: ["#00ff00"] }))
