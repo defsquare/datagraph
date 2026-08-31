@@ -189,8 +189,9 @@ export interface GraphLayoutResult extends LayoutResult {
 
 export interface GraphLayoutEngine {
   layout(graph, aggregates, visible, metrics?): Promise<GraphLayoutResult>
-  layoutAfterExpand(prev, graph, aggregates, expandedAggId, visible, metrics?): Promise<GraphLayoutResult>
-  layoutAfterCollapse(prev, graph, aggregates, collapsedAggId, visible): GraphLayoutResult
+  // RETIRÉ avec le pli d'agrégat — voir la section « Dépliage » plus bas :
+  //   layoutAfterExpand(prev, graph, aggregates, expandedAggId, visible, metrics?)
+  //   layoutAfterCollapse(prev, graph, aggregates, collapsedAggId, visible)
 }
 
 export interface GraphLayoutOptions {
@@ -270,7 +271,14 @@ et restent, eux, dans le barrel principal.
 Un test de non-régression doit vérifier que `dist/index.js` ne référence ni
 `cytoscape` ni `cytoscape-fcose`.
 
-### `aggregate-collapse.ts` — nouveau
+### `aggregate-collapse.ts` — ~~nouveau~~ RETIRÉ
+
+> **Mécanisme retiré.** La vue graphe ne plie plus rien : toutes les entités y
+> sont visibles en permanence, aucune carte ne porte de chevron, et un clic
+> d'en-tête y sélectionne comme un clic de corps. `aggregate-collapse.ts`, son
+> test et son export du barrel ont été supprimés. La section ci-dessous est
+> conservée telle quelle comme trace de conception, à la manière de la note sur
+> le centre virtuel d'agrégat plus haut : elle décrit du code qui n'existe plus.
 
 ```ts
 export class AggregateCollapseState {
@@ -297,9 +305,19 @@ Règles de visibilité, dans cet ordre :
 C'est une classe distincte de `CollapseState`, qui reste inchangée et continue
 de servir la vue structure.
 
-### Dépliage : épinglage plutôt que relance globale
+### Dépliage : épinglage plutôt que relance globale — RETIRÉ
 
-C'est le point qui a fait échouer la sonde et il est traité ici de front.
+> **Mécanisme retiré**, en même temps que le pli d'agrégat ci-dessus. Sans pli,
+> il n'y a plus de dépliage, donc plus aucun relayout incrémental à stabiliser :
+> `layoutAfterExpand` et `layoutAfterCollapse` ont disparu de
+> `GraphLayoutEngine`, avec le paramètre `pinned` de son `run(...)` interne, le
+> câblage de `fixedNodeConstraint` et le saut de normalisation de bbox sous
+> épinglage (la normalisation tourne désormais toujours). Les tests
+> correspondants et la ligne de budget « dérive médiane » des READMEs sont
+> supprimés avec eux : un budget sans test ni code derrière lui vaut moins que
+> pas de budget du tout. La section ci-dessous reste comme trace de conception.
+
+C'était le point qui a fait échouer la sonde et il était traité ici de front.
 
 Une force-layout est globale : la sonde mesurait **1084 px de dérive médiane**
 (p95 : 2562 px) sur les nœuds déjà présents à chaque dépliage — la carte que
@@ -392,13 +410,13 @@ préfixé `__agg:` dans le résultat ; **déterminisme : deux `layout()` sur les
 mêmes entrées donnent des positions identiques au pixel** ; aucun chevauchement
 de cartes après la passe de séparation ; chaque enveloppe contient tous les
 rectangles de ses membres visibles ; un agrégat sans membre visible ne produit
-pas d'enveloppe ; **`layoutAfterExpand` laisse les positions des nœuds déjà
-présents inchangées**, à la tolérance près de la passe de séparation.
+pas d'enveloppe. ~~**`layoutAfterExpand` laisse les positions des nœuds déjà
+présents inchangées**~~ — RETIRÉ avec le pli d'agrégat.
 
-**`aggregate-collapse.test.ts`** — état initial déplié ; replier réduit à la
-racine ; une entité partagée reste visible tant qu'un de ses agrégats est
-déplié et disparaît quand tous sont repliés ; une entité sans agrégat est
-toujours visible.
+~~**`aggregate-collapse.test.ts`**~~ — RETIRÉ avec le pli d'agrégat : état
+initial déplié ; replier réduit à la racine ; une entité partagée reste visible
+tant qu'un de ses agrégats est déplié et disparaît quand tous sont repliés ; une
+entité sans agrégat est toujours visible.
 
 **Renderer** — bascule de vue ; report de sélection vers l'ancêtre entité ;
 `fit()` englobant les enveloppes.
@@ -418,7 +436,7 @@ d'entités qui est plus petit et bien moins dense :
 | Chevauchement de cartes | 0 |
 | `layout()` initial | < 3 s à 1000 entités |
 | Écart entre deux runs identiques | **0 px** (exigence, pas budget) |
-| Dérive au dépliage, nœuds existants | **0 px** hors passe de séparation |
+| ~~Dérive au dépliage, nœuds existants~~ | RETIRÉ : sans pli d'agrégat, il n'y a plus de dépliage |
 
 Le poids du bundle est le coût connu : la sonde mesurait **+183 ko gzip** pour
 `cytoscape` + `cytoscape-fcose`. Le moteur de la vue graphe doit donc être en

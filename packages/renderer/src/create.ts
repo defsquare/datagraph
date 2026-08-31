@@ -1,7 +1,6 @@
 import { Application, Container, Graphics, type FederatedPointerEvent } from "pixi.js";
 import ELK from "elkjs/lib/elk.bundled.js";
 import {
-  AggregateCollapseState,
   buildAggregates,
   buildGraph,
   buildSearchIndex,
@@ -52,12 +51,9 @@ import { Emitter } from "./events.js";
 export type DataGraphView = "structure" | "graph";
 
 /** L'état complet de la vue graphe, calculé d'un bloc puis publié d'un bloc :
- * l'index, l'état de pli et la mise en page doivent toujours décrire le même
- * graphe. */
+ * l'index et la mise en page doivent toujours décrire le même graphe. */
 interface GraphViewState {
   index: AggregateIndex;
-  collapse: AggregateCollapseState;
-  roots: Map<NodeId, string>;
   layout: GraphLayoutResult;
 }
 
@@ -85,8 +81,8 @@ export interface DataGraph {
   /** Déplie un nœud de l'arbre de containment — une opération de la VUE
    * STRUCTURE. En vue graphe elle reste sans effet visible : l'état est bien
    * mis à jour, et se verra au retour dans la vue structure, mais la vue graphe
-   * ne montre pas le containment. Le pli d'un agrégat, lui, passe par le
-   * chevron de sa carte racine. */
+   * ne montre pas le containment. La vue graphe, elle, ne plie rien : toutes
+   * les entités y sont toujours visibles. */
   expand(id: NodeId): Promise<void>;
   /** Replie un nœud de l'arbre de containment. Même remarque que `expand`. */
   collapse(id: NodeId): Promise<void>;
@@ -242,11 +238,6 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   // structure ne paie ni le calcul des agrégats ni le chargement du moteur.
   let view: DataGraphView = options.view ?? "structure";
   let aggregateIndex: AggregateIndex | undefined;
-  let aggregateCollapse: AggregateCollapseState | undefined;
-  // Racine d'agrégat -> id de l'agrégat, dérivée de `aggregateIndex`. Une table
-  // plutôt qu'un balayage des agrégats à chaque carte : `rebuild()` pose la
-  // question pour chaque nœud visible.
-  let aggregateRoots = new Map<NodeId, string>();
   let graphLayout: GraphLayoutResult | undefined;
   let graphEngine: GraphLayoutEngine | undefined;
   // The config currently in effect — `options.config` initially, replaced by
@@ -313,21 +304,21 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     return graphEngine;
   }
 
-  /** Index d'agrégats et état de pli pour `target`. Le constructeur reçoit la
-   * liste COMPLÈTE des entités : l'index ne connaît que celles rattachées à un
-   * agrégat, et une entité isolée disparaîtrait sinon de la vue. */
-  function buildAggregateState(
-    target: Graph,
-    config: DataGraphConfig,
-  ): { index: AggregateIndex; collapse: AggregateCollapseState; roots: Map<NodeId, string> } {
-    const index = buildAggregates(target, validateConfig(config));
-    const entityIds: NodeId[] = [];
+  /** Index d'agrégats pour `target`. */
+  function buildAggregateState(target: Graph, config: DataGraphConfig): { index: AggregateIndex } {
+    return { index: buildAggregates(target, validateConfig(config)) };
+  }
+
+  /** Toutes les entités de `target` : c'est exactement ce que montre la vue
+   * graphe, qui ne cache rien. L'index d'agrégats ne connaît que les entités
+   * rattachées à un agrégat, donc on balaie le graphe et pas l'index — sans
+   * quoi une entité isolée disparaîtrait de la vue. */
+  function entityIdsOf(target: Graph): Set<NodeId> {
+    const ids = new Set<NodeId>();
     for (const node of target.nodes.values()) {
-      if (node.kind === "entity") entityIds.push(node.id);
+      if (node.kind === "entity") ids.add(node.id);
     }
-    const roots = new Map<NodeId, string>();
-    for (const aggregate of index.aggregates.values()) roots.set(aggregate.rootId, aggregate.id);
-    return { index, collapse: new AggregateCollapseState(index, entityIds), roots };
+    return ids;
   }
 
   /**
@@ -339,36 +330,26 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
    * page du nouveau graphe par des positions calculées sur l'ancien — voire
    * appellerait `layout()` sur une paire (graphe, index) dépareillée.
    *
-   * `reuse` conserve l'index et l'état de pli en place, ce qui préserve les
-   * agrégats repliés d'une bascule de vue à l'autre ; un changement de données
-   * passe `false`, ces structures étant indexées par id de nœud.
+   * `reuse` conserve l'index en place, qui ne dépend que du couple (graphe,
+   * config) et n'a donc pas à être recalculé d'une bascule de vue à l'autre ;
+   * un changement de données passe `false`, l'index étant indexé par id de
+   * nœud.
    */
   async function computeGraphView(
     target: Graph,
     config: DataGraphConfig,
     reuse: boolean,
   ): Promise<GraphViewState> {
-    const base =
-      reuse && aggregateIndex && aggregateCollapse
-        ? { index: aggregateIndex, collapse: aggregateCollapse, roots: aggregateRoots }
-        : buildAggregateState(target, config);
+    const base = reuse && aggregateIndex ? { index: aggregateIndex } : buildAggregateState(target, config);
     const engine = await ensureGraphEngine();
-    const layout = await engine.layout(target, base.index, base.collapse.visibleEntityIds(), metrics);
+    const layout = await engine.layout(target, base.index, entityIdsOf(target), metrics);
     return { ...base, layout };
   }
 
   /** Publie en un seul geste l'état calculé par `computeGraphView`. */
   function publishGraphView(state: GraphViewState): void {
     aggregateIndex = state.index;
-    aggregateCollapse = state.collapse;
-    aggregateRoots = state.roots;
     graphLayout = state.layout;
-  }
-
-  /** L'agrégat dont ce nœud est la RACINE, s'il en est une. Un simple membre ne
-   * plie rien : seul le chevron de la racine gouverne son agrégat. */
-  function rootAggregateOf(id: NodeId): string | null {
-    return aggregateRoots.get(id) ?? null;
   }
 
   /** Les positions de la vue courante. */
@@ -376,10 +357,11 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     return view === "graph" ? graphLayout?.positions : layoutResult?.positions;
   }
 
-  /** Les nœuds visibles de la vue courante : des entités en vue graphe, des
-   * nœuds de l'arbre de containment en vue structure. */
+  /** Les nœuds visibles de la vue courante : TOUTES les entités en vue graphe,
+   * qui ne plie rien, et les nœuds dépliés de l'arbre de containment en vue
+   * structure. */
   function activeVisible(): Set<NodeId> {
-    if (view === "graph") return aggregateCollapse?.visibleEntityIds() ?? new Set();
+    if (view === "graph") return graph ? entityIdsOf(graph) : new Set();
     return collapseState?.visibleNodeIds() ?? new Set();
   }
 
@@ -528,14 +510,10 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       const rect = positions.get(id);
       if (!node || !rect) continue;
       // Le chevron n'a de sens que là où un clic d'en-tête plie quelque chose :
-      // l'arbre de containment en vue structure, l'agrégat dont ce nœud est la
-      // racine en vue graphe.
-      const aggregateId = view === "graph" ? rootAggregateOf(id) : null;
-      const hasChevron = view === "graph" ? aggregateId !== null : node.childIds.length > 0;
-      const expanded =
-        view === "graph"
-          ? aggregateId === null || (aggregateCollapse?.isExpanded(aggregateId) ?? true)
-          : (collapseState?.isExpanded(id) ?? false);
+      // l'arbre de containment en vue structure, et RIEN en vue graphe, qui
+      // montre tout et ne plie plus aucun agrégat.
+      const hasChevron = view === "graph" ? false : node.childIds.length > 0;
+      const expanded = view === "graph" ? true : (collapseState?.isExpanded(id) ?? false);
       const nodeView = drawNode(
         node,
         rect,
@@ -584,25 +562,15 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
    * renders a header/rows distinction) — anywhere else, tapping the node
    * just selects it.
    *
-   * En vue graphe, c'est l'agrégat et non l'arbre que plie un clic d'en-tête,
-   * et seule sa racine en porte un ; le reste (lignes, références, sélection)
-   * est identique. */
+   * En vue graphe, aucun clic d'en-tête ne plie quoi que ce soit : tout y est
+   * toujours visible, donc l'en-tête sélectionne comme le corps. Le reste
+   * (lignes, références) est identique. */
   function handleNodeTap(node: GraphNode, nodeView: Container, event: FederatedPointerEvent): void {
     if (!graph) return;
     if (currentLod === 0) {
       const local = nodeView.toLocal(event.global);
       if (local.y < metrics.headerHeight) {
-        if (view === "graph") {
-          // En vue graphe, un clic d'en-tête sur une RACINE plie/déplie son
-          // agrégat ; sur une carte non-racine il n'y a rien à plier, donc il
-          // sélectionne, comme un clic d'en-tête sur un nœud sans enfant en vue
-          // structure.
-          const aggregateId = rootAggregateOf(node.id);
-          if (aggregateId) {
-            void toggleAggregate(aggregateId);
-            return;
-          }
-        } else if (node.childIds.length > 0) {
+        if (view !== "graph" && node.childIds.length > 0) {
           toggleExpand(node.id);
           return;
         }
@@ -628,53 +596,6 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     else void doExpand(id);
   }
 
-  /** Plie/déplie un agrégat en vue graphe, par relayout incrémental : les
-   * entités déjà placées restent épinglées, seules les nouvelles sont relaxées.
-   *
-   * Volontairement PAS de `fitInternal()` ici : recadrer la caméra à chaque pli
-   * annulerait tout l'intérêt de cet épinglage, qui existe précisément pour que
-   * la vue ne bouge pas sous les yeux de l'utilisateur. */
-  async function toggleAggregate(aggregateId: string): Promise<void> {
-    if (!graph || !aggregateIndex || !aggregateCollapse || !graphLayout) return;
-    // Même discipline que doExpand/doCollapse : une opération concurrente qui
-    // a déjà publié son propre layout ne doit pas être écrasée par le nôtre,
-    // devenu périmé pendant l'attente.
-    const gen = ++opGen;
-    const prev = graphLayout;
-    const collapse = aggregateCollapse;
-    const index = aggregateIndex;
-    const engine = await ensureGraphEngine();
-    if (destroyed || gen !== opGen) return;
-
-    let next: GraphLayoutResult;
-    if (collapse.isExpanded(aggregateId)) {
-      collapse.collapse(aggregateId);
-      next = engine.layoutAfterCollapse(prev, graph, index, aggregateId, collapse.visibleEntityIds());
-    } else {
-      collapse.expand(aggregateId);
-      next = await engine.layoutAfterExpand(
-        prev,
-        graph,
-        index,
-        aggregateId,
-        collapse.visibleEntityIds(),
-        metrics,
-      );
-      if (destroyed || gen !== opGen) {
-        // Superseded : on annule notre propre mutation d'état plutôt que de
-        // laisser `aggregateCollapse` en avance sur le layout publié — sinon
-        // les entités révélées n'auraient aucune position et ne seraient
-        // jamais dessinées.
-        collapse.collapse(aggregateId);
-        return;
-      }
-    }
-
-    graphLayout = next;
-    rebuild();
-    app.render();
-  }
-
   async function doExpand(id: NodeId): Promise<void> {
     if (!graph || !collapseState || !layoutResult || !engine) return;
     if (!graph.nodes.has(id) || collapseState.isExpanded(id)) return;
@@ -695,14 +616,13 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       // et ce `layoutResult` à moitié fusionné corrompt l'opération suivante
       // en lui servant de `prev`.
       //
-      // `opGen` est désormais PARTAGÉ avec la vue graphe : `toggleAggregate`
-      // et `setView` l'incrémentent aussi. Un clic sur le chevron d'un
-      // agrégat peut donc court-circuiter un `expand()` en vol — et le
-      // symétrique est immédiat, un `collapse()` appelé par l'hôte (sans
-      // effet visible en vue graphe, par contrat) incrémentant `opGen` de
-      // façon synchrone. La course ne demande plus deux opérations de la vue
-      // structure : elle traverse les vues, et le dégât ne se voit qu'au
-      // retour en vue structure.
+      // `opGen` est PARTAGÉ avec la vue graphe : `setView` l'incrémente
+      // aussi. Une bascule de vue peut donc court-circuiter un `expand()` en
+      // vol — et le symétrique est immédiat, un `collapse()` appelé par
+      // l'hôte (sans effet visible en vue graphe, par contrat) incrémentant
+      // `opGen` de façon synchrone. La course ne demande plus deux opérations
+      // de la vue structure : elle traverse les vues, et le dégât ne se voit
+      // qu'au retour en vue structure.
       collapseState.collapse(id);
       return;
     }
@@ -755,8 +675,8 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     if (!graph || !camera) return;
     if (!graph.nodes.has(id)) return;
 
-    // La vue graphe n'a pas d'arbre à déplier : elle n'a que des entités, dont
-    // la visibilité dépend du pli des agrégats et non d'un chemin d'ancêtres.
+    // La vue graphe n'a pas d'arbre à déplier : elle n'a que des entités, et
+    // elles y sont toutes visibles — aucun chemin d'ancêtres à ouvrir.
     // On centre donc sur la carte si elle est là, et rien d'autre — surtout pas
     // la cascade d'expansion ci-dessous, qui mettrait l'état de la vue
     // structure au travail sans rien montrer.
@@ -1016,8 +936,6 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     // changement de données. On l'invalide, puis on publie celui calculé plus
     // haut — sinon `rebuild()` peindrait les positions de l'ancien graphe.
     aggregateIndex = undefined;
-    aggregateCollapse = undefined;
-    aggregateRoots = new Map();
     graphLayout = undefined;
     if (graphViewFailed) view = "structure";
     if (newGraphView) publishGraphView(newGraphView);
@@ -1153,7 +1071,6 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
 
       rebuild();
       // Recadrer ICI est légitime : les deux vues n'ont aucun repère commun.
-      // C'est le pli d'un agrégat qui ne doit jamais recadrer.
       fitInternal();
       app.render();
     },

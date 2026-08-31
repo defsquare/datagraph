@@ -153,9 +153,9 @@ Returned by `createDataGraph(container, options)`.
 | `destroy()` | Tears down the Pixi application and releases all resources. |
 
 `DataGraphOptions.view?: "structure" \| "graph"` (default `"structure"`) picks the initial view at
-`createDataGraph` time; `setView`/`currentView` switch and query it afterwards. Folding an aggregate
-in the graph view is done by clicking its root card's header chevron — there is no public API for it,
-unlike `expand`/`collapse` which are structure-view-only.
+`createDataGraph` time; `setView`/`currentView` switch and query it afterwards. The graph view folds
+nothing: every entity is always visible there, and a header click just selects the card. `expand`/
+`collapse` remain structure-view-only.
 
 ## Themes
 
@@ -217,7 +217,6 @@ package's README for the latest numbers and any documented deviation.
 | --- | --- | --- |
 | Card overlap after layout | Zero overlapping pairs, always. The stronger `separationMargin` gap between every pair is measured and asserted at 334 cards; past ~450 the iteration cap can leave a few pairs closer than the margin (still never overlapping) — see the note below | `packages/core/test/layout-graph.test.ts` |
 | Determinism | Pixel-identical positions across two runs on the same input | `packages/core/test/layout-graph.test.ts` |
-| Median drift on already-placed cards when expanding an aggregate | ≤ 1e-6 px (measured 0px on 167 cards, floating-point noise aside) | `packages/core/test/layout-graph.test.ts` ("keeps median drift … at scale") |
 | `@defsquare/data-graph` bundle purity | `cytoscape` (~178 kB gzip) never enters a consumer's bundle unless it calls `setView("graph")` — the structure view alone doesn't pull it in | `packages/core/test/bundle-purity.test.ts` (core half) + `packages/renderer/test/bundle-purity.test.ts` (renderer half) |
 
 **Separation, measured.** After fcose runs, a relaxation pass (`separateOverlaps`)
@@ -236,18 +235,19 @@ does not converge-and-exit in practice — floating-point jitter keeps its
 `separationIterations` even on an easy input.
 
 The graph view's organic layout (fcose) is seeded deterministically from node
-ids rather than left to its default randomization, and cards already placed
-before an `expand()` are pinned in place during relayout. On a 167-card
-fixture (one isolated customer/order pair per aggregate, expanding a single
-aggregate to reveal its one order), the committed test measures a **median
-drift of 0px** across the 167 already-placed cards, with a **max of ~56px**
-on the rare card that a newly-inserted one lands on top of (`separateOverlaps`
-has no notion of "pinned," so it can still nudge one) — both figures are
-asserted, not just observed. Before pinning existed, a full relayout on every
-expand measured a **1084px median** drift on the same kind of fixture; that
-number is historical (from an ad hoc, uncommitted measurement during
-development) and no longer guarded by anything, since the pinned code path
-replaced the unpinned one rather than coexisting with it.
+ids rather than left to its default randomization, which is what makes the
+determinism row above assertable.
+
+**Folding was removed from the graph view**, and with it the incremental
+relayout that used to keep already-placed cards from drifting when an
+aggregate was unfolded. That mechanism pinned every placed card through
+fcose's `fixedNodeConstraint`, and a committed test measured its median drift
+at 0px (against 1084px for an unpinned full relayout). Both the code and that
+test are gone: everything is visible at all times, so there is no incremental
+relayout left to stabilise, and a budget with no test behind it would be worse
+than no budget. The history lives on in
+`docs/superpowers/specs/2026-08-31-graph-view-aggregates-design.md`.
+
 Switching to the graph view for the first time dynamically imports
 `cytoscape` and its `fcose` layout plugin; a Vite production build of
 [`apps/demo`](./apps/demo) emits that as its own ~178 kB gzip chunk

@@ -21,9 +21,8 @@ async function gotoReady(page: Page): Promise<void> {
 // `src/sample-data.ts`), mais son jeu par defaut ne compte que 4 entites : les
 // tests ci-dessous injectent par `setData` des jeux calibres pour ce qu'ils
 // prouvent. Le dernier test du fichier, lui, travaille sur le jeu etendu reel
-// de la demo, sans injection. Deux agregats (un par Customer), cinq
-// entites au total ; replier celui de c1 doit retirer o1 et o2 et n'en laisser
-// que trois : c1 (racine, toujours visible), c2 et o3.
+// de la demo, sans injection. Deux agregats (un par Customer), cinq entites au
+// total, toutes visibles en vue graphe : elle ne plie rien.
 const data = {
   customers: [
     { id: "c1", name: "Dupont", address: { city: "Paris" } },
@@ -215,10 +214,9 @@ test("la vue graphe tient sur le jeu de donnees etendu de la demo", async ({ pag
   expect(await page.evaluate(() => (window as any).__graph.currentView())).toBe("graph")
 
   // `bigShop(2000)` de la demo produit 53 clients et 158 commandes : 211
-  // entites, toutes visibles puisque les agregats naissent deplies et que
-  // chaque commande reference son client. La vue graphe ne montre QUE des
-  // entites, donc c'est exactement le compte attendu — un chiffre exact plutot
-  // qu'une borne, pour que toute derive du fixture se voie.
+  // entites, toutes visibles puisque la vue graphe ne plie rien. Elle ne montre
+  // QUE des entites, donc c'est exactement le compte attendu — un chiffre exact
+  // plutot qu'une borne, pour que toute derive du fixture se voie.
   expect(await visibleCount(page)).toBe(211)
 
   // Recadrage et rendu sous charge : le canvas doit rester peint, et rien ne
@@ -235,46 +233,5 @@ test("la vue graphe tient sur le jeu de donnees etendu de la demo", async ({ pag
   // Retour en vue structure : la bascule doit rester reversible a cette echelle.
   await page.evaluate(() => (window as any).__graph.setView("structure"))
   expect(await page.evaluate(() => (window as any).__graph.currentView())).toBe("structure")
-  expect(errors).toEqual([])
-})
-
-test("le chevron de la carte racine plie puis deplie son agregat", async ({ page }) => {
-  const errors: string[] = []
-  page.on("pageerror", e => errors.push(String(e)))
-
-  await gotoReady(page)
-  await loadAggregateData(page)
-  await page.evaluate(() => (window as any).__graph.setView("graph"))
-  expect(await visibleCount(page)).toBe(5)
-
-  // `focus` recentre la carte a l'echelle 1 : son centre tombe donc au centre
-  // du canvas. La hauteur exacte de la carte depend des polices mesurees a
-  // l'execution et n'est pas exposee, d'ou ce balayage vers le haut depuis le
-  // centre : le premier clic qui tombe dans l'en-tete plie l'agregat. Les
-  // clics precedents atterrissent dans le corps de la carte, ou ils ne font
-  // que selectionner (aucune ligne de Customer ne porte de reference).
-  await page.evaluate(() => (window as any).__graph.focus("/customers/0"))
-  const box = (await page.locator("canvas").boundingBox())!
-  const cx = box.x + box.width / 2
-  const cy = box.y + box.height / 2
-
-  let headerDy: number | null = null
-  for (let dy = -10; dy >= -80; dy -= 5) {
-    await page.mouse.click(cx, cy + dy)
-    await page.waitForTimeout(250)
-    if ((await visibleCount(page)) === 3) {
-      headerDy = dy
-      break
-    }
-  }
-
-  // Repli : c1 reste seule, o1 et o2 disparaissent ; c2 et o3 sont intacts.
-  expect(headerDy).not.toBeNull()
-  expect(await visibleCount(page)).toBe(3)
-
-  // Depli : le meme chevron ramene les membres.
-  await page.mouse.click(cx, cy + headerDy!)
-  await expect.poll(() => visibleCount(page), { timeout: 5000 }).toBe(5)
-
   expect(errors).toEqual([])
 })

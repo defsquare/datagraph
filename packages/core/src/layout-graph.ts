@@ -35,21 +35,6 @@ export interface GraphLayoutEngine {
     visible: Set<NodeId>,
     metrics?: NodeMetrics,
   ): Promise<GraphLayoutResult>
-  layoutAfterExpand(
-    prev: GraphLayoutResult,
-    graph: Graph,
-    aggregates: AggregateIndex,
-    expandedAggId: string,
-    visible: Set<NodeId>,
-    metrics?: NodeMetrics,
-  ): Promise<GraphLayoutResult>
-  layoutAfterCollapse(
-    prev: GraphLayoutResult,
-    graph: Graph,
-    aggregates: AggregateIndex,
-    collapsedAggId: string,
-    visible: Set<NodeId>,
-  ): GraphLayoutResult
 }
 
 const DEFAULTS: Required<GraphLayoutOptions> = {
@@ -131,9 +116,7 @@ function seedPosition(id: string, radius: number): Point {
 /**
  * Une enveloppe par agrégat ayant au moins un membre positionné, dans le
  * repère de `positions`. Ordre stable : celui de `aggregates`, qui suit
- * lui-même l'ordre de déclaration de la config. Extrait ici pour être
- * réutilisé tel quel par `layoutAfterCollapse` (Task 8), qui recalcule les
- * enveloppes sans relancer tout le layout.
+ * lui-même l'ordre de déclaration de la config.
  *
  * Le chevauchement (une entité membre de plusieurs agrégats) n'a pas besoin
  * d'un montage particulier ici : chaque agrégat calcule son enveloppe
@@ -166,15 +149,11 @@ function computeClusters(
 export function createGraphLayoutEngine(opts: GraphLayoutOptions = {}): GraphLayoutEngine {
   const options: Required<GraphLayoutOptions> = { ...DEFAULTS, ...opts }
 
-  // Corps commun à `layout` et `layoutAfterExpand`. `pinned`, quand fourni,
-  // fixe la position de départ ET finale des nœuds déjà placés — c'est
-  // l'unique différence entre un premier layout et un relayout incrémental.
   async function run(
     graph: Graph,
     aggregates: AggregateIndex,
     visible: Set<NodeId>,
     metrics: NodeMetrics,
-    pinned?: Map<NodeId, Point>,
   ): Promise<GraphLayoutResult> {
     const sizes = new Map<NodeId, { width: number; height: number }>()
     const elements: cytoscape.ElementDefinition[] = []
@@ -194,15 +173,10 @@ export function createGraphLayoutEngine(opts: GraphLayoutOptions = {}): GraphLay
       const node = graph.nodes.get(id)!
       const size = measureNode(node, metrics)
       sizes.set(id, size)
-      // Un nœud épinglé démarre à sa position connue (centre), pas au
-      // hachage : fcose n'a besoin de le déplacer que si une force l'y
-      // contraint, ce qui ne devrait plus arriver une fois `fixedNodeConstraint`
-      // posé plus bas.
-      const pin = pinned?.get(id)
       elements.push({
         group: "nodes",
         data: { id, w: size.width, h: size.height },
-        position: pin ? { x: pin.x, y: pin.y } : seedPosition(id, radius),
+        position: seedPosition(id, radius),
       })
     }
 
@@ -260,12 +234,6 @@ export function createGraphLayoutEngine(opts: GraphLayoutOptions = {}): GraphLay
         const t = sizes.get(edge.target().id()) ?? { width: 160, height: 40 }
         return (s.width + t.width) / 2 + options.separationMargin * 2
       },
-      // Épingle les entités déjà placées : seuls les nœuds nouvellement
-      // révélés sont relaxés. C'est ce qui annule la dérive globale d'une
-      // force-layout — la carte que l'utilisateur regardait ne bouge plus.
-      fixedNodeConstraint: pinned
-        ? [...pinned].map(([nodeId, position]) => ({ nodeId, position }))
-        : undefined,
     } as cytoscape.LayoutOptions)
 
     const done = layout.promiseOn("layoutstop")
@@ -288,22 +256,17 @@ export function createGraphLayoutEngine(opts: GraphLayoutOptions = {}): GraphLay
 
     separateOverlaps(positions, options.separationMargin, options.separationIterations)
 
-    // Normalisation : le coin haut-gauche de la bbox à l'origine. Sous
-    // épinglage, cette translation déplacerait UNIFORMÉMENT tous les nœuds
-    // épinglés — exactement la dérive que l'épinglage doit annuler. On la
-    // saute donc entièrement quand `pinned` est fourni.
-    if (!pinned) {
-      let minX = Infinity
-      let minY = Infinity
+    // Normalisation : le coin haut-gauche de la bbox à l'origine.
+    let minX = Infinity
+    let minY = Infinity
+    for (const rect of positions.values()) {
+      minX = Math.min(minX, rect.x)
+      minY = Math.min(minY, rect.y)
+    }
+    if (Number.isFinite(minX)) {
       for (const rect of positions.values()) {
-        minX = Math.min(minX, rect.x)
-        minY = Math.min(minY, rect.y)
-      }
-      if (Number.isFinite(minX)) {
-        for (const rect of positions.values()) {
-          rect.x -= minX
-          rect.y -= minY
-        }
+        rect.x -= minX
+        rect.y -= minY
       }
     }
 
@@ -317,38 +280,6 @@ export function createGraphLayoutEngine(opts: GraphLayoutOptions = {}): GraphLay
   return {
     async layout(graph, aggregates, visible, metrics = DEFAULT_METRICS) {
       return run(graph, aggregates, visible, metrics)
-    },
-
-    // Task 8 : relayout incrémental après expansion d'un agrégat. Seules les
-    // entités nouvellement révélées sont relaxées ; tout ce qui était déjà
-    // visible reste épinglé à sa position actuelle.
-    async layoutAfterExpand(prev, graph, aggregates, _expandedAggId, visible, metrics = DEFAULT_METRICS) {
-      // Toutes les entités déjà positionnées ET toujours visibles sont
-      // épinglées à leur centre actuel ; les nouvelles seules sont relaxées.
-      const pinned = new Map<NodeId, Point>()
-      for (const [id, rect] of prev.positions) {
-        if (!visible.has(id)) continue
-        pinned.set(id, { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 })
-      }
-      return run(graph, aggregates, visible, metrics, pinned)
-    },
-
-    // Task 8 : relayout incrémental après réduction d'un agrégat. Synchrone :
-    // on ne fait que retirer des nœuds et recalculer les enveloppes, sans
-    // relancer aucune force.
-    layoutAfterCollapse(prev, _graph, aggregates, _collapsedAggId, visible) {
-      // Synchrone par contrat : on retire les nœuds devenus invisibles et on
-      // recalcule les enveloppes sur ce qui reste. Aucune force ne tourne, donc
-      // le trou laissé ne se referme pas jusqu'au prochain dépliage — c'est un
-      // compromis assumé, cohérent avec l'épinglage.
-      const positions = new Map<NodeId, Rect>()
-      for (const [id, rect] of prev.positions) {
-        if (visible.has(id)) positions.set(id, { ...rect })
-      }
-
-      const clusters = computeClusters(aggregates, positions, options.hullPadding)
-
-      return { positions, clusters }
     },
   }
 }

@@ -130,12 +130,13 @@ checks this package's sources for any static *value* import of that entry point
 — turning `create.ts`'s `import type` into a value import would put cytoscape
 in every consumer's bundle while leaving the rest of the suite green.
 
-**Folding.** `expand`/`collapse` are structure-view operations (see the
+**No folding.** `expand`/`collapse` are structure-view operations (see the
 [root README's API table](https://github.com/defsquare/data-graph#public-api--datagraph));
 they act on the containment tree and have no visible effect in the graph
-view. There is **no public API** to fold an aggregate. Instead, clicking an
-aggregate root card's header chevron folds or unfolds that aggregate's
-members directly on the canvas.
+view. The graph view itself folds nothing: every entity is always drawn,
+aggregate cards carry no chevron, and a header click selects the card just
+like a body click. An earlier version folded an aggregate onto its root card
+from that chevron; it was removed.
 
 **Selection carry-over.** The graph view only knows entities — a structure
 node nested under one (e.g. an address object) has no counterpart there.
@@ -144,14 +145,10 @@ nearest entity ancestor rather than dropping it.
 
 **Determinism.** The graph-view layout is deterministic to the pixel: two
 runs on identical input produce identical positions (seeded from node ids,
-not left to fcose's default randomization). Expanding an aggregate pins every
-already-placed card so the rest of the layout doesn't drift — a committed
-test measures a **median drift of 0px** (max ~56px on the rare card a
-newly-inserted one lands on, since `separateOverlaps` doesn't know about
-pins) across 167 already-placed cards on a single-aggregate expand. Before
-pinning existed, an unpinned full relayout measured 1084px median drift on
-the same kind of fixture — a historical, no-longer-guarded number, since that
-code path was replaced rather than kept around. See the
+not left to fcose's default randomization). Removing folding also removed the
+pinned incremental relayout that used to bound drift on already-placed cards
+when an aggregate was unfolded, along with the 0px-median-drift budget it
+enforced — there is no longer any incremental relayout to stabilise. See the
 [root README's performance budgets](https://github.com/defsquare/data-graph#performance-budgets)
 for the full table.
 
