@@ -21,7 +21,7 @@ import {
   type SearchResult,
 } from "@defsquare/data-graph-core";
 import { entityAccentMap, resolveTheme, type Theme, type ThemeOverride } from "./theme.js";
-import { measureFontMetrics } from "./font-metrics.js";
+import { fontsReady, measureFontMetrics } from "./font-metrics.js";
 import { Camera, type Size } from "./camera.js";
 import {
   drawEdgeHitAreas,
@@ -61,9 +61,15 @@ export interface DataGraph {
   on(event: DataGraphEvent, callback: (payload: any) => void): () => void;
   setData(data: unknown, config?: DataGraphConfig): Promise<void>;
   diagnostics(): Diagnostic[];
-  /** Remplace le thème et redessine, sans relancer le layout : les
-   * `NodeMetrics` ne dépendent pas du thème, donc les positions restent
-   * valides. */
+  /** Remplace le thème et redessine, sans relancer le layout ni remesurer les
+   * polices. Ceci n'est sûr que si `typography` et `fonts` ne changent pas —
+   * c'est le cas pour un couple de thèmes clair/sombre, qui ne diffèrent que
+   * par les couleurs. Les `NodeMetrics` sont mesurées une seule fois, à
+   * l'initialisation ; changer `typography`/`fonts` ici désynchroniserait
+   * ces métriques du thème effectivement dessiné (glyphes redimensionnés
+   * sans que la mise en page des cartes ne bouge). Il n'existe aujourd'hui
+   * aucune API pour changer la police après coup : cela demande de recréer
+   * l'instance via `createDataGraph`. */
   setTheme(theme: Theme | ThemeOverride): void;
   destroy(): void;
 }
@@ -199,9 +205,11 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   }
 
   function viewport(): Size {
-    // `renderer.screen` est en pixels CSS, comme le `stage`. `renderer.width`
-    // est en pixels device dès qu'`autoDensity` est actif et casserait donc
-    // `fitTo`/`centerOn` sur écran Retina.
+    // `screen` et `width`/`height` sont actuellement d'accord sous
+    // `autoDensity` (le view texture a son frame en pixels logiques). On lit
+    // `screen` quand même : c'est l'API qui signifie explicitement "pixels
+    // CSS", ce sur quoi travaille le `stage` — et donc celle qui reste
+    // correcte si ce détail d'implémentation de Pixi change.
     const screen = app.renderer?.screen;
     return { width: screen?.width ?? 0, height: screen?.height ?? 0 };
   }
@@ -525,6 +533,12 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       return;
     }
 
+    // `setTheme` a pu tourner pendant que `app.init()` était en vol : à ce
+    // moment `app.renderer` n'existait pas encore, donc son assignation de
+    // fond a été sautée (elle est gardée par `if (app.renderer)`). Ré-appliquer
+    // ici honore un thème installé pendant l'init.
+    app.renderer.background.color = theme.surface.canvas;
+
     // Pixi v8's BitmapText only rasterizes reliably on WebGL/WebGPU; its
     // software "canvas" fallback renderer (used when neither is available)
     // leaves BitmapText blank, so use plain Text there (see draw.ts).
@@ -536,6 +550,12 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
 
     currentConfig = options.config;
     graph = buildGraph(options.data, currentConfig);
+    // Les avances ne sont mesurées qu'une fois. Mesurer avant que la police web
+    // soit prête figerait celles de la pile de repli pour toute la session, et
+    // les largeurs de cartes varieraient d'un chargement à l'autre. Le timeout
+    // borne l'attente : un service de polices lent ne doit pas bloquer le rendu.
+    await fontsReady(1500);
+    if (destroyed) return;
     metrics = measureFontMetrics(theme, DEFAULT_METRICS);
     refreshEntityAccents(currentConfig);
     collapseState = new CollapseState(graph);
@@ -672,12 +692,18 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
 
     setTheme(next: Theme | ThemeOverride): void {
       if (destroyed) return;
-      // Un Theme complet est reconnaissable à la présence de `entityPalette` ;
-      // une surcharge partielle est fusionnée sur le thème courant.
-      theme =
-        "entityPalette" in next && Array.isArray(next.entityPalette)
-          ? (next as Theme)
-          : resolveTheme(next as ThemeOverride, theme);
+      // Un `Theme` complet est aussi structurellement valide comme
+      // `ThemeOverride` (chaque groupe de `DeepPartial` est optionnel, donc
+      // aucun champ ne peut servir de discriminant sûr — un override qui
+      // fixe `entityPalette` est parfaitement légal et ne doit pas être
+      // confondu avec un thème complet). `resolveTheme` est idempotente sur
+      // un `Theme` complet : chaque groupe étale `base` puis `partial`, donc
+      // passer un `Theme` entier reproduit exactement ce `Theme`.
+      // Conséquence assumée : un `byEntityType` déjà en place survit à un
+      // changement de thème, puisque `resolveTheme` le reporte depuis
+      // `base` quand `partial` n'en fournit pas — c'est le comportement
+      // voulu pour un bascule clair/sombre.
+      theme = resolveTheme(next as ThemeOverride, theme);
       refreshEntityAccents(currentConfig);
       if (app.renderer) app.renderer.background.color = theme.surface.canvas;
       rebuild();

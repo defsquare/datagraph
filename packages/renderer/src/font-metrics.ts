@@ -55,3 +55,16 @@ function createContext(): CanvasRenderingContext2D | null {
     return null;
   }
 }
+
+/**
+ * Attend que les polices web déclarées par la page aient fini de charger (ou
+ * `timeoutMs`, au premier des deux) avant de rendre la main. Sans DOM (Node,
+ * test) ou sans `document.fonts`, résout immédiatement — il n'y a rien à
+ * attendre. Le timeout borne l'attente : un service de polices lent ou
+ * indisponible ne doit jamais bloquer indéfiniment l'initialisation.
+ */
+export async function fontsReady(timeoutMs: number): Promise<void> {
+  const fonts = (globalThis as { document?: { fonts?: { ready?: Promise<unknown> } } }).document?.fonts;
+  if (!fonts?.ready) return;
+  await Promise.race([fonts.ready, new Promise((r) => setTimeout(r, timeoutMs))]);
+}

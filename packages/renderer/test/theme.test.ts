@@ -80,6 +80,44 @@ describe("resolveTheme", () => {
     const custom = resolveTheme({ byEntityType: { Customer: { accent: "#ff0000" } } });
     expect(custom.byEntityType).toEqual({ Customer: { accent: "#ff0000" } });
   });
+
+  // Régression fix round 1, finding 1 : `setTheme` (create.ts) délègue
+  // directement à `resolveTheme(next as ThemeOverride, theme)`, sans
+  // discriminant Theme/ThemeOverride — un ancien discriminant fondé sur la
+  // présence de `entityPalette` confondait à tort un override qui fixe
+  // seulement la palette avec un Theme complet, et le cast qui en résultait
+  // faisait planter `theme.surface.canvas` en aval. Un override qui ne fixe
+  // que `entityPalette` doit rester un override normal : ne pas lancer, et
+  // ne changer que la palette (donc les couleurs de rail), le reste du thème
+  // restant celui de la base.
+  it("ne plante pas sur un override qui ne fixe que entityPalette, et ne change que la palette", () => {
+    const overriddenPalette = ["#111111", "#222222", "#333333"];
+    let custom: Theme | undefined;
+    expect(() => {
+      custom = resolveTheme({ entityPalette: overriddenPalette }, defsquareLight);
+    }).not.toThrow();
+    expect(custom!.entityPalette).toEqual(overriddenPalette);
+    // Le reste du thème (nécessaire au rendu, ex. le fond du canvas) doit
+    // provenir intact de la base — pas d'un cast fautif vers un Theme partiel.
+    expect(custom!.surface).toEqual(defsquareLight.surface);
+    expect(custom!.typography).toEqual(defsquareLight.typography);
+
+    // Et la conséquence observable pour l'appelant : les rails changent.
+    const before = entityAccentMap(["Customer", "Order"], defsquareLight);
+    const after = entityAccentMap(["Customer", "Order"], custom!);
+    expect(after.get("Customer")).toBe(overriddenPalette[0]);
+    expect(after.get("Order")).toBe(overriddenPalette[1]);
+    expect(after.get("Customer")).not.toBe(before.get("Customer"));
+  });
+
+  it("est idempotente sur un Theme complet (setTheme(fullTheme) reproduit exactement fullTheme)", () => {
+    // C'est cette idempotence qui permet à `setTheme` de toujours appeler
+    // `resolveTheme(next as ThemeOverride, theme)` même quand `next` est un
+    // Theme complet, sans avoir besoin de le distinguer d'un override. Un
+    // `Theme` complet est structurellement assignable à `ThemeOverride`
+    // (chaque groupe de `DeepPartial` accepte un objet totalement rempli).
+    expect(resolveTheme(defsquareDark, defsquareLight)).toEqual(defsquareDark);
+  });
 });
 
 describe("entityAccentMap", () => {
