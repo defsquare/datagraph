@@ -76,6 +76,12 @@ deltas with some horizontal component. A very fast, perfectly vertical swipe
 can therefore be read as a wheel and zoom instead of panning. The threshold is
 deliberately set high so this stays rare.
 
+Containment edges are drawn beneath the node cards; reference edges are drawn
+above them. A reference often points back to the left and crosses whatever
+cards sit between it and its target, so underneath it was invisible along most
+of its length. Their click targets stay beneath the cards, so clicking a card
+always wins over clicking an edge that flies over it.
+
 Zoom is bounded to `[0.02, 3]`. `fit()` never scales past `1` — magnifying a
 bitmap-font atlas baked at its nominal size is what made text look soft — so a
 graph smaller than the viewport is centred rather than blown up.

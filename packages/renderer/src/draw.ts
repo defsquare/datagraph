@@ -1,4 +1,4 @@
-import { BitmapFont, BitmapFontManager, BitmapText, Container, Graphics, Rectangle, Text } from "pixi.js";
+import { BitmapText, Container, Graphics, Rectangle, Text } from "pixi.js";
 import {
   badgeTextFor,
   headerTextFor,
@@ -11,6 +11,9 @@ import {
   type RefEdge,
 } from "@defsquare/data-graph-core";
 import type { Theme, TypeStyle } from "./theme.js";
+import { fontNameFor, type TextRole } from "./font-registry.js";
+
+export type { TextRole };
 
 export type Lod = 0 | 1 | 2;
 
@@ -24,8 +27,6 @@ export function lodForScale(scale: number): Lod {
   if (scale >= LOD1_MIN_SCALE) return 1;
   return 2;
 }
-
-export type TextRole = "header" | "badge" | "key" | "value";
 
 /** L'avance à utiliser pour tronquer un rôle donné. DOIT rester alignée sur
  * ce que `measureNode` a budgété pour ce même rôle : c'est l'invariant que
@@ -53,53 +54,10 @@ export function truncateToWidth(text: string, maxWidth: number, charWidth: numbe
   return `${text.slice(0, maxChars - 1)}…`;
 }
 
-// Une police bitmap par rôle : les quatre diffèrent en famille, taille ou
-// graisse, et BitmapFont cuit un atlas par combinaison.
-const FONT_NAMES: Record<TextRole, string> = {
-  header: "dg-header",
-  badge: "dg-badge",
-  key: "dg-key",
-  value: "dg-value",
-};
-
-// Résolution 2 : le texte reste net jusqu'à 2x de zoom au lieu de baver dès
-// que la caméra dépasse 1x.
-const FONT_RESOLUTION = 2;
-
-/** Signature d'un rôle, pour ne réinstaller un atlas que si son style change. */
-const installed = new Map<TextRole, string>();
-
-function styleKey(theme: Theme, role: TextRole): string {
-  const s = theme.typography[role];
-  const family = s.family === "body" ? theme.fonts.body : theme.fonts.mono;
-  // `tracking` doit faire partie de la clé : `ensureFonts` le cuit dans
-  // l'atlas via `letterSpacing`, donc deux thèmes qui ne diffèrent que par
-  // `typography.*.tracking` partageraient sinon un atlas obsolète.
-  return `${family}|${s.size}|${s.weight}|${s.tracking ?? 0}`;
-}
-
-function ensureFonts(theme: Theme): void {
-  for (const role of ["header", "badge", "key", "value"] as TextRole[]) {
-    const key = styleKey(theme, role);
-    if (installed.get(role) === key) continue;
-    if (installed.has(role)) BitmapFont.uninstall(FONT_NAMES[role]);
-    const s = theme.typography[role];
-    BitmapFont.install({
-      name: FONT_NAMES[role],
-      style: {
-        fontFamily: s.family === "body" ? theme.fonts.body : theme.fonts.mono,
-        fontSize: s.size,
-        fontWeight: String(s.weight) as never,
-        letterSpacing: (s.tracking ?? 0) * s.size,
-        fill: "#ffffff",
-      },
-      chars: BitmapFontManager.ASCII,
-      resolution: FONT_RESOLUTION,
-      dynamicFill: true,
-    });
-    installed.set(role, key);
-  }
-}
+// L'installation des atlas appartient à `font-registry.ts`, qui les compte
+// par référence : le nom d'un atlas y est une fonction pure du thème et du
+// rôle, si bien que `drawNode` le retrouve sans rien recevoir de l'appelant.
+// C'est `create.ts` qui tient le bail et le libère à `destroy()`.
 
 /**
  * BitmapText ne se rastérise pas de façon fiable sous le renderer canvas
@@ -118,7 +76,10 @@ function createLabel(
 ): BitmapText | Text {
   const s: TypeStyle = theme.typography[role];
   if (useBitmapText) {
-    const t = new BitmapText({ text, style: { fontFamily: FONT_NAMES[role], fontSize: s.size } });
+    const t = new BitmapText({
+      text,
+      style: { fontFamily: fontNameFor(theme, role), fontSize: s.size },
+    });
     t.tint = color;
     return t;
   }
@@ -168,8 +129,8 @@ export function drawNode(
   metrics: NodeMetrics = DEFAULT_METRICS,
   expanded = false,
 ): Container {
-  if (useBitmapText) ensureFonts(theme);
-
+  // Les atlas sont installés par le bail que tient `create.ts`, avant tout
+  // appel ici. `fontNameFor` en dérive le nom depuis le thème seul.
   const container = new Container();
   container.cullable = true;
   container.cullArea = new Rectangle(0, 0, rect.width, rect.height);
@@ -370,7 +331,12 @@ const DANGLING_CROSS_RADIUS = 4;
  * Renvoie un Graphics vide en LOD 2 (les arêtes ne sont ni lisibles ni
  * rentables à ce niveau de dézoom).
  */
-export function drawEdges(graph: Graph, positions: Map<NodeId, Rect>, theme: Theme, lod: Lod): Graphics {
+export function drawContainEdges(
+  graph: Graph,
+  positions: Map<NodeId, Rect>,
+  theme: Theme,
+  lod: Lod,
+): Graphics {
   const g = new Graphics();
   if (lod === 2) return g;
 
@@ -389,6 +355,30 @@ export function drawEdges(graph: Graph, positions: Map<NodeId, Rect>, theme: The
     hasContain = true;
   }
   if (hasContain) g.stroke({ width: theme.strokes.edge, color: theme.edge.contain });
+
+  return g;
+}
+
+/**
+ * Dessine les arêtes de référence : résolues en pointillés terminés par une
+ * tête de flèche, cassées en moignon barré d'une croix.
+ *
+ * Séparé de `drawContainEdges` parce que les deux ne vivent pas dans le même
+ * calque. Une référence remonte souvent vers la gauche et traverse alors les
+ * cartes qui la séparent de sa cible ; dessinée sous elles, elle était
+ * invisible sur presque toute sa longueur. Les arêtes de contenance, elles,
+ * relient le bord droit d'un parent au bord gauche d'un enfant et ne
+ * traversent rien — elles restent donc sous les cartes, où elles ne
+ * surchargent pas la lecture.
+ */
+export function drawRefEdges(
+  graph: Graph,
+  positions: Map<NodeId, Rect>,
+  theme: Theme,
+  lod: Lod,
+): Graphics {
+  const g = new Graphics();
+  if (lod === 2) return g;
 
   let hasRef = false;
   const resolved: { x1: number; y1: number; x2: number; y2: number }[] = [];

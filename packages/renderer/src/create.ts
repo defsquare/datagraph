@@ -21,11 +21,13 @@ import {
   type SearchResult,
 } from "@defsquare/data-graph-core";
 import { entityAccentMap, resolveTheme, type Theme, type ThemeOverride } from "./theme.js";
+import { pixiFontRegistry } from "./font-registry.js";
 import { fontsReady, measureFontMetrics } from "./font-metrics.js";
 import { Camera, type Size } from "./camera.js";
 import {
   drawEdgeHitAreas,
-  drawEdges,
+  drawContainEdges,
+  drawRefEdges,
   drawNode,
   drawSearchHighlights,
   drawSelectionOverlay,
@@ -152,11 +154,22 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
 
   const app = new Application();
   const world = new Container();
-  let edgesGraphics = new Graphics();
+  let containEdges = new Graphics();
   const edgeHitLayer = new Container();
   const nodesLayer = new Container();
+  // Les références passent AU-DESSUS des cartes : elles remontent souvent vers
+  // la gauche et traversent alors les cartes qui les séparent de leur cible.
+  // Les zones de clic restent sous les cartes, pour qu'un clic sur une carte
+  // l'emporte toujours sur un clic sur une arête qui la survole.
+  let refEdges = new Graphics();
   let overlayGraphics = new Container();
-  world.addChild(edgesGraphics, edgeHitLayer, nodesLayer, overlayGraphics);
+  world.addChild(containEdges, edgeHitLayer, nodesLayer, refEdges, overlayGraphics);
+
+  // Le bail d'atlas de cette instance. Les atlas Pixi sont globaux par nom,
+  // donc partagés entre instances ; le registre les compte par référence et ne
+  // désinstalle qu'au départ du dernier porteur. Sans lui, `destroy()` ne
+  // pouvait rien libérer et la mémoire de texture fuyait à chaque montage.
+  const fontLease = pixiFontRegistry.lease();
 
   let camera: Camera | null = null;
   let graph: Graph | undefined;
@@ -306,9 +319,17 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     nodeViews.clear();
     for (const child of edgeHitLayer.removeChildren()) child.destroy();
 
-    edgesGraphics.destroy();
-    edgesGraphics = drawEdges(graph, layoutResult.positions, theme, currentLod);
-    world.addChildAt(edgesGraphics, 0);
+    // Les atlas doivent exister avant que `drawNode` n'en dérive les noms.
+    if (useBitmapText) fontLease.sync(theme);
+
+    containEdges.destroy();
+    containEdges = drawContainEdges(graph, layoutResult.positions, theme, currentLod);
+    world.addChildAt(containEdges, 0);
+
+    refEdges.destroy();
+    refEdges = drawRefEdges(graph, layoutResult.positions, theme, currentLod);
+    // Juste au-dessus des cartes, juste en dessous des surlignages.
+    world.addChildAt(refEdges, world.getChildIndex(nodesLayer) + 1);
 
     for (const hit of drawEdgeHitAreas(graph, layoutResult.positions)) {
       attachTap(hit.graphics, () => followRef(hit.edge));
@@ -650,40 +671,52 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     fitInternal();
   }
 
+  // Après `destroy()`, chaque méthode publique doit être un no-op sûr plutôt
+  // qu'un throw : un hôte qui démonte son composant n'a aucun moyen d'annuler
+  // un callback déjà planifié, et `camera`/`app.stage` sont alors détruits.
   return {
     ready,
 
     fit(): void {
+      if (destroyed) return;
       fitInternal();
     },
 
     async expand(id: NodeId): Promise<void> {
+      if (destroyed) return;
       await doExpand(id);
     },
 
     async collapse(id: NodeId): Promise<void> {
+      if (destroyed) return;
       doCollapse(id);
     },
 
     focus(id: NodeId): void {
+      if (destroyed) return;
       void focusOn(id);
     },
 
     select(id: NodeId): void {
+      if (destroyed) return;
       doSelect(id);
     },
 
     search(query: string): SearchResult[] {
+      if (destroyed) return [];
       return doSearch(query);
     },
     nextMatch(): SearchResult | null {
+      if (destroyed) return null;
       return stepMatch(1);
     },
     prevMatch(): SearchResult | null {
+      if (destroyed) return null;
       return stepMatch(-1);
     },
 
     on(event: DataGraphEvent, callback: (payload: any) => void): () => void {
+      if (destroyed) return () => {};
       return emitter.on(event, callback);
     },
 
@@ -726,8 +759,13 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     },
 
     destroy(): void {
+      if (destroyed) return;
       destroyed = true;
       camera?.dispose();
+      camera = null;
+      // Libère la part de cette instance dans les atlas partagés : ils ne sont
+      // désinstallés que si plus aucune autre instance ne les porte.
+      fontLease.dispose();
       emitter.clear();
       // `ready` may still be in flight (destroy() called before app.init()
       // resolved); guard so we never throw on a half-initialized renderer.

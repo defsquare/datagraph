@@ -99,3 +99,27 @@ test("setTheme accepte une surcharge partielle de palette sans planter", async (
   await page.evaluate(() => (window as any).__graph.select("/customers/0"))
   await expect(page.locator("#selection-label")).toContainText("Customer #c1")
 })
+
+test("les methodes publiques sont inoffensives apres destroy()", async ({ page }) => {
+  await gotoReady(page)
+  const errors: string[] = []
+  page.on("pageerror", e => errors.push(String(e)))
+  // Un hote qui demonte son composant ne peut pas annuler un callback deja
+  // planifie : chaque methode doit devenir un no-op sur, pas lever.
+  const returned = await page.evaluate(() => {
+    const g = (window as any).__graph
+    g.destroy()
+    g.destroy() // idempotent
+    g.fit()
+    g.focus("/customers/0")
+    g.select("/customers/0")
+    return {
+      search: g.search("Dupont").length,
+      next: g.nextMatch(),
+      prev: g.prevMatch(),
+      unsubscribeIsFunction: typeof g.on("select", () => {}) === "function",
+    }
+  })
+  expect(errors).toEqual([])
+  expect(returned).toEqual({ search: 0, next: null, prev: null, unsubscribeIsFunction: true })
+})

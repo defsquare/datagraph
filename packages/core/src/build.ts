@@ -82,7 +82,7 @@ export function buildGraph(data: unknown, config: DataGraphConfig): Graph {
         kind: "object",
         id,
         path: [...path],
-        label: "$",
+        label: validated.rootLabel,
         rows: [{ key: "$value", value, valueType: scalarValueType(value) }],
         parentId,
         childIds: [],
@@ -97,7 +97,7 @@ export function buildGraph(data: unknown, config: DataGraphConfig): Graph {
 
     let label: string
     if (path.length === 0) {
-      label = "$"
+      label = validated.rootLabel
     } else {
       const key = path[path.length - 1]!
       label = parentNode && parentNode.kind === "array" ? `${parentNode.label}[${key}]` : String(key)

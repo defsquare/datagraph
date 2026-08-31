@@ -104,7 +104,8 @@ doesn't exist).
   "references": {
     "Order": { "customerId": "Customer" }
   },
-  "maxNodes": 50000
+  "maxNodes": 50000,
+  "rootLabel": "$"
 }
 ```
 
@@ -112,6 +113,10 @@ doesn't exist).
 - `entities.<Type>.id` — the field on each matched object that holds its unique id.
 - `references.<Type>.<field>` — declares `<Type>.<field>` as a foreign key pointing at another configured entity type.
 - `maxNodes` — optional safety cap (default `50000`); `buildGraph` throws `GraphTooLargeError` past it.
+- `rootLabel` — label shown on the root node (default `"$"`, the root symbol of
+  the same selector syntax `match` uses). Set it to something your users
+  recognise — `"Shop"`, `"Invoice"` — when the graph is customer-facing. An
+  empty string is honoured rather than falling back to the default.
 
 ## Public API — `DataGraph`
 

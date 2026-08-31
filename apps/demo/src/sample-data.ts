@@ -33,6 +33,7 @@ export const shopConfig: DataGraphConfig = {
     Order: { match: "$.orders[*]", id: "id" },
   },
   references: { Order: { customerId: "Customer" } },
+  rootLabel: "Boutique",
 };
 
 /** Generates ~`n` logical nodes worth of shop data, for scale testing. */

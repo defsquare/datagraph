@@ -9,12 +9,17 @@ export interface DataGraphConfig {
   entities: Record<string, EntityConfig>
   references?: Record<string, Record<string, string>>
   maxNodes?: number
+  /** Libellé du nœud racine. Défaut `"$"` — le symbole racine de la syntaxe de
+   * sélecteur que `entities[].match` utilise déjà, donc cohérent avec la
+   * config plutôt que dénué de sens. Une chaîne vide est respectée. */
+  rootLabel?: string
 }
 
 export interface ValidatedConfig {
   entities: Map<string, { segments: PathSegment[]; idField: string }>
   references: Map<string, Map<string, string>>
   maxNodes: number
+  rootLabel: string
 }
 
 export function validateConfig(config: DataGraphConfig): ValidatedConfig {
@@ -53,9 +58,14 @@ export function validateConfig(config: DataGraphConfig): ValidatedConfig {
   // Apply default maxNodes
   const maxNodes = config.maxNodes ?? 50_000
 
+  // `??` et non `||` : une chaîne vide est un libellé valide que l'appelant a
+  // le droit de vouloir.
+  const rootLabel = config.rootLabel ?? "$"
+
   return {
     entities,
     references,
     maxNodes,
+    rootLabel,
   }
 }
