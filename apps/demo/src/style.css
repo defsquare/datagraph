@@ -247,6 +247,12 @@ html, body {
   border-radius: var(--radius-sm);
 }
 
+/* Une règle d'id l'emporte sur `[hidden] { display: none }` de la feuille UA :
+   sans ceci, la pastille reste affichée, vide, sous l'état initial du panneau. */
+#selection-type[hidden] {
+  display: none;
+}
+
 #selection-label {
   margin: 0 0 var(--space-1);
   font-size: 15px;

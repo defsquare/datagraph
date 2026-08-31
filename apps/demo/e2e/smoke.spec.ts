@@ -57,7 +57,12 @@ test("le bouton de theme bascule clair et sombre", async ({ page }) => {
 test("le panneau de detail montre le type et permet de suivre une reference", async ({ page }) => {
   await page.goto("/")
   await page.waitForFunction(() => (window as any).__graph !== undefined)
+  // Regression guard: #selection-type must stay display:none while [hidden]
+  // (an id rule in style.css previously outranked the UA's [hidden] rule and
+  // left an empty navy pill visible under the panel's initial empty state).
+  await expect(page.locator("#selection-type")).not.toBeVisible()
   await page.evaluate(() => (window as any).__graph.select("/orders/0"))
+  await expect(page.locator("#selection-type")).toBeVisible()
   await expect(page.locator("#selection-type")).toHaveText("ORDER")
   await expect(page.locator("#selection-path")).toContainText("/orders/0")
   await page.click("#selection-rows .ref-btn:not([disabled])")
