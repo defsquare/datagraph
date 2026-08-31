@@ -1,0 +1,429 @@
+# Vue graphe : entités, références et agrégats
+
+**Statut** : design validé, prêt pour un plan d'implémentation
+**Branche** : `feat/graph-view-aggregates`
+**Sonde préalable** : `docs/superpowers/spikes/2026-08-31-organic-layout.md`
+
+## Le problème
+
+Le layout actuel met en page l'arbre de containment JSON et **ignore
+complètement `refEdges`**. Deux conséquences, mesurées sur le jeu de démo
+étendu (2019 nœuds logiques, 227 visibles au repos) :
+
+1. **La géométrie est pilotée par des nœuds qui n'ont pas de sens.** Sur les
+   227 nœuds visibles, 224 sont des entités et 3 sont structurels — la racine,
+   `customers`, `orders`. Ces 3 nœuds portent à eux seuls 224 des arêtes de
+   containment. Ce sont eux qui créent la topologie en étoile, donc
+   l'empilement en colonne de `elk.layered` : ratio de bbox 1:21, 2,5 % de
+   remplissage, une vue d'ensemble illisible dès ~100 nœuds visibles.
+2. **Le sens n'est pas mis en page.** Les 112 arêtes `Order → Customer`, les
+   seules qui portent de l'information métier, ne participent à rien.
+
+Le layout actuel met donc en page exactement ce qui n'a pas de sens, et ignore
+exactement ce qui en a.
+
+## Ce qu'on construit
+
+Une **seconde vue**, dite « graphe », à côté de la vue structure existante :
+
+- les sommets sont les **entités** et rien d'autre ;
+- les arêtes sont les **références** et rien d'autre ;
+- les entités sont regroupées en **agrégats** déclarés dans la configuration,
+  dessinés comme des enveloppes ; une entité peut appartenir à plusieurs
+  agrégats à la fois.
+
+La vue structure actuelle — containment, ELK layered, expand/collapse du JSON —
+**n'est pas modifiée**. Les deux vues partagent la sélection.
+
+### Décisions cadrantes
+
+| Décision | Choix retenu |
+|---|---|
+| Sommets de la vue graphe | Entités seulement ; racine, tableaux et objets imbriqués ne sont pas dessinés |
+| Définition d'un cluster | Agrégat déclaré dans la config, pas de détection automatique |
+| Périmètre | Deux vues coexistantes, bascule explicite |
+| Appartenance multiple | Autorisée : une entité peut être dans plusieurs agrégats |
+| Forme des enveloppes | Convexe matelassée (pas de bubble-sets concaves) |
+| État initial des agrégats | Dépliés |
+
+## Règle d'appartenance
+
+> Une entité E appartient à l'agrégat de racine R si R fait partie des racines
+> que E atteint **à distance minimale**, en suivant les références sortantes.
+> Une racine est à distance 0 d'elle-même.
+
+Formellement : soit `d(E, R)` le nombre minimal d'arêtes `refEdge` sortantes
+menant de E à R. Soit `dmin(E) = min{ d(E, R) | R racine, d(E, R) fini }`.
+Alors E appartient à l'agrégat de R ssi `d(E, R) = dmin(E)`.
+
+Cette règle a trois propriétés voulues :
+
+- **Le chevauchement n'apparaît que là où il est réel.** `Order o3 → Customer c1`
+  et `Order o3 → Product p9`, les deux types étant racines : égalité à 1 saut,
+  donc o3 appartient aux deux agrégats.
+- **Elle est transitive quand il le faut.** `LineItem → Order → Customer` :
+  le LineItem rejoint l'agrégat de Customer à 2 sauts.
+- **Elle borne l'explosion des hubs sans réglage.** Si `Customer → Country` et
+  que Country est aussi racine, une transitivité naïve mettrait tout le monde
+  dans l'agrégat Country. Ici non : un Order atteint Customer à 1 saut et
+  Country à 2, il reste donc chez Customer. Aucun `maxDepth` à régler à
+  l'aveugle.
+
+Cas limites, tous à couvrir par des tests :
+
+- Une racine appartient toujours à son propre agrégat et à lui seul
+  (`d(R, R) = 0`, minimal par construction) : une racine n'est jamais absorbée
+  par une autre.
+- Une entité qui n'atteint aucune racine n'appartient à aucun agrégat. Elle est
+  dessinée normalement, sans enveloppe.
+- Les `refEdge` cassées (`to === null` ou `dangling`) ne propagent rien.
+- Les cycles de références sont coupés par le marquage de visite du BFS.
+- Un type déclaré racine dont aucune instance n'existe ne produit aucun agrégat.
+
+## Architecture
+
+Cinq unités nouvelles dans le cœur, chacune testable seule, plus deux
+extensions du renderer. Aucune ne modifie le chemin de la vue structure.
+
+### `config.ts` — extension
+
+```ts
+export interface DataGraphConfig {
+  // … champs existants inchangés
+  /** Types d'entités qui sont racines d'agrégat. */
+  aggregates?: string[]
+}
+
+export interface ValidatedConfig {
+  // … champs existants inchangés
+  aggregates: string[]   // vide si non fourni ; ordre de déclaration préservé
+}
+```
+
+`validateConfig` rejette avec `ConfigError("unknown-entity-type", …)` tout nom
+qui n'est pas un type d'entité déclaré, comme il le fait déjà pour
+`references`. L'ordre de déclaration est conservé : il ne joue aucun rôle dans
+l'appartenance (le chevauchement rend tout arbitrage inutile), seulement dans
+l'ordre de peinture des enveloppes, pour que le rendu soit reproductible.
+
+### `aggregate.ts` — nouveau
+
+```ts
+export interface Aggregate {
+  /** `${rootType}#${rootEntityId}` — stable entre deux constructions. */
+  id: string
+  rootId: NodeId
+  rootType: string
+  /** Inclut `rootId`. */
+  memberIds: Set<NodeId>
+}
+
+export interface AggregateIndex {
+  aggregates: Map<string, Aggregate>
+  /** Plusieurs entrées pour une entité = chevauchement. Ordre stable :
+   *  celui de `ValidatedConfig.aggregates`, puis l'id de la racine. */
+  byNode: Map<NodeId, string[]>
+}
+
+export function buildAggregates(graph: Graph, config: ValidatedConfig): AggregateIndex
+```
+
+Implémentation : un BFS **multi-source inverse** sur `refEdges`. On construit
+l'adjacence inverse (cible → sources), on initialise la file avec toutes les
+racines à distance 0, et on propage. Chaque nœud retient sa distance minimale
+et l'ensemble des racines atteintes à cette distance ; une racine découverte à
+une distance strictement supérieure à celle déjà connue est ignorée, une
+racine à distance égale s'ajoute (c'est ce qui produit le chevauchement).
+
+Un seul parcours pour toutes les racines, donc linéaire en (entités +
+références) — pas un BFS par racine.
+
+`buildGraph` n'est **pas** modifié : `refEdges` et `entityIndex` fournissent
+déjà tout le nécessaire.
+
+### `hull.ts` — nouveau
+
+```ts
+export interface Point { x: number; y: number }
+/** Enveloppe convexe des coins des rectangles, chacun gonflé de `padding`. */
+export function paddedHull(rects: Rect[], padding: number): Point[]
+```
+
+Enveloppe convexe par balayage de Andrew (monotone chain) sur les 4 coins de
+chaque rectangle préalablement gonflé. Gonfler *avant* plutôt que décaler le
+polygone *après* évite tout calcul d'offset de polygone et reste exact.
+
+Cas limites à tester : un seul rectangle (l'enveloppe est ce rectangle gonflé,
+4 points), deux rectangles, des centres colinéaires, des rectangles identiques
+superposés, une liste vide (renvoie `[]`).
+
+### `separate.ts` — extrait de la sonde
+
+```ts
+export function separateOverlaps(
+  positions: Map<NodeId, Rect>,
+  margin: number,
+  iterations: number,
+): void
+```
+
+Écarte les rectangles en collision par relaxation, le long de leur axe de
+moindre pénétration, chacun encaissant la moitié du déplacement. Voisinage via
+une grille de hachage de maille égale à la plus grande carte, donc linéaire.
+Déterministe : aucun aléa, ordre d'itération stable.
+
+Cette passe est indispensable et la sonde l'a montré : une force converge vers
+un compromis attraction/répulsion, **jamais** vers une contrainte dure de
+non-recouvrement. Sans elle, fcose recouvre jusqu'à 94 % de l'aire des cartes ;
+avec elle, on tombe à 0 pour un remplissage de ~46 %.
+
+Le code existe déjà sur `spike/organic-layout`, validé par les bancs de mesure.
+Il est repris tel quel.
+
+### `layout-graph.ts` — nouveau
+
+```ts
+export interface GraphLayoutResult extends LayoutResult {
+  clusters: { aggregateId: string; rootId: NodeId; polygon: Point[] }[]
+}
+
+export interface GraphLayoutEngine {
+  layout(graph, aggregates, visible, metrics?): Promise<GraphLayoutResult>
+  layoutAfterExpand(prev, graph, aggregates, expandedAggId, visible, metrics?): Promise<GraphLayoutResult>
+  layoutAfterCollapse(prev, graph, aggregates, collapsedAggId, visible): GraphLayoutResult
+}
+
+export interface GraphLayoutOptions {
+  /** Poids d'attraction d'un membre vers le centre virtuel de son agrégat. */
+  clusterPull?: number
+  /** Marge entre une carte et le bord de l'enveloppe de son agrégat. */
+  hullPadding?: number
+  /** Marge garantie entre deux cartes par la passe de séparation. */
+  separationMargin?: number
+  separationIterations?: number
+}
+
+export function createGraphLayoutEngine(opts?: GraphLayoutOptions): GraphLayoutEngine
+```
+
+C'est une interface **distincte** de `LayoutEngine`, pas une implémentation de
+celle-ci : la signature diffère (elle prend l'index d'agrégats, elle rend des
+enveloppes) et la vue structure ne doit rien savoir des agrégats.
+
+Le moteur, sur cytoscape + fcose (le couple validé par la sonde) :
+
+1. **Sommets** : `graph.nodes` filtré sur `kind === "entity"`, intersecté avec
+   `visible`.
+2. **Arêtes** : `graph.refEdges` non cassées, dont les deux extrémités sont
+   visibles.
+3. **Regroupement par centres virtuels** : un nœud invisible de taille nulle
+   par agrégat (id préfixé `__agg:`), relié à chacun de ses membres visibles
+   par une arête courte de poids `clusterPull`. Les membres d'un même agrégat
+   se regroupent mécaniquement ; une entité partagée est tirée par deux centres
+   et se pose entre eux, ce qui est le comportement voulu. Les centres sont
+   **retirés du résultat** — ils ne sont ni positionnés ni dessinés.
+4. **Amorçage déterministe** : la position initiale de chaque sommet est
+   dérivée d'un hachage de son `NodeId`, projetée sur un disque, et fcose
+   tourne avec `randomize: false`. Le placement spectral aléatoire de fcose est
+   ainsi court-circuité. La sonde mesurait 1589 px d'écart médian entre deux
+   runs identiques ; l'objectif ici est **zéro**, et c'est directement testable.
+5. **Séparation** : `separateOverlaps` sur le résultat.
+   Rappel de calibrage issu de la sonde : les valeurs par défaut de fcose sont
+   prévues pour des nœuds ponctuels et inutilisables sur des cartes de
+   140–340 px. La longueur d'arête idéale doit être dérivée de la taille des
+   deux boîtes reliées, pas laissée à 50 px.
+6. **Enveloppes** : `paddedHull` sur les rectangles des membres visibles de
+   chaque agrégat, dans l'ordre stable de `ValidatedConfig.aggregates`.
+
+Un agrégat dont aucun membre n'est visible ne produit pas d'enveloppe.
+
+**Point de packaging, à ne pas rater.** Ce module ne doit pas être exporté
+depuis `src/index.ts` : le barrel est importé par tout consommateur, donc un
+export statique ferait entrer `cytoscape` et `cytoscape-fcose` dans le bundle de
+quiconque n'utilise que la vue structure — exactement les +183 ko gzip qu'on
+cherche à éviter. `layout-graph.ts` reçoit son **propre point d'entrée** :
+
+```jsonc
+// packages/core/package.json
+"exports": {
+  ".":              { "types": "./dist/index.d.ts",        "import": "./dist/index.js" },
+  "./graph-layout": { "types": "./dist/graph-layout.d.ts",  "import": "./dist/graph-layout.js" }
+}
+```
+
+avec une seconde entrée `tsup`. Le renderer fait alors
+`await import("@defsquare/data-graph-core/graph-layout")` à la première bascule
+vers la vue graphe. `aggregate.ts` et `hull.ts` n'ont aucune dépendance externe
+et restent, eux, dans le barrel principal.
+
+Un test de non-régression doit vérifier que `dist/index.js` ne référence ni
+`cytoscape` ni `cytoscape-fcose`.
+
+### `aggregate-collapse.ts` — nouveau
+
+```ts
+export class AggregateCollapseState {
+  constructor(index: AggregateIndex)
+  isExpanded(aggregateId: string): boolean
+  expand(aggregateId: string): void
+  collapse(aggregateId: string): void
+  visibleEntityIds(): Set<NodeId>
+}
+```
+
+Les agrégats démarrent **dépliés** : la vue graphe existe pour montrer le
+graphe. Replier un agrégat le réduit à sa seule carte racine.
+
+Règles de visibilité, dans cet ordre :
+
+- une racine d'agrégat est toujours visible ;
+- une entité qui n'appartient à aucun agrégat est toujours visible ;
+- une entité membre non-racine est visible ssi **au moins un** des agrégats
+  auxquels elle appartient est déplié. C'est la règle correcte sous
+  chevauchement : une entité partagée reste montrée par celui de ses agrégats
+  qui est ouvert, et ne disparaît que quand ils sont tous fermés.
+
+C'est une classe distincte de `CollapseState`, qui reste inchangée et continue
+de servir la vue structure.
+
+### Dépliage : épinglage plutôt que relance globale
+
+C'est le point qui a fait échouer la sonde et il est traité ici de front.
+
+Une force-layout est globale : la sonde mesurait **1084 px de dérive médiane**
+(p95 : 2562 px) sur les nœuds déjà présents à chaque dépliage — la carte que
+l'utilisateur regardait avait quitté l'écran quand le layout revenait.
+
+`layoutAfterExpand` **épingle** ici toutes les entités déjà positionnées via
+`fixedNodeConstraint` de fcose et ne relaxe que les nœuds nouvellement révélés.
+Un dépliage n'expose que les membres d'un agrégat, donc une poignée de nœuds :
+l'opération est peu coûteuse et la dérive attendue sur les nœuds existants est
+**nulle par construction**. `separateOverlaps` tourne ensuite sur l'ensemble et
+peut encore bouger un nœud épinglé s'il se fait mordre — c'est voulu, et borné
+par la marge.
+
+`layoutAfterCollapse` est synchrone (comme dans `LayoutEngine`) : il retire les
+nœuds devenus invisibles, recalcule les enveloppes sur les membres restants, et
+ne relance aucune force. Le trou laissé ne se referme pas jusqu'au prochain
+dépliage — comportement accepté, cohérent avec l'épinglage.
+
+### Renderer
+
+```ts
+export type DataGraphView = "structure" | "graph"
+
+export interface DataGraphOptions {
+  // … champs existants inchangés
+  view?: DataGraphView   // défaut "structure"
+}
+
+export interface DataGraph {
+  // … méthodes existantes inchangées
+  setView(view: DataGraphView): Promise<void>
+  currentView(): DataGraphView
+}
+```
+
+Un calque `hullsGraphics` s'insère **sous** `edgesGraphics` dans
+`world.addChild(...)` (`create.ts:179`), pour que les enveloppes passent
+derrière tout le reste. Les enveloppes sont peintes en remplissage translucide
+plus contour, dans la couleur d'accent du type de leur racine, obtenue via
+`entityAccentMap` qui existe déjà.
+
+En vue graphe, les références deviennent les arêtes **principales** : elles sont
+tracées pleines, et non avec le pointillé « référence » de la vue structure, où
+elles sont une décoration au-dessus du containment.
+
+`fit()` doit englober les enveloppes, pas seulement les cartes : la marge
+déborde des rectangles.
+
+**Sélection partagée.** Basculer de vue conserve l'id sélectionné. Si le nœud
+sélectionné n'est pas une entité (on quitte la vue structure depuis un objet
+imbriqué), la vue graphe sélectionne son **ancêtre entité le plus proche**, en
+remontant `parentId` ; s'il n'y en a pas, la sélection est vidée.
+
+Le thème et les polices ne changent pas : `setTheme` et les `NodeMetrics`
+restent partagés entre les deux vues, avec les mêmes garanties qu'aujourd'hui.
+
+### Démo
+
+- Un bouton de bascule Structure / Graphe.
+- `shopConfig` gagne `aggregates: ["Customer"]`.
+- **`bigShop` doit changer.** Il génère aujourd'hui exactement une commande par
+  client (`customerId: c${i}`), donc des agrégats de deux cartes où le
+  clustering est invisible. Il faut 2 à 4 commandes par client. C'est une
+  modification de fixture de démo, pas du cœur ; `packages/core/test/fixtures.ts`
+  documente déjà que la duplication est volontaire, il faudra les resynchroniser
+  à la main.
+
+## Tests
+
+Le cœur est testable sans rendu, et c'est là que porte l'essentiel.
+
+**`aggregate.test.ts`** — la règle d'appartenance, cas par cas : appartenance
+simple à 1 saut ; transitivité à 2 sauts ; égalité de distance produisant un
+chevauchement ; racine jamais absorbée par une autre racine ; hub borné (le cas
+`Customer → Country` décrit plus haut) ; entité n'atteignant aucune racine ;
+référence cassée ne propageant rien ; cycle de références ; type racine sans
+instance ; ordre stable de `byNode`.
+
+**`hull.test.ts`** — enveloppe convexe : cas nominal, un seul rectangle, deux
+rectangles, centres colinéaires, rectangles superposés identiques, liste vide.
+Invariant vérifié systématiquement : tout coin de tout rectangle d'entrée est à
+l'intérieur ou sur le bord du polygone rendu.
+
+**`separate.test.ts`** — reprise des tests de la sonde : deux rectangles qui se
+mordent finissent séparés d'au moins la marge ; une configuration déjà
+disjointe n'est pas modifiée ; le résultat est identique sur deux exécutions.
+
+**`layout-graph.test.ts`** — aucun nœud non-entité dans le résultat ; aucun id
+préfixé `__agg:` dans le résultat ; **déterminisme : deux `layout()` sur les
+mêmes entrées donnent des positions identiques au pixel** ; aucun chevauchement
+de cartes après la passe de séparation ; chaque enveloppe contient tous les
+rectangles de ses membres visibles ; un agrégat sans membre visible ne produit
+pas d'enveloppe ; **`layoutAfterExpand` laisse les positions des nœuds déjà
+présents inchangées**, à la tolérance près de la passe de séparation.
+
+**`aggregate-collapse.test.ts`** — état initial déplié ; replier réduit à la
+racine ; une entité partagée reste visible tant qu'un de ses agrégats est
+déplié et disparaît quand tous sont repliés ; une entité sans agrégat est
+toujours visible.
+
+**Renderer** — bascule de vue ; report de sélection vers l'ancêtre entité ;
+`fit()` englobant les enveloppes.
+
+**E2E** — la vue graphe s'affiche sur le jeu de démo étendu ; le déterminisme
+permet enfin de s'appuyer sur des positions, ce que la sonde interdisait.
+
+## Budgets
+
+Repères mesurés par la sonde, sur ~800 sommets, à confirmer sur le graphe
+d'entités qui est plus petit et bien moins dense :
+
+| | valeur attendue |
+|---|---|
+| Ratio de bbox | ~1:1,5 (contre 1:21 aujourd'hui) |
+| Remplissage | ~45 % (contre 2,5 %) |
+| Chevauchement de cartes | 0 |
+| `layout()` initial | < 3 s à 1000 entités |
+| Écart entre deux runs identiques | **0 px** (exigence, pas budget) |
+| Dérive au dépliage, nœuds existants | **0 px** hors passe de séparation |
+
+Le poids du bundle est le coût connu : la sonde mesurait **+183 ko gzip** pour
+`cytoscape` + `cytoscape-fcose`. Le moteur de la vue graphe doit donc être en
+**import dynamique**, chargé à la première bascule et pas dans le chemin par
+défaut — la vue structure ne doit rien payer.
+
+## Hors périmètre
+
+- **Layout à deux niveaux** (placer les agrégats entre eux, puis leur contenu).
+  C'est l'évolution prévue si la taille l'exige : elle change le moteur sans
+  toucher au modèle ni au rendu, puisque les enveloppes sont calculées après
+  coup dans les deux cas.
+- **Enveloppes concaves** type bubble-sets.
+- **Détection automatique de communautés** : écartée au profit des agrégats
+  déclarés, pour le déterminisme et parce que la notion DDD est celle que la
+  bibliothèque revendique déjà.
+- **Recherche et diagnostics conscients des agrégats.**
+- **Participation des `refEdge` au layout de la vue structure** : sondé,
+  fonctionnel, mais coûteux (7,7 s contre 2,4 s à 800 nœuds) et non décisif.
