@@ -24,10 +24,12 @@ import {
   type SearchIndex,
   type SearchResult,
 } from "@defsquare/data-graph-core";
-// `import type` UNIQUEMENT : ce point d'entrée tire cytoscape (~183 ko gzip) et
+// `import type` UNIQUEMENT : ce point d'entrée tire cytoscape (~178 ko gzip) et
 // ne doit entrer dans le bundle que de qui bascule réellement en vue graphe.
 // Un import de type ne produit aucun code à l'exécution ; le seul chemin
 // d'exécution vers le moteur est l'`import()` dynamique de `ensureGraphEngine`.
+// `test/bundle-purity.test.ts` (côté renderer) garde ces deux lignes : le test
+// du cœur ne couvre que le `dist/` du cœur, pas ce fichier-ci.
 import type { GraphLayoutEngine, GraphLayoutResult } from "@defsquare/data-graph-core/graph-layout";
 import { entityAccentMap, resolveTheme, type Theme, type ThemeOverride } from "./theme.js";
 import { pixiFontRegistry } from "./font-registry.js";
@@ -293,7 +295,10 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   }
 
   /**
-   * Charge le moteur organique à la demande. `cytoscape` pèse ~183 ko gzip : il
+   * Charge le moteur organique à la demande. `cytoscape` pèse ~178 ko gzip —
+   * taille MESURÉE, celle du chunk `graph-layout-*.js` qu'émet le build Vite de
+   * production d'`apps/demo` (178,29 ko gzip) ; le ~183 ko encore lisible dans
+   * `docs/superpowers/` est l'estimation de la sonde d'avant intégration. Il
    * ne doit entrer dans le bundle que de qui bascule réellement en vue graphe,
    * jamais dans celui d'un consommateur de la seule vue structure. C'est
    * pourquoi le cœur l'expose sur un point d'entrée séparé, et pourquoi cet
@@ -681,7 +686,26 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     // A concurrent doCollapse/doExpand/focusOn ran while we were awaiting
     // (bumping opGen) and already applied its own layoutResult — applying
     // this stale one now would silently revert that operation. Bail.
-    if (destroyed || gen !== opGen) return;
+    if (destroyed || gen !== opGen) {
+      // ...mais en ANNULANT d'abord la mutation faite plus haut, comme le font
+      // déjà `toggleAggregate` et `focusOn`. Sans ce retour arrière,
+      // `collapseState` reste en avance sur `layoutResult` : il déclare
+      // `id` déplié, donc ses enfants visibles, alors qu'aucun d'eux n'a de
+      // position dans le `layoutResult` publié. Ils ne sont jamais dessinés,
+      // et ce `layoutResult` à moitié fusionné corrompt l'opération suivante
+      // en lui servant de `prev`.
+      //
+      // `opGen` est désormais PARTAGÉ avec la vue graphe : `toggleAggregate`
+      // et `setView` l'incrémentent aussi. Un clic sur le chevron d'un
+      // agrégat peut donc court-circuiter un `expand()` en vol — et le
+      // symétrique est immédiat, un `collapse()` appelé par l'hôte (sans
+      // effet visible en vue graphe, par contrat) incrémentant `opGen` de
+      // façon synchrone. La course ne demande plus deux opérations de la vue
+      // structure : elle traverse les vues, et le dégât ne se voit qu'au
+      // retour en vue structure.
+      collapseState.collapse(id);
+      return;
+    }
     layoutResult = next;
     rebuild();
     animatePositions(prevPositions, layoutResult.positions);
@@ -692,6 +716,12 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     if (!collapseState.isExpanded(id)) return;
     // Synchronous, but still bumps the generation counter so any in-flight
     // async doExpand/focusOn awaiting a layout notices it's been superseded.
+    //
+    // Pas de retour arrière à prévoir ici, contrairement à `doExpand` :
+    // `layoutAfterCollapse` est synchrone, donc il n'existe aucun `await`
+    // entre la mutation de `collapseState` et la publication de
+    // `layoutResult`. Les deux ne peuvent pas se désynchroniser, et aucune
+    // opération concurrente ne peut s'intercaler entre elles.
     ++opGen;
     collapseState.collapse(id);
     const visible = collapseState.visibleNodeIds();
