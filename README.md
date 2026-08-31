@@ -44,21 +44,37 @@ pnpm add @defsquare/data-graph
 `@defsquare/data-graph` depends on `@defsquare/data-graph-core` and `pixi.js`
 directly (they're installed automatically), and on `elkjs` for layout.
 
-This is the exact bootstrap used by [`apps/demo`](./apps/demo/src/main.ts):
+This is the exact bootstrap used by [`apps/demo`](./apps/demo/src/main.ts),
+whose small fixture is a four-entity-type e-commerce shop:
 
 ```ts
 import { createDataGraph } from "@defsquare/data-graph";
 
 const shopData = {
+  categories: [
+    { id: "cat1", name: "Informatique" },
+    { id: "cat4", name: "Audio" },
+  ],
+  products: [
+    { id: "p1", name: "Clavier mécanique", reference: "INF-1000",
+      price: 89.9, stock: 42, categoryId: "cat1" },
+    { id: "p16", name: "Casque bluetooth", reference: "AUD-1555",
+      price: 129, stock: 17, categoryId: "cat4" },
+  ],
   customers: [
-    { id: "c1", name: "Dupont", email: "dupont@example.com",
-      address: { street: "1 rue de la Paix", city: "Paris" } },
-    { id: "c2", name: "Martin", email: "martin@example.com" },
+    { id: "c1", name: "Camille Dubois", email: "camille.dubois@example.fr",
+      address: { street: "1 rue de la Paix", postcode: "75002", city: "Paris" },
+      segment: "VIP", signupDate: "2023-04-12" },
+    { id: "c2", name: "Julien Martin", email: "julien.martin@example.fr",
+      segment: "nouveau", signupDate: "2024-01-08" },
   ],
   orders: [
-    { id: "o1", customerId: "c1", total: 99.5,
-      lines: [{ sku: "A-1", qty: 2 }, { sku: "B-7", qty: 1 }] },
-    { id: "o2", customerId: "GHOST", total: 12 },
+    { id: "o1", customerId: "c1", productId: "p1", quantity: 2, total: 179.8,
+      status: "livrée", payment: "carte bancaire", date: "2024-03-05",
+      shippingAddress: { street: "1 rue de la Paix", postcode: "75002", city: "Paris" } },
+    // `GHOST` doesn't exist: a deliberate dangling reference.
+    { id: "o2", customerId: "GHOST", productId: "p16", quantity: 1, total: 129,
+      status: "en attente", payment: "PayPal", date: "2024-03-11" },
   ],
 };
 
@@ -66,8 +82,15 @@ const shopConfig = {
   entities: {
     Customer: { match: "$.customers[*]", id: "id" },
     Order: { match: "$.orders[*]", id: "id" },
+    Product: { match: "$.products[*]", id: "id" },
+    Category: { match: "$.categories[*]", id: "id" },
   },
-  references: { Order: { customerId: "Customer" } },
+  references: {
+    Order: { customerId: "Customer", productId: "Product" },
+    Product: { categoryId: "Category" },
+  },
+  rootLabel: "Boutique",
+  aggregates: ["Customer", "Product"],
 };
 
 const container = document.getElementById("app")!;
@@ -264,8 +287,25 @@ aggregates collapse into 3 super-clusters (the largest 33% of all cards), and
 with a single shared product into one, where the pass has nothing left to
 separate. That is semantically right — those aggregates cannot be pulled apart
 without tearing a card — but it does mean cluster spacing is a no-op on such
-data. Single-root configurations (this repo's fixtures and the demo) share
-nothing and are unaffected.
+data. Single-root configurations (this repo's core fixtures) share nothing and
+are unaffected.
+
+**The demo now shows exactly that percolation**, deliberately. Its config
+declares two roots (`aggregates: ["Customer", "Product"]`) over a dataset where
+every `Order` references a `Customer` *and* a `Product`, so every order is one
+hop from both roots and is a full member of both aggregates. Measured on
+`bigShop(4000)` — 350 entities, 108 aggregates: the union-find collapses those
+108 aggregates into **9 super-clusters, the largest holding 342 of the 350
+cards (97.7%)**. The eight remaining singletons are the `Category` entities,
+which no aggregate claims (membership follows references *inbound* to the root,
+and products point *at* categories). `separateClusters` therefore has nothing
+left to space out inside the blob: it only pushes those eight categories away.
+Dropping back to `aggregates: ["Customer"]` on the same data gives **116
+super-clusters, the largest 5 cards (1.4%)** — 26 of 5, 26 of 4, 26 of 3 and 38
+singletons — and the pass does real work again, at the cost of an 18× larger
+canvas (17,367×21,849 px versus 4,816×6,752 px, since 116 blocks each claim a
+160 px corridor). Two roots one hop apart is the configuration that turns
+cluster spacing off; it is not a defect, it is what the merge rule means.
 
 `clusterGap` defaults to **160 px**, chosen by measurement rather than taste —
 the sweep is recorded in `DEFAULTS` in `packages/core/src/layout-graph.ts`, and

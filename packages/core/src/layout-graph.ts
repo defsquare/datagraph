@@ -89,7 +89,12 @@ const DEFAULTS: Required<GraphLayoutOptions> = {
   //   320 | 320,4 |                      0 |  9072×10833|  ×9,5 |  4,5 %
   //   400 | 401,3 |                      0 | 12045×12543| ×14,6 |  2,9 %
   //
-  //   jeu de la démo — 211 entités, 53 agrégats de 3 à 5 cartes
+  //   ancien jeu de la démo — 211 entités, 53 agrégats de 3 à 5 cartes
+  //   (le jeu de la démo a depuis doublé et déclare DEUX racines d'agrégat :
+  //   ses 108 agrégats fusionnent en un seul super-cluster de 342 cartes sur
+  //   350, où cette passe n'a plus rien à écarter. Le balayage ci-dessous
+  //   garde donc la forme mesurée à une racine, qui est celle où le réglage
+  //   compte.)
   //   gap |  nn   | paires en recouvrement |    bbox     | aire  | remplissage
   //     0 |   0,0 |                    138 |  2673×2404 |  ×1   | 43,2 %
   //    80 |  80,9 |                      0 |  3958×5288 |  ×3,3 | 13,3 %

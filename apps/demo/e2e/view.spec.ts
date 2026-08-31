@@ -17,12 +17,14 @@ async function gotoReady(page: Page): Promise<void> {
   await page.evaluate(() => (window as any).__graph.ready)
 }
 
-// La config de la demo declare bien `aggregates: ["Customer"]` (voir
-// `src/sample-data.ts`), mais son jeu par defaut ne compte que 4 entites : les
+// La config de la demo declare `aggregates: ["Customer", "Product"]` (voir
+// `src/sample-data.ts`), mais son jeu par defaut ne compte que 8 entites : les
 // tests ci-dessous injectent par `setData` des jeux calibres pour ce qu'ils
-// prouvent. Le dernier test du fichier, lui, travaille sur le jeu etendu reel
-// de la demo, sans injection. Deux agregats (un par Customer), cinq entites au
-// total, toutes visibles en vue graphe : elle ne plie rien.
+// prouvent — avec leur PROPRE config a une seule racine, pour isoler ce qu'ils
+// mesurent de la fusion des super-clusters qu'entraine la seconde racine. Le
+// dernier test du fichier, lui, travaille sur le jeu etendu reel de la demo et
+// sa vraie config, sans injection. Deux agregats (un par Customer), cinq
+// entites au total, toutes visibles en vue graphe : elle ne plie rien.
 const data = {
   customers: [
     { id: "c1", name: "Dupont", address: { city: "Paris" } },
@@ -190,7 +192,8 @@ test("la vue graphe tient sur le jeu de donnees etendu de la demo", async ({ pag
   // vue structure qu'elle existe pour corriger — et c'est le seul endroit ou la
   // passe de separation, le recouvrement des enveloppes et le temps de mise en
   // page travaillent pour de vrai. La config de la demo declare deja
-  // `aggregates: ["Customer"]`, donc il suffit du bouton de bascule de jeu.
+  // `aggregates: ["Customer", "Product"]`, donc il suffit du bouton de bascule
+  // de jeu.
   await page.click("#toggle-dataset")
   // Le clic ne fait que lancer un gestionnaire async. On attend le compteur
   // plutot que le libelle du bouton : c'est la preuve que `setData` a fini de
@@ -200,9 +203,11 @@ test("la vue graphe tient sur le jeu de donnees etendu de la demo", async ({ pag
     .poll(() => page.evaluate(() => (window as any).__graph.stats().logicalNodeCount), {
       timeout: 30_000,
     })
-    // 1638 noeuds logiques, contre une vingtaine pour le jeu reduit : le seuil
-    // separe les deux sans coller au chiffre exact du fixture.
-    .toBeGreaterThan(1000)
+    // `bigShop(4000)` produit EXACTEMENT 4061 noeuds logiques : 5 pour le
+    // squelette (racine + 4 tableaux), 8 categories a 3, 30 produits a 7, 78
+    // clients a 10 et 234 commandes a 13. Un chiffre exact plutot qu'un seuil,
+    // pour que toute derive du generateur se voie ici.
+    .toBe(4061)
   const logical = await page.evaluate(() => (window as any).__graph.stats().logicalNodeCount)
 
   const ms = await page.evaluate(async () => {
@@ -213,11 +218,12 @@ test("la vue graphe tient sur le jeu de donnees etendu de la demo", async ({ pag
 
   expect(await page.evaluate(() => (window as any).__graph.currentView())).toBe("graph")
 
-  // `bigShop(2000)` de la demo produit 53 clients et 158 commandes : 211
-  // entites, toutes visibles puisque la vue graphe ne plie rien. Elle ne montre
-  // QUE des entites, donc c'est exactement le compte attendu — un chiffre exact
-  // plutot qu'une borne, pour que toute derive du fixture se voie.
-  expect(await visibleCount(page)).toBe(211)
+  // `bigShop(4000)` de la demo produit 78 clients, 234 commandes, 30 produits
+  // et 8 categories : 350 entites, toutes visibles puisque la vue graphe ne
+  // plie rien. Elle ne montre QUE des entites, donc c'est exactement le compte
+  // attendu — un chiffre exact plutot qu'une borne, pour que toute derive du
+  // fixture se voie.
+  expect(await visibleCount(page)).toBe(350)
 
   // Recadrage et rendu sous charge : le canvas doit rester peint, et rien ne
   // doit avoir ete jete dans la console.
@@ -228,7 +234,7 @@ test("la vue graphe tient sur le jeu de donnees etendu de la demo", async ({ pag
   // Pas d'assertion serree : la machine de CI n'est pas celle du developpeur.
   // Le plafond large n'attrape qu'un effondrement franc.
   expect(ms).toBeLessThan(30_000)
-  console.log(`[e2e] setView("graph") sur ${logical} noeuds logiques / 211 entites : ${ms.toFixed(0)} ms`)
+  console.log(`[e2e] setView("graph") sur ${logical} noeuds logiques / 350 entites : ${ms.toFixed(0)} ms`)
 
   // Retour en vue structure : la bascule doit rester reversible a cette echelle.
   await page.evaluate(() => (window as any).__graph.setView("structure"))

@@ -147,6 +147,13 @@ see the
 [root README's graph-view budgets](https://github.com/defsquare/data-graph#graph-view)
 for the numbers and for what the merge costs on hub-shaped data.
 
+Two aggregate roots one hop apart from the same entity make that merge
+swallow the graph: [`apps/demo`](../../apps/demo) declares
+`aggregates: ["Customer", "Product"]` over orders that reference both, and its
+108 aggregates collapse into a single super-cluster of 342 of 350 cards. The
+pass is then a no-op — expect one dense blob of crossing envelopes, not
+separated islands. Numbers and the one-root comparison are in the root README.
+
 How wide the corridors should be is a matter of eye, screen size and data
 density, so it is settable per instance rather than baked into core:
 

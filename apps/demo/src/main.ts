@@ -207,9 +207,10 @@ statDiagEl?.addEventListener("click", () => {
 });
 
 // --- Dataset swap: exercises setData() with the small `shopData` fixture vs.
-// a ~2000-logical-node `bigShopData` generated fixture. Config is the same
-// for both, so this deliberately calls setData(data) without a config,
-// exercising the "reuse current config when omitted" path.
+// a ~4000-logical-node `bigShopData` generated fixture (4061 exactly: 78
+// clients, 234 commandes, 30 produits, 8 catégories — 350 entités). Config is
+// the same for both, so this deliberately calls setData(data) without a
+// config, exercising the "reuse current config when omitted" path.
 const toggleDatasetBtn = document.getElementById("toggle-dataset") as HTMLButtonElement | null;
 let usingBigDataset = false;
 
@@ -220,7 +221,7 @@ if (toggleDatasetBtn) {
       try {
         usingBigDataset = !usingBigDataset;
         await graph.setData(usingBigDataset ? bigShopData : shopData);
-        toggleDatasetBtn.textContent = usingBigDataset ? "Jeu de données réduit" : "Jeu de données étendu (2000)";
+        toggleDatasetBtn.textContent = usingBigDataset ? "Jeu de données réduit" : "Jeu de données étendu (4000)";
         // setData() resets the renderer's own search/selection state; mirror
         // that in the demo's local UI state too.
         if (searchInput) searchInput.value = "";
