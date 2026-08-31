@@ -1,36 +1,61 @@
 <!doctype html>
-<html lang="en">
+<html lang="fr" data-theme="light">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>data-graph demo</title>
+    <title>data-graph — defsquare</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;500;600&family=Fira+Code:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
     <div id="page">
-      <div id="toolbar">
-        <h1>data-graph</h1>
-        <input type="search" id="search" placeholder="Search…" autocomplete="off" />
-        <button id="prev-match" title="Previous match (Shift+Enter)">↑</button>
-        <button id="next-match" title="Next match (Enter)">↓</button>
-        <span id="match-counter"></span>
-        <button id="toggle-dataset">Load big dataset (2000)</button>
-      </div>
+      <header id="appbar">
+        <div class="brand">
+          <img id="logo" src="/defsquare-short-dark-red.svg" alt="defsquare" />
+          <span class="brand-sep" aria-hidden="true"></span>
+          <h1>data-graph</h1>
+        </div>
+
+        <div class="findbar">
+          <svg class="findbar-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5" />
+            <line x1="10.5" y1="10.5" x2="14" y2="14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+          </svg>
+          <input type="search" id="search" placeholder="Rechercher…" autocomplete="off" aria-label="Rechercher" />
+          <span id="match-counter" aria-live="polite"></span>
+          <button id="prev-match" class="findbar-nav" title="Résultat précédent (Maj+Entrée)" aria-label="Résultat précédent">↑</button>
+          <button id="next-match" class="findbar-nav" title="Résultat suivant (Entrée)" aria-label="Résultat suivant">↓</button>
+        </div>
+
+        <div class="actions">
+          <button id="fit" class="btn">Ajuster</button>
+          <button id="toggle-dataset" class="btn btn-accent">Jeu de données étendu (2000)</button>
+          <button id="toggle-theme" class="btn btn-icon" title="Basculer clair/sombre" aria-label="Basculer clair/sombre">◐</button>
+        </div>
+      </header>
+
       <div id="layout">
         <div id="app"></div>
         <aside id="detail">
-          <h2>Node detail</h2>
-          <p id="selection-label">Click a node to see details.</p>
-          <p id="selection-path"></p>
-          <ul id="selection-rows"></ul>
+          <h2>Détail du nœud</h2>
+          <p id="selection-empty">Sélectionnez un nœud pour voir son détail.</p>
+          <span id="selection-type" hidden></span>
+          <p id="selection-label" hidden></p>
+          <p id="selection-path" hidden></p>
+          <dl id="selection-rows"></dl>
         </aside>
       </div>
+
+      <footer id="statusbar">
+        <span><strong id="stat-nodes">0</strong> nœuds</span>
+        <span><strong id="stat-visible">0</strong> visibles</span>
+        <button id="stat-diagnostics" class="status-link" hidden></button>
+      </footer>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
