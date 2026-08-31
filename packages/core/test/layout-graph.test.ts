@@ -3,7 +3,7 @@ import { buildGraph } from "../src/build.js"
 import { buildAggregates } from "../src/aggregate.js"
 import { validateConfig } from "../src/config.js"
 import { createGraphLayoutEngine } from "../src/layout-graph.js"
-import { shopData, shopConfig } from "./fixtures.js"
+import { shopData, shopConfig, bigShop } from "./fixtures.js"
 
 const config = { ...shopConfig, aggregates: ["Customer"] }
 
@@ -19,7 +19,12 @@ function setup() {
 describe("createGraphLayoutEngine", () => {
   it("positions entities only — no root, no array, no object node", async () => {
     const { graph, aggregates, visible } = setup()
-    const result = await createGraphLayoutEngine().layout(graph, aggregates, visible)
+    // La racine et le nœud tableau /customers sont ajoutés à `visible` pour
+    // que le filtre `kind !== "entity"` de layout-graph.ts soit réellement
+    // exercé : sans eux, `visible` ne contient que des entités et le filtre
+    // ne rejette jamais rien.
+    const visibleWithStructural = new Set([...visible, graph.rootId, "/customers"])
+    const result = await createGraphLayoutEngine().layout(graph, aggregates, visibleWithStructural)
     for (const id of result.positions.keys()) {
       expect(graph.nodes.get(id)?.kind).toBe("entity")
     }
@@ -44,6 +49,44 @@ describe("createGraphLayoutEngine", () => {
     const a = await createGraphLayoutEngine().layout(graph, aggregates, visible)
     const b = await createGraphLayoutEngine().layout(graph, aggregates, visible)
     expect([...a.positions.entries()]).toEqual([...b.positions.entries()])
+  })
+
+  it("pulls a referenced entity closer than an unrelated one", async () => {
+    // shopData (2 clients) donne un signal trop faible pour être fiable : à
+    // cette échelle, l'amorçage déterministe par hachage domine encore le
+    // résultat plus que la seule arête de référence. bigShop produit N paires
+    // customer/order INDÉPENDANTES (order_i référence uniquement customer_i,
+    // jamais un autre client) : chaque paire est sa propre composante
+    // connexe, ce qui donne à fcose un vrai signal de regroupement à
+    // exploiter, et à ce test une marge large et non fragile.
+    const data = bigShop(150)
+    const graph = buildGraph(data, config)
+    const aggregates = buildAggregates(graph, validateConfig(config))
+    const visible = new Set(
+      [...graph.nodes.values()].filter((n) => n.kind === "entity").map((n) => n.id),
+    )
+    const result = await createGraphLayoutEngine().layout(graph, aggregates, visible)
+
+    const centreOf = (id: string) => {
+      const r = result.positions.get(id)!
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 }
+    }
+    const distanceBetween = (a: string, b: string) => {
+      const p = centreOf(a)
+      const q = centreOf(b)
+      return Math.hypot(p.x - q.x, p.y - q.y)
+    }
+
+    // /orders/0 référence /customers/0 via customerId : une arête les relie.
+    // /customers/<dernier> n'a aucun lien, direct ou indirect, avec
+    // /orders/0 — deux composantes disjointes, que fcose écarte nettement
+    // l'une de l'autre. Sans la construction des arêtes de référence
+    // (layout-graph.ts), ce test ne distinguerait plus les deux distances.
+    const last = data.customers.length - 1
+    const linked = distanceBetween("/orders/0", "/customers/0")
+    const unrelated = distanceBetween("/orders/0", `/customers/${last}`)
+
+    expect(linked).toBeLessThan(unrelated * 0.5)
   })
 
   it("leaves no overlapping cards", async () => {

@@ -49,8 +49,7 @@
     "bench": "tsx bench/bench.ts"
   },
   "devDependencies": {
-    "@types/cytoscape": "^3.31.0",
-    "@types/node": "^26.4.0",
+    "@types/node": "^20.19.43",
     "tsup": "^8.5.1",
     "tsx": "^4.23.13",
     "vitest": "^4.1.11"
