@@ -261,6 +261,22 @@ themeBtn?.addEventListener("click", () => {
   applyTheme();
 });
 
+// --- Bascule Structure / Graphe.
+const toggleViewBtn = document.getElementById("toggle-view") as HTMLButtonElement | null;
+
+toggleViewBtn?.addEventListener("click", () => {
+  void (async () => {
+    toggleViewBtn.disabled = true;
+    try {
+      const next = graph.currentView() === "graph" ? "structure" : "graph";
+      await graph.setView(next);
+      toggleViewBtn.textContent = next === "graph" ? "Vue structure" : "Vue graphe";
+    } finally {
+      toggleViewBtn.disabled = false;
+    }
+  })();
+});
+
 document.getElementById("fit")?.addEventListener("click", () => graph.fit());
 
 void (async () => {

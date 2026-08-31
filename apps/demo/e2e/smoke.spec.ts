@@ -100,6 +100,20 @@ test("setTheme accepte une surcharge partielle de palette sans planter", async (
   await expect(page.locator("#selection-label")).toContainText("Customer #c1")
 })
 
+test("bascule en vue graphe et n'y place que des entites", async ({ page }) => {
+  await gotoReady(page)
+
+  await page.getByRole("button", { name: "Vue graphe" }).click()
+
+  // Le clic ne fait que declencher le gestionnaire async : attendre que le
+  // bouton ait bascule son libelle est ce qui garantit que setView() a fini,
+  // avant de lire currentView() (sinon la lecture court-circuite l'attente).
+  await expect(page.getByRole("button", { name: "Vue structure" })).toBeVisible()
+
+  const view = await page.evaluate(() => (window as any).__graph.currentView())
+  expect(view).toBe("graph")
+})
+
 test("les methodes publiques sont inoffensives apres destroy()", async ({ page }) => {
   await gotoReady(page)
   const errors: string[] = []
