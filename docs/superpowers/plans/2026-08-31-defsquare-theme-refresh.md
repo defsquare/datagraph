@@ -17,6 +17,7 @@
 - Style de code : le core est **sans point-virgule**, le renderer et la démo sont **avec point-virgule**. Respecter le fichier qu'on modifie.
 - Les valeurs de couleur proviennent de `colors_and_type.css` du projet Claude Design « Defsquare Design System ». Les valeurs marquées **dérivée** dans le spec sont à recopier telles quelles depuis ce plan, sans réinvention.
 - Aucune ombre portée simulée dans le canvas Pixi (pas de flou disponible en `Graphics`).
+- **Le renderer résout le core via `packages/core/dist`, pas via ses sources.** Après toute modification de `packages/core/src`, lancer `pnpm --filter @defsquare/data-graph-core build` avant les tests du renderer ou de la démo, sinon ils lisent un core périmé et échouent sur des exports « manquants » qui existent pourtant.
 - Commandes de vérification : `pnpm -r typecheck`, `pnpm -r test`, `pnpm --filter demo e2e`, `pnpm bench`.
 - Branche de travail : `feat/defsquare-theme-refresh`. Un commit par tâche.
 
@@ -277,12 +278,17 @@ Les deux autres assertions restent valides telles quelles. Aucune autre assertio
 Run: `pnpm --filter @defsquare/data-graph-core test`
 Expected: PASS, y compris `layout.test.ts`, `build.test.ts`, `collapse.test.ts`, `layout-incremental.test.ts`.
 
-- [ ] **Step 7: Typecheck**
+- [ ] **Step 7: Reconstruire le core**
+
+Run: `pnpm --filter @defsquare/data-graph-core build`
+Expected: `packages/core/dist` régénéré. Sans ça, les tâches 3 et 5 importeraient un core périmé et croiraient `badgeTextFor` absent.
+
+- [ ] **Step 8: Typecheck**
 
 Run: `pnpm -r typecheck`
 Expected: le core passe. Le renderer **échouera** (`draw.ts` et `create.ts` référencent encore `DEFAULT_METRICS.charWidth`) — c'est attendu, la tâche 3 le corrige. Noter les erreurs, ne pas les corriger ici.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 git add packages/core/src/measure.ts packages/core/src/index.ts packages/core/test/measure.test.ts packages/core/test/layout.test.ts
@@ -1080,7 +1086,7 @@ git commit -m "feat(renderer): carte encre-d-abord avec rail de type, pastille e
 
 **Interfaces:**
 - Consumes: `Theme` (tâche 2).
-- Produces: signatures inchangées pour `drawEdges`, `drawEdgeHitAreas`, `drawSelectionOverlay`, `drawSearchHighlights`, plus un paramètre `metrics` optionnel sur `drawSelectionOverlay` et `drawSearchHighlights` pour le rayon de carte. La tâche 5 les appelle depuis `rebuild()`/`redrawOverlay()`.
+- Produces: signatures **inchangées** pour `drawEdges`, `drawEdgeHitAreas`, `drawSelectionOverlay`, `drawSearchHighlights` — la tâche 5 continue de les appeler depuis `rebuild()`/`redrawOverlay()` exactement comme aujourd'hui. Le rayon de carte vient de `theme.radii.card`, donc aucune de ces fonctions n'a besoin des `NodeMetrics`.
 
 - [ ] **Step 1: Remplacer tout le bloc à partir de `const DASH_LENGTH`**
 
