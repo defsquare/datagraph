@@ -19,6 +19,7 @@
 - **La vue structure ne doit subir aucune régression.** `CollapseState`, `createLayoutEngine`, `layout.ts` et le chemin ELK ne sont modifiés par aucune tâche.
 - Le barrel `packages/core/src/index.ts` ne doit **jamais** exporter quoi que ce soit qui importe `cytoscape` (Task 6 pose le test de non-régression qui le garantit).
 - Après chaque tâche : `pnpm -r typecheck` et `pnpm -r test` doivent passer. Le typecheck du renderer et de la démo lit les `dist/` du cœur : lancer `pnpm --filter @defsquare/data-graph-core build` puis `pnpm --filter @defsquare/data-graph build` avant de typechecker si une signature publique a bougé.
+- **`pnpm -r build` précède toujours `pnpm -r test`.** À partir de la Task 6, `test/bundle-purity.test.ts` lit `dist/index.js`, et `dist/` est gitignoré : sur une copie fraîche, la suite complète échoue tant que rien n'a été construit. Le test échoue avec un message actionnable plutôt que de se skipper — un skip silencieux donnerait une fausse assurance sur un budget de 183 ko.
 - Budget dur, vérifié par test : deux `layout()` sur les mêmes entrées donnent des positions **identiques au pixel**.
 - Commit à la fin de chaque tâche, message en français, préfixe conventionnel.
 
@@ -2157,7 +2158,63 @@ et remplacer la garde d'entrée de `rebuild` par une garde sur `activePositions(
 
 En vue graphe, `drawEdges` doit tracer les références comme arêtes principales et non le containment. Passer par un paramètre plutôt que dupliquer la fonction : si `drawEdges` ne le permet pas, ajouter un argument `mode: "contain" | "ref"` à sa signature et le router depuis `rebuild`. Vérifier son corps avant de choisir.
 
-- [ ] **Step 9: Vérifier**
+- [ ] **Step 9: Câbler le pli/dépli d'un agrégat**
+
+Sans cette étape, `AggregateCollapseState` (Task 5) et `layoutAfterExpand`/`layoutAfterCollapse` (Task 8) sont du code mort, et l'exigence du spec « le chevron replie un agrégat sur sa seule carte racine » reste non implémentée.
+
+`handleNodeTap` (`create.ts:~365`) route aujourd'hui un clic d'en-tête vers `toggleExpand(node.id)`, qui agit sur l'arbre de containment. En vue graphe, un clic d'en-tête sur une **racine d'agrégat** doit plier/déplier cet agrégat. Ajouter, en tête de la branche `if (local.y < metrics.headerHeight)` :
+
+```ts
+        if (view === "graph") {
+          const aggregateId = rootAggregateOf(node.id);
+          if (aggregateId) {
+            void toggleAggregate(aggregateId);
+          }
+          return;
+        }
+```
+
+et, dans le closure :
+
+```ts
+  /** L'agrégat dont ce nœud est la RACINE, s'il en est une. Un simple membre
+   * ne plie rien : seul le chevron de la racine gouverne son agrégat. */
+  function rootAggregateOf(id: NodeId): string | null {
+    if (!aggregateIndex) return null;
+    for (const aggregate of aggregateIndex.aggregates.values()) {
+      if (aggregate.rootId === id) return aggregate.id;
+    }
+    return null;
+  }
+
+  async function toggleAggregate(aggregateId: string): Promise<void> {
+    if (!graph || !aggregateIndex || !aggregateCollapse || !graphLayout) return;
+    const wasExpanded = aggregateCollapse.isExpanded(aggregateId);
+
+    if (wasExpanded) {
+      aggregateCollapse.collapse(aggregateId);
+      const engine = await ensureGraphEngine();
+      graphLayout = engine.layoutAfterCollapse(
+        graphLayout, graph, aggregateIndex, aggregateId, aggregateCollapse.visibleEntityIds(),
+      );
+    } else {
+      aggregateCollapse.expand(aggregateId);
+      const engine = await ensureGraphEngine();
+      graphLayout = await engine.layoutAfterExpand(
+        graphLayout, graph, aggregateIndex, aggregateId, aggregateCollapse.visibleEntityIds(), metrics,
+      );
+    }
+
+    rebuild();
+    app.render();
+  }
+```
+
+Ne PAS appeler `fitInternal()` ici : recadrer la caméra à chaque pli annulerait tout l'intérêt de l'épinglage de la Task 8, qui existe précisément pour que la vue ne bouge pas sous les yeux de l'utilisateur.
+
+`drawNode` reçoit aujourd'hui `collapseState.isExpanded(id)` pour orienter le chevron. En vue graphe, passer `aggregateCollapse.isExpanded(rootAggregateOf(id) ?? "")` pour la racine d'un agrégat, et `true` pour les autres nœuds (pas de chevron à orienter).
+
+- [ ] **Step 10: Vérifier**
 
 ```bash
 pnpm --filter @defsquare/data-graph-core build
@@ -2167,7 +2224,7 @@ pnpm --filter @defsquare/data-graph build
 ```
 Expected: PASS partout. **La vue structure doit être strictement inchangée** : les 53 tests du renderer qui passaient avant doivent passer après.
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 11: Commit**
 
 ```bash
 git add packages/renderer/src/create.ts packages/renderer/src/index.ts \
