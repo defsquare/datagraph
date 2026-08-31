@@ -15,6 +15,10 @@ import {
 
 const config = { ...shopConfig, aggregates: ["Customer"] }
 
+/** `separationMargin` par défaut de `createGraphLayoutEngine` : l'écart que la
+ * passe de séparation garantit entre deux cartes. */
+const MARGIN = 16
+
 function setup() {
   const graph = buildGraph(shopData, config)
   const aggregates = buildAggregates(graph, validateConfig(config))
@@ -137,20 +141,68 @@ describe("createGraphLayoutEngine", () => {
     expect(sameAggregate).toBeLessThan(otherAggregate * 0.5)
   })
 
-  it("leaves no overlapping cards", async () => {
-    const { graph, aggregates, visible } = setup()
-    const result = await createGraphLayoutEngine().layout(graph, aggregates, visible)
-    const rects = [...result.positions.values()]
-    for (let i = 0; i < rects.length; i++) {
-      for (let j = i + 1; j < rects.length; j++) {
-        const a = rects[i]!
-        const b = rects[j]!
-        const ox = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)
-        const oy = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y)
-        expect(ox > 1e-6 && oy > 1e-6).toBe(false)
+  it(
+    "sépare toutes les cartes d'au moins separationMargin, à l'échelle",
+    async () => {
+      // Deux raisons de ne PAS jouer cette assertion sur shopData :
+      //
+      // 1. shopData ne compte que 4 entités, et fcose n'y produit AUCUN
+      //    empilement — mesuré sur sa sortie brute (moteur construit avec
+      //    `separationIterations: 0`) : 0 paire en recouvrement. Le résultat
+      //    était donc déjà disjoint avant même la passe de séparation, et
+      //    l'assertion passait sans rien exercer — ce qui privait aussi de sa
+      //    justification le relèvement de `separationIterations` (600 → 3000),
+      //    motivé par des recouvrements que quatre cartes ne produisent jamais.
+      //    À 334 cartes, la même mesure donne 160 paires en recouvrement et une
+      //    carte recouverte jusqu'à 40,5 % de son aire : la passe de séparation
+      //    y est réellement le seul rempart.
+      // 2. Le prédicat historique (`ox > 0 && oy > 0`, sans marge) ne testait
+      //    que le non-recouvrement nu, alors que le contrat de
+      //    `separateOverlaps` — et la ligne « budgets » du README — promettent
+      //    un ÉCART d'au moins `separationMargin`. On reprend donc ici le
+      //    prédicat fort de `separate.test.ts` : marge ajoutée aux deux
+      //    pénétrations, exactement la condition de collision qu'applique
+      //    `separateOverlaps` elle-même.
+      //
+      // Mesuré à 334 cartes : 0 paire en recouvrement, 0 paire à moins de
+      // `separationMargin`. La garantie de marge N'EST PAS inconditionnelle au
+      // delà — voir la ligne « budgets » du README, corrigée en conséquence :
+      // le plafond d'itérations laisse 47 paires sous la marge à 450 cartes et
+      // 289 à 900 cartes (jamais un recouvrement, seulement un écart trop
+      // court). Ce test garde donc l'échelle où la promesse tient.
+      const data = bigShop(3000)
+      const graph = buildGraph(data, config)
+      const aggregates = buildAggregates(graph, validateConfig(config))
+      const visible = new Set(
+        [...graph.nodes.values()].filter((n) => n.kind === "entity").map((n) => n.id),
+      )
+      const result = await createGraphLayoutEngine().layout(graph, aggregates, visible)
+
+      const rects = [...result.positions.values()]
+      expect(rects.length).toBeGreaterThan(300)
+
+      // Comptage plutôt qu'un `expect` par paire : 334 cartes font 55 611
+      // paires, et un échec dit alors COMBIEN de paires fautent, pas seulement
+      // la première.
+      let overlapping = 0
+      let tooClose = 0
+      for (let i = 0; i < rects.length; i++) {
+        for (let j = i + 1; j < rects.length; j++) {
+          const a = rects[i]!
+          const b = rects[j]!
+          const px = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)
+          const py = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y)
+          if (px > 1e-6 && py > 1e-6) overlapping++
+          if (px + MARGIN > 1e-6 && py + MARGIN > 1e-6) tooClose++
+        }
       }
-    }
-  })
+      expect(overlapping).toBe(0)
+      expect(tooClose).toBe(0)
+    },
+    // La mise en page de 334 cartes coûte ~2 s, au-dessus du défaut de 5 s une
+    // fois la suite complète en concurrence.
+    60_000,
+  )
 })
 
 describe("cluster shapes", () => {
