@@ -239,7 +239,8 @@ Le moteur, sur cytoscape + fcose (le couple validé par la sonde) :
    tourne avec `randomize: false`. Le placement spectral aléatoire de fcose est
    ainsi court-circuité. La sonde mesurait 1589 px d'écart médian entre deux
    runs identiques ; l'objectif ici est **zéro**, et c'est directement testable.
-5. **Séparation** : `separateOverlaps` sur le résultat.
+5. **Séparation** : `separateOverlaps` sur le résultat, puis
+   `separateClusters` (ajouté après coup, voir ci-dessous).
    Rappel de calibrage issu de la sonde : les valeurs par défaut de fcose sont
    prévues pour des nœuds ponctuels et inutilisables sur des cartes de
    140–340 px. La longueur d'arête idéale doit être dérivée de la taille des
@@ -270,6 +271,40 @@ et restent, eux, dans le barrel principal.
 
 Un test de non-régression doit vérifier que `dist/index.js` ne référence ni
 `cytoscape` ni `cytoscape-fcose`.
+
+### `cluster-separate.ts` — ajouté après coup
+
+```ts
+export function separateClusters(
+  positions: Map<NodeId, Rect>,
+  aggregates: AggregateIndex,
+  gap: number,
+  iterations: number,
+): void
+```
+
+`separateOverlaps` écarte les CARTES ; elle ne dit rien des AGRÉGATS, et sans
+seconde passe les enveloppes se touchent — mesuré sur `bigShop(3000)` : 310
+paires d'enveloppes franchement superposées, 0,7 px d'écart moyen au plus
+proche voisin. Cette passe-ci reprend la même mécanique de relaxation à la
+granularité du cluster : boîte englobante par agrégat, poussée le long de l'axe
+de moindre pénétration jusqu'à `clusterGap`, puis **translation rigide** de
+chaque membre par le déplacement total de son cluster. C'est la rigidité qui la
+rend sûre : la géométrie interne d'un agrégat est préservée au bit près.
+
+Trois cas particuliers : une entité de plusieurs agrégats reçoit la MOYENNE des
+translations de ses clusters ; deux agrégats partageant un membre sont exemptés
+(les écarter n'aurait pas de sens et la passe ne convergerait pas) ; une entité
+sans agrégat forme un cluster d'un seul, pour être poussée hors des enveloppes
+voisines. La sortie anticipée compare à une épsilon et non à zéro : elle se
+déclenche vraiment, contrairement à celle de `separateOverlaps`.
+
+`clusterGap` vaut 240 px par défaut, **calibré par mesure** — le balayage
+complet est dans `DEFAULTS` (`layout-graph.ts`). À NE PAS refaire en allongeant
+`idealEdgeLength` des arêtes inter-agrégats : fcose calibre son échelle de
+répulsion sur la MOYENNE des longueurs idéales, donc allonger un sous-ensemble
+gonfle toute la mise en page au lieu d'ouvrir les couloirs. C'était déjà essayé
+et documenté au point d'appel d'`idealEdgeLength`.
 
 ### `aggregate-collapse.ts` — ~~nouveau~~ RETIRÉ
 

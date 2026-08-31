@@ -217,6 +217,8 @@ package's README for the latest numbers and any documented deviation.
 | --- | --- | --- |
 | Card overlap after layout | Zero overlapping pairs, always. The stronger `separationMargin` gap between every pair is measured and asserted at 334 cards; past ~450 the iteration cap can leave a few pairs closer than the margin (still never overlapping) — see the note below | `packages/core/test/layout-graph.test.ts` |
 | Determinism | Pixel-identical positions across two runs on the same input | `packages/core/test/layout-graph.test.ts` |
+| Aggregate envelope overlap after layout | Zero overlapping pairs at 167 aggregates, with one exemption: two aggregates that genuinely share a member entity are left interlocking, since neither can move without tearing the shared card | `packages/core/test/layout-graph.test.ts` ("leaves no two aggregate envelopes overlapping" / "exempts two aggregates that share a member entity") |
+| Intra-aggregate geometry under cluster separation | Bit-exact — the pass only translates whole clusters, so pairwise distances inside an aggregate are unchanged, asserted with strict equality rather than a tolerance | `packages/core/test/cluster-separate.test.ts` |
 | `@defsquare/data-graph` bundle purity | `cytoscape` (~178 kB gzip) never enters a consumer's bundle unless it calls `setView("graph")` — the structure view alone doesn't pull it in | `packages/core/test/bundle-purity.test.ts` (core half) + `packages/renderer/test/bundle-purity.test.ts` (renderer half) |
 
 **Separation, measured.** After fcose runs, a relaxation pass (`separateOverlaps`)
@@ -233,6 +235,38 @@ tuning ceiling rather than a defect in the algorithm. Note also that the pass
 does not converge-and-exit in practice — floating-point jitter keeps its
 "nothing moved" early exit from firing — so its cost is proportional to
 `separationIterations` even on an easy input.
+
+**Cluster spacing, measured.** `separateOverlaps` keeps *cards* apart; it says
+nothing about *aggregates*, and without a second pass the envelopes end up
+touching — 310 of the 13,861 envelope pairs on `bigShop(3000)` are frankly
+superimposed, and the mean gap to a cluster's nearest neighbour is **0.7 px**.
+So a second relaxation (`separateClusters`) runs after it, at cluster
+granularity: it computes each aggregate's bounding box, pushes boxes closer
+than `clusterGap` apart along their axis of least penetration, and then
+translates each cluster's members **rigidly** by its box's total displacement,
+which is what makes it safe — intra-aggregate geometry survives bit-exact. An
+entity in several aggregates gets the average of their translations; an entity
+in none is its own singleton cluster, so it is pushed out of a neighbour's
+envelope instead of being left inside it. Unlike `separateOverlaps`, its early
+exit compares against an epsilon rather than zero, so it actually converges and
+stops.
+
+`clusterGap` defaults to **240 px**, chosen by measurement rather than taste —
+the sweep is recorded in `DEFAULTS` in `packages/core/src/layout-graph.ts`. On
+`bigShop(3000)`: nearest-neighbour gap 0.7 px → 240.2 px, overlapping envelope
+pairs 310 → 0, overall bbox 3494×2969 → 7987×9879 (7.6× the area). On the
+demo's extended dataset: 0.0 → 241.2 px, 138 → 0 overlapping pairs, area 6.5×.
+Card overlap stays at zero throughout. Going further costs canvas fast for a
+diminishing visual gain (320 px is +25% area, 400 px is double 240 px on the
+core fixture), and canvas fill drops from ~43% to ~6% — the accepted price of
+the spacing.
+
+Note what this pass is **not**: it is not longer `idealEdgeLength` on
+cross-aggregate edges. That was tried and failed — fcose calibrates its
+internal repulsion scale on the *average* ideal edge length across all edges,
+so lengthening a subset inflates the whole layout instead of opening the gaps,
+and destroys the clustering signal. The comment at the `idealEdgeLength` call
+site records it.
 
 The graph view's organic layout (fcose) is seeded deterministically from node
 ids rather than left to its default randomization, which is what makes the

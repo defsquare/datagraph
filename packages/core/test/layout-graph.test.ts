@@ -268,3 +268,87 @@ describe("cluster shapes", () => {
     }
   })
 })
+
+describe("cluster separation", () => {
+  /** Boîte englobante d'un polygone d'enveloppe. Comparer les boîtes plutôt
+   * que les polygones suffit ici et se lit : si les boîtes sont disjointes,
+   * les enveloppes le sont a fortiori. */
+  const boxOf = (polygon: { x: number; y: number }[]) => {
+    const xs = polygon.map((p) => p.x)
+    const ys = polygon.map((p) => p.y)
+    return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) }
+  }
+  const boxesOverlap = (a: ReturnType<typeof boxOf>, b: ReturnType<typeof boxOf>) =>
+    Math.min(a.maxX, b.maxX) - Math.max(a.minX, b.minX) > 1e-6 &&
+    Math.min(a.maxY, b.maxY) - Math.max(a.minY, b.minY) > 1e-6
+
+  it(
+    "leaves no two aggregate envelopes overlapping, at scale",
+    async () => {
+      const data = bigShop(3000)
+      const graph = buildGraph(data, config)
+      const aggregates = buildAggregates(graph, validateConfig(config))
+      const visible = new Set(
+        [...graph.nodes.values()].filter((n) => n.kind === "entity").map((n) => n.id),
+      )
+      const result = await createGraphLayoutEngine().layout(graph, aggregates, visible)
+      expect(result.clusters.length).toBeGreaterThan(150)
+
+      // Mesuré sans la passe (`clusterGap: 0`) sur ce même fixture : 310 paires
+      // d'enveloppes franchement superposées et 0,7 px d'écart moyen au plus
+      // proche voisin. Aucun agrégat ne partage de membre ici (chaque commande
+      // ne référence qu'un client), donc l'exemption ne s'applique pas : le
+      // compte attendu est zéro.
+      let overlapping = 0
+      const boxes = result.clusters.map((c) => boxOf(c.polygon))
+      for (let i = 0; i < boxes.length; i++) {
+        for (let j = i + 1; j < boxes.length; j++) {
+          if (boxesOverlap(boxes[i]!, boxes[j]!)) overlapping++
+        }
+      }
+      expect(overlapping).toBe(0)
+    },
+    60_000,
+  )
+
+  it("exempts two aggregates that share a member entity", async () => {
+    // /orders/0 est à distance égale de Customer#c1 et Product#p9 : il
+    // appartient aux DEUX agrégats. Leurs enveloppes se recouvrent donc par
+    // construction — les écarter reviendrait à déchirer la carte partagée. La
+    // passe laisse ce couple tranquille, et c'est le seul cas où deux
+    // enveloppes ont le droit de se croiser.
+    const graph = buildGraph(twoRootsData, twoRootsConfig)
+    const aggregates = buildAggregates(graph, validateConfig(twoRootsConfig))
+    const visible = new Set(
+      [...graph.nodes.values()].filter((n) => n.kind === "entity").map((n) => n.id),
+    )
+    const result = await createGraphLayoutEngine().layout(graph, aggregates, visible)
+    expect(result.clusters).toHaveLength(2)
+
+    const [a, b] = result.clusters
+    expect(boxesOverlap(boxOf(a!.polygon), boxOf(b!.polygon))).toBe(true)
+
+    // Cette assertion-là ne suffit PAS à prouver l'exemption : les deux
+    // enveloppes contiennent la carte partagée, donc elles se croisent même si
+    // la passe les a écartées. On compare donc aux positions obtenues avec la
+    // passe désactivée : sur ce fixture, tous les clusters sont exemptés, donc
+    // la passe ne doit RIEN déplacer.
+    const untouched = await createGraphLayoutEngine({ clusterGap: 0 }).layout(graph, aggregates, visible)
+    expect([...result.positions.entries()]).toEqual([...untouched.positions.entries()])
+  })
+
+  it("keeps the layout deterministic once clusters are separated", async () => {
+    // Le déterminisme est déjà couvert plus haut sur `shopData` (2 agrégats de
+    // 2 cartes, où la passe n'a presque rien à faire). Ici elle travaille pour
+    // de vrai : plusieurs dizaines de clusters à écarter.
+    const data = bigShop(600)
+    const graph = buildGraph(data, config)
+    const aggregates = buildAggregates(graph, validateConfig(config))
+    const visible = new Set(
+      [...graph.nodes.values()].filter((n) => n.kind === "entity").map((n) => n.id),
+    )
+    const first = await createGraphLayoutEngine().layout(graph, aggregates, visible)
+    const second = await createGraphLayoutEngine().layout(graph, aggregates, visible)
+    expect([...first.positions.entries()]).toEqual([...second.positions.entries()])
+  })
+})

@@ -138,6 +138,13 @@ aggregate cards carry no chevron, and a header click selects the card just
 like a body click. An earlier version folded an aggregate onto its root card
 from that chevron; it was removed.
 
+**Cluster spacing.** Aggregate envelopes are spaced apart by a dedicated pass
+(`separateClusters`, core-side) that translates each cluster rigidly, so
+nothing inside an aggregate moves relative to anything else in it. The gap is
+`clusterGap`, 240 px by default and calibrated by measurement — see the
+[root README's graph-view budgets](https://github.com/defsquare/data-graph#graph-view)
+for the numbers.
+
 **Selection carry-over.** The graph view only knows entities — a structure
 node nested under one (e.g. an address object) has no counterpart there.
 Switching views while such a node is selected reassigns the selection to its

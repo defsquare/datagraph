@@ -7,6 +7,7 @@ import type { Point } from "./hull.js"
 import { paddedHull } from "./hull.js"
 import { measureNode, DEFAULT_METRICS, type NodeMetrics } from "./measure.js"
 import { separateOverlaps } from "./separate.js"
+import { separateClusters } from "./cluster-separate.js"
 
 cytoscape.use(fcose as cytoscape.Ext)
 
@@ -16,6 +17,9 @@ export interface GraphLayoutOptions {
   /** Marge garantie entre deux cartes par la passe de séparation. */
   separationMargin?: number
   separationIterations?: number
+  /** Écart visé entre les boîtes englobantes de deux agrégats voisins, ouvert
+   * par `separateClusters`. Voir le calibrage dans `DEFAULTS`. */
+  clusterGap?: number
 }
 
 export interface ClusterShape {
@@ -70,6 +74,42 @@ const DEFAULTS: Required<GraphLayoutOptions> = {
   // du README ; l'assainir demanderait d'abord de réparer la sortie anticipée
   // (comparer à une épsilon plutôt qu'à zéro), ce qui déborde de cette revue.
   separationIterations: 3000,
+  // CALIBRÉ, pas choisi au goût. Balayage complet de `layout()` sur deux
+  // fixtures à l'échelle, en mesurant l'écart bord à bord au plus proche
+  // voisin (« nn ») entre boîtes englobantes d'agrégats, la taille de la bbox
+  // globale et le remplissage. `clusterGap: 0` = passe désactivée, c'est-à-dire
+  // l'état d'avant ce réglage.
+  //
+  //   bigShop(3000) — 334 entités, 167 agrégats de 2 cartes
+  //   gap |  nn   | paires en recouvrement |    bbox     | aire  | remplissage
+  //     0 |   0,7 |                    310 |  3494×2969 |  ×1   | 42,4 %
+  //    80 |  80,0 |                      0 |  5969×6571 |  ×3,8 | 11,2 %
+  //   160 | 160,0 |                      0 |  6778×8171 |  ×5,3 |  7,9 %
+  //   240 | 240,2 |                      0 |  7987×9879 |  ×7,6 |  5,6 %
+  //   320 | 320,4 |                      0 |  9072×10833|  ×9,5 |  4,5 %
+  //   400 | 401,3 |                      0 | 12045×12543| ×14,6 |  2,9 %
+  //
+  //   jeu de la démo — 211 entités, 53 agrégats de 3 à 5 cartes
+  //   gap |  nn   | paires en recouvrement |    bbox     | aire  | remplissage
+  //     0 |   0,0 |                    138 |  2673×2404 |  ×1   | 43,2 %
+  //    80 |  80,9 |                      0 |  3958×5288 |  ×3,3 | 13,3 %
+  //   160 | 160,0 |                      0 |  5151×5799 |  ×4,7 |  9,3 %
+  //   240 | 241,2 |                      0 |  6105×6845 |  ×6,5 |  6,6 %
+  //   320 | 323,0 |                      0 |  6400×7842 |  ×7,8 |  5,5 %
+  //   400 | 400,5 |                      0 |  6674×8588 |  ×8,9 |  4,8 %
+  //
+  // Aucun recouvrement de CARTES à aucune valeur, y compris 0 : la passe de
+  // séparation garde son contrat, celle-ci ne fait que translater des blocs.
+  //
+  // 240 retenu. Sans la passe, les enveloppes se touchent (0,7 px d'écart
+  // moyen au plus proche voisin, 310 paires franchement superposées) : elles
+  // sont illisibles. 240 px valent 15× `separationMargin` et environ deux
+  // hauteurs de carte, donc l'écart se voit sans zoom. Au-delà, le gain visuel
+  // s'émousse pendant que la toile enfle vite : 320 coûte déjà +25 % d'aire et
+  // 400 le double de 240 sur le fixture du cœur, pour un couloir à peine plus
+  // large à l'œil. Le remplissage tombe de 43 % à ~6 % — c'est le prix assumé
+  // de l'écartement demandé, et `fit()` recadre de toute façon.
+  clusterGap: 240,
 }
 
 /** Hachage FNV-1a de l'id, base de l'amorçage déterministe des positions. */
@@ -255,6 +295,15 @@ export function createGraphLayoutEngine(opts: GraphLayoutOptions = {}): GraphLay
     cy.destroy()
 
     separateOverlaps(positions, options.separationMargin, options.separationIterations)
+
+    // Puis, à la granularité de l'agrégat : ouvrir les couloirs entre
+    // enveloppes. La passe translate chaque cluster RIGIDEMENT, donc elle ne
+    // défait rien du travail de fcose ni de `separateOverlaps` à l'intérieur
+    // d'un agrégat. Elle réutilise le plafond d'itérations de la séparation :
+    // il y a bien moins de clusters que de cartes, et sa sortie anticipée
+    // fonctionne (comparaison à une épsilon), donc ce plafond n'est jamais
+    // atteint en pratique.
+    separateClusters(positions, aggregates, options.clusterGap, options.separationIterations)
 
     // Normalisation : le coin haut-gauche de la bbox à l'origine.
     let minX = Infinity
