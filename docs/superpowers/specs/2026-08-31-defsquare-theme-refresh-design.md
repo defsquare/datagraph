@@ -239,6 +239,13 @@ chaque `setData` avec une nouvelle config) et la passe à `drawNode`.
 - **En-tête** 30px : chevron 10px (uniquement si le nœud a des enfants), libellé en
   style `header` couleur `ink.primary`, et à droite une **pastille de type** en style
   `badge` dans la couleur de type. Filet 1px `edge.hairline` en bas.
+
+  `build.ts` produit déjà `label = "Order #o1"`, type inclus. Afficher la pastille
+  `ORDER` à côté serait redondant. Donc en LOD 0, un nœud entité affiche `#o1`
+  (`node.entityId`) comme libellé et `ORDER` (`node.entityType`) comme pastille — la
+  couleur du rail rend le couple immédiatement lisible. En LOD 1, où la pastille
+  disparaît, on réaffiche `node.label` complet. `node.label` reste inchangé côté core :
+  c'est lui que la recherche indexe.
 - **Lignes** 19px : clé en style `key` couleur `ink.muted`, alignée à gauche ; valeur en
   style `value` couleur `ink.primary`, **alignée à droite** sur le padding droit.
   L'alignement à droite rend la troncature déterministe et fait basculer la lecture de

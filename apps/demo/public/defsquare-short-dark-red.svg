@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<svg width="121px" height="54px" viewBox="0 0 121 54" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>Defsquare-logo-short-dark-blue-text-red-brackets</title>
+    <g id="Defsquare" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g id="Defsquare-logo-short-dark-blue-text-red-brackets">
+            <g id="right-bracket" transform="translate(105.500000, 3.000000)" fill="#F65E5E">
+                <rect id="Rectangle" transform="translate(7.500000, 3.500000) scale(-1, 1) translate(-7.500000, -3.500000) " x="0" y="0" width="15" height="7"></rect>
+                <rect id="Rectangle" transform="translate(7.500000, 45.500000) scale(-1, 1) translate(-7.500000, -45.500000) " x="0" y="42" width="15" height="7"></rect>
+                <rect id="Rectangle" transform="translate(11.500000, 24.000000) scale(-1, 1) rotate(-90.000000) translate(-11.500000, -24.000000) " x="-12.5" y="20.5" width="48" height="7"></rect>
+            </g>
+            <text id="def" font-family="Helvetica-Bold, Helvetica" font-size="40" font-weight="bold" fill="#1A2A36">
+                <tspan x="6.5" y="39">def</tspan>
+            </text>
+            <g id="left-bracket" transform="translate(79.500000, 3.000000)" fill="#F65E5E">
+                <rect id="Rectangle" transform="translate(7.500000, 3.500000) scale(-1, 1) rotate(180.000000) translate(-7.500000, -3.500000) " x="0" y="0" width="15" height="7"></rect>
+                <rect id="Rectangle" transform="translate(7.500000, 45.500000) scale(-1, 1) translate(-7.500000, -45.500000) " x="0" y="42" width="15" height="7"></rect>
+                <rect id="Rectangle" transform="translate(3.500000, 24.000000) scale(-1, 1) rotate(-90.000000) translate(-3.500000, -24.000000) " x="-20.5" y="20.5" width="48" height="7"></rect>
+            </g>
+        </g>
+    </g>
+</svg>
