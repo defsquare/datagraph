@@ -61,7 +61,7 @@ export function validateConfig(config: DataGraphConfig): ValidatedConfig {
     }
   }
 
-  // Validate aggregates
+  // Valider les agrégats
   const aggregates: string[] = []
   for (const name of config.aggregates ?? []) {
     if (!entities.has(name)) {
