@@ -1243,7 +1243,16 @@ const DEFAULTS: Required<GraphLayoutOptions> = {
   clusterPull: 3,
   hullPadding: 18,
   separationMargin: 16,
-  separationIterations: 600,
+  // `iterations` est un PLAFOND, pas un coût fixe : `separateOverlaps` sort dès
+  // qu'une passe ne bouge plus rien. Le relever est donc quasi gratuit sur une
+  // entrée facile, et seul le cas difficile paie.
+  //
+  // Mesure de la Task 4 : la convergence suit la SÉVÉRITÉ du recouvrement, pas
+  // le nombre de nœuds — une pile de 40 cartes en recouvrement quasi total
+  // demande ~3000 passes, avec un long plateau avant la libération. Le chiffre
+  // « ~600 passes à 800 cartes » de la sonde ne se transpose donc pas, et fcose
+  // peut produire jusqu'à 94 % d'aire recouverte avant cette passe.
+  separationIterations: 3000,
 }
 
 /** Hachage FNV-1a de l'id, base de l'amorçage déterministe des positions. */
