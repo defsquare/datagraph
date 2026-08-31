@@ -1550,62 +1550,44 @@ Ajouter `twoRootsData, twoRootsConfig` à l'import de `./fixtures.js` en tête d
 Run: `pnpm --filter @defsquare/data-graph-core exec vitest run test/layout-graph.test.ts`
 Expected: FAIL — `result.clusters` est `[]`.
 
-- [ ] **Step 3: Implémenter les centres virtuels**
+- [ ] ~~**Step 3: Implémenter les centres virtuels**~~ — ⚠️ **ÉTAPE ANNULÉE, NE PAS L'EXÉCUTER**
 
-Dans `layout-graph.ts`, renommer le paramètre `_aggregates` en `aggregates`, importer `paddedHull`, et ajouter — **après** la boucle des arêtes de référence, **avant** la création de `cytoscape(...)` :
+Cette étape a été implémentée, mesurée, puis **retirée**. Elle est conservée
+barrée plutôt que supprimée pour que la décision reste lisible.
 
-```ts
-      // Regroupement : un nœud invisible de taille nulle par agrégat, relié à
-      // chacun de ses membres visibles. Les membres d'un même agrégat se
-      // regroupent mécaniquement ; une entité qui appartient à DEUX agrégats
-      // est tirée par deux centres et se pose entre eux — c'est exactement le
-      // comportement voulu sous chevauchement, et c'est pourquoi ce montage
-      // supporte l'appartenance multiple là où des boîtes compound ne le
-      // pourraient pas (cytoscape n'accepte qu'un parent par nœud).
-      const centreIds: string[] = []
-      for (const aggregate of aggregates.aggregates.values()) {
-        const members = [...aggregate.memberIds].filter((id) => entitySet.has(id)).sort()
-        if (members.length === 0) continue
-        const centreId = `__agg:${aggregate.id}`
-        centreIds.push(centreId)
-        elements.push({
-          group: "nodes",
-          data: { id: centreId, w: 1, h: 1 },
-          position: seedPosition(centreId, radius),
-        })
-        for (const memberId of members) {
-          elements.push({
-            group: "edges",
-            data: { id: `a:${centreId}->${memberId}`, source: centreId, target: memberId },
-          })
-        }
-      }
-```
+Le montage consistait à ajouter, par agrégat, un nœud invisible de taille nulle
+(id préfixé `__agg:`) relié à chacun de ses membres, l'attraction étant réglée
+par une longueur d'arête plus courte. Deux défauts, dans cet ordre :
 
-L'attraction est réglée par `idealEdgeLength` : une arête vers un centre doit être **plus courte** qu'une arête de référence. Remplacer le corps de `idealEdgeLength` par :
+1. **Longueur ≠ force.** Raccourcir les arêtes d'agrégat fait chuter la longueur
+   idéale MOYENNE sur laquelle fcose calibre son échelle d'espacement interne,
+   ce qui contracte toute la mise en page et détruit le signal de proximité des
+   références. Corrigé d'abord en séparant `idealEdgeLength` (identique pour
+   toutes les arêtes) de `edgeElasticity`.
+2. **Le mécanisme entier ne gagnait pas sa place.** Mesure de la contribution
+   marginale des centres, ratio de regroupement (plus bas = plus serré) :
 
-```ts
-        // ⚠️ Piège mesuré, ne pas « optimiser » en sens inverse : la longueur
-        // idéale est la même pour TOUTES les arêtes, y compris celles d'agrégat.
-        // fcose calibre son échelle d'espacement interne sur la longueur idéale
-        // MOYENNE de toutes les arêtes ; raccourcir les arêtes d'agrégat fait
-        // chuter cette moyenne, contracte l'échelle globale, et affaiblit la
-        // séparation entre composantes disjointes — au point de détruire le
-        // signal de proximité que les références sont censées produire.
-        //
-        // La distance à laquelle une arête veut se poser et la FORCE avec
-        // laquelle elle tire sont deux choses distinctes. L'attraction
-        // d'agrégat s'exprime en élasticité, ci-dessous.
-        idealEdgeLength: (edge: cytoscape.EdgeSingular) => {
-          const s = sizes.get(edge.source().id()) ?? { width: 160, height: 40 }
-          const t = sizes.get(edge.target().id()) ?? { width: 160, height: 40 }
-          return (s.width + t.width) / 2 + options.separationMargin * 2
-        },
-        edgeElasticity: (edge: cytoscape.EdgeSingular) =>
-          edge.source().id().startsWith("__agg:") ? 0.45 * options.clusterPull : 0.45,
-```
+   | forme d'agrégat | avec centres | sans |
+   |---|---|---|
+   | frères à 1 saut | 0,596 | **0,180** |
+   | co-membres à 2 sauts | 0,574 | **0,153** |
+   | fan-out 8×20 | **0,442** | 0,473 |
 
-Les centres n'apparaissent jamais dans le résultat : la boucle de relecture des positions itère sur `entityIds`, qui ne les contient pas. Rien à retirer.
+   L'appartenance à un agrégat est *définie* par l'accessibilité via `refEdges` :
+   tout membre est donc déjà relié à sa racine par un chemin de références
+   présent dans le layout. Le centre ré-encodait cette information tout en
+   occupant de la place entre les membres qu'il devait rassembler.
+
+Le chevauchement — la raison pour laquelle les nœuds compound de cytoscape
+avaient été écartés — ne dépendait pas des centres : une entité partagée est
+tirée vers ses deux racines par ses propres références, et les enveloppes étant
+calculées par agrégat à partir des positions de ses membres, elle tombe dans les
+deux polygones.
+
+**Ce qu'il reste à faire à la place de cette étape :** renommer le paramètre
+`_aggregates` en `aggregates`, importer `paddedHull`, et passer directement au
+Step 4. `idealEdgeLength` garde une longueur identique pour toutes les arêtes,
+avec le commentaire français qui documente le piège ci-dessus.
 
 - [ ] **Step 4: Implémenter les enveloppes**
 
