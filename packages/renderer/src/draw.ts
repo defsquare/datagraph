@@ -332,8 +332,15 @@ export type EdgeMode = "contain" | "ref";
 /**
  * Dessine toutes les arêtes entre nœuds visibles dans un seul Graphics,
  * groupées par style : contenance en béziers horizontales pleines, références
- * résolues en pointillés terminés par une tête de flèche, références cassées
- * en moignon pointillé barré d'une croix.
+ * résolues terminées par une tête de flèche, références cassées en moignon
+ * pointillé barré d'une croix.
+ *
+ * Le tracé des références résolues dépend du mode : POINTILLÉ en `"contain"`
+ * (vue structure, où la référence est une décoration au-dessus de l'arbre),
+ * PLEIN en `"ref"` (vue graphe, où elle est la relation principale). Le moignon
+ * d'une référence cassée reste pointillé dans les deux modes : son pointillé ne
+ * dit pas « secondaire » mais « ne mène nulle part », et il porte déjà sa propre
+ * couleur et sa croix.
  *
  * Les têtes de flèche sont des triangles pleins : elles ne peuvent pas
  * partager l'appel `stroke()` des pointillés, d'où un `fill()` distinct émis
@@ -388,7 +395,19 @@ export function drawEdges(
     // La ligne s'arrête au pied de la flèche pour ne pas la traverser.
     const len = Math.hypot(x2 - x1, y2 - y1);
     const t = len > ARROW_LENGTH ? (len - ARROW_LENGTH) / len : 1;
-    dashedLine(g, x1, y1, x1 + (x2 - x1) * t, y1 + (y2 - y1) * t);
+    const ex = x1 + (x2 - x1) * t;
+    const ey = y1 + (y2 - y1) * t;
+    if (mode === "ref") {
+      // Vue graphe : la référence EST la relation montrée, pas une décoration
+      // posée au-dessus du containment. Le pointillé signifie « secondaire » ;
+      // il serait à contresens dans une vue dont c'est tout le propos. Trait
+      // plein, donc — un seul segment au lieu des N tirets de `dashedLine`,
+      // ce qui rend les deux modes distinguables au comptage d'instructions.
+      g.moveTo(x1, y1);
+      g.lineTo(ex, ey);
+    } else {
+      dashedLine(g, x1, y1, ex, ey);
+    }
     resolved.push({ x1, y1, x2, y2 });
     hasRef = true;
   }
