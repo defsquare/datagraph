@@ -215,10 +215,25 @@ package's README for the latest numbers and any documented deviation.
 
 | Property | Budget | Enforced by |
 | --- | --- | --- |
-| Card overlap after layout | Zero — every pair of cards separated by at least `separationMargin` | `packages/core/test/layout-graph.test.ts` |
+| Card overlap after layout | Zero overlapping pairs, always. The stronger `separationMargin` gap between every pair is measured and asserted at 334 cards; past ~450 the iteration cap can leave a few pairs closer than the margin (still never overlapping) — see the note below | `packages/core/test/layout-graph.test.ts` |
 | Determinism | Pixel-identical positions across two runs on the same input | `packages/core/test/layout-graph.test.ts` |
 | Median drift on already-placed cards when expanding an aggregate | ≤ 1e-6 px (measured 0px on 167 cards, floating-point noise aside) | `packages/core/test/layout-graph.test.ts` ("keeps median drift … at scale") |
-| `@defsquare/data-graph` bundle purity | `cytoscape` (~178 kB gzip) never enters a consumer's bundle unless it calls `setView("graph")` — the structure view alone doesn't pull it in | `packages/core/test/bundle-purity.test.ts` |
+| `@defsquare/data-graph` bundle purity | `cytoscape` (~178 kB gzip) never enters a consumer's bundle unless it calls `setView("graph")` — the structure view alone doesn't pull it in | `packages/core/test/bundle-purity.test.ts` (core half) + `packages/renderer/test/bundle-purity.test.ts` (renderer half) |
+
+**Separation, measured.** After fcose runs, a relaxation pass (`separateOverlaps`)
+pushes cards apart until no two are closer than `separationMargin` (16 px by
+default), capped at `separationIterations` (3,000). The pass is load-bearing:
+fcose's raw output leaves 160 overlapping pairs at 334 cards (worst card 40.5%
+covered) and 448 pairs at 450 cards (worst card 90.8% covered). Zero *overlap*
+after the pass is robust and asserted at scale. The stronger *margin* guarantee is not unconditional: on this
+repo's fixtures the pass leaves **0** pairs under the margin at 334 cards (the
+scale the committed test asserts), **47** at 450 cards, and **289** at 900 —
+none of them overlapping, merely closer to each other than 16 px. Raising the
+cap to 10,000 clears all of them, at roughly 3× the pass's cost, so this is a
+tuning ceiling rather than a defect in the algorithm. Note also that the pass
+does not converge-and-exit in practice — floating-point jitter keeps its
+"nothing moved" early exit from firing — so its cost is proportional to
+`separationIterations` even on an easy input.
 
 The graph view's organic layout (fcose) is seeded deterministically from node
 ids rather than left to its default randomization, and cards already placed
@@ -259,12 +274,23 @@ pnpm install
 
 pnpm typecheck      # tsc --noEmit across every package
 pnpm build          # tsup build across every package
-pnpm test           # vitest across every package
+pnpm test           # vitest across every package — run `pnpm build` FIRST
 pnpm bench          # non-blocking perf bench (packages/core/bench/bench.ts)
 
 pnpm --filter demo dev   # run the demo app locally
-pnpm --filter demo e2e   # Playwright end-to-end tests against the demo
+pnpm --filter demo e2e   # Playwright e2e — build the renderer FIRST
 ```
+
+**Build before test.** Two suites read build output, and `dist/` is gitignored,
+so on a fresh clone both fail until something has been built:
+
+- `pnpm build` must precede `pnpm test` — `packages/core/test/bundle-purity.test.ts`
+  walks `packages/core/dist/index.js` to prove `cytoscape` stays out of the main
+  entry point's transitive closure. It fails with an actionable message rather
+  than skipping: a silent skip would give false assurance on a bundle budget.
+- `pnpm --filter @defsquare/data-graph build` must precede
+  `pnpm --filter demo e2e` — the demo imports the renderer's `dist/`, so the e2e
+  run otherwise exercises a stale (or missing) build.
 
 ## License
 

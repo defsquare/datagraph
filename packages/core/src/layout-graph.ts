@@ -55,15 +55,35 @@ export interface GraphLayoutEngine {
 const DEFAULTS: Required<GraphLayoutOptions> = {
   hullPadding: 18,
   separationMargin: 16,
-  // `iterations` est un PLAFOND, pas un coût fixe : `separateOverlaps` sort dès
-  // qu'une passe ne bouge plus rien. Le relever est donc quasi gratuit sur une
-  // entrée facile, et seul le cas difficile paie.
-  //
   // Mesure de la Task 4 : la convergence suit la SÉVÉRITÉ du recouvrement, pas
   // le nombre de nœuds — une pile de 40 cartes en recouvrement quasi total
   // demande ~3000 passes, avec un long plateau avant la libération. Le chiffre
-  // « ~600 passes à 800 cartes » de la sonde ne se transpose donc pas, et fcose
-  // peut produire jusqu'à 94 % d'aire recouverte avant cette passe.
+  // « ~600 passes à 800 cartes » de la sonde ne se transpose donc pas.
+  //
+  // La passe elle-même est indispensable, et c'est maintenant mesuré sur la
+  // sortie BRUTE de fcose (moteur construit avec `separationIterations: 0`) :
+  // 448 paires en recouvrement à 450 cartes, la pire carte recouverte à 90,8 %
+  // de son aire ; 160 paires et 40,5 % à 334 cartes. En revanche, sur les 4
+  // cartes de `shopData`, fcose ne produit AUCUN recouvrement — d'où le
+  // déplacement du test de non-recouvrement vers une vraie échelle : sur ce
+  // fixture-là, il passait sans rien exercer.
+  //
+  // CORRECTIF (revue finale) : `iterations` avait été documenté ici comme « un
+  // PLAFOND, pas un coût fixe », au motif que `separateOverlaps` sort dès
+  // qu'une passe ne bouge plus rien. C'est faux en pratique. Mesuré sur 334
+  // cartes déjà séparées dès la 3000e passe : plafond 3000 → 1,9 s, plafond
+  // 10 000 → 6,3 s, plafond 100 000 → 63,5 s. La sortie anticipée ne se
+  // déclenche jamais, parce qu'une paire posée exactement à la marge produit
+  // une pénétration résiduelle de l'ordre de 1e-14 qui repasse le test `> 0` :
+  // la boucle continue de « bouger » des picomètres jusqu'au plafond. Le coût
+  // est donc bien PROPORTIONNEL à ce chiffre, y compris sur une entrée facile.
+  //
+  // 3000 n'est par ailleurs pas suffisant à toute échelle : il reste 47 paires
+  // sous la marge (jamais en recouvrement) à 450 cartes et 289 à 900. Les
+  // relever demanderait 10 000 passes, soit ~3× le temps de la passe sur TOUTE
+  // entrée. Le compromis est assumé et documenté dans la section « Graph view »
+  // du README ; l'assainir demanderait d'abord de réparer la sortie anticipée
+  // (comparer à une épsilon plutôt qu'à zéro), ce qui déborde de cette revue.
   separationIterations: 3000,
 }
 

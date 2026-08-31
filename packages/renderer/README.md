@@ -122,9 +122,13 @@ organic layout engine (`cytoscape` + its `fcose` layout plugin), which is why
 `setView` returns a promise. That import is isolated behind the dynamic
 `import()`: in a Vite production build (see [`apps/demo`](../../apps/demo)),
 it lands in its own chunk — roughly **178 kB gzip** — and never enters the
-bundle of a consumer that only ever uses the structure view. A test walking
-the built chunk closure (`packages/core/test/bundle-purity.test.ts`) guards
-this so a careless barrel export can't regress it.
+bundle of a consumer that only ever uses the structure view. Two tests guard
+it, one per half of the chain: `packages/core/test/bundle-purity.test.ts` walks
+the built chunk closure of the core's main entry point, so a careless barrel
+export can't regress it, and `packages/renderer/test/bundle-purity.test.ts`
+checks this package's sources for any static *value* import of that entry point
+— turning `create.ts`'s `import type` into a value import would put cytoscape
+in every consumer's bundle while leaving the rest of the suite green.
 
 **Folding.** `expand`/`collapse` are structure-view operations (see the
 [root README's API table](https://github.com/defsquare/data-graph#public-api--datagraph));
