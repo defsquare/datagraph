@@ -311,8 +311,9 @@ force 0.15, weight capped at 2, gravity 0.02, 400 iterations) are the **first se
 tried**, never swept — which says the architecture is robust to tuning, not that
 these values are the right ones.
 
-**Envelopes are circles**, and this is shared by both engines — it lives in
-`packages/core/src/hull.ts`, not in either layout. An aggregate's envelope is the
+**Envelopes are circles**, and that predates the current engine — it lives in
+`packages/core/src/hull.ts`, not in the layout, and it survived the engine swap
+unchanged. An aggregate's envelope is the
 **minimal enclosing circle** of its cards' corners (Welzl's algorithm), its
 radius grown by `hullPadding`. The input is deliberately **not shuffled**:
 Welzl's expected-linear bound relies on a random permutation, but this repo
