@@ -55,8 +55,6 @@
     "vitest": "^4.1.11"
   },
   "dependencies": {
-    "cytoscape": "^3.34.2",
-    "cytoscape-fcose": "^2.2.0",
     "elkjs": "^0.12.0"
   }
 }

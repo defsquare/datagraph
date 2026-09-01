@@ -14,13 +14,24 @@ export interface AggregateIndex {
   aggregates: Map<string, Aggregate>
   /**
    * L'appartenance est une PARTITION : chaque entité atteignant au moins une
-   * racine a exactement un agrégat, donc chaque tableau tient un seul id.
+   * racine a exactement un agrégat, donc chaque tableau tient un seul id. Le
+   * seul consommateur du cœur, `layout-two-level.ts`, lit d'ailleurs `[0]` et
+   * rien d'autre.
    *
-   * Le type reste `string[]` et non `string` : `separateClusters` s'appuie sur
-   * une garantie de rigidité (fusion par union-find des agrégats qui
-   * partagent un membre) que la partition rend inactive mais pas caduque —
-   * voir sa documentation. Un type qui rendrait le chevauchement inexprimable
-   * ferait de cette garantie du code mort avant l'heure.
+   * Le type reste `string[]` et non `string`, et la raison a changé. Elle
+   * tenait à `separateClusters`, qui portait une garantie de rigidité (fusion
+   * par union-find des agrégats partageant un membre) que la partition rendait
+   * inactive sans la rendre caduque ; cette passe est retirée. Ce qui reste est
+   * plus simple : la partition est une décision PRODUIT — l'arbitrage des
+   * égalités de distance par ordre de déclaration, cf. `buildAggregates` —, pas
+   * une propriété du modèle de données. Elle a déjà été l'inverse une fois. Un
+   * type qui rendrait le chevauchement inexprimable transformerait un
+   * revirement de règle en refonte de signature, pour économiser un `[0]`.
+   *
+   * Le moteur actuel, lui, ne survivrait PAS tel quel à un tel revirement : sa
+   * décomposition à deux niveaux n'est correcte que parce que chaque carte
+   * appartient à exactement un bloc. C'est une raison de plus de garder la
+   * question ouverte dans le type plutôt que de la fermer.
    */
   byNode: Map<NodeId, string[]>
 }

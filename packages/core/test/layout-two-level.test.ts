@@ -4,7 +4,7 @@ import { buildAggregates, type AggregateIndex } from "../src/aggregate.js"
 import { validateConfig, type DataGraphConfig } from "../src/config.js"
 import { enclosingCircle } from "../src/hull.js"
 import type { Rect } from "../src/layout.js"
-import type { GraphLayoutResult } from "../src/layout-graph.js"
+import type { GraphLayoutResult } from "../src/layout-two-level.js"
 import type { NodeId } from "../src/model.js"
 import { createTwoLevelLayoutEngine } from "../src/layout-two-level.js"
 import { shopData, shopConfig, bigShop, twoRootsData, twoRootsConfig } from "./fixtures.js"
@@ -211,7 +211,7 @@ describe("garanties de séparation, à l'échelle", () => {
       // pas exactement `x₁ − x₂` — la sonde a mesuré des paires à
       // 16 px − 10⁻¹² sur le jeu de la démo, trois ordres de grandeur sous
       // cette tolérance. C'est le même contrat qu'`expectRigid` dans
-      // `cluster-separate.test.ts`, pour la même raison.
+      // `separateClusters`, retiré avec la passe, pour la même raison.
       //
       // L'assertion porte sur TOUTES les paires, pas seulement les
       // intra-agrégat : deux cartes d'agrégats différents sont séparées par
@@ -327,7 +327,7 @@ describe("garanties de séparation, à l'échelle", () => {
       const { result, aggregates } = await atScale()
       // Un `single:` qui fuirait en `clusters` ferait peindre une enveloppe
       // autour d'une carte isolée — le pendant du `__agg:` que
-      // `layout-graph.test.ts` interdit dans `positions`.
+      // le test du moteur retiré interdisait dans `positions`.
       for (const cluster of result.clusters) {
         expect(cluster.aggregateId.startsWith("single:")).toBe(false)
         expect(aggregates.aggregates.has(cluster.aggregateId)).toBe(true)

@@ -6,14 +6,24 @@ import { join } from "node:path";
 /**
  * Pendant renderer du test de pureté de `packages/core` — et la moitié
  * manquante de la chaîne. Celui du cœur vérifie que le `dist/index.js` du CŒUR
- * ne tire pas cytoscape ; mais la garantie que les READMEs vendent réellement
- * (« cytoscape n'entre jamais dans le bundle d'un consommateur qui n'utilise
- * que la vue structure ») ne tient PAS là : elle tient à deux lignes de
- * `src/create.ts`, l'`import type` du point d'entrée `./graph-layout` et
- * l'`import()` dynamique de `ensureGraphEngine`. Transformer cet `import type`
- * en import de valeur suffit à faire entrer les ~178 ko gzip dans le bundle de
+ * n'atteint pas le moteur de la vue graphe ; mais le chargement paresseux de
+ * cette vue ne tient PAS là : il tient à deux lignes de `src/create.ts`,
+ * l'`import type` du point d'entrée `./graph-layout` et l'`import()` dynamique
+ * de `ensureGraphEngine`. Transformer cet `import type` en import de valeur
+ * suffit à faire entrer tout ce que ce point d'entrée tire dans le bundle de
  * TOUT consommateur — et, avant ce test, la totalité de la suite (cœur,
  * renderer, e2e), le build et le typecheck restaient verts.
+ *
+ * L'ENJEU A CHANGÉ D'ORDRE DE GRANDEUR, et le dire fait partie du test. Ces
+ * deux lignes gardaient ~178 ko gzip tant que l'ancien moteur importait
+ * `cytoscape` + `cytoscape-fcose` ; ce moteur est retiré et le chunk mesure
+ * désormais **1,77 ko gzip** au lieu de 180,28. Une régression coûterait donc
+ * 1,77 ko, pas 178. Ce que ces deux lignes gardent encore, et qui n'a pas de
+ * substitut, c'est la FORME : la vue graphe est chargée à la demande par
+ * construction, `setView` est asynchrone pour cette raison, et tout poids qu'on
+ * ajoutera derrière cette vue héritera de la paresse au lieu d'avoir à la
+ * redemander. Voir la même mise au point dans
+ * `packages/core/test/bundle-purity.test.ts`.
  *
  * Le test est volontairement un examen du SOURCE par expression régulière, et
  * pas une inspection du bundle : ce qu'il faut interdire est une propriété
@@ -66,7 +76,7 @@ describe("bundle purity (renderer sources)", () => {
       for (const match of code.matchAll(withClause)) {
         expect(
           match[1]!.trimStart().startsWith("type"),
-          `${name}: import de VALEUR vers ${SPECIFIER} — cytoscape entrerait dans le bundle de tout consommateur`,
+          `${name}: import de VALEUR vers ${SPECIFIER} — la vue graphe entrerait dans le bundle de tout consommateur`,
         ).toBe(true);
       }
 

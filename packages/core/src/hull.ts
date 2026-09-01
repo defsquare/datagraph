@@ -65,9 +65,9 @@ function fromThree(a: Point, b: Point, c: Point): Circle {
  *
  * **L'entrée n'est PAS mélangée**, et c'est délibéré. La borne linéaire en
  * espérance de Welzl repose sur une permutation aléatoire des points ; sans
- * elle, le pire cas est cubique. Mais ce dépôt exige un déterminisme au pixel
- * (voir `seedPosition` dans `layout-graph.ts` et les tests de déterminisme de
- * la mise en page), et un mélange — même à graine fixe — est une pièce mobile
+ * elle, le pire cas est cubique. Mais ce dépôt exige un déterminisme au BIT
+ * (voir l'amorçage FNV-1a de `layout-two-level.ts` et les tests de déterminisme
+ * de la mise en page), et un mélange — même à graine fixe — est une pièce mobile
  * de plus sur ce chemin. Les tailles en jeu rendent l'arbitrage facile : un
  * cluster est ici un agrégat, soit 4 points pour le cas courant (une seule
  * carte) et 20 pour le plus gros mesuré sur le jeu de la démo (5 cartes). Un

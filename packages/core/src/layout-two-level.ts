@@ -1,11 +1,19 @@
-// Moteur de mise en page de la vue graphe à DEUX NIVEAUX, alternative au
-// pipeline global corrigé de `layout-graph.ts` (fcose → `separateOverlaps` →
-// `separateClusters`).
+// Moteur de mise en page de la vue graphe à DEUX NIVEAUX, et le seul.
 //
-// Porté depuis la sonde `bench/layout-two-level.ts` — voir
-// `docs/superpowers/spikes/2026-09-01-two-level-layout.md` pour les mesures
-// complètes. L'algorithme est repris à l'identique sur le fond ; l'enveloppe
-// change (factory + `layout()` async, pour respecter `GraphLayoutEngine`), et
+// Il a remplacé un pipeline global corrigé — `createGraphLayoutEngine`, qui
+// demandait à fcose une mise en page de toutes les cartes puis la réparait par
+// deux passes de relaxation, `separateOverlaps` (cartes) puis
+// `separateClusters` (enveloppes). Ces trois modules ont été RETIRÉS du dépôt
+// avec `cytoscape` et `cytoscape-fcose`. Les nombreux renvois ci-dessous les
+// nomment encore parce que c'est ce contre quoi les choix d'ici ont été
+// mesurés ; leur code vit dans l'historique git, et le doc de sonde cité
+// ci-dessous garde les mesures.
+//
+// Porté depuis la sonde (`bench/layout-two-level.ts`, retirée elle aussi) —
+// voir `docs/superpowers/spikes/2026-09-01-two-level-layout.md` pour les
+// mesures complètes. L'algorithme est repris à l'identique sur le fond ;
+// l'enveloppe change (factory + `layout()` async, pour respecter
+// `GraphLayoutEngine`, déclaré plus bas dans ce fichier), et
 // deux constantes de la passe dure finale sont resserrées — voir sa
 // documentation plus bas, qui donne les mesures et ce qu'elles coûtent. Ces
 // deux écarts ne changent rien à la structure ; ils font tenir à toute échelle
@@ -24,8 +32,8 @@
 //   2. INTER-agrégat — chaque agrégat devient un disque rigide : le cercle
 //      englobant minimal de ses cartes plus `hullPadding`, c'est-à-dire
 //      exactement la forme que le renderer peint. Une entité hors agrégat est
-//      un disque singleton, comme dans `separateClusters`. Les références
-//      inter-agrégats sont agrégées en ressorts pondérés ; une petite
+//      un disque singleton, comme dans le `separateClusters` retiré. Les
+//      références inter-agrégats sont agrégées en ressorts pondérés ; une petite
 //      simulation pose les disques, et une passe dure finale fait de
 //      dist ≥ r₁ + r₂ + `clusterGap` un INVARIANT DE SORTIE, pas un espoir de
 //      convergence.
@@ -54,17 +62,14 @@
 //     longueur moyenne d'une réf. inter-agrégat : 6 104 px → 1 364 px (÷4,5)
 //
 // Pourquoi le remplissage double à quintuple, et ce n'est pas un réglage : dans
-// le pipeline actuel fcose éparpille les membres d'un agrégat, donc le cercle
-// englobant gonfle, donc `separateClusters` écarte de GRANDS cercles presque
-// vides. Ici le cercle est minimal par construction — les cartes sont packées
-// AVANT que le cercle existe — donc tout l'écartement est du couloir utile.
+// le pipeline retiré, fcose éparpillait les membres d'un agrégat, donc le
+// cercle englobant gonflait, donc `separateClusters` écartait de GRANDS cercles
+// presque vides. Ici le cercle est minimal par construction — les cartes sont
+// packées AVANT que le cercle existe — donc tout l'écartement est du couloir
+// utile.
 //
 // Ce moteur n'importe NI cytoscape NI elkjs : il ne dépend que du cœur pur
-// (`hull.ts`, `measure.ts`). Les imports de `layout-graph.js` sont
-// délibérément des `import type` — ils s'effacent à la compilation, donc
-// aucune chaîne d'import runtime ne mène d'ici à cytoscape. Voir
-// `graph-layout.ts` pour le canal d'exposition et `test/bundle-purity.test.ts`
-// pour la garde.
+// (`hull.ts`, `measure.ts`). Voir `graph-layout.ts` pour le canal d'exposition.
 //
 // CE QUE CE MOTEUR NE TRANCHE PAS (réserves de la sonde, reprises telles
 // quelles parce qu'aucune n'a été levée depuis) :
@@ -86,19 +91,61 @@
 //     agrégats sans arêtes). Assumé, mais c'est un choix de produit.
 import type { AggregateIndex } from "./aggregate.js"
 import type { Graph, NodeId } from "./model.js"
-import type { Rect } from "./layout.js"
-import type { ClusterShape, GraphLayoutEngine, GraphLayoutResult } from "./layout-graph.js"
+import type { LayoutResult, Rect } from "./layout.js"
 import { enclosingCircle } from "./hull.js"
 import { measureNode, DEFAULT_METRICS, type NodeMetrics } from "./measure.js"
 
+// Le contrat de la vue graphe — l'enveloppe, le résultat, l'interface du moteur
+// — est déclaré ICI depuis le retrait de `layout-graph.ts`, où il vivait tant
+// que deux moteurs le partageaient. Il n'en reste qu'un, et un module de types
+// dont le seul contenu serait ces trois interfaces demanderait sa propre
+// justification. Ce qu'un consommateur importe ne bouge pas pour autant : le
+// point d'entrée `./graph-layout` les republie, sous les mêmes noms.
+//
+// Ces types restent nommés « Graph… » et non « TwoLevel… » : ils décrivent la
+// VUE, pas l'algorithme. Un second moteur de vue graphe les réimplémenterait
+// tels quels — c'est exactement ce qui vient de se passer dans l'autre sens.
+
+/** Enveloppe d'un agrégat : un disque, dans le repère de `positions`. */
+export interface ClusterShape {
+  aggregateId: string
+  rootId: NodeId
+  cx: number
+  cy: number
+  r: number
+}
+
+export interface GraphLayoutResult extends LayoutResult {
+  clusters: ClusterShape[]
+}
+
+/**
+ * Le moteur de mise en page de la vue graphe.
+ *
+ * `layout()` est asynchrone par contrat, pas par nécessité : l'implémentation
+ * actuelle est entièrement synchrone (voir `createTwoLevelLayoutEngine`), mais
+ * celle qu'elle remplace attendait un `layoutstop` de cytoscape, et le
+ * renderer `await` déjà ce résultat. Rendre la signature synchrone
+ * n'achèterait rien et fermerait la porte à une implémentation qui céderait la
+ * main — un Web Worker, par exemple.
+ */
+export interface GraphLayoutEngine {
+  layout(
+    graph: Graph,
+    aggregates: AggregateIndex,
+    visible: Set<NodeId>,
+    metrics?: NodeMetrics,
+  ): Promise<GraphLayoutResult>
+}
+
 export interface TwoLevelLayoutOptions {
   /** Marge entre le coin de carte le plus éloigné du centre de l'enveloppe et
-   * le bord de celle-ci. Même sens et même valeur que dans `layout-graph.ts` :
+   * le bord de celle-ci. Même sens et même valeur que dans le moteur retiré :
    * c'est le rayon du disque que le renderer peint. */
   hullPadding?: number
   /** Marge entre deux cartes d'un même agrégat, INCLUSE dans le packing (donc
-   * acquise par construction, là où `separationMargin` de `layout-graph.ts`
-   * est le but d'une relaxation plafonnée). */
+   * acquise par construction, là où le `separationMargin` du moteur retiré
+   * était le but d'une relaxation plafonnée). */
   cardGap?: number
   /** Écart bord à bord garanti entre deux disques d'agrégats. */
   clusterGap?: number
@@ -107,11 +154,24 @@ export interface TwoLevelLayoutOptions {
 }
 
 const DEFAULTS: Required<TwoLevelLayoutOptions> = {
-  // Repris de `layout-graph.ts` sans les rejuger : ce sont les mêmes formes
+  // Repris du moteur retiré sans les rejuger : ce sont les mêmes formes
   // dessinées et le même contrat visuel. La sonde a mesuré les deux moteurs
-  // avec ces valeurs des deux côtés, pour comparer à garanties égales — et
-  // `clusterGap: 160` reste le fruit du balayage documenté dans les `DEFAULTS`
-  // de `layout-graph.ts`, pas un choix au goût.
+  // avec ces valeurs des deux côtés, pour comparer à garanties égales.
+  //
+  // `clusterGap: 160` n'est pas un choix au goût : il vient d'un balayage
+  // complet (gap 0 / 80 / 160 / 240 / 320 / 400, en mesurant recouvrements
+  // d'enveloppes, écart au plus proche voisin, bbox et remplissage) fait sur le
+  // moteur retiré. Le tableau vivait dans son `DEFAULTS` ; il est reporté dans
+  // la section « Graph view » du README racine, et son code dans l'historique
+  // git. Ce qu'il établit et qui vaut toujours : la CORRECTION — zéro paire
+  // d'enveloppes en recouvrement — est déjà acquise à 80 px, tout ce qui est
+  // au-dessus achète de la largeur de couloir. 160 px valent 10× `cardGap` et
+  // une hauteur et demie de carte : l'écart se voit sans zoomer.
+  //
+  // Il n'a PAS été re-balayé sur ce moteur-ci, et le résultat serait
+  // différent : le balayage mesurait des cercles gonflés par l'éparpillement de
+  // fcose, là où ceux d'ici sont minimaux par construction. À remesurer si la
+  // valeur redevient une question ; elle ne l'est pas devenue.
   hullPadding: 18,
   cardGap: 16,
   clusterGap: 160,
@@ -120,8 +180,10 @@ const DEFAULTS: Required<TwoLevelLayoutOptions> = {
   // PREMIER jeu de constantes essayé — 400 itérations, force de ressort 0,15,
   // poids plafonné à 2, gravité 0,02 — sans aucun balayage de réglages. Cela
   // suggère que l'architecture est robuste au réglage plus que ces valeurs ne
-  // sont bonnes. Un calibrage à la façon de `clusterGap` reste à faire avant
-  // d'en faire le défaut de la vue.
+  // sont bonnes. Un calibrage à la façon de `clusterGap` reste à faire — il ne
+  // l'a pas été avant que ce moteur devienne celui de la vue, et c'est un choix
+  // assumé : ces constantes ne portent aucune des garanties (voir juste en
+  // dessous), donc les régler achèterait de l'esthétique, pas de la justesse.
   //
   // Ce que 400 achète : rien de la CORRECTION. Les garanties de sortie
   // (non-recouvrement des cartes, écart des disques) sont portées par le
@@ -131,7 +193,7 @@ const DEFAULTS: Required<TwoLevelLayoutOptions> = {
   simIterations: 400,
 }
 
-/** Hachage FNV-1a de l'id — le MÊME que celui de `layout-graph.ts`, et pour la
+/** Hachage FNV-1a de l'id — le MÊME que celui du moteur retiré, et pour la
  * même raison : c'est toute la source d'« aléa » du moteur. Aucun `Math.random`
  * ni `Date.now` n'intervient nulle part ici, sans quoi le déterminisme au bit
  * près, asserté par les tests, tomberait. */
@@ -284,7 +346,7 @@ function run(
   }
 
   // Amorçage déterministe sur un disque proportionné à l'aire totale des
-  // disques — même idée que `seedPosition` de `layout-graph.ts`, mais à la
+  // disques — même idée que le `seedPosition` du moteur retiré, mais à la
   // granularité de l'agrégat et non de la carte.
   let discArea = 0
   for (const c of clusters) discArea += (2 * c.r + o.clusterGap) ** 2
@@ -453,7 +515,7 @@ function run(
   }
 
   // Report des positions locales dans le repère global, puis normalisation : le
-  // coin haut-gauche de la bbox à l'origine, comme `layout-graph.ts`.
+  // coin haut-gauche de la bbox à l'origine, comme le moteur retiré.
   const positions = new Map<NodeId, Rect>()
   for (const c of clusters) {
     for (const id of c.memberIds) {

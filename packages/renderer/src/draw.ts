@@ -582,9 +582,11 @@ export function drawSearchHighlights(
  * plus bas du monde, donc elles passent derrière les arêtes et les cartes.
  *
  * L'enveloppe est le cercle englobant minimal des cartes de l'agrégat, calculé
- * côté cœur (`enclosingCircle`) et écarté sous cette même forme par
- * `separateClusters` : ce qu'on peint ici est exactement ce que la mise en page
- * a espacé. Un rayon nul ou négatif n'est pas une surface et est ignoré.
+ * côté cœur (`enclosingCircle`). Ce qu'on peint ici n'est pas seulement égal à
+ * ce que la mise en page a espacé : c'est le MÊME disque. `layout-two-level.ts`
+ * le calcule une fois sur le bloc packé, puis le translate avec ses cartes ;
+ * aucun recalcul après coup ne peut faire diverger la forme espacée de la forme
+ * tracée. Un rayon nul ou négatif n'est pas une surface et est ignoré.
  */
 export function drawClusters(
   clusters: { circle: { cx: number; cy: number; r: number }; color: string }[],
