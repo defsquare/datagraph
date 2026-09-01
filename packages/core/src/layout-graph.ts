@@ -3,8 +3,7 @@ import fcose from "cytoscape-fcose"
 import type { AggregateIndex } from "./aggregate.js"
 import type { Graph, NodeId } from "./model.js"
 import type { LayoutResult, Rect } from "./layout.js"
-import type { Point } from "./hull.js"
-import { paddedHull } from "./hull.js"
+import { enclosingCircle } from "./hull.js"
 import { measureNode, DEFAULT_METRICS, type NodeMetrics } from "./measure.js"
 import { separateOverlaps } from "./separate.js"
 import { separateClusters } from "./cluster-separate.js"
@@ -12,7 +11,8 @@ import { separateClusters } from "./cluster-separate.js"
 cytoscape.use(fcose as cytoscape.Ext)
 
 export interface GraphLayoutOptions {
-  /** Marge entre une carte et le bord de l'enveloppe de son agrégat. */
+  /** Marge entre le coin de carte le plus éloigné du centre de l'enveloppe et
+   * le bord de celle-ci. */
   hullPadding?: number
   /** Marge garantie entre deux cartes par la passe de séparation. */
   separationMargin?: number
@@ -22,10 +22,13 @@ export interface GraphLayoutOptions {
   clusterGap?: number
 }
 
+/** Enveloppe d'un agrégat : un disque, dans le repère de `positions`. */
 export interface ClusterShape {
   aggregateId: string
   rootId: NodeId
-  polygon: Point[]
+  cx: number
+  cy: number
+  r: number
 }
 
 export interface GraphLayoutResult extends LayoutResult {
@@ -98,52 +101,52 @@ const DEFAULTS: Required<GraphLayoutOptions> = {
   // anticipée a acquis. Le compromis est assumé et documenté dans la section
   // « Graph view » du README.
   separationIterations: 3000,
-  // CALIBRÉ, pas choisi au goût. Balayage complet de `layout()` sur deux
-  // fixtures à l'échelle, en mesurant l'écart bord à bord au plus proche
-  // voisin (« nn ») entre boîtes englobantes d'agrégats, la taille de la bbox
-  // globale et le remplissage. `clusterGap: 0` = passe désactivée, c'est-à-dire
-  // l'état d'avant ce réglage.
+  // CALIBRÉ, pas choisi au goût. Balayage complet de `layout()`, en mesurant
+  // l'écart bord à bord au plus proche voisin (« nn ») entre ENVELOPPES
+  // d'agrégats — les cercles eux-mêmes, marge comprise, donc exactement ce que
+  // le renderer peint —, la taille de la bbox globale et le remplissage.
+  // `clusterGap: 0` = passe désactivée, c'est-à-dire l'état d'avant ce réglage.
   //
   //   bigShop(3000) — 334 entités, 167 agrégats de 2 cartes
-  //   gap |  nn   | paires en recouvrement |    bbox     | aire  | remplissage
-  //     0 |   0,7 |                    310 |  3494×2969 |  ×1   | 42,4 %
-  //    80 |  80,0 |                      0 |  5969×6571 |  ×3,8 | 11,2 %
-  //   160 | 160,0 |                      0 |  6778×8171 |  ×5,3 |  7,9 %
-  //   240 | 240,2 |                      0 |  7987×9879 |  ×7,6 |  5,6 %
-  //   320 | 320,4 |                      0 |  9072×10833|  ×9,5 |  4,5 %
-  //   400 | 401,3 |                      0 | 12045×12543| ×14,6 |  2,9 %
+  //   gap |   nn   | paires en recouvrement |    bbox     | aire  | remplissage
+  //     0 | −289,8 |                    911 |  3494×2969  |  ×1   | 42,4 %
+  //    80 |   80,0 |                      0 |  7585×7425  |  ×5,4 |  7,8 %
+  //   160 |  160,0 |                      0 |  8370×8418  |  ×6,8 |  6,2 %
+  //   240 |  240,0 |                      0 |  9898×9796  |  ×9,3 |  4,5 %
+  //   320 |  320,1 |                      0 | 11173×10370 | ×11,2 |  3,8 %
+  //   400 |  400,0 |                      0 | 12355×11634 | ×13,9 |  3,1 %
   //
-  //   ancien jeu de la démo — 211 entités, 53 agrégats de 3 à 5 cartes
-  //   (le jeu de la démo a depuis doublé et déclare DEUX racines d'agrégat :
-  //   ses 108 agrégats fusionnent en un seul super-cluster de 342 cartes sur
-  //   350, où cette passe n'a plus rien à écarter. Le balayage ci-dessous
-  //   garde donc la forme mesurée à une racine, qui est celle où le réglage
-  //   compte.)
-  //   gap |  nn   | paires en recouvrement |    bbox     | aire  | remplissage
-  //     0 |   0,0 |                    138 |  2673×2404 |  ×1   | 43,2 %
-  //    80 |  80,9 |                      0 |  3958×5288 |  ×3,3 | 13,3 %
-  //   160 | 160,0 |                      0 |  5151×5799 |  ×4,7 |  9,3 %
-  //   240 | 241,2 |                      0 |  6105×6845 |  ×6,5 |  6,6 %
-  //   320 | 323,0 |                      0 |  6400×7842 |  ×7,8 |  5,5 %
-  //   400 | 400,5 |                      0 |  6674×8588 |  ×8,9 |  4,8 %
+  // TRACE HISTORIQUE, à ne pas confondre avec les chiffres ci-dessus : ce
+  // balayage a d'abord été mesuré quand la passe relaxait des BOÎTES
+  // englobantes et que le renderer traçait une enveloppe CONVEXE — deux formes
+  // qui ne coïncidaient nulle part. Il donnait alors, sur le même fixture :
+  // gap 0 → nn 0,7 px et 310 paires en recouvrement ; 160 → 6778×8171 (×5,3),
+  // 7,9 % de remplissage. Le passage au cercle englobant minimal, forme unique
+  // pour l'écartement ET le tracé, élargit tout : un cercle circonscrit est
+  // plus large que la boîte qu'il enferme, donc à `gap` égal les couloirs
+  // partent de plus loin (×6,8 au lieu de ×5,3 à 160 px), et à gap 0 le
+  // recouvrement mesuré triple (911 paires au lieu de 310) parce qu'on mesure
+  // enfin le recouvrement de la forme réellement dessinée. Un second balayage
+  // existait sur un jeu de démo à 211 entités et une seule racine ; ce fixture
+  // n'est plus dans le dépôt et ses chiffres ne sont pas reportés ici.
   //
   // Aucun recouvrement de CARTES à aucune valeur, y compris 0 : la passe de
   // séparation garde son contrat, celle-ci ne fait que translater des blocs.
   //
-  // 160 retenu. Sans la passe, les enveloppes se touchent (0,7 px d'écart
-  // moyen au plus proche voisin, 310 paires franchement superposées) : elles
-  // sont illisibles. La CORRECTION — plus aucune paire d'enveloppes en
-  // recouvrement — est déjà acquise à 80 px ; tout ce qui est au-dessus achète
-  // de la largeur de couloir, pas de la justesse. 160 px valent 10×
-  // `separationMargin` et une hauteur et demie de carte : l'écart se voit sans
-  // zoomer, pour ×5,3 d'aire et 7,9 % de remplissage.
+  // 160 retenu. Sans la passe, les enveloppes s'interpénètrent franchement
+  // (−289,8 px d'écart moyen au plus proche voisin, 911 paires en
+  // recouvrement) : elles sont illisibles. La CORRECTION — plus aucune paire
+  // d'enveloppes en recouvrement — est déjà acquise à 80 px ; tout ce qui est
+  // au-dessus achète de la largeur de couloir, pas de la justesse. 160 px
+  // valent 10× `separationMargin` et une hauteur et demie de carte : l'écart
+  // se voit sans zoomer, pour ×6,8 d'aire et 6,2 % de remplissage.
   //
-  // Au-delà, le coût grimpe plus vite que le bénéfice : 160 → 240 coûte +42 %
-  // d'aire pour faire passer le remplissage de 7,9 % à 5,6 %, soit plus près
+  // Au-delà, le coût grimpe plus vite que le bénéfice : 160 → 240 coûte +38 %
+  // d'aire pour faire passer le remplissage de 6,2 % à 4,5 %, soit plus près
   // des 2,5 % de la mise en page que cette vue REMPLACE que des ~43 % d'où
-  // elle part. `fit()` doit alors dézoomer d'un facteur √7,6 ≈ 2,8, donc les
-  // cartes s'affichent au tiers de leur taille en vue d'ensemble et tombent
-  // plus tôt dans les LOD dégradés.
+  // elle part. `fit()` doit déjà dézoomer d'un facteur √6,8 ≈ 2,6 à 160 px,
+  // donc les cartes s'affichent au tiers de leur taille en vue d'ensemble et
+  // tombent plus tôt dans les LOD dégradés.
   //
   // C'est un réglage d'œil, pas de correction : il est exposé jusque dans
   // `createDataGraph` via `graphLayoutOptions`, pour se régler sans toucher au
@@ -169,7 +172,7 @@ function hashOf(id: string): number {
  * nous-mêmes les positions et en passant `randomize: false`, ce tirage est
  * court-circuité et la sortie devient stable d'une session à l'autre.
  */
-function seedPosition(id: string, radius: number): Point {
+function seedPosition(id: string, radius: number): { x: number; y: number } {
   const h = hashOf(id)
   const angle = ((h & 0xffff) / 0x10000) * 2 * Math.PI
   const r = Math.sqrt(((h >>> 16) & 0xffff) / 0x10000) * radius
@@ -197,11 +200,8 @@ function seedPosition(id: string, radius: number): Point {
  * repère de `positions`. Ordre stable : celui de `aggregates`, qui suit
  * lui-même l'ordre de déclaration de la config.
  *
- * Le chevauchement (une entité membre de plusieurs agrégats) n'a pas besoin
- * d'un montage particulier ici : chaque agrégat calcule son enveloppe
- * indépendamment à partir des positions de SES membres, donc une entité
- * partagée tombe naturellement dans les deux polygones — tirée vers ses deux
- * racines par ses propres arêtes de référence pendant le layout.
+ * C'est le MÊME cercle, à la même marge, que celui que `separateClusters` a
+ * écarté juste avant : la forme dessinée est exactement la forme espacée.
  */
 function computeClusters(
   aggregates: AggregateIndex,
@@ -216,10 +216,13 @@ function computeClusters(
       if (rect) rects.push(rect)
     }
     if (rects.length === 0) continue
+    const circle = enclosingCircle(rects, hullPadding)
     clusters.push({
       aggregateId: aggregate.id,
       rootId: aggregate.rootId,
-      polygon: paddedHull(rects, hullPadding),
+      cx: circle.cx,
+      cy: circle.cy,
+      r: circle.r,
     })
   }
   return clusters
@@ -341,8 +344,15 @@ export function createGraphLayoutEngine(opts: GraphLayoutOptions = {}): GraphLay
     // d'un agrégat. Elle réutilise le plafond d'itérations de la séparation :
     // il y a bien moins de clusters que de cartes, et sa sortie anticipée
     // fonctionne (comparaison à une épsilon), donc ce plafond n'est jamais
-    // atteint en pratique.
-    separateClusters(positions, aggregates, options.clusterGap, options.separationIterations)
+    // atteint en pratique. Elle reçoit `hullPadding` : elle écarte le cercle
+    // que `computeClusters` tracera plus bas, pas une approximation.
+    separateClusters(
+      positions,
+      aggregates,
+      options.clusterGap,
+      options.separationIterations,
+      options.hullPadding,
+    )
 
     // Normalisation : le coin haut-gauche de la bbox à l'origine.
     let minX = Infinity

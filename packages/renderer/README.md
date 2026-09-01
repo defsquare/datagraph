@@ -99,8 +99,8 @@ graph smaller than the viewport is centred rather than blown up.
 - **`"graph"`** lays out entities as vertices and references as edges,
   grouped into the DDD aggregates declared in `config.aggregates` (see the
   [core package README](https://github.com/defsquare/data-graph/tree/main/packages/core#aggregates)
-  for the membership rule) and drawn as convex envelopes around each
-  aggregate's cards.
+  for the membership rule) and drawn as circular envelopes — the minimal
+  enclosing circle of each aggregate's cards, plus a `hullPadding` margin.
 
 ```ts
 const graph = createDataGraph(container, {
@@ -141,7 +141,10 @@ from that chevron; it was removed.
 **Cluster spacing.** Aggregate envelopes are spaced apart by a dedicated pass
 (`separateClusters`, core-side) that translates each cluster rigidly, so
 nothing inside an aggregate moves relative to anything else in it, at a gap
-of `clusterGap` (**160 px** by default). It only has something to do when
+of `clusterGap` (**160 px** by default). It pushes two clusters apart along the
+line of their centres until that distance reaches `r₁ + r₂ + clusterGap`, using
+the same `hullPadding` this package paints with — so the shape that gets spaced
+is exactly the shape you see. It only has something to do when
 aggregates don't share entities: two aggregates sharing a member are merged
 into one rigid block instead of being pulled apart, so once every aggregate
 ends up transitively linked by shared members — as happens with

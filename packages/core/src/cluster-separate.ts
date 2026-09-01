@@ -1,4 +1,5 @@
 import type { AggregateIndex } from "./aggregate.js"
+import { enclosingCircle } from "./hull.js"
 import type { Rect } from "./layout.js"
 import type { NodeId } from "./model.js"
 
@@ -19,39 +20,40 @@ const EPSILON = 1e-6
 interface SuperCluster {
   /** Membres positionnés, dans un ordre stable. */
   members: NodeId[]
-  /** Boîte englobante, déplacée en place par la relaxation. */
-  box: Rect
-  /** Coin haut-gauche d'origine, pour en déduire la translation totale. */
+  /** Centre de l'enveloppe, déplacé en place par la relaxation. */
+  cx: number
+  cy: number
+  /** Rayon de l'enveloppe, marge comprise. Invariant : la passe ne fait que
+   * translater, donc le rayon ne bouge jamais. */
+  r: number
+  /** Centre d'origine, pour en déduire la translation totale. */
   originX: number
   originY: number
 }
 
-function boundingBox(positions: Map<NodeId, Rect>, members: Iterable<NodeId>): Rect {
-  let minX = Infinity
-  let minY = Infinity
-  let maxX = -Infinity
-  let maxY = -Infinity
-  for (const id of members) {
-    const rect = positions.get(id)!
-    minX = Math.min(minX, rect.x)
-    minY = Math.min(minY, rect.y)
-    maxX = Math.max(maxX, rect.x + rect.width)
-    maxY = Math.max(maxY, rect.y + rect.height)
-  }
-  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
-}
-
 /**
  * Écarte les **agrégats** les uns des autres, **en place**, jusqu'à laisser au
- * moins `gap` entre deux boîtes englobantes voisines.
+ * moins `gap` entre les bords de deux enveloppes voisines.
  *
- * Même mécanique de relaxation que `separateOverlaps` — grille de hachage pour
- * le voisinage, poussée le long de l'axe de moindre pénétration, moitié du
- * déplacement pour chacun, ordre d'itération stable donc déterminisme — mais à
- * la granularité du CLUSTER et non de la carte. Elle s'applique après
- * `separateOverlaps` : celle-là garantit qu'aucune carte n'en recouvre une
- * autre, celle-ci ouvre les couloirs entre agrégats pour que les enveloppes se
- * lisent.
+ * L'enveloppe d'un cluster est le **cercle englobant minimal** de ses cartes,
+ * rayon augmenté de `padding` — exactement la forme que le renderer peint
+ * (`drawClusters`, `computeClusters`). C'est ce qui rend la passe honnête :
+ * elle écarte la forme qu'on voit, pas une approximation. La version
+ * précédente relaxait des boîtes englobantes axiales alors que le renderer
+ * traçait une enveloppe convexe : les deux formes ne coïncidaient nulle part,
+ * et le couloir mesuré n'était pas celui qu'on regardait.
+ *
+ * Deux cercles se poussent le long de la droite de leurs centres, chacun
+ * encaissant la moitié du déplacement, jusqu'à ce que la distance entre centres
+ * atteigne `r₁ + r₂ + gap`. C'est plus simple que la relaxation sur boîtes
+ * qu'elle remplace : un seul axe de poussée, celui des centres, au lieu d'un
+ * choix entre deux pénétrations axiales. Le reste ne change pas — voisinage par
+ * grille de hachage, ordre d'itération stable donc déterminisme, sortie
+ * anticipée sous `EPSILON`.
+ *
+ * Elle s'applique après `separateOverlaps` : celle-là garantit qu'aucune carte
+ * n'en recouvre une autre, celle-ci ouvre les couloirs entre agrégats pour que
+ * les enveloppes se lisent.
  *
  * Deux règles font toute la sûreté de la passe :
  *
@@ -88,6 +90,7 @@ export function separateClusters(
   aggregates: AggregateIndex,
   gap: number,
   iterations: number,
+  padding: number,
 ): void {
   if (positions.size < 2 || gap <= 0) return
 
@@ -152,7 +155,7 @@ export function separateClusters(
     const root = find(index)
     let cluster = byRoot.get(root)
     if (!cluster) {
-      cluster = { members: [], box: { x: 0, y: 0, width: 0, height: 0 }, originX: 0, originY: 0 }
+      cluster = { members: [], cx: 0, cy: 0, r: 0, originX: 0, originY: 0 }
       byRoot.set(root, cluster)
     }
     for (const id of members) {
@@ -164,25 +167,28 @@ export function separateClusters(
   const clusters = [...byRoot.values()]
   if (clusters.length < 2) return
   for (const cluster of clusters) {
-    cluster.box = boundingBox(positions, cluster.members)
-    cluster.originX = cluster.box.x
-    cluster.originY = cluster.box.y
+    const circle = enclosingCircle(
+      cluster.members.map((id) => positions.get(id)!),
+      padding,
+    )
+    cluster.cx = circle.cx
+    cluster.cy = circle.cy
+    cluster.r = circle.r
+    cluster.originX = circle.cx
+    cluster.originY = circle.cy
   }
 
-  // 4. Relaxation sur les boîtes. Maille de la grille : la plus grande boîte
-  //    augmentée de `gap`, donc toute paire trop proche tombe dans des cellules
-  //    adjacentes.
+  // 4. Relaxation sur les cercles. Maille de la grille : le plus grand diamètre
+  //    augmenté de `gap`, donc toute paire trop proche — dont les centres sont
+  //    à moins de `r₁ + r₂ + gap ≤ maille` — tombe dans des cellules adjacentes.
   let cell = 0
-  for (const cluster of clusters) {
-    cell = Math.max(cell, cluster.box.width + gap, cluster.box.height + gap)
-  }
+  for (const cluster of clusters) cell = Math.max(cell, 2 * cluster.r + gap)
   if (cell <= 0) return
 
   for (let pass = 0; pass < iterations; pass++) {
     const buckets = new Map<string, number[]>()
     clusters.forEach((cluster, index) => {
-      const b = cluster.box
-      const key = `${Math.floor((b.x + b.width / 2) / cell)},${Math.floor((b.y + b.height / 2) / cell)}`
+      const key = `${Math.floor(cluster.cx / cell)},${Math.floor(cluster.cy / cell)}`
       const bucket = buckets.get(key)
       if (bucket) bucket.push(index)
       else buckets.set(key, [index])
@@ -191,9 +197,9 @@ export function separateClusters(
     let moved = false
     const seen = new Set<string>()
     for (let index = 0; index < clusters.length; index++) {
-      const a = clusters[index]!.box
-      const cx = Math.floor((a.x + a.width / 2) / cell)
-      const cy = Math.floor((a.y + a.height / 2) / cell)
+      const a = clusters[index]!
+      const cx = Math.floor(a.cx / cell)
+      const cy = Math.floor(a.cy / cell)
       for (let dx = -1; dx <= 1; dx++) {
         for (let dy = -1; dy <= 1; dy++) {
           for (const other of buckets.get(`${cx + dx},${cy + dy}`) ?? []) {
@@ -202,21 +208,27 @@ export function separateClusters(
             if (seen.has(pair)) continue
             seen.add(pair)
 
-            const b = clusters[other]!.box
-            const ox = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x) + gap
-            const oy = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y) + gap
-            if (ox <= EPSILON || oy <= EPSILON) continue
+            const b = clusters[other]!
+            const wanted = a.r + b.r + gap
+            let vx = b.cx - a.cx
+            let vy = b.cy - a.cy
+            let distance = Math.hypot(vx, vy)
+            if (wanted - distance <= EPSILON) continue
 
             moved = true
-            if (ox < oy) {
-              const push = (ox / 2) * (a.x + a.width / 2 <= b.x + b.width / 2 ? -1 : 1)
-              a.x += push
-              b.x -= push
-            } else {
-              const push = (oy / 2) * (a.y + a.height / 2 <= b.y + b.height / 2 ? -1 : 1)
-              a.y += push
-              b.y -= push
+            if (distance <= EPSILON) {
+              // Centres confondus : la direction de poussée est indéterminée.
+              // On prend l'axe des x, arbitraire mais FIXE — un tirage, même
+              // à graine, casserait le déterminisme au pixel de la vue.
+              vx = 1
+              vy = 0
+              distance = 1
             }
+            const push = (wanted - distance) / 2 / distance
+            a.cx -= vx * push
+            a.cy -= vy * push
+            b.cx += vx * push
+            b.cy += vy * push
           }
         }
       }
@@ -228,7 +240,7 @@ export function separateClusters(
   //    super-cluster, donc rigide pour tout le monde.
   for (const [id, cluster] of clusterOf) {
     const rect = positions.get(id)!
-    rect.x += cluster.box.x - cluster.originX
-    rect.y += cluster.box.y - cluster.originY
+    rect.x += cluster.cx - cluster.originX
+    rect.y += cluster.cy - cluster.originY
   }
 }

@@ -7,7 +7,6 @@ import {
   type GraphNode,
   type NodeId,
   type NodeMetrics,
-  type Point,
   type Rect,
   type RefEdge,
 } from "@defsquare/data-graph-core";
@@ -582,18 +581,22 @@ export function drawSearchHighlights(
  * la couleur d'accent du type de la racine. Le calque qui les reçoit est le
  * plus bas du monde, donc elles passent derrière les arêtes et les cartes.
  *
- * Un polygone de moins de trois points n'est pas une surface et est ignoré.
+ * L'enveloppe est le cercle englobant minimal des cartes de l'agrégat, calculé
+ * côté cœur (`enclosingCircle`) et écarté sous cette même forme par
+ * `separateClusters` : ce qu'on peint ici est exactement ce que la mise en page
+ * a espacé. Un rayon nul ou négatif n'est pas une surface et est ignoré.
  */
-export function drawHulls(hulls: { polygon: Point[]; color: string }[], theme: Theme): Graphics {
+export function drawClusters(
+  clusters: { circle: { cx: number; cy: number; r: number }; color: string }[],
+  theme: Theme,
+): Graphics {
   const g = new Graphics();
-  for (const hull of hulls) {
-    if (hull.polygon.length < 3) continue;
-    const [first, ...rest] = hull.polygon;
-    g.moveTo(first!.x, first!.y);
-    for (const point of rest) g.lineTo(point.x, point.y);
-    g.closePath();
-    g.fill({ color: hull.color, alpha: 0.08 });
-    g.stroke({ width: 1.5, color: hull.color, alpha: 0.35 });
+  for (const cluster of clusters) {
+    const { cx, cy, r } = cluster.circle;
+    if (!(r > 0)) continue;
+    g.circle(cx, cy, r);
+    g.fill({ color: cluster.color, alpha: 0.08 });
+    g.stroke({ width: 1.5, color: cluster.color, alpha: 0.35 });
   }
   return g;
 }

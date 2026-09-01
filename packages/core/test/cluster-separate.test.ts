@@ -1,8 +1,14 @@
 import { describe, it, expect } from "vitest"
 import type { Aggregate, AggregateIndex } from "../src/aggregate.js"
+import { enclosingCircle } from "../src/hull.js"
 import type { Rect } from "../src/layout.js"
 import type { NodeId } from "../src/model.js"
 import { separateClusters } from "../src/cluster-separate.js"
+
+/** `hullPadding` par défaut de `createGraphLayoutEngine`. La passe reçoit la
+ * MÊME marge que le tracé, donc la forme écartée ici est exactement celle que
+ * le renderer peint. */
+const PADDING = 18
 
 /** Un `AggregateIndex` monté à la main : ces tests portent sur la géométrie,
  * pas sur la règle d'appartenance (couverte par `aggregate.test.ts`). Le
@@ -51,32 +57,54 @@ function intraDistances(positions: Map<NodeId, Rect>, members: NodeId[]): number
   return out
 }
 
+/**
+ * Rigidité : chaque carte d'un cluster encaisse la MÊME translation, donc les
+ * distances intra-agrégat traversent la passe inchangées.
+ *
+ * À l'arrondi de cette translation près, et pas au bit près. La poussée se
+ * fait maintenant le long de la droite des centres, donc ses deux composantes
+ * sont quelconques : `(x₁ + d) − (x₂ + d)` ne redonne pas exactement
+ * `x₁ − x₂`. Écart maximal MESURÉ sur les fixtures de ce fichier : 0 px sur
+ * `twoTangledClusters` (poussée purement horizontale, exacte en binaire) et
+ * **2,84e-14 px** sur le cas à trois clusters ci-dessous — quatorze ordres de
+ * grandeur sous le pixel. La relaxation sur boîtes qu'on remplace poussait le
+ * long d'un axe et tombait toujours sur 0 ; c'était une propriété du fixture,
+ * pas de la passe.
+ */
+function expectRigid(after: number[], before: number[]): void {
+  expect(after).toHaveLength(before.length)
+  for (let i = 0; i < before.length; i++) {
+    expect(Math.abs(after[i]! - before[i]!)).toBeLessThan(1e-9)
+  }
+}
+
 function overlaps(a: Rect, b: Rect): boolean {
   const px = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)
   const py = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y)
   return px > 1e-9 && py > 1e-9
 }
 
-/** Boîte englobante des membres positionnés d'un agrégat. */
-function bboxOf(positions: Map<NodeId, Rect>, members: Iterable<NodeId>): Rect {
-  let minX = Infinity
-  let minY = Infinity
-  let maxX = -Infinity
-  let maxY = -Infinity
+/** L'enveloppe d'un cluster : le cercle que le renderer peindra pour lui. */
+function circleOf(positions: Map<NodeId, Rect>, members: Iterable<NodeId>, padding = PADDING) {
+  const boxes: Rect[] = []
   for (const id of members) {
     const rect = positions.get(id)
-    if (!rect) continue
-    minX = Math.min(minX, rect.x)
-    minY = Math.min(minY, rect.y)
-    maxX = Math.max(maxX, rect.x + rect.width)
-    maxY = Math.max(maxY, rect.y + rect.height)
+    if (rect) boxes.push(rect)
   }
-  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
+  return enclosingCircle(boxes, padding)
 }
 
-/** Deux agrégats de trois cartes, posés l'un sur l'autre : leurs boîtes
- * englobantes se recouvrent franchement, sans qu'aucune carte n'en recouvre
- * une autre. C'est exactement l'entrée que la passe doit ouvrir. */
+/** Écart bord à bord entre deux enveloppes : négatif si elles se recouvrent. */
+function circleGap(
+  a: { cx: number; cy: number; r: number },
+  b: { cx: number; cy: number; r: number },
+): number {
+  return Math.hypot(a.cx - b.cx, a.cy - b.cy) - a.r - b.r
+}
+
+/** Deux agrégats de trois cartes, posés l'un sur l'autre : leurs enveloppes se
+ * recouvrent franchement, sans qu'aucune carte n'en recouvre une autre. C'est
+ * exactement l'entrée que la passe doit ouvrir. */
 function twoTangledClusters() {
   const positions = rects({
     "a/0": [0, 0],
@@ -94,15 +122,15 @@ function twoTangledClusters() {
 }
 
 describe("separateClusters", () => {
-  it("preserves intra-cluster geometry EXACTLY — rigid translation", () => {
+  it("preserves intra-cluster geometry — rigid translation", () => {
     const { positions, aggregates } = twoTangledClusters()
     const beforeA = intraDistances(positions, ["a/0", "a/1", "a/2"])
     const beforeB = intraDistances(positions, ["b/0", "b/1", "b/2"])
 
-    separateClusters(positions, aggregates, 400, 3000)
+    separateClusters(positions, aggregates, 400, 3000, PADDING)
 
-    // Égalité STRICTE, pas une tolérance : la passe ne translate que des
-    // clusters entiers, donc la géométrie interne est bit à bit la même.
+    // Ici la poussée est purement horizontale et l'égalité est bit à bit ;
+    // c'est le fixture qui le permet, pas la passe — voir `expectRigid`.
     expect(intraDistances(positions, ["a/0", "a/1", "a/2"])).toEqual(beforeA)
     expect(intraDistances(positions, ["b/0", "b/1", "b/2"])).toEqual(beforeB)
   })
@@ -124,19 +152,23 @@ describe("separateClusters", () => {
     }
 
     const before = meanCross(positions)
-    separateClusters(positions, aggregates, 400, 3000)
+    separateClusters(positions, aggregates, 400, 3000, PADDING)
     const after = meanCross(positions)
 
-    // Mesuré sur ce fixture, gap = 400 : 156,44 px avant, 505,14 px après
-    // (×3,23). Les deux chiffres sont ceux de l'exécution, pas une cible.
+    // Mesuré sur ce fixture, gap = 400, padding = 18 : 156,44 px avant,
+    // 628,42 px après (×4,02). Les deux chiffres sont ceux de l'exécution, pas
+    // une cible. L'écart monte par rapport à la relaxation sur boîtes qu'on
+    // remplace (505,14 px mesurés alors) : un cercle circonscrit est plus large
+    // que la boîte qu'il enferme, et c'est bord à bord de CERCLE qu'on ouvre
+    // `gap`.
     expect(before).toBeCloseTo(156.44, 1)
-    expect(after).toBeCloseTo(505.14, 1)
+    expect(after).toBeCloseTo(628.42, 1)
     expect(after).toBeGreaterThan(before * 2)
   })
 
   it("stays rigid when a THIRD cluster pushes an aggregate that shares a member", () => {
     // Le cas que les fixtures à deux clusters ne peuvent pas voir. A et B
-    // partagent s/0 ; c/0, hors de tout agrégat, mord la boîte de A et la
+    // partagent s/0 ; c/0, hors de tout agrégat, mord l'enveloppe de A et la
     // pousse. Si A et B encaissent alors des déplacements différents et que
     // s/0 en prend la moyenne, s/0 se détache de ses co-membres : la
     // translation n'est plus rigide, et des cartes peuvent se recouvrir — ce
@@ -153,14 +185,14 @@ describe("separateClusters", () => {
     const beforeA = intraDistances(positions, ["a/0", "a/1", "s/0"])
     const beforeB = intraDistances(positions, ["b/0", "b/1", "s/0"])
 
-    separateClusters(positions, aggregates, 200, 3000)
+    separateClusters(positions, aggregates, 200, 3000, PADDING)
 
     // Mesuré avec la règle de la moyenne : a/0 et a/1 bougeaient de +125,00 px
     // quand s/0 n'en prenait que +67,50 ; les distances intra-A passaient de
     // 120 à 62,50 px et de 60 à 2,50 px, et une paire de cartes se retrouvait
     // en recouvrement. La fusion en super-cluster supprime le cas.
-    expect(intraDistances(positions, ["a/0", "a/1", "s/0"])).toEqual(beforeA)
-    expect(intraDistances(positions, ["b/0", "b/1", "s/0"])).toEqual(beforeB)
+    expectRigid(intraDistances(positions, ["a/0", "a/1", "s/0"]), beforeA)
+    expectRigid(intraDistances(positions, ["b/0", "b/1", "s/0"]), beforeB)
 
     const all = [...positions.values()]
     for (let i = 0; i < all.length; i++) {
@@ -178,7 +210,7 @@ describe("separateClusters", () => {
     const aggregates = indexOf({ "A#a": ["a/0", "s/0"], "B#b": ["b/0", "s/0"] })
     const before = new Map([...positions].map(([id, r]) => [id, { ...r }]))
 
-    separateClusters(positions, aggregates, 400, 3000)
+    separateClusters(positions, aggregates, 400, 3000, PADDING)
 
     for (const [id, rect] of before) expect(positions.get(id)).toEqual(rect)
   })
@@ -189,16 +221,16 @@ describe("separateClusters", () => {
     const positions = rects({ "a/0": [0, 0], "a/1": [0, 60], "lone/0": [40, 20] })
     const aggregates = indexOf({ "A#a": ["a/0", "a/1"] })
 
-    separateClusters(positions, aggregates, 200, 3000)
+    separateClusters(positions, aggregates, 200, 3000, PADDING)
 
-    const hull = bboxOf(positions, ["a/0", "a/1"])
-    const lone = positions.get("lone/0")!
-    expect(overlaps(hull, lone)).toBe(false)
+    const envelope = circleOf(positions, ["a/0", "a/1"])
+    const lone = circleOf(positions, ["lone/0"])
+    expect(circleGap(envelope, lone)).toBeGreaterThanOrEqual(200 - 1e-6)
   })
 
   it("keeps cards non-overlapping", () => {
     const { positions, aggregates } = twoTangledClusters()
-    separateClusters(positions, aggregates, 400, 3000)
+    separateClusters(positions, aggregates, 400, 3000, PADDING)
     const all = [...positions.values()]
     for (let i = 0; i < all.length; i++) {
       for (let j = i + 1; j < all.length; j++) {
@@ -207,42 +239,74 @@ describe("separateClusters", () => {
     }
   })
 
-  it("opens at least `gap` between two cluster bounding boxes", () => {
+  it("opens at least `gap` between two cluster envelopes", () => {
     const { positions, aggregates } = twoTangledClusters()
-    separateClusters(positions, aggregates, 400, 3000)
-    const boxA = bboxOf(positions, ["a/0", "a/1", "a/2"])
-    const boxB = bboxOf(positions, ["b/0", "b/1", "b/2"])
-    const px = Math.min(boxA.x + boxA.width, boxB.x + boxB.width) - Math.max(boxA.x, boxB.x)
-    const py = Math.min(boxA.y + boxA.height, boxB.y + boxB.height) - Math.max(boxA.y, boxB.y)
-    // Séparées le long d'au moins un axe, d'au moins `gap`.
-    expect(Math.max(-px, -py)).toBeGreaterThanOrEqual(400 - 1e-6)
+    separateClusters(positions, aggregates, 400, 3000, PADDING)
+    const circleA = circleOf(positions, ["a/0", "a/1", "a/2"])
+    const circleB = circleOf(positions, ["b/0", "b/1", "b/2"])
+    expect(circleGap(circleA, circleB)).toBeGreaterThanOrEqual(400 - 1e-6)
+  })
+
+  it("honours `padding`: the gap is opened between the PAINTED circles", () => {
+    // La forme écartée est celle que le renderer peint, marge comprise. Avec
+    // une marge nulle la passe ouvrirait `gap` entre des cercles plus petits
+    // que ceux tracés, et le couloir visible serait `gap - 2 × padding`.
+    const withPadding = twoTangledClusters()
+    separateClusters(withPadding.positions, withPadding.aggregates, 400, 3000, PADDING)
+    const withoutPadding = twoTangledClusters()
+    separateClusters(withoutPadding.positions, withoutPadding.aggregates, 400, 3000, 0)
+
+    // Distance entre les centres — le centre d'un cercle englobant ne dépend
+    // pas de la marge, seul son rayon en dépend.
+    const spread = (p: Map<NodeId, Rect>) => {
+      const a = circleOf(p, ["a/0", "a/1", "a/2"], 0)
+      const b = circleOf(p, ["b/0", "b/1", "b/2"], 0)
+      return Math.hypot(a.cx - b.cx, a.cy - b.cy)
+    }
+
+    // Deux fois la marge de plus entre les centres, exactement.
+    expect(spread(withPadding.positions) - spread(withoutPadding.positions)).toBeCloseTo(
+      2 * PADDING,
+      6,
+    )
   })
 
   it("is deterministic across two runs", () => {
     const first = twoTangledClusters()
     const second = twoTangledClusters()
-    separateClusters(first.positions, first.aggregates, 400, 3000)
-    separateClusters(second.positions, second.aggregates, 400, 3000)
+    separateClusters(first.positions, first.aggregates, 400, 3000, PADDING)
+    separateClusters(second.positions, second.aggregates, 400, 3000, PADDING)
     expect([...first.positions.entries()]).toEqual([...second.positions.entries()])
+  })
+
+  it("separates two clusters stacked at the very same centre", () => {
+    // Cercles concentriques : la direction de poussée est indéterminée. La
+    // passe doit choisir un axe fixe plutôt que diviser par zéro.
+    const positions = rects({ "a/0": [0, 0], "b/0": [0, 0] })
+    const aggregates = indexOf({ "A#a": ["a/0"], "B#b": ["b/0"] })
+
+    separateClusters(positions, aggregates, 200, 3000, PADDING)
+
+    expect(circleGap(circleOf(positions, ["a/0"]), circleOf(positions, ["b/0"]))).toBeGreaterThanOrEqual(
+      200 - 1e-6,
+    )
   })
 })
 
 describe("separateClusters — entrées dégénérées", () => {
   it("no aggregate at all: every entity is its own cluster", () => {
     const positions = rects({ "x/0": [0, 0], "x/1": [20, 10] })
-    separateClusters(positions, { aggregates: new Map(), byNode: new Map() }, 200, 3000)
-    const a = positions.get("x/0")!
-    const b = positions.get("x/1")!
-    const px = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)
-    const py = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y)
-    expect(Math.max(-px, -py)).toBeGreaterThanOrEqual(200 - 1e-6)
+    separateClusters(positions, { aggregates: new Map(), byNode: new Map() }, 200, 3000, PADDING)
+    expect(
+      circleGap(circleOf(positions, ["x/0"]), circleOf(positions, ["x/1"])),
+    ).toBeGreaterThanOrEqual(200 - 1e-6)
   })
 
   it("a single aggregate covering everything: nothing moves", () => {
     const positions = rects({ "a/0": [0, 0], "a/1": [10, 10] })
     const aggregates = indexOf({ "A#a": ["a/0", "a/1"] })
     const before = new Map([...positions].map(([id, r]) => [id, { ...r }]))
-    separateClusters(positions, aggregates, 400, 3000)
+    separateClusters(positions, aggregates, 400, 3000, PADDING)
     for (const [id, rect] of before) expect(positions.get(id)).toEqual(rect)
   })
 
@@ -261,7 +325,7 @@ describe("separateClusters — entrées dégénérées", () => {
     })
     const before = new Map([...positions].map(([id, r]) => [id, { ...r }]))
 
-    separateClusters(positions, aggregates, 400, 3000)
+    separateClusters(positions, aggregates, 400, 3000, PADDING)
 
     for (const [id, rect] of before) expect(positions.get(id)).toEqual(rect)
   })
@@ -269,24 +333,22 @@ describe("separateClusters — entrées dégénérées", () => {
   it("a single-member aggregate is separated like any other cluster", () => {
     const positions = rects({ "a/0": [0, 0], "b/0": [20, 10] })
     const aggregates = indexOf({ "A#a": ["a/0"], "B#b": ["b/0"] })
-    separateClusters(positions, aggregates, 200, 3000)
-    const a = positions.get("a/0")!
-    const b = positions.get("b/0")!
-    const px = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)
-    const py = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y)
-    expect(Math.max(-px, -py)).toBeGreaterThanOrEqual(200 - 1e-6)
+    separateClusters(positions, aggregates, 200, 3000, PADDING)
+    expect(
+      circleGap(circleOf(positions, ["a/0"]), circleOf(positions, ["b/0"])),
+    ).toBeGreaterThanOrEqual(200 - 1e-6)
   })
 
   it("an empty position map is a no-op", () => {
     const positions = new Map<NodeId, Rect>()
-    separateClusters(positions, { aggregates: new Map(), byNode: new Map() }, 400, 3000)
+    separateClusters(positions, { aggregates: new Map(), byNode: new Map() }, 400, 3000, PADDING)
     expect(positions.size).toBe(0)
   })
 
   it("an aggregate whose members are all unpositioned is skipped", () => {
     const positions = rects({ "b/0": [0, 0] })
     const aggregates = indexOf({ "A#a": ["a/0", "a/1"], "B#b": ["b/0"] })
-    expect(() => separateClusters(positions, aggregates, 400, 3000)).not.toThrow()
+    expect(() => separateClusters(positions, aggregates, 400, 3000, PADDING)).not.toThrow()
     expect(positions.get("b/0")).toEqual({ x: 0, y: 0, width: 100, height: 40 })
   })
 })

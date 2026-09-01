@@ -206,29 +206,15 @@ describe("createGraphLayoutEngine", () => {
 })
 
 describe("cluster shapes", () => {
-  it("emits one hull per aggregate that has a visible member", async () => {
+  it("emits one envelope per aggregate that has a visible member", async () => {
     const { graph, aggregates, visible } = setup()
     const result = await createGraphLayoutEngine().layout(graph, aggregates, visible)
     expect(result.clusters.map((c) => c.aggregateId).sort()).toEqual(["Customer#c1", "Customer#c2"])
   })
 
-  it("wraps every member rect inside its aggregate hull", async () => {
+  it("wraps every member rect inside its aggregate envelope", async () => {
     const { graph, aggregates, visible } = setup()
     const result = await createGraphLayoutEngine().layout(graph, aggregates, visible)
-
-    const inside = (poly: { x: number; y: number }[], p: { x: number; y: number }) => {
-      let sign = 0
-      for (let i = 0; i < poly.length; i++) {
-        const a = poly[i]!
-        const b = poly[(i + 1) % poly.length]!
-        const cross = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)
-        if (Math.abs(cross) < 1e-6) continue
-        const s = cross > 0 ? 1 : -1
-        if (sign === 0) sign = s
-        else if (s !== sign) return false
-      }
-      return true
-    }
 
     for (const cluster of result.clusters) {
       const members = aggregates.aggregates.get(cluster.aggregateId)!.memberIds
@@ -241,13 +227,40 @@ describe("cluster shapes", () => {
           { x: r.x, y: r.y + r.height },
           { x: r.x + r.width, y: r.y + r.height },
         ]) {
-          expect(inside(cluster.polygon, c)).toBe(true)
+          expect(Math.hypot(c.x - cluster.cx, c.y - cluster.cy)).toBeLessThanOrEqual(cluster.r + 1e-6)
         }
       }
     }
   })
 
-  it("emits no hull for an aggregate with no visible member", async () => {
+  it("leaves at least hullPadding between the farthest corner and the envelope's edge", async () => {
+    // La marge est ce qui empêche l'enveloppe de raser les cartes. Le coin le
+    // plus éloigné du centre doit rester à exactement `hullPadding` du bord —
+    // « au moins » ne suffirait pas : le cercle est MINIMAL, donc ce coin est
+    // sur le cercle non matelassé.
+    const { graph, aggregates, visible } = setup()
+    const result = await createGraphLayoutEngine({ hullPadding: 40 }).layout(graph, aggregates, visible)
+
+    for (const cluster of result.clusters) {
+      const members = aggregates.aggregates.get(cluster.aggregateId)!.memberIds
+      let farthest = 0
+      for (const id of members) {
+        const r = result.positions.get(id)
+        if (!r) continue
+        for (const c of [
+          { x: r.x, y: r.y },
+          { x: r.x + r.width, y: r.y },
+          { x: r.x, y: r.y + r.height },
+          { x: r.x + r.width, y: r.y + r.height },
+        ]) {
+          farthest = Math.max(farthest, Math.hypot(c.x - cluster.cx, c.y - cluster.cy))
+        }
+      }
+      expect(cluster.r - farthest).toBeCloseTo(40, 6)
+    }
+  })
+
+  it("emits no envelope for an aggregate with no visible member", async () => {
     const { graph, aggregates } = setup()
     // Seule /customers/0 est visible : l'agrégat Customer#c2 n'a aucun membre.
     const visible = new Set(["/customers/0"])
@@ -255,7 +268,7 @@ describe("cluster shapes", () => {
     expect(result.clusters.map((c) => c.aggregateId)).toEqual(["Customer#c1"])
   })
 
-  it("gives a shared entity a place inside both hulls", async () => {
+  it("gives a shared entity a place inside both envelopes", async () => {
     const graph = buildGraph(twoRootsData, twoRootsConfig)
     const aggregates = buildAggregates(graph, validateConfig(twoRootsConfig))
     const visible = new Set(
@@ -270,17 +283,13 @@ describe("cluster shapes", () => {
 })
 
 describe("cluster separation", () => {
-  /** Boîte englobante d'un polygone d'enveloppe. Comparer les boîtes plutôt
-   * que les polygones suffit ici et se lit : si les boîtes sont disjointes,
-   * les enveloppes le sont a fortiori. */
-  const boxOf = (polygon: { x: number; y: number }[]) => {
-    const xs = polygon.map((p) => p.x)
-    const ys = polygon.map((p) => p.y)
-    return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) }
-  }
-  const boxesOverlap = (a: ReturnType<typeof boxOf>, b: ReturnType<typeof boxOf>) =>
-    Math.min(a.maxX, b.maxX) - Math.max(a.minX, b.minX) > 1e-6 &&
-    Math.min(a.maxY, b.maxY) - Math.max(a.minY, b.minY) > 1e-6
+  /** Deux enveloppes se recouvrent si la distance de leurs centres est
+   * inférieure à la somme des rayons. La comparaison porte directement sur la
+   * forme tracée — plus d'approximation par une boîte englobante, l'enveloppe
+   * EST le disque. */
+  type Circle = { cx: number; cy: number; r: number }
+  const circlesOverlap = (a: Circle, b: Circle) =>
+    Math.hypot(a.cx - b.cx, a.cy - b.cy) - a.r - b.r < -1e-6
 
   it(
     "leaves no two aggregate envelopes overlapping, at scale",
@@ -300,10 +309,10 @@ describe("cluster separation", () => {
       // ne référence qu'un client), donc l'exemption ne s'applique pas : le
       // compte attendu est zéro.
       let overlapping = 0
-      const boxes = result.clusters.map((c) => boxOf(c.polygon))
-      for (let i = 0; i < boxes.length; i++) {
-        for (let j = i + 1; j < boxes.length; j++) {
-          if (boxesOverlap(boxes[i]!, boxes[j]!)) overlapping++
+      const circles = result.clusters
+      for (let i = 0; i < circles.length; i++) {
+        for (let j = i + 1; j < circles.length; j++) {
+          if (circlesOverlap(circles[i]!, circles[j]!)) overlapping++
         }
       }
       expect(overlapping).toBe(0)
@@ -326,7 +335,7 @@ describe("cluster separation", () => {
     expect(result.clusters).toHaveLength(2)
 
     const [a, b] = result.clusters
-    expect(boxesOverlap(boxOf(a!.polygon), boxOf(b!.polygon))).toBe(true)
+    expect(circlesOverlap(a!, b!)).toBe(true)
 
     // Cette assertion-là ne suffit PAS à prouver la fusion : les deux
     // enveloppes contiennent la carte partagée, donc elles se croisent même si

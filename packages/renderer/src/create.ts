@@ -17,7 +17,6 @@ import {
   type LayoutResult,
   type NodeId,
   type NodeMetrics,
-  type Point,
   type Rect,
   type RefEdge,
   type SearchIndex,
@@ -46,7 +45,7 @@ import { Camera, type Size } from "./camera.js";
 import {
   drawEdgeHitAreas,
   drawEdges,
-  drawHulls,
+  drawClusters,
   drawNode,
   drawSearchHighlights,
   drawSelectionOverlay,
@@ -225,7 +224,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   const world = new Container();
   // Les enveloppes d'agrégats forment le calque le plus bas : elles passent
   // derrière les arêtes et les cartes. Vide en vue structure.
-  let hullsGraphics = new Graphics();
+  let clustersGraphics = new Graphics();
   let edgesGraphics = new Graphics();
   const edgeHitLayer = new Container();
   const nodesLayer = new Container();
@@ -236,7 +235,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   // les références sortantes du nœud sélectionné dans `overlayGraphics`, le
   // calque le plus haut, où elles passent donc par-dessus tout.
   let overlayGraphics = new Container();
-  world.addChild(hullsGraphics, edgesGraphics, edgeHitLayer, nodesLayer, overlayGraphics);
+  world.addChild(clustersGraphics, edgesGraphics, edgeHitLayer, nodesLayer, overlayGraphics);
 
   // Le bail d'atlas de cette instance. Les atlas Pixi sont globaux par nom,
   // donc partagés entre instances ; le registre les compte par référence et ne
@@ -383,13 +382,18 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   }
 
   /** Les enveloppes à peindre : vide en vue structure. La couleur vient de
-   * l'accent du type de la racine, comme pour les cartes. */
-  function hullsFor(): { polygon: Point[]; color: string }[] {
+   * l'accent du type de la racine, comme pour les cartes. Cette résolution
+   * reste ici, et pas dans `drawClusters` : la fonction de dessin ne prend que
+   * de la donnée nue, donc elle se teste sans graphe ni index d'agrégats. */
+  function clustersFor(): { circle: { cx: number; cy: number; r: number }; color: string }[] {
     if (view !== "graph" || !graph || !graphLayout) return [];
     const current = graph;
     return graphLayout.clusters.map((cluster) => {
       const root = current.nodes.get(cluster.rootId);
-      return { polygon: cluster.polygon, color: root ? accentFor(root) : theme.edge.border };
+      return {
+        circle: { cx: cluster.cx, cy: cluster.cy, r: cluster.r },
+        color: root ? accentFor(root) : theme.edge.border,
+      };
     });
   }
 
@@ -507,9 +511,9 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     // Les atlas doivent exister avant que `drawNode` n'en dérive les noms.
     if (useBitmapText) fontLease.sync(theme);
 
-    hullsGraphics.destroy();
-    hullsGraphics = drawHulls(hullsFor(), theme);
-    world.addChildAt(hullsGraphics, 0);
+    clustersGraphics.destroy();
+    clustersGraphics = drawClusters(clustersFor(), theme);
+    world.addChildAt(clustersGraphics, 0);
 
     edgesGraphics.destroy();
     // Index 1, et non 0 : le calque des enveloppes occupe désormais le fond.
@@ -558,15 +562,15 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     // Les enveloppes débordent des cartes : les inclure, sans quoi le cadrage
     // les rognerait.
     if (view === "graph" && graphLayout) {
+      // Le disque déborde des cartes de sa marge ; sa boîte englobante est
+      // `cx ± r`, `cy ± r`, et c'est elle qu'on unit aux bornes des cartes.
       for (const cluster of graphLayout.clusters) {
-        for (const p of cluster.polygon) {
-          const right = bounds.x + bounds.width;
-          const bottom = bounds.y + bounds.height;
-          bounds.x = Math.min(bounds.x, p.x);
-          bounds.y = Math.min(bounds.y, p.y);
-          bounds.width = Math.max(right, p.x) - bounds.x;
-          bounds.height = Math.max(bottom, p.y) - bounds.y;
-        }
+        const right = bounds.x + bounds.width;
+        const bottom = bounds.y + bounds.height;
+        bounds.x = Math.min(bounds.x, cluster.cx - cluster.r);
+        bounds.y = Math.min(bounds.y, cluster.cy - cluster.r);
+        bounds.width = Math.max(right, cluster.cx + cluster.r) - bounds.x;
+        bounds.height = Math.max(bottom, cluster.cy + cluster.r) - bounds.y;
       }
     }
     camera.fitTo(bounds, viewport());

@@ -43,7 +43,7 @@ La vue structure actuelle — containment, ELK layered, expand/collapse du JSON 
 | Définition d'un cluster | Agrégat déclaré dans la config, pas de détection automatique |
 | Périmètre | Deux vues coexistantes, bascule explicite |
 | Appartenance multiple | Autorisée : une entité peut être dans plusieurs agrégats |
-| Forme des enveloppes | Convexe matelassée (pas de bubble-sets concaves) |
+| Forme des enveloppes | ~~Convexe matelassée (pas de bubble-sets concaves)~~ RÉVISÉ : **cercle englobant minimal** matelassé — voir `hull.ts` |
 | État initial des agrégats | Dépliés |
 
 ## Règle d'appartenance
@@ -144,18 +144,42 @@ déjà tout le nécessaire.
 ### `hull.ts` — nouveau
 
 ```ts
-export interface Point { x: number; y: number }
-/** Enveloppe convexe des coins des rectangles, chacun gonflé de `padding`. */
-export function paddedHull(rects: Rect[], padding: number): Point[]
+export interface Circle { cx: number; cy: number; r: number }
+/** Cercle englobant minimal des coins des rectangles, rayon + `padding`. */
+export function enclosingCircle(rects: Rect[], padding: number): Circle
 ```
 
-Enveloppe convexe par balayage de Andrew (monotone chain) sur les 4 coins de
-chaque rectangle préalablement gonflé. Gonfler *avant* plutôt que décaler le
-polygone *après* évite tout calcul d'offset de polygone et reste exact.
+Algorithme de Welzl, forme itérative à trois boucles, sur les 4 coins de chaque
+rectangle. Gonfler le RAYON en sortie est ici exact : dilater un cercle de
+`padding` revient exactement à ajouter `padding` à son rayon, sans bissectrice
+ni coin rentrant à traiter.
 
-Cas limites à tester : un seul rectangle (l'enveloppe est ce rectangle gonflé,
-4 points), deux rectangles, des centres colinéaires, des rectangles identiques
-superposés, une liste vide (renvoie `[]`).
+**L'entrée n'est pas mélangée.** La borne linéaire en espérance de Welzl repose
+sur une permutation aléatoire ; sans elle, le pire cas est cubique. Mais le
+déterminisme au pixel est une exigence dure de cette vue, et les tailles en jeu
+rendent l'arbitrage facile : 4 points pour l'agrégat d'une seule carte — le cas
+courant — et 20 pour le plus gros du jeu de démo. Un ordre fixe est le bon
+compromis à cette échelle ; il cesserait de l'être sur des agrégats de plusieurs
+centaines de cartes.
+
+Cas limites à tester : un seul rectangle (son cercle circonscrit), deux
+rectangles, des centres colinéaires, des rectangles identiques superposés, un
+rectangle de taille nulle, une liste vide (cercle nul).
+
+> **~~Enveloppe convexe matelassée~~ RETIRÉE.** La première version calculait un
+> polygone convexe (balayage de Andrew sur les coins de rectangles gonflés) et
+> `paddedHull` / `Point` étaient exportés depuis le barrel du cœur. Deux raisons
+> de l'avoir remplacée par le cercle. D'abord la cohérence : la passe
+> d'écartement (`cluster-separate.ts`) relaxait des BOÎTES englobantes axiales
+> pendant que le renderer traçait ce POLYGONE — le couloir mesuré n'était donc
+> pas le couloir regardé. Avec le cercle, écartement et tracé partagent une
+> seule forme et une seule marge. Ensuite la simplicité : la poussée se fait le
+> long de la droite des centres, sans choix entre deux pénétrations axiales, et
+> le test de recouvrement de deux enveloppes redevient une comparaison de
+> distances. Le prix mesuré est une bbox plus large — un cercle circonscrit est
+> plus large que la boîte qu'il enferme, ×6,8 d'aire au `clusterGap` par défaut
+> contre ×5,3 pour la relaxation sur boîtes — et un recouvrement à gap 0
+> plus élevé parce qu'on mesure enfin la vraie forme (911 paires contre 310).
 
 ### `separate.ts` — extrait de la sonde
 
@@ -184,7 +208,7 @@ Il est repris tel quel.
 
 ```ts
 export interface GraphLayoutResult extends LayoutResult {
-  clusters: { aggregateId: string; rootId: NodeId; polygon: Point[] }[]
+  clusters: { aggregateId: string; rootId: NodeId; cx: number; cy: number; r: number }[]
 }
 
 export interface GraphLayoutEngine {
@@ -195,7 +219,8 @@ export interface GraphLayoutEngine {
 }
 
 export interface GraphLayoutOptions {
-  /** Marge entre une carte et le bord de l'enveloppe de son agrégat. */
+  /** Marge entre le coin de carte le plus éloigné du centre de l'enveloppe et
+   * le bord de celle-ci. */
   hullPadding?: number
   /** Marge garantie entre deux cartes par la passe de séparation. */
   separationMargin?: number
@@ -245,8 +270,9 @@ Le moteur, sur cytoscape + fcose (le couple validé par la sonde) :
    prévues pour des nœuds ponctuels et inutilisables sur des cartes de
    140–340 px. La longueur d'arête idéale doit être dérivée de la taille des
    deux boîtes reliées, pas laissée à 50 px.
-6. **Enveloppes** : `paddedHull` sur les rectangles des membres visibles de
-   chaque agrégat, dans l'ordre stable de `ValidatedConfig.aggregates`.
+6. **Enveloppes** : `enclosingCircle` sur les rectangles des membres visibles de
+   chaque agrégat, dans l'ordre stable de `ValidatedConfig.aggregates`, à la
+   MÊME marge que celle passée à `separateClusters` juste avant.
 
 Un agrégat dont aucun membre n'est visible ne produit pas d'enveloppe.
 
@@ -280,19 +306,31 @@ export function separateClusters(
   aggregates: AggregateIndex,
   gap: number,
   iterations: number,
+  padding: number,
 ): void
 ```
 
 `separateOverlaps` écarte les CARTES ; elle ne dit rien des AGRÉGATS, et sans
-seconde passe les enveloppes se touchent — mesuré sur `bigShop(3000)` : 310
-paires d'enveloppes franchement superposées, 0,7 px d'écart moyen au plus
-proche voisin. Cette passe-ci reprend la même mécanique de relaxation à la
-granularité du cluster : boîte englobante par agrégat, poussée le long de l'axe
-de moindre pénétration jusqu'à `clusterGap`, puis **translation rigide** de
-chaque membre par le déplacement total de son cluster. C'est la rigidité qui la
-rend sûre : la géométrie interne d'un agrégat traverse la passe intacte, et
-comme rien ne relance `separateOverlaps` derrière, c'est aussi ce qui garantit
-qu'aucun recouvrement de cartes n'y apparaît.
+seconde passe les enveloppes s'interpénètrent — mesuré sur `bigShop(3000)` :
+911 paires d'enveloppes en recouvrement, −289,8 px d'écart bord à bord moyen au
+plus proche voisin. Cette passe-ci reprend la même mécanique de relaxation à la
+granularité du cluster : **cercle englobant** par agrégat, à la MÊME marge que
+le tracé (d'où le paramètre `padding`), poussée le long de la droite des centres
+jusqu'à `r₁ + r₂ + clusterGap`, puis **translation rigide** de chaque membre par
+le déplacement total de son cluster. C'est la rigidité qui la rend sûre : la
+géométrie interne d'un agrégat traverse la passe intacte, et comme rien ne
+relance `separateOverlaps` derrière, c'est aussi ce qui garantit qu'aucun
+recouvrement de cartes n'y apparaît.
+
+> **~~Relaxation sur boîtes englobantes~~ RÉVISÉE.** La première version relaxait
+> des boîtes axiales — poussée le long de l'axe de moindre pénétration — alors
+> que le renderer traçait une enveloppe convexe. Les deux formes ne coïncidaient
+> nulle part : la passe garantissait `gap` entre des boîtes qu'on ne voyait
+> jamais. Ses chiffres sur `bigShop(3000)` (310 paires en recouvrement, 0,7 px
+> d'écart moyen à gap 0) mesuraient donc une autre forme que celle affichée, et
+> ne sont pas comparables à ceux ci-dessus. La rigidité y était de surcroît bit
+> à bit par accident : une poussée axiale tombe sur des flottants exacts, ce que
+> la poussée le long des centres ne fait pas (écart maximal mesuré : 2,84e-14 px).
 
 Deux cas particuliers. Une entité sans agrégat forme un cluster d'un seul, pour
 être poussée hors des enveloppes voisines. Et **les agrégats qui partagent une
@@ -439,7 +477,7 @@ export interface DataGraph {
 }
 ```
 
-Un calque `hullsGraphics` s'insère **sous** `edgesGraphics` dans
+Un calque `clustersGraphics` s'insère **sous** `edgesGraphics` dans
 `world.addChild(...)` (`create.ts:179`), pour que les enveloppes passent
 derrière tout le reste. Les enveloppes sont peintes en remplissage translucide
 plus contour, dans la couleur d'accent du type de leur racine, obtenue via
@@ -482,10 +520,12 @@ chevauchement ; racine jamais absorbée par une autre racine ; hub borné (le ca
 référence cassée ne propageant rien ; cycle de références ; type racine sans
 instance ; ordre stable de `byNode`.
 
-**`hull.test.ts`** — enveloppe convexe : cas nominal, un seul rectangle, deux
-rectangles, centres colinéaires, rectangles superposés identiques, liste vide.
-Invariant vérifié systématiquement : tout coin de tout rectangle d'entrée est à
-l'intérieur ou sur le bord du polygone rendu.
+**`hull.test.ts`** — cercle englobant minimal : cas nominal, un seul rectangle,
+deux rectangles, centres colinéaires, rectangles superposés identiques,
+rectangle de taille nulle, liste vide, déterminisme. Deux invariants vérifiés
+systématiquement : tout coin de tout rectangle d'entrée est à l'intérieur ou sur
+le bord du cercle rendu, et ce cercle est MINIMAL — le rétrécir d'un millième de
+pixel fait sortir au moins un coin.
 
 **`separate.test.ts`** — reprise des tests de la sonde : deux rectangles qui se
 mordent finissent séparés d'au moins la marge ; une configuration déjà
@@ -518,7 +558,7 @@ d'entités qui est plus petit et bien moins dense :
 | | valeur attendue |
 |---|---|
 | Ratio de bbox | ~1:1,5 (contre 1:21 aujourd'hui) |
-| ~~Remplissage~~ | RÉVISÉ : ~43 % atteint sans écartement des clusters, mais **7,9 %** au `clusterGap` de 160 px — prix assumé de l'écartement demandé, `fit()` recadrant de toute façon |
+| ~~Remplissage~~ | RÉVISÉ : ~43 % atteint sans écartement des clusters, mais **6,2 %** au `clusterGap` de 160 px sur `bigShop(3000)` — prix assumé de l'écartement demandé, `fit()` recadrant de toute façon. (Le 7,9 % de la révision précédente était mesuré quand la passe relaxait des boîtes ; le cercle englobant est plus large, donc ouvre davantage.) |
 | Chevauchement de cartes | 0 |
 | `layout()` initial | < 3 s à 1000 entités |
 | Écart entre deux runs identiques | **0 px** (exigence, pas budget) |
@@ -535,7 +575,8 @@ défaut — la vue structure ne doit rien payer.
   C'est l'évolution prévue si la taille l'exige : elle change le moteur sans
   toucher au modèle ni au rendu, puisque les enveloppes sont calculées après
   coup dans les deux cas.
-- **Enveloppes concaves** type bubble-sets.
+- **Enveloppes concaves** type bubble-sets. (L'enveloppe convexe elle-même a été
+  abandonnée depuis, au profit du cercle englobant minimal — voir `hull.ts`.)
 - **Détection automatique de communautés** : écartée au profit des agrégats
   déclarés, pour le déterminisme et parce que la notion DDD est celle que la
   bibliothèque revendique déjà.

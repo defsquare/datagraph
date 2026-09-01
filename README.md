@@ -21,7 +21,7 @@ across every field.
 Two views are built in. The default **structure view** lays out the
 containment tree (parent/child, ELK layered). An optional **graph view**
 switches the canvas to entities-as-vertices, references-as-edges, grouped
-into DDD aggregates drawn as convex envelopes — see [`config.aggregates`](#entityreference-configuration)
+into DDD aggregates drawn as circular envelopes — see [`config.aggregates`](#entityreference-configuration)
 and [the renderer's graph view docs](./packages/renderer/README.md#graph-view).
 
 <!-- demo GIF placeholder: replace this comment with an actual GIF/screen
@@ -241,7 +241,7 @@ package's README for the latest numbers and any documented deviation.
 | Card overlap after layout | Zero overlapping pairs, always. The stronger `separationMargin` gap between every pair is measured and asserted at 334 cards; past ~450 the iteration cap can leave a few pairs closer than the margin (still never overlapping) — see the note below | `packages/core/test/layout-graph.test.ts` |
 | Determinism | Pixel-identical positions across two runs on the same input | `packages/core/test/layout-graph.test.ts` |
 | Aggregate envelope overlap after layout | Zero overlapping pairs at 167 aggregates. Aggregates that genuinely share a member entity are merged into one rigid block instead of being separated, so their envelopes still cross — that is the intended behavior, not an exception to the budget | `packages/core/test/layout-graph.test.ts` ("leaves no two aggregate envelopes overlapping" / "merges two aggregates that share a member entity into one rigid block") |
-| Intra-aggregate geometry under cluster separation | Exact to floating-point representation — a uniform per-cluster translation, asserted with strict equality rather than a tolerance | `packages/core/test/cluster-separate.test.ts` |
+| Intra-aggregate geometry under cluster separation | Preserved to the rounding of one uniform per-cluster translation. Measured worst case on the committed fixtures: **2.84e-14 px** (0 px where the push happens to be axis-aligned) | `packages/core/test/cluster-separate.test.ts` |
 | `@defsquare/data-graph` bundle purity | `cytoscape` (~178 kB gzip) never enters a consumer's bundle unless it calls `setView("graph")` — the structure view alone doesn't pull it in | `packages/core/test/bundle-purity.test.ts` (core half) + `packages/renderer/test/bundle-purity.test.ts` (renderer half) |
 
 **Separation, measured.** After fcose runs, a relaxation pass (`separateOverlaps`)
@@ -290,20 +290,38 @@ comparison can recover them. Bringing that number down needs a different
 approach — a cheaper non-overlap algorithm, or moving the layout off the main
 thread — not a better epsilon.
 
+**Envelopes are circles.** An aggregate's envelope is the **minimal enclosing
+circle** of its cards' corners (Welzl's algorithm, `packages/core/src/hull.ts`),
+its radius grown by `hullPadding`. The input is deliberately **not shuffled**:
+Welzl's expected-linear bound relies on a random permutation, but this repo
+requires pixel determinism, and the clusters here are tiny — 4 points for the
+common single-card aggregate, 20 for the largest on the demo dataset. A fixed
+order is the right trade at that size; it would stop being one on aggregates of
+hundreds of cards. An earlier version drew a padded **convex hull** instead;
+circles replaced it so that one single shape is both spaced and painted (see
+below).
+
 **Cluster spacing, measured.** `separateOverlaps` keeps *cards* apart; it says
-nothing about *aggregates*, and without a second pass the envelopes end up
-touching — 310 of the 13,861 envelope pairs on `bigShop(3000)` are frankly
-superimposed, and the mean gap to a cluster's nearest neighbour is **0.7 px**.
-So a second relaxation (`separateClusters`) runs after it, at cluster
-granularity: it computes each aggregate's bounding box, pushes boxes closer
-than `clusterGap` apart along their axis of least penetration, and then
-translates each cluster's members **rigidly** by its box's total displacement.
-That rigidity is what makes it safe: intra-aggregate geometry comes through
-untouched, and since nothing re-runs `separateOverlaps` afterwards, it is also
-what guarantees the pass introduces no card overlap. An entity in no aggregate
-is its own singleton cluster, so it is pushed out of a neighbour's envelope
-instead of being left inside it. Unlike `separateOverlaps`, its early exit
-compares against an epsilon rather than zero, so it actually converges and stops.
+nothing about *aggregates*, and without a second pass the envelopes interpenetrate
+badly — 911 of the 13,861 envelope pairs on `bigShop(3000)` overlap, and the mean
+edge-to-edge gap to a cluster's nearest neighbour is **−289.8 px**. So a second
+relaxation (`separateClusters`) runs after it, at cluster granularity: it pushes
+two clusters apart along the line of their centres until that distance reaches
+`r₁ + r₂ + clusterGap`, then translates each cluster's members **rigidly** by its
+circle's total displacement. It receives the same `hullPadding` the renderer
+paints with, so **the spaced shape is exactly the drawn shape** — the previous
+version relaxed axis-aligned bounding boxes while the renderer drew a convex
+hull, so the corridor it measured was not the corridor you looked at (that older
+box pass reported 310 overlapping pairs and a 0.7 px mean gap on the same
+fixture: a different, smaller shape, not a better result). Pushing along the
+centre line is also simpler than the box relaxation it replaces — one axis
+instead of a choice between two axial penetrations. That rigidity is what makes
+it safe: intra-aggregate geometry comes through untouched, and since nothing
+re-runs `separateOverlaps` afterwards, it is also what guarantees the pass
+introduces no card overlap. An entity in no aggregate is its own singleton
+cluster, so it is pushed out of a neighbour's envelope instead of being left
+inside it. Unlike `separateOverlaps`, its early exit compares against an epsilon
+rather than zero, so it actually converges and stops.
 
 **Aggregates that share an entity are merged** into a single rigid super-cluster
 (union-find) before the relaxation, rather than being separated. A shared entity
@@ -344,13 +362,13 @@ the sweep is recorded in `DEFAULTS` in `packages/core/src/layout-graph.ts`, and
 the value is settable per instance via `graphLayoutOptions` (see the renderer
 README). Correctness — zero overlapping envelope pairs — is already reached at
 80 px; everything above that buys corridor width, not correctness. On
-`bigShop(3000)` at 160 px: nearest-neighbour gap 0.7 px → 160.0 px, overlapping
-envelope pairs 310 → 0, overall bbox 3494×2969 → 6778×8171 (5.3× the area),
-fill 42.4% → 7.9%. Card overlap stays at zero at every value tested. Going
-further costs canvas faster than it buys legibility: 160 → 240 px is +42% area
-to move fill from 7.9% to 5.6%, and forces `fit()` to zoom out ~2.8×, so cards
-render around a third of their former size at overview and drop to a coarser
-LOD sooner.
+`bigShop(3000)` at 160 px: nearest-neighbour gap −289.8 px → 160.0 px, overlapping
+envelope pairs 911 → 0, overall bbox 3494×2969 → 8370×8418 (6.8× the area),
+fill 42.4% → 6.2%. Card overlap stays at zero at every value tested. Going
+further costs canvas faster than it buys legibility: 160 → 240 px is +38% area
+to move fill from 6.2% to 4.5%; already at 160 px `fit()` zooms out ~2.6×, so
+cards render around a third of their former size at overview and drop to a
+coarser LOD sooner.
 
 Note what this pass is **not**: it is not longer `idealEdgeLength` on
 cross-aggregate edges. That was tried and failed — fcose calibrates its

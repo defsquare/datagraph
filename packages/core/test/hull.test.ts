@@ -1,21 +1,11 @@
 import { describe, it, expect } from "vitest"
-import { paddedHull } from "../src/hull.js"
+import { enclosingCircle } from "../src/hull.js"
 import type { Rect } from "../src/layout.js"
 
-/** Vrai si `p` est dans le polygone convexe `poly` (ou sur son bord), à
- * epsilon près. Sert d'invariant à toutes les assertions de ce fichier. */
-function inside(poly: { x: number; y: number }[], p: { x: number; y: number }): boolean {
-  let sign = 0
-  for (let i = 0; i < poly.length; i++) {
-    const a = poly[i]!
-    const b = poly[(i + 1) % poly.length]!
-    const cross = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)
-    if (Math.abs(cross) < 1e-9) continue
-    const s = cross > 0 ? 1 : -1
-    if (sign === 0) sign = s
-    else if (s !== sign) return false
-  }
-  return true
+/** Vrai si `p` est dans le cercle (ou sur son bord), à epsilon près. Sert
+ * d'invariant à toutes les assertions de ce fichier. */
+function inside(c: { cx: number; cy: number; r: number }, p: { x: number; y: number }): boolean {
+  return Math.hypot(p.x - c.cx, p.y - c.cy) <= c.r + 1e-6
 }
 
 function corners(r: Rect) {
@@ -27,20 +17,32 @@ function corners(r: Rect) {
   ]
 }
 
-describe("paddedHull", () => {
-  it("returns an empty polygon for no rects", () => {
-    expect(paddedHull([], 10)).toEqual([])
+describe("enclosingCircle", () => {
+  it("returns a null circle for no rects", () => {
+    expect(enclosingCircle([], 10)).toEqual({ cx: 0, cy: 0, r: 0 })
   })
 
-  it("wraps a single rect in its padded box", () => {
-    const poly = paddedHull([{ x: 10, y: 20, width: 100, height: 40 }], 5)
-    expect(poly).toHaveLength(4)
-    const xs = poly.map((p) => p.x)
-    const ys = poly.map((p) => p.y)
-    expect(Math.min(...xs)).toBe(5)
-    expect(Math.max(...xs)).toBe(115)
-    expect(Math.min(...ys)).toBe(15)
-    expect(Math.max(...ys)).toBe(65)
+  it("wraps a single rect in its circumscribed circle plus padding", () => {
+    const c = enclosingCircle([{ x: 10, y: 20, width: 100, height: 40 }], 5)
+    expect(c.cx).toBeCloseTo(60, 6)
+    expect(c.cy).toBeCloseTo(40, 6)
+    // Demi-diagonale d'un 100×40, plus la marge : √(50² + 20²) + 5.
+    expect(c.r).toBeCloseTo(Math.hypot(50, 20) + 5, 6)
+  })
+
+  it("spans two rects on the diameter of their two farthest corners", () => {
+    // (0,0) et (380,180) sont les deux coins les plus éloignés ; le cercle
+    // ayant ce segment pour diamètre contient déjà les six autres, donc c'est
+    // LE cercle minimal — un cas à deux points de support, pas trois.
+    const rects: Rect[] = [
+      { x: 0, y: 0, width: 100, height: 40 },
+      { x: 300, y: 120, width: 80, height: 60 },
+    ]
+    const c = enclosingCircle(rects, 0)
+    expect(c.cx).toBeCloseTo(190, 6)
+    expect(c.cy).toBeCloseTo(90, 6)
+    expect(c.r).toBeCloseTo(Math.hypot(190, 90), 6)
+    for (const r of rects) for (const p of corners(r)) expect(inside(c, p)).toBe(true)
   })
 
   it("contains every corner of every input rect", () => {
@@ -50,35 +52,65 @@ describe("paddedHull", () => {
       { x: 120, y: 400, width: 140, height: 30 },
       { x: -80, y: 220, width: 60, height: 50 },
     ]
-    const poly = paddedHull(rects, 12)
+    const c = enclosingCircle(rects, 12)
     for (const r of rects) {
-      for (const c of corners(r)) expect(inside(poly, c)).toBe(true)
+      for (const p of corners(r)) expect(inside(c, p)).toBe(true)
     }
   })
 
-  it("handles collinear rect centres without emitting duplicate points", () => {
+  it("stays minimal: shrinking the radius drops at least one corner", () => {
+    // Le contenant n'est pas suffisant — une boîte englobante circonscrite le
+    // serait aussi. Ce qu'on veut est le cercle MINIMAL : le réduire d'un
+    // millième de pixel doit faire sortir un coin.
+    const rects: Rect[] = [
+      { x: 0, y: 0, width: 100, height: 40 },
+      { x: 300, y: 120, width: 80, height: 60 },
+      { x: 120, y: 400, width: 140, height: 30 },
+      { x: -80, y: 220, width: 60, height: 50 },
+    ]
+    const c = enclosingCircle(rects, 0)
+    const shrunk = { cx: c.cx, cy: c.cy, r: c.r - 1e-3 }
+    const escaping = rects.flatMap(corners).filter((p) => !inside(shrunk, p))
+    expect(escaping.length).toBeGreaterThan(0)
+  })
+
+  it("handles collinear rect centres", () => {
     const rects: Rect[] = [
       { x: 0, y: 0, width: 50, height: 20 },
       { x: 100, y: 0, width: 50, height: 20 },
       { x: 200, y: 0, width: 50, height: 20 },
     ]
-    const poly = paddedHull(rects, 4)
-    expect(poly).toHaveLength(4)
-    const key = (p: { x: number; y: number }) => `${p.x},${p.y}`
-    expect(new Set(poly.map(key)).size).toBe(poly.length)
+    const c = enclosingCircle(rects, 4)
+    // Les quatre coins extrêmes — (0,0), (250,0), (0,20), (250,20) — sont
+    // équidistants du centre de la bande : le cercle minimal est celui de
+    // diamètre la diagonale, aucune configuration à trois points ici.
+    expect(c.cx).toBeCloseTo(125, 6)
+    expect(c.cy).toBeCloseTo(10, 6)
+    expect(c.r).toBeCloseTo(Math.hypot(125, 10) + 4, 6)
+    for (const r of rects) for (const p of corners(r)) expect(inside(c, p)).toBe(true)
   })
 
-  it("collapses identical stacked rects to a single padded box", () => {
+  it("collapses identical stacked rects to a single padded circle", () => {
     const r: Rect = { x: 7, y: 9, width: 30, height: 30 }
-    expect(paddedHull([r, { ...r }, { ...r }], 3)).toHaveLength(4)
+    const c = enclosingCircle([r, { ...r }, { ...r }], 3)
+    expect(c.cx).toBeCloseTo(22, 6)
+    expect(c.cy).toBeCloseTo(24, 6)
+    expect(c.r).toBeCloseTo(Math.hypot(15, 15) + 3, 6)
+  })
+
+  it("handles a zero-sized rect", () => {
+    const c = enclosingCircle([{ x: 40, y: 12, width: 0, height: 0 }], 6)
+    expect(c).toEqual({ cx: 40, cy: 12, r: 6 })
   })
 
   it("is deterministic", () => {
+    // L'entrée n'est PAS mélangée (voir la doc de `enclosingCircle`) : deux
+    // appels sur la même entrée donnent bit pour bit le même cercle.
     const rects: Rect[] = [
       { x: 0, y: 0, width: 100, height: 40 },
       { x: 300, y: 120, width: 80, height: 60 },
       { x: 120, y: 400, width: 140, height: 30 },
     ]
-    expect(paddedHull(rects, 12)).toEqual(paddedHull(rects, 12))
+    expect(enclosingCircle(rects, 12)).toEqual(enclosingCircle(rects, 12))
   })
 })

@@ -29,7 +29,7 @@ export {
   drawNode,
   drawEdges,
   drawEdgeHitAreas,
-  drawHulls,
+  drawClusters,
   drawSelectionOverlay,
   drawSearchHighlights,
   lodForScale,
