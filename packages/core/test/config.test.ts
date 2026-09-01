@@ -30,3 +30,25 @@ describe("validateConfig", () => {
     expect(() => validateConfig({ entities: { X: { match: "nope", id: "id" } } })).toThrow(ConfigError)
   })
 })
+
+describe("aggregates", () => {
+  const base = {
+    entities: {
+      Customer: { match: "$.customers[*]", id: "id" },
+      Order: { match: "$.orders[*]", id: "id" },
+    },
+  }
+
+  it("defaults to an empty list", () => {
+    expect(validateConfig(base).aggregates).toEqual([])
+  })
+
+  it("preserves declaration order", () => {
+    const v = validateConfig({ ...base, aggregates: ["Order", "Customer"] })
+    expect(v.aggregates).toEqual(["Order", "Customer"])
+  })
+
+  it("rejects an aggregate root that is not a declared entity type", () => {
+    expect(() => validateConfig({ ...base, aggregates: ["Ghost"] })).toThrow(ConfigError)
+  })
+})

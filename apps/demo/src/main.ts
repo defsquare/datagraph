@@ -207,9 +207,10 @@ statDiagEl?.addEventListener("click", () => {
 });
 
 // --- Dataset swap: exercises setData() with the small `shopData` fixture vs.
-// a ~2000-logical-node `bigShopData` generated fixture. Config is the same
-// for both, so this deliberately calls setData(data) without a config,
-// exercising the "reuse current config when omitted" path.
+// a ~4000-logical-node `bigShopData` generated fixture (4061 exactly: 78
+// clients, 234 commandes, 30 produits, 8 catégories — 350 entités). Config is
+// the same for both, so this deliberately calls setData(data) without a
+// config, exercising the "reuse current config when omitted" path.
 const toggleDatasetBtn = document.getElementById("toggle-dataset") as HTMLButtonElement | null;
 let usingBigDataset = false;
 
@@ -220,7 +221,7 @@ if (toggleDatasetBtn) {
       try {
         usingBigDataset = !usingBigDataset;
         await graph.setData(usingBigDataset ? bigShopData : shopData);
-        toggleDatasetBtn.textContent = usingBigDataset ? "Jeu de données réduit" : "Jeu de données étendu (2000)";
+        toggleDatasetBtn.textContent = usingBigDataset ? "Jeu de données réduit" : "Jeu de données étendu (4000)";
         // setData() resets the renderer's own search/selection state; mirror
         // that in the demo's local UI state too.
         if (searchInput) searchInput.value = "";
@@ -259,6 +260,33 @@ function applyTheme(): void {
 themeBtn?.addEventListener("click", () => {
   dark = !dark;
   applyTheme();
+});
+
+// --- Bascule Structure / Graphe.
+const toggleViewBtn = document.getElementById("toggle-view") as HTMLButtonElement | null;
+
+toggleViewBtn?.addEventListener("click", () => {
+  void (async () => {
+    toggleViewBtn.disabled = true;
+    try {
+      const next = graph.currentView() === "graph" ? "structure" : "graph";
+      await graph.setView(next);
+      // Le libellé est dérivé de la vue RÉELLEMENT active, jamais de celle
+      // qu'on a demandée : `setView` avale deux échecs sans rejeter — l'import
+      // dynamique du moteur de la vue graphe qui échoue (réseau, chunk absent)
+      // et le cas où un `setData` concurrent a déjà pris la main. Dans les deux
+      // cas la promesse se résout alors que la vue n'a pas bougé, et un libellé
+      // posé depuis `next` annoncerait une vue qui n'est pas à l'écran.
+      const active = graph.currentView();
+      toggleViewBtn.textContent = active === "graph" ? "Vue structure" : "Vue graphe";
+      // La bascule change le nombre de nœuds affichés (l'arbre entier d'un
+      // côté, les seules entités de l'autre) : sans ce rafraîchissement, le
+      // compteur de la barre d'état reste sur la valeur de l'autre vue.
+      updateStatus();
+    } finally {
+      toggleViewBtn.disabled = false;
+    }
+  })();
 });
 
 document.getElementById("fit")?.addEventListener("click", () => graph.fit());

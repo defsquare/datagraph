@@ -54,8 +54,8 @@ graph.on("select", (node) => console.log("selected:", node.label));
 
 `createDataGraph` returns a `DataGraph` handle with `fit`, `expand`,
 `collapse`, `focus`, `select`, `search`, `nextMatch`, `prevMatch`, `on`,
-`setData`, `diagnostics`, `stats`, `refEdges`, `setTheme`, and `destroy` —
-full descriptions in the
+`setData`, `diagnostics`, `stats`, `refEdges`, `setTheme`, `setView`,
+`currentView`, and `destroy` — full descriptions in the
 [root README's API table](https://github.com/defsquare/data-graph#public-api--datagraph).
 
 ## Navigation
@@ -86,6 +86,111 @@ selection colour on the topmost layer, where they run over everything.
 Zoom is bounded to `[0.02, 3]`. `fit()` never scales past `1` — magnifying a
 bitmap-font atlas baked at its nominal size is what made text look soft — so a
 graph smaller than the viewport is centred rather than blown up.
+
+## Graph view
+
+`createDataGraph` supports two views, chosen with `DataGraphOptions.view?:
+"structure" | "graph"` (default `"structure"`) and switched at runtime with
+`setView(view): Promise<void>` / `currentView(): "structure" | "graph"`:
+
+- **`"structure"`** (default) lays out the containment tree — parent/child
+  structure, ELK layered. This is everything described above and elsewhere in
+  this README.
+- **`"graph"`** lays out entities as vertices and references as edges,
+  grouped into the DDD aggregates declared in `config.aggregates` (see the
+  [core package README](https://github.com/defsquare/data-graph/tree/main/packages/core#aggregates)
+  for the membership rule) and drawn as circular envelopes — the minimal
+  enclosing circle of each aggregate's cards, plus a `hullPadding` margin.
+
+```ts
+const graph = createDataGraph(container, {
+  data: shopData,
+  config: { ...shopConfig, aggregates: ["Customer"] },
+  // Omit `view` to start in "structure" (the default) and switch later.
+  view: "graph",
+});
+
+await graph.ready;
+graph.currentView(); // -> "graph"
+
+await graph.setView("structure"); // switch back at runtime
+await graph.setView("graph");     // and switch again
+```
+
+**Dynamic import.** The first switch to `"graph"` dynamically imports the
+organic layout engine (`cytoscape` + its `fcose` layout plugin), which is why
+`setView` returns a promise. That import is isolated behind the dynamic
+`import()`: in a Vite production build (see [`apps/demo`](../../apps/demo)),
+it lands in its own chunk — roughly **178 kB gzip** — and never enters the
+bundle of a consumer that only ever uses the structure view. Two tests guard
+it, one per half of the chain: `packages/core/test/bundle-purity.test.ts` walks
+the built chunk closure of the core's main entry point, so a careless barrel
+export can't regress it, and `packages/renderer/test/bundle-purity.test.ts`
+checks this package's sources for any static *value* import of that entry point
+— turning `create.ts`'s `import type` into a value import would put cytoscape
+in every consumer's bundle while leaving the rest of the suite green.
+
+**No folding.** `expand`/`collapse` are structure-view operations (see the
+[root README's API table](https://github.com/defsquare/data-graph#public-api--datagraph));
+they act on the containment tree and have no visible effect in the graph
+view. The graph view itself folds nothing: every entity is always drawn,
+aggregate cards carry no chevron, and a header click selects the card just
+like a body click. An earlier version folded an aggregate onto its root card
+from that chevron; it was removed.
+
+**Cluster spacing.** Aggregate envelopes are spaced apart by a dedicated pass
+(`separateClusters`, core-side) that translates each cluster rigidly, so
+nothing inside an aggregate moves relative to anything else in it, at a gap
+of `clusterGap` (**160 px** by default). It pushes two clusters apart along the
+line of their centres until that distance reaches `r₁ + r₂ + clusterGap`, using
+the same `hullPadding` this package paints with — so the shape that gets spaced
+is exactly the shape you see. Every aggregate gets its own block: membership is
+a partition, so no two aggregates share a card and none of them are welded
+together. On [`apps/demo`](../../apps/demo)'s two-root config that is 116 blocks
+over 350 cards — 78 `Customer` aggregates of 3 to 5 cards, 30 single-card
+`Product` aggregates, and the 8 `Category` entities no aggregate claims — with
+zero overlapping envelope pairs after the pass.
+
+That used to read very differently. When an entity could belong to several
+aggregates at once, two aggregates sharing a member were merged into one rigid
+block rather than pulled apart (they can't be separated without tearing the
+shared card), and on this same config the merge percolated: 108 aggregates
+collapsed into a single block of 342 of 350 cards, and the pass had nothing left
+to space out. The membership rule now arbitrates ties instead of sharing, which
+is what brought the spacing back. See the
+[core README's Aggregates section](https://github.com/defsquare/data-graph/tree/main/packages/core#aggregates)
+for the rule and the measured before/after.
+
+How wide the corridors should be is a matter of eye, screen size and data
+density, so it is settable per instance rather than baked into core:
+
+```ts
+const graph = createDataGraph(container, {
+  data,
+  config,
+  view: "graph",
+  // Any GraphLayoutOptions field: clusterGap, hullPadding, separationMargin,
+  // separationIterations. Read once, when the graph view is first built.
+  graphLayoutOptions: { clusterGap: 240 },
+});
+```
+
+`GraphLayoutOptions` is re-exported from this package, so you can type the
+object without depending on `@defsquare/data-graph-core` directly.
+
+**Selection carry-over.** The graph view only knows entities — a structure
+node nested under one (e.g. an address object) has no counterpart there.
+Switching views while such a node is selected reassigns the selection to its
+nearest entity ancestor rather than dropping it.
+
+**Determinism.** The graph-view layout is deterministic to the pixel: two
+runs on identical input produce identical positions (seeded from node ids,
+not left to fcose's default randomization). Removing folding also removed the
+pinned incremental relayout that used to bound drift on already-placed cards
+when an aggregate was unfolded, along with the 0px-median-drift budget it
+enforced — there is no longer any incremental relayout to stabilise. See the
+[root README's performance budgets](https://github.com/defsquare/data-graph#performance-budgets)
+for the full table.
 
 ## Themes
 

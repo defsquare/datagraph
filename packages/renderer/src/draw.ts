@@ -118,6 +118,11 @@ function drawChevron(g: Graphics, x: number, y: number, expanded: boolean, color
  * `accent` est la couleur de rail résolue par l'appelant via `entityAccentMap`
  * — `drawNode` ne peut pas la déduire de `node` et `theme` seuls, puisque
  * l'assignation dépend de l'ordre de déclaration des types dans la config.
+ *
+ * `showChevron` gouverne l'affordance de pli. Le défaut — le nœud a des enfants
+ * de containment — est celui de la vue structure ; la vue graphe le passe
+ * explicitement, car là c'est l'agrégat qui se plie, pas l'arbre, et seule sa
+ * racine porte un chevron.
  */
 export function drawNode(
   node: GraphNode,
@@ -128,6 +133,7 @@ export function drawNode(
   accent: string,
   metrics: NodeMetrics = DEFAULT_METRICS,
   expanded = false,
+  showChevron = node.childIds.length > 0,
 ): Container {
   // Les atlas sont installés par le bail que tient `create.ts`, avant tout
   // appel ici. `fontNameFor` en dérive le nom depuis le thème seul.
@@ -188,7 +194,7 @@ export function drawNode(
   const headerY = metrics.headerHeight / 2;
   let cursorX = contentX;
 
-  if (node.childIds.length > 0) {
+  if (showChevron) {
     const chevron = new Graphics();
     drawChevron(chevron, cursorX + 5, headerY, expanded, theme.ink.subtle);
     container.addChild(chevron);
@@ -318,11 +324,22 @@ function arrowHead(g: Graphics, x1: number, y1: number, x2: number, y2: number):
 const DANGLING_STUB_LENGTH = 32;
 const DANGLING_CROSS_RADIUS = 4;
 
+/** Relation dominante de la vue : l'arbre de containment (vue structure) ou les
+ * seules références (vue graphe). */
+export type EdgeMode = "contain" | "ref";
+
 /**
  * Dessine toutes les arêtes entre nœuds visibles dans un seul Graphics,
  * groupées par style : contenance en béziers horizontales pleines, références
- * résolues en pointillés terminés par une tête de flèche, références cassées
- * en moignon pointillé barré d'une croix.
+ * résolues terminées par une tête de flèche, références cassées en moignon
+ * pointillé barré d'une croix.
+ *
+ * Le tracé des références résolues dépend du mode : POINTILLÉ en `"contain"`
+ * (vue structure, où la référence est une décoration au-dessus de l'arbre),
+ * PLEIN en `"ref"` (vue graphe, où elle est la relation principale). Le moignon
+ * d'une référence cassée reste pointillé dans les deux modes : son pointillé ne
+ * dit pas « secondaire » mais « ne mène nulle part », et il porte déjà sa propre
+ * couleur et sa croix.
  *
  * Les têtes de flèche sont des triangles pleins : elles ne peuvent pas
  * partager l'appel `stroke()` des pointillés, d'où un `fill()` distinct émis
@@ -331,25 +348,37 @@ const DANGLING_CROSS_RADIUS = 4;
  * Renvoie un Graphics vide en LOD 2 (les arêtes ne sont ni lisibles ni
  * rentables à ce niveau de dézoom).
  */
-export function drawEdges(graph: Graph, positions: Map<NodeId, Rect>, theme: Theme, lod: Lod): Graphics {
+export function drawEdges(
+  graph: Graph,
+  positions: Map<NodeId, Rect>,
+  theme: Theme,
+  lod: Lod,
+  mode: EdgeMode = "contain",
+): Graphics {
   const g = new Graphics();
   if (lod === 2) return g;
 
-  let hasContain = false;
-  for (const edge of graph.containEdges) {
-    const from = positions.get(edge.from);
-    const to = positions.get(edge.to);
-    if (!from || !to) continue;
-    const x1 = from.x + from.width;
-    const y1 = from.y + from.height / 2;
-    const x2 = to.x;
-    const y2 = to.y + to.height / 2;
-    const dx = Math.max(24, (x2 - x1) / 2);
-    g.moveTo(x1, y1);
-    g.bezierCurveTo(x1 + dx, y1, x2 - dx, y2, x2, y2);
-    hasContain = true;
+  // En mode `"ref"` (vue graphe), le containment n'est pas la relation montrée :
+  // seules les références le sont. Deux entités imbriquées l'une dans l'autre
+  // sont toutes deux positionnées, et tracer leur arête de containment
+  // ajouterait une relation qui n'appartient pas à cette vue.
+  if (mode === "contain") {
+    let hasContain = false;
+    for (const edge of graph.containEdges) {
+      const from = positions.get(edge.from);
+      const to = positions.get(edge.to);
+      if (!from || !to) continue;
+      const x1 = from.x + from.width;
+      const y1 = from.y + from.height / 2;
+      const x2 = to.x;
+      const y2 = to.y + to.height / 2;
+      const dx = Math.max(24, (x2 - x1) / 2);
+      g.moveTo(x1, y1);
+      g.bezierCurveTo(x1 + dx, y1, x2 - dx, y2, x2, y2);
+      hasContain = true;
+    }
+    if (hasContain) g.stroke({ width: theme.strokes.edge, color: theme.edge.contain });
   }
-  if (hasContain) g.stroke({ width: theme.strokes.edge, color: theme.edge.contain });
 
   let hasRef = false;
   const resolved: { x1: number; y1: number; x2: number; y2: number }[] = [];
@@ -365,7 +394,19 @@ export function drawEdges(graph: Graph, positions: Map<NodeId, Rect>, theme: The
     // La ligne s'arrête au pied de la flèche pour ne pas la traverser.
     const len = Math.hypot(x2 - x1, y2 - y1);
     const t = len > ARROW_LENGTH ? (len - ARROW_LENGTH) / len : 1;
-    dashedLine(g, x1, y1, x1 + (x2 - x1) * t, y1 + (y2 - y1) * t);
+    const ex = x1 + (x2 - x1) * t;
+    const ey = y1 + (y2 - y1) * t;
+    if (mode === "ref") {
+      // Vue graphe : la référence EST la relation montrée, pas une décoration
+      // posée au-dessus du containment. Le pointillé signifie « secondaire » ;
+      // il serait à contresens dans une vue dont c'est tout le propos. Trait
+      // plein, donc — un seul segment au lieu des N tirets de `dashedLine`,
+      // ce qui rend les deux modes distinguables au comptage d'instructions.
+      g.moveTo(x1, y1);
+      g.lineTo(ex, ey);
+    } else {
+      dashedLine(g, x1, y1, ex, ey);
+    }
     resolved.push({ x1, y1, x2, y2 });
     hasRef = true;
   }
@@ -532,5 +573,30 @@ export function drawSearchHighlights(
     }
   }
 
+  return g;
+}
+
+/**
+ * Peint les enveloppes d'agrégats : remplissage translucide plus contour, dans
+ * la couleur d'accent du type de la racine. Le calque qui les reçoit est le
+ * plus bas du monde, donc elles passent derrière les arêtes et les cartes.
+ *
+ * L'enveloppe est le cercle englobant minimal des cartes de l'agrégat, calculé
+ * côté cœur (`enclosingCircle`) et écarté sous cette même forme par
+ * `separateClusters` : ce qu'on peint ici est exactement ce que la mise en page
+ * a espacé. Un rayon nul ou négatif n'est pas une surface et est ignoré.
+ */
+export function drawClusters(
+  clusters: { circle: { cx: number; cy: number; r: number }; color: string }[],
+  theme: Theme,
+): Graphics {
+  const g = new Graphics();
+  for (const cluster of clusters) {
+    const { cx, cy, r } = cluster.circle;
+    if (!(r > 0)) continue;
+    g.circle(cx, cy, r);
+    g.fill({ color: cluster.color, alpha: 0.08 });
+    g.stroke({ width: 1.5, color: cluster.color, alpha: 0.35 });
+  }
   return g;
 }

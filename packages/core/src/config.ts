@@ -13,6 +13,12 @@ export interface DataGraphConfig {
    * sélecteur que `entities[].match` utilise déjà, donc cohérent avec la
    * config plutôt que dénué de sens. Une chaîne vide est respectée. */
   rootLabel?: string
+  /** Types d'entités qui sont racines d'agrégat, dans l'ordre de déclaration.
+   * Cet ordre est PORTEUR : il arbitre les égalités de distance, donc il décide
+   * de l'agrégat d'une entité qui atteint deux racines aussi près l'une que
+   * l'autre (voir `buildAggregates`). Il fixe aussi l'ordre de peinture des
+   * enveloppes, pour que le rendu soit reproductible. */
+  aggregates?: string[]
 }
 
 export interface ValidatedConfig {
@@ -20,6 +26,7 @@ export interface ValidatedConfig {
   references: Map<string, Map<string, string>>
   maxNodes: number
   rootLabel: string
+  aggregates: string[]
 }
 
 export function validateConfig(config: DataGraphConfig): ValidatedConfig {
@@ -55,6 +62,15 @@ export function validateConfig(config: DataGraphConfig): ValidatedConfig {
     }
   }
 
+  // Valider les agrégats
+  const aggregates: string[] = []
+  for (const name of config.aggregates ?? []) {
+    if (!entities.has(name)) {
+      throw new ConfigError("unknown-entity-type", `Unknown entity type: ${name}`)
+    }
+    aggregates.push(name)
+  }
+
   // Apply default maxNodes
   const maxNodes = config.maxNodes ?? 50_000
 
@@ -67,5 +83,6 @@ export function validateConfig(config: DataGraphConfig): ValidatedConfig {
     references,
     maxNodes,
     rootLabel,
+    aggregates,
   }
 }

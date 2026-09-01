@@ -1,12 +1,14 @@
 import { Application, Container, Graphics, type FederatedPointerEvent } from "pixi.js";
 import ELK from "elkjs/lib/elk.bundled.js";
 import {
+  buildAggregates,
   buildGraph,
   buildSearchIndex,
   CollapseState,
   createLayoutEngine,
   DEFAULT_METRICS,
   validateConfig,
+  type AggregateIndex,
   type DataGraphConfig,
   type Diagnostic,
   type Graph,
@@ -20,6 +22,22 @@ import {
   type SearchIndex,
   type SearchResult,
 } from "@defsquare/data-graph-core";
+// `import type` UNIQUEMENT : ce point d'entrée tire cytoscape (~178 ko gzip) et
+// ne doit entrer dans le bundle que de qui bascule réellement en vue graphe.
+// Un import de type ne produit aucun code à l'exécution ; le seul chemin
+// d'exécution vers le moteur est l'`import()` dynamique de `ensureGraphEngine`.
+// `test/bundle-purity.test.ts` (côté renderer) garde ces deux lignes : le test
+// du cœur ne couvre que le `dist/` du cœur, pas ce fichier-ci.
+import type {
+  GraphLayoutEngine,
+  GraphLayoutOptions,
+  GraphLayoutResult,
+} from "@defsquare/data-graph-core/graph-layout";
+// Relais et non réexport : `export … from "<ce specifier>"` est interdit par
+// `test/bundle-purity.test.ts`, y compris sous forme type-only. Réexporter le
+// symbole déjà importé ci-dessus donne le même service aux consommateurs sans
+// écrire la forme interdite.
+export type { GraphLayoutOptions };
 import { entityAccentMap, resolveTheme, type Theme, type ThemeOverride } from "./theme.js";
 import { pixiFontRegistry } from "./font-registry.js";
 import { fontsReady, measureFontMetrics } from "./font-metrics.js";
@@ -27,6 +45,7 @@ import { Camera, type Size } from "./camera.js";
 import {
   drawEdgeHitAreas,
   drawEdges,
+  drawClusters,
   drawNode,
   drawSearchHighlights,
   drawSelectionOverlay,
@@ -35,11 +54,34 @@ import {
 } from "./draw.js";
 import { Emitter } from "./events.js";
 
+/** `"structure"` met en page l'arbre de containment ; `"graph"` met en page les
+ * entités et leurs références, groupées par agrégat. */
+export type DataGraphView = "structure" | "graph";
+
+/** L'état complet de la vue graphe, calculé d'un bloc puis publié d'un bloc :
+ * l'index et la mise en page doivent toujours décrire le même graphe. */
+interface GraphViewState {
+  index: AggregateIndex;
+  layout: GraphLayoutResult;
+}
+
 export interface DataGraphOptions {
   data: unknown;
   config: DataGraphConfig;
   theme?: ThemeOverride;
   elkWorkerUrl?: string | URL;
+  /** Vue initiale. `"structure"` (défaut) met en page l'arbre de containment ;
+   * `"graph"` met en page les entités et leurs références, groupées par
+   * agrégat. */
+  view?: DataGraphView;
+  /** Réglages de la mise en page de la vue graphe, passés tels quels à
+   * `createGraphLayoutEngine`. Le plus utile est `clusterGap` (160 px par
+   * défaut), l'écart ouvert entre deux enveloppes d'agrégats : c'est un
+   * réglage d'œil, qui dépend de la densité des données et de la taille de
+   * l'écran, et il doit pouvoir se régler sans toucher au cœur. Les valeurs
+   * sont lues au premier passage en vue graphe ; les changer après coup
+   * demande de recréer l'instance. */
+  graphLayoutOptions?: GraphLayoutOptions;
 }
 
 export type DataGraphEvent = "select" | "followRef";
@@ -52,7 +94,13 @@ type DataGraphEvents = {
 export interface DataGraph {
   ready: Promise<void>;
   fit(): void;
+  /** Déplie un nœud de l'arbre de containment — une opération de la VUE
+   * STRUCTURE. En vue graphe elle reste sans effet visible : l'état est bien
+   * mis à jour, et se verra au retour dans la vue structure, mais la vue graphe
+   * ne montre pas le containment. La vue graphe, elle, ne plie rien : toutes
+   * les entités y sont toujours visibles. */
   expand(id: NodeId): Promise<void>;
+  /** Replie un nœud de l'arbre de containment. Même remarque que `expand`. */
   collapse(id: NodeId): Promise<void>;
   focus(id: NodeId): void;
   select(id: NodeId): void;
@@ -77,6 +125,12 @@ export interface DataGraph {
    * aucune API pour changer la police après coup : cela demande de recréer
    * l'instance via `createDataGraph`. */
   setTheme(theme: Theme | ThemeOverride): void;
+  /** Bascule de vue. Le premier passage en `"graph"` charge le moteur organique
+   * à la demande (import dynamique) et calcule les agrégats, d'où la promesse.
+   * La sélection est reportée sur l'entité la plus proche, car la vue graphe ne
+   * connaît que des entités. */
+  setView(view: DataGraphView): Promise<void>;
+  currentView(): DataGraphView;
   destroy(): void;
 }
 
@@ -99,6 +153,21 @@ function boundsOf(positions: Map<NodeId, Rect>): Rect {
   }
   if (!Number.isFinite(minX)) return { x: 0, y: 0, width: 1, height: 1 };
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+/**
+ * Remonte `parentId` jusqu'à trouver une entité. Sert au report de sélection
+ * entre les deux vues : la vue graphe ne connaît que des entités, donc quitter
+ * la vue structure depuis un objet imbriqué doit sélectionner l'entité qui le
+ * contient plutôt que de vider la sélection.
+ */
+export function nearestEntityAncestor(graph: Graph, id: NodeId): NodeId | null {
+  let current = graph.nodes.get(id);
+  while (current) {
+    if (current.kind === "entity") return current.id;
+    current = current.parentId ? graph.nodes.get(current.parentId) : undefined;
+  }
+  return null;
 }
 
 function buildLayoutEngine(elkWorkerUrl: string | URL | undefined): LayoutEngine {
@@ -153,6 +222,9 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
 
   const app = new Application();
   const world = new Container();
+  // Les enveloppes d'agrégats forment le calque le plus bas : elles passent
+  // derrière les arêtes et les cartes. Vide en vue structure.
+  let clustersGraphics = new Graphics();
   let edgesGraphics = new Graphics();
   const edgeHitLayer = new Container();
   const nodesLayer = new Container();
@@ -163,7 +235,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   // les références sortantes du nœud sélectionné dans `overlayGraphics`, le
   // calque le plus haut, où elles passent donc par-dessus tout.
   let overlayGraphics = new Container();
-  world.addChild(edgesGraphics, edgeHitLayer, nodesLayer, overlayGraphics);
+  world.addChild(clustersGraphics, edgesGraphics, edgeHitLayer, nodesLayer, overlayGraphics);
 
   // Le bail d'atlas de cette instance. Les atlas Pixi sont globaux par nom,
   // donc partagés entre instances ; le registre les compte par référence et ne
@@ -177,6 +249,13 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   let layoutResult: LayoutResult | undefined;
   let engine: LayoutEngine | undefined;
   let searchIndex: SearchIndex | undefined;
+  // Vue courante et état propre à la vue graphe. Tout reste `undefined` tant
+  // qu'on n'y a pas basculé au moins une fois : un consommateur de la seule vue
+  // structure ne paie ni le calcul des agrégats ni le chargement du moteur.
+  let view: DataGraphView = options.view ?? "structure";
+  let aggregateIndex: AggregateIndex | undefined;
+  let graphLayout: GraphLayoutResult | undefined;
+  let graphEngine: GraphLayoutEngine | undefined;
   // The config currently in effect — `options.config` initially, replaced by
   // whatever setData() was last called with. setData(data) (config omitted)
   // reuses this rather than re-reading options.config, so a second setData
@@ -222,6 +301,102 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     return entityAccents.get(node.entityType) ?? theme.accent.entity;
   }
 
+  /**
+   * Charge le moteur organique à la demande. `cytoscape` pèse ~178 ko gzip —
+   * taille MESURÉE, celle du chunk `graph-layout-*.js` qu'émet le build Vite de
+   * production d'`apps/demo` (178,29 ko gzip) ; le ~183 ko encore lisible dans
+   * `docs/superpowers/` est l'estimation de la sonde d'avant intégration. Il
+   * ne doit entrer dans le bundle que de qui bascule réellement en vue graphe,
+   * jamais dans celui d'un consommateur de la seule vue structure. C'est
+   * pourquoi le cœur l'expose sur un point d'entrée séparé, et pourquoi cet
+   * `import()` dynamique est le SEUL chemin d'exécution vers lui (les types,
+   * eux, viennent d'un `import type`, qui ne produit aucun code).
+   */
+  async function ensureGraphEngine(): Promise<GraphLayoutEngine> {
+    if (!graphEngine) {
+      const mod = await import("@defsquare/data-graph-core/graph-layout");
+      graphEngine = mod.createGraphLayoutEngine(options.graphLayoutOptions);
+    }
+    return graphEngine;
+  }
+
+  /** Index d'agrégats pour `target`. */
+  function buildAggregateState(target: Graph, config: DataGraphConfig): { index: AggregateIndex } {
+    return { index: buildAggregates(target, validateConfig(config)) };
+  }
+
+  /** Toutes les entités de `target` : c'est exactement ce que montre la vue
+   * graphe, qui ne cache rien. L'index d'agrégats ne connaît que les entités
+   * rattachées à un agrégat, donc on balaie le graphe et pas l'index — sans
+   * quoi une entité isolée disparaîtrait de la vue. */
+  function entityIdsOf(target: Graph): Set<NodeId> {
+    const ids = new Set<NodeId>();
+    for (const node of target.nodes.values()) {
+      if (node.kind === "entity") ids.add(node.id);
+    }
+    return ids;
+  }
+
+  /**
+   * Calcule l'état de la vue graphe pour `target` **sans rien publier**. Tout
+   * l'état de closure dont il dépend est lu AVANT le premier `await`, et le
+   * résultat n'est assigné que par `publishGraphView`, que l'appelant n'appelle
+   * qu'après sa propre vérification de génération. Sans cette séparation, un
+   * calcul lancé avant un `setData` et terminé après lui écraserait la mise en
+   * page du nouveau graphe par des positions calculées sur l'ancien — voire
+   * appellerait `layout()` sur une paire (graphe, index) dépareillée.
+   *
+   * `reuse` conserve l'index en place, qui ne dépend que du couple (graphe,
+   * config) et n'a donc pas à être recalculé d'une bascule de vue à l'autre ;
+   * un changement de données passe `false`, l'index étant indexé par id de
+   * nœud.
+   */
+  async function computeGraphView(
+    target: Graph,
+    config: DataGraphConfig,
+    reuse: boolean,
+  ): Promise<GraphViewState> {
+    const base = reuse && aggregateIndex ? { index: aggregateIndex } : buildAggregateState(target, config);
+    const engine = await ensureGraphEngine();
+    const layout = await engine.layout(target, base.index, entityIdsOf(target), metrics);
+    return { ...base, layout };
+  }
+
+  /** Publie en un seul geste l'état calculé par `computeGraphView`. */
+  function publishGraphView(state: GraphViewState): void {
+    aggregateIndex = state.index;
+    graphLayout = state.layout;
+  }
+
+  /** Les positions de la vue courante. */
+  function activePositions(): Map<NodeId, Rect> | undefined {
+    return view === "graph" ? graphLayout?.positions : layoutResult?.positions;
+  }
+
+  /** Les nœuds visibles de la vue courante : TOUTES les entités en vue graphe,
+   * qui ne plie rien, et les nœuds dépliés de l'arbre de containment en vue
+   * structure. */
+  function activeVisible(): Set<NodeId> {
+    if (view === "graph") return graph ? entityIdsOf(graph) : new Set();
+    return collapseState?.visibleNodeIds() ?? new Set();
+  }
+
+  /** Les enveloppes à peindre : vide en vue structure. La couleur vient de
+   * l'accent du type de la racine, comme pour les cartes. Cette résolution
+   * reste ici, et pas dans `drawClusters` : la fonction de dessin ne prend que
+   * de la donnée nue, donc elle se teste sans graphe ni index d'agrégats. */
+  function clustersFor(): { circle: { cx: number; cy: number; r: number }; color: string }[] {
+    if (view !== "graph" || !graph || !graphLayout) return [];
+    const current = graph;
+    return graphLayout.clusters.map((cluster) => {
+      const root = current.nodes.get(cluster.rootId);
+      return {
+        circle: { cx: cluster.cx, cy: cluster.cy, r: cluster.r },
+        color: root ? accentFor(root) : theme.edge.border,
+      };
+    });
+  }
+
   function viewport(): Size {
     // `screen` et `width`/`height` sont actuellement d'accord sous
     // `autoDensity` (le view texture a son frame en pixels logiques). On lit
@@ -250,18 +425,30 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
    * its new one over `TRANSITION_MS`, via the Pixi ticker. Nodes that are
    * newly visible or about to disappear are left at whatever `rebuild()`
    * already set (their final position, or removed entirely). Only one
-   * animation is ever in flight: starting a new one cancels any previous. */
+   * animation is ever in flight: starting a new one cancels any previous.
+   *
+   * Inerte en vue graphe, et c'est essentiel : les deux jeux de rects passés
+   * ici viennent TOUJOURS de la vue structure (`doExpand`/`doCollapse`), alors
+   * que `nodeViews` est alors indexée par des entités posées aux coordonnées de
+   * la vue graphe. Ces ids existent aussi dans les positions de la vue
+   * structure dès qu'elle a été dépliée jusqu'à eux : sans cette garde,
+   * `expand()`/`collapse()` téléporteraient les cartes vers le repère de
+   * l'autre vue, en laissant enveloppes, arêtes et zones de clic là où elles
+   * sont — un état de rendu incohérent jusqu'au prochain `rebuild()`. */
   function animatePositions(prevPositions: Map<NodeId, Rect>, nextPositions: Map<NodeId, Rect>): void {
     cancelAnimation();
+    if (view === "graph") return;
 
-    const anims: { view: Container; fromX: number; fromY: number; toX: number; toY: number }[] = [];
-    for (const [id, view] of nodeViews) {
+    // `nodeView`, et non `view` : ce nom désigne désormais la vue courante dans
+    // tout le closure, et le masquer ici rendrait la garde ci-dessus illisible.
+    const anims: { nodeView: Container; fromX: number; fromY: number; toX: number; toY: number }[] = [];
+    for (const [id, nodeView] of nodeViews) {
       const from = prevPositions.get(id);
       const to = nextPositions.get(id);
       if (!from || !to) continue;
       if (from.x === to.x && from.y === to.y) continue;
-      view.position.set(from.x, from.y);
-      anims.push({ view, fromX: from.x, fromY: from.y, toX: to.x, toY: to.y });
+      nodeView.position.set(from.x, from.y);
+      anims.push({ nodeView, fromX: from.x, fromY: from.y, toX: to.x, toY: to.y });
     }
     if (anims.length === 0) return;
 
@@ -274,8 +461,8 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
         // cancelAnimation()'s best effort, e.g. a re-entrant rebuild from
         // within a ticker callback) must self-skip destroyed containers
         // instead of throwing on a null `.position`.
-        if (a.view.destroyed) continue;
-        a.view.position.set(a.fromX + (a.toX - a.fromX) * eased, a.fromY + (a.toY - a.fromY) * eased);
+        if (a.nodeView.destroyed) continue;
+        a.nodeView.position.set(a.fromX + (a.toX - a.fromX) * eased, a.fromY + (a.toY - a.fromY) * eased);
       }
       if (t >= 1) {
         app.ticker.remove(tick);
@@ -291,24 +478,26 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
    * on every redraw (rather than cached) since visibility can change
    * independently of the search state, e.g. an expand/collapse elsewhere. */
   function visibleMatchIds(): NodeId[] {
-    if (!collapseState || searchResults.length === 0) return [];
-    const visible = collapseState.visibleNodeIds();
+    if (searchResults.length === 0) return [];
+    const visible = activeVisible();
     return searchResults.map((r) => r.nodeId).filter((id) => visible.has(id));
   }
 
   function redrawOverlay(): void {
     overlayGraphics.destroy({ children: true });
     overlayGraphics = new Container();
-    if (graph && layoutResult) {
-      overlayGraphics.addChild(drawSelectionOverlay(graph, layoutResult.positions, theme, selectedId));
+    const positions = activePositions();
+    if (graph && positions) {
+      overlayGraphics.addChild(drawSelectionOverlay(graph, positions, theme, selectedId));
       const currentId = searchResults[searchCursor]?.nodeId ?? null;
-      overlayGraphics.addChild(drawSearchHighlights(layoutResult.positions, theme, visibleMatchIds(), currentId));
+      overlayGraphics.addChild(drawSearchHighlights(positions, theme, visibleMatchIds(), currentId));
     }
     world.addChild(overlayGraphics);
   }
 
   function rebuild(): void {
-    if (!graph || !collapseState || !layoutResult) return;
+    const positions = activePositions();
+    if (!graph || !positions) return;
     // Any in-flight position animation is about to have its containers
     // destroyed below — cancel it first so its next tick can't run against
     // stale/destroyed Containers.
@@ -322,20 +511,30 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     // Les atlas doivent exister avant que `drawNode` n'en dérive les noms.
     if (useBitmapText) fontLease.sync(theme);
 
-    edgesGraphics.destroy();
-    edgesGraphics = drawEdges(graph, layoutResult.positions, theme, currentLod);
-    world.addChildAt(edgesGraphics, 0);
+    clustersGraphics.destroy();
+    clustersGraphics = drawClusters(clustersFor(), theme);
+    world.addChildAt(clustersGraphics, 0);
 
-    for (const hit of drawEdgeHitAreas(graph, layoutResult.positions)) {
+    edgesGraphics.destroy();
+    // Index 1, et non 0 : le calque des enveloppes occupe désormais le fond.
+    edgesGraphics = drawEdges(graph, positions, theme, currentLod, view === "graph" ? "ref" : "contain");
+    world.addChildAt(edgesGraphics, 1);
+
+    for (const hit of drawEdgeHitAreas(graph, positions)) {
       attachTap(hit.graphics, () => followRef(hit.edge));
       edgeHitLayer.addChild(hit.graphics);
     }
 
-    const visible = collapseState.visibleNodeIds();
+    const visible = activeVisible();
     for (const id of visible) {
       const node = graph.nodes.get(id);
-      const rect = layoutResult.positions.get(id);
+      const rect = positions.get(id);
       if (!node || !rect) continue;
+      // Le chevron n'a de sens que là où un clic d'en-tête plie quelque chose :
+      // l'arbre de containment en vue structure, et RIEN en vue graphe, qui
+      // montre tout et ne plie plus aucun agrégat.
+      const hasChevron = view === "graph" ? false : node.childIds.length > 0;
+      const expanded = view === "graph" ? true : (collapseState?.isExpanded(id) ?? false);
       const nodeView = drawNode(
         node,
         rect,
@@ -344,7 +543,8 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
         useBitmapText,
         accentFor(node),
         metrics,
-        collapseState.isExpanded(id),
+        expanded,
+        hasChevron,
       );
       nodeView.position.set(rect.x, rect.y);
       attachTap(nodeView, (event) => handleNodeTap(node, nodeView, event));
@@ -356,8 +556,24 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   }
 
   function fitInternal(): void {
-    if (!camera || !layoutResult) return;
-    camera.fitTo(boundsOf(layoutResult.positions), viewport());
+    const positions = activePositions();
+    if (!camera || !positions) return;
+    const bounds = boundsOf(positions);
+    // Les enveloppes débordent des cartes : les inclure, sans quoi le cadrage
+    // les rognerait.
+    if (view === "graph" && graphLayout) {
+      // Le disque déborde des cartes de sa marge ; sa boîte englobante est
+      // `cx ± r`, `cy ± r`, et c'est elle qu'on unit aux bornes des cartes.
+      for (const cluster of graphLayout.clusters) {
+        const right = bounds.x + bounds.width;
+        const bottom = bounds.y + bounds.height;
+        bounds.x = Math.min(bounds.x, cluster.cx - cluster.r);
+        bounds.y = Math.min(bounds.y, cluster.cy - cluster.r);
+        bounds.width = Math.max(right, cluster.cx + cluster.r) - bounds.x;
+        bounds.height = Math.max(bottom, cluster.cy + cluster.r) - bounds.y;
+      }
+    }
+    camera.fitTo(bounds, viewport());
   }
 
   /** Header click on a node with children toggles expand/collapse; a header
@@ -365,13 +581,17 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
    * selects the node; a click on a row backed by an outgoing ref edge
    * follows that reference. Only meaningful at LOD 0 (the only LOD that
    * renders a header/rows distinction) — anywhere else, tapping the node
-   * just selects it. */
-  function handleNodeTap(node: GraphNode, view: Container, event: FederatedPointerEvent): void {
+   * just selects it.
+   *
+   * En vue graphe, aucun clic d'en-tête ne plie quoi que ce soit : tout y est
+   * toujours visible, donc l'en-tête sélectionne comme le corps. Le reste
+   * (lignes, références) est identique. */
+  function handleNodeTap(node: GraphNode, nodeView: Container, event: FederatedPointerEvent): void {
     if (!graph) return;
     if (currentLod === 0) {
-      const local = view.toLocal(event.global);
+      const local = nodeView.toLocal(event.global);
       if (local.y < metrics.headerHeight) {
-        if (node.childIds.length > 0) {
+        if (view !== "graph" && node.childIds.length > 0) {
           toggleExpand(node.id);
           return;
         }
@@ -408,7 +628,25 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     // A concurrent doCollapse/doExpand/focusOn ran while we were awaiting
     // (bumping opGen) and already applied its own layoutResult — applying
     // this stale one now would silently revert that operation. Bail.
-    if (destroyed || gen !== opGen) return;
+    if (destroyed || gen !== opGen) {
+      // ...mais en ANNULANT d'abord la mutation faite plus haut, comme le font
+      // déjà `toggleAggregate` et `focusOn`. Sans ce retour arrière,
+      // `collapseState` reste en avance sur `layoutResult` : il déclare
+      // `id` déplié, donc ses enfants visibles, alors qu'aucun d'eux n'a de
+      // position dans le `layoutResult` publié. Ils ne sont jamais dessinés,
+      // et ce `layoutResult` à moitié fusionné corrompt l'opération suivante
+      // en lui servant de `prev`.
+      //
+      // `opGen` est PARTAGÉ avec la vue graphe : `setView` l'incrémente
+      // aussi. Une bascule de vue peut donc court-circuiter un `expand()` en
+      // vol — et le symétrique est immédiat, un `collapse()` appelé par
+      // l'hôte (sans effet visible en vue graphe, par contrat) incrémentant
+      // `opGen` de façon synchrone. La course ne demande plus deux opérations
+      // de la vue structure : elle traverse les vues, et le dégât ne se voit
+      // qu'au retour en vue structure.
+      collapseState.collapse(id);
+      return;
+    }
     layoutResult = next;
     rebuild();
     animatePositions(prevPositions, layoutResult.positions);
@@ -419,6 +657,12 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     if (!collapseState.isExpanded(id)) return;
     // Synchronous, but still bumps the generation counter so any in-flight
     // async doExpand/focusOn awaiting a layout notices it's been superseded.
+    //
+    // Pas de retour arrière à prévoir ici, contrairement à `doExpand` :
+    // `layoutAfterCollapse` est synchrone, donc il n'existe aucun `await`
+    // entre la mutation de `collapseState` et la publication de
+    // `layoutResult`. Les deux ne peuvent pas se désynchroniser, et aucune
+    // opération concurrente ne peut s'intercaler entre elles.
     ++opGen;
     collapseState.collapse(id);
     const visible = collapseState.visibleNodeIds();
@@ -449,8 +693,21 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   }
 
   async function focusOn(id: NodeId): Promise<void> {
-    if (!graph || !collapseState || !layoutResult || !engine || !camera) return;
+    if (!graph || !camera) return;
     if (!graph.nodes.has(id)) return;
+
+    // La vue graphe n'a pas d'arbre à déplier : elle n'a que des entités, et
+    // elles y sont toutes visibles — aucun chemin d'ancêtres à ouvrir.
+    // On centre donc sur la carte si elle est là, et rien d'autre — surtout pas
+    // la cascade d'expansion ci-dessous, qui mettrait l'état de la vue
+    // structure au travail sans rien montrer.
+    if (view === "graph") {
+      const rect = graphLayout?.positions.get(id);
+      if (rect) camera.centerOn(rect, viewport(), 1);
+      return;
+    }
+
+    if (!collapseState || !layoutResult || !engine) return;
 
     if (!collapseState.visibleNodeIds().has(id)) {
       // Collect the collapsed ancestors WITHOUT mutating collapseState yet
@@ -593,6 +850,24 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     }
     if (destroyed) return;
 
+    // La vue structure est toujours mise en page, même si l'hôte démarre en vue
+    // graphe : c'est elle qui sert de repli et elle est déjà payée ici. La vue
+    // graphe, elle, ne se construit que si on la demande — et son échec ne doit
+    // pas rejeter `ready`, ce qui condamnerait toutes les méthodes qui
+    // l'attendent. On retombe sur la vue structure, comme le repli ELK
+    // ci-dessus retombe sur un moteur en processus.
+    if (view === "graph") {
+      try {
+        const state = await computeGraphView(graph, currentConfig, true);
+        if (destroyed) return;
+        publishGraphView(state);
+      } catch (err) {
+        console.warn("[data-graph] the graph view failed to build, falling back to the structure view", err);
+        view = "structure";
+      }
+      if (destroyed) return;
+    }
+
     rebuild();
     fitInternal();
     // Force one immediate, synchronous frame so the first paint is
@@ -646,6 +921,22 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       newEngine = createLayoutEngine();
       newLayout = await newEngine.layout(newGraph, visible, metrics);
     }
+
+    // La vue graphe se recalcule sur le NOUVEAU graphe, avant publication et
+    // sans réutiliser l'index en place, qui décrit l'ancien. Un échec ici ne
+    // doit pas rejeter `setData` en laissant l'instance à moitié remplacée : on
+    // retombe sur la vue structure, dont la mise en page est déjà prête.
+    let newGraphView: GraphViewState | undefined;
+    let graphViewFailed = false;
+    if (view === "graph") {
+      try {
+        newGraphView = await computeGraphView(newGraph, config, false);
+      } catch (err) {
+        console.warn("[data-graph] the graph view failed to rebuild, falling back to the structure view", err);
+        graphViewFailed = true;
+      }
+    }
+
     // A concurrent setData/doExpand/doCollapse/focusOn ran while we were
     // awaiting the layout (bumping opGen) and already applied its own
     // state — applying this stale one now would silently revert it. Bail.
@@ -661,6 +952,14 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     selectedId = null;
     searchResults = [];
     searchCursor = -1;
+
+    // L'état de la vue graphe est indexé par id de nœud : il ne survit pas à un
+    // changement de données. On l'invalide, puis on publie celui calculé plus
+    // haut — sinon `rebuild()` peindrait les positions de l'ancien graphe.
+    aggregateIndex = undefined;
+    graphLayout = undefined;
+    if (graphViewFailed) view = "structure";
+    if (newGraphView) publishGraphView(newGraphView);
 
     rebuild();
     fitInternal();
@@ -726,7 +1025,9 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     stats(): { logicalNodeCount: number; visibleNodeCount: number } {
       return {
         logicalNodeCount: graph?.logicalNodeCount ?? 0,
-        visibleNodeCount: collapseState?.visibleNodeIds().size ?? 0,
+        // Le compte de la vue affichée : des entités en vue graphe, des nœuds
+        // de l'arbre en vue structure.
+        visibleNodeCount: activeVisible().size,
       };
     },
 
@@ -751,6 +1052,52 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       refreshEntityAccents(currentConfig);
       if (app.renderer) app.renderer.background.color = theme.surface.canvas;
       rebuild();
+    },
+
+    async setView(next: DataGraphView): Promise<void> {
+      await ready;
+      if (destroyed || next === view || !graph) return;
+
+      if (next === "graph") {
+        // Même discipline de génération que toutes les autres opérations
+        // asynchrones du fichier : le calcul dure le temps d'un import
+        // dynamique plus une passe de force, pendant lesquels un `setData` peut
+        // très bien atterrir. `view` n'est donc basculée, et l'état publié,
+        // qu'une fois cette course tranchée.
+        const gen = ++opGen;
+        let state: GraphViewState;
+        try {
+          state = await computeGraphView(graph, currentConfig, true);
+        } catch (err) {
+          // Le moteur organique est chargé dynamiquement : un import qui échoue
+          // (réseau, chunk absent) ne doit pas laisser l'instance dans une vue
+          // qu'elle ne sait pas peindre. `view` n'a pas encore bougé.
+          console.warn("[data-graph] switching to the graph view failed", err);
+          return;
+        }
+        if (destroyed || gen !== opGen) return;
+        publishGraphView(state);
+      }
+
+      // `graph` a pu être remplacé pendant l'attente ; la garde de génération
+      // ci-dessus l'exclut, mais on le relit plutôt que de faire confiance à un
+      // narrowing d'avant l'`await`.
+      const current = graph;
+      if (!current) return;
+      view = next;
+
+      // La vue graphe ne connaît que des entités : reporter la sélection sur
+      // l'entité englobante plutôt que de la perdre.
+      if (view === "graph" && selectedId) selectedId = nearestEntityAncestor(current, selectedId);
+
+      rebuild();
+      // Recadrer ICI est légitime : les deux vues n'ont aucun repère commun.
+      fitInternal();
+      app.render();
+    },
+
+    currentView(): DataGraphView {
+      return view;
     },
 
     destroy(): void {

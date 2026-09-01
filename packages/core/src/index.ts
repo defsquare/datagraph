@@ -5,6 +5,8 @@ export { validateConfig, type EntityConfig, type DataGraphConfig, type Validated
 
 export { buildGraph } from "./build.js"
 export { CollapseState } from "./collapse.js"
+export { buildAggregates, type Aggregate, type AggregateIndex } from "./aggregate.js"
+export { enclosingCircle, type Circle } from "./hull.js"
 export { buildSearchIndex, SearchIndex, type SearchResult } from "./search.js"
 export { measureNode, badgeTextFor, headerTextFor, DEFAULT_METRICS, type Size, type NodeMetrics } from "./measure.js"
 export {

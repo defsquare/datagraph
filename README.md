@@ -18,6 +18,12 @@ renders only what's expanded, so a 10,000-node dataset stays smooth: pan,
 zoom, expand/collapse, click a reference to jump to its target, and search
 across every field.
 
+Two views are built in. The default **structure view** lays out the
+containment tree (parent/child, ELK layered). An optional **graph view**
+switches the canvas to entities-as-vertices, references-as-edges, grouped
+into DDD aggregates drawn as circular envelopes — see [`config.aggregates`](#entityreference-configuration)
+and [the renderer's graph view docs](./packages/renderer/README.md#graph-view).
+
 <!-- demo GIF placeholder: replace this comment with an actual GIF/screen
      recording of apps/demo (pan/zoom, expand/collapse, search, follow-ref)
      before publishing, e.g. ![data-graph demo](./docs/demo.gif) -->
@@ -38,21 +44,37 @@ pnpm add @defsquare/data-graph
 `@defsquare/data-graph` depends on `@defsquare/data-graph-core` and `pixi.js`
 directly (they're installed automatically), and on `elkjs` for layout.
 
-This is the exact bootstrap used by [`apps/demo`](./apps/demo/src/main.ts):
+This is the exact bootstrap used by [`apps/demo`](./apps/demo/src/main.ts),
+whose small fixture is a four-entity-type e-commerce shop:
 
 ```ts
 import { createDataGraph } from "@defsquare/data-graph";
 
 const shopData = {
+  categories: [
+    { id: "cat1", name: "Informatique" },
+    { id: "cat4", name: "Audio" },
+  ],
+  products: [
+    { id: "p1", name: "Clavier mécanique", reference: "INF-1000",
+      price: 89.9, stock: 42, categoryId: "cat1" },
+    { id: "p16", name: "Casque bluetooth", reference: "AUD-1555",
+      price: 129, stock: 17, categoryId: "cat4" },
+  ],
   customers: [
-    { id: "c1", name: "Dupont", email: "dupont@example.com",
-      address: { street: "1 rue de la Paix", city: "Paris" } },
-    { id: "c2", name: "Martin", email: "martin@example.com" },
+    { id: "c1", name: "Camille Dubois", email: "camille.dubois@example.fr",
+      address: { street: "1 rue de la Paix", postcode: "75002", city: "Paris" },
+      segment: "VIP", signupDate: "2023-04-12" },
+    { id: "c2", name: "Julien Martin", email: "julien.martin@example.fr",
+      segment: "nouveau", signupDate: "2024-01-08" },
   ],
   orders: [
-    { id: "o1", customerId: "c1", total: 99.5,
-      lines: [{ sku: "A-1", qty: 2 }, { sku: "B-7", qty: 1 }] },
-    { id: "o2", customerId: "GHOST", total: 12 },
+    { id: "o1", customerId: "c1", productId: "p1", quantity: 2, total: 179.8,
+      status: "livrée", payment: "carte bancaire", date: "2024-03-05",
+      shippingAddress: { street: "1 rue de la Paix", postcode: "75002", city: "Paris" } },
+    // `GHOST` doesn't exist: a deliberate dangling reference.
+    { id: "o2", customerId: "GHOST", productId: "p16", quantity: 1, total: 129,
+      status: "en attente", payment: "PayPal", date: "2024-03-11" },
   ],
 };
 
@@ -60,8 +82,15 @@ const shopConfig = {
   entities: {
     Customer: { match: "$.customers[*]", id: "id" },
     Order: { match: "$.orders[*]", id: "id" },
+    Product: { match: "$.products[*]", id: "id" },
+    Category: { match: "$.categories[*]", id: "id" },
   },
-  references: { Order: { customerId: "Customer" } },
+  references: {
+    Order: { customerId: "Customer", productId: "Product" },
+    Product: { categoryId: "Category" },
+  },
+  rootLabel: "Boutique",
+  aggregates: ["Customer", "Product"],
 };
 
 const container = document.getElementById("app")!;
@@ -112,6 +141,10 @@ doesn't exist).
 - `entities.<Type>.match` — selector for where instances of `<Type>` live in the document.
 - `entities.<Type>.id` — the field on each matched object that holds its unique id.
 - `references.<Type>.<field>` — declares `<Type>.<field>` as a foreign key pointing at another configured entity type.
+- `aggregates` — entity type names that are DDD aggregate roots, in declaration order. That order
+  is load-bearing: it decides which root claims an entity that reaches two of them at the same
+  distance. See [the core package README](./packages/core/README.md#aggregates) for the membership
+  rule and the [graph view](./packages/renderer/README.md#graph-view) it powers.
 - `maxNodes` — optional safety cap (default `50000`); `buildGraph` throws `GraphTooLargeError` past it.
 - `rootLabel` — label shown on the root node (default `"$"`, the root symbol of
   the same selector syntax `match` uses). Set it to something your users
@@ -126,8 +159,8 @@ Returned by `createDataGraph(container, options)`.
 | --- | --- |
 | `ready: Promise<void>` | Resolves once Pixi has initialized, the graph has been built, and the initial layout has been rendered. Await before calling other methods. |
 | `fit()` | Frames the camera to fit every currently laid-out node in the viewport. |
-| `expand(id): Promise<void>` | Expands a node (reveals its children), re-lays-out, and animates the transition. |
-| `collapse(id): Promise<void>` | Collapses a node (hides its children) and animates the transition. |
+| `expand(id): Promise<void>` | **Structure-view operation.** Expands a node (reveals its children), re-lays-out, and animates the transition. In the graph view it updates the (invisible) containment state but has no visible effect — see [graph view](./packages/renderer/README.md#graph-view). |
+| `collapse(id): Promise<void>` | **Structure-view operation.** Collapses a node (hides its children) and animates the transition. Same graph-view caveat as `expand`. |
 | `focus(id)` | Expands every collapsed ancestor of `id` as needed, then centers the camera on it. |
 | `select(id)` | Marks a node as selected (drawn with a selection overlay) and emits a `select` event. |
 | `search(query): SearchResult[]` | Full-text search across every node label, entity id, and row key/value; returns all matches and resets the next/prev cursor. |
@@ -139,7 +172,14 @@ Returned by `createDataGraph(container, options)`.
 | `stats(): { logicalNodeCount, visibleNodeCount }` | Counters for a host status bar: `logicalNodeCount` is every node in the built graph, `visibleNodeCount` is how many are currently expanded/rendered. |
 | `refEdges(from): RefEdge[]` | The outgoing reference edges of node `from`, so a host can offer "follow reference" affordances without knowing graph internals. |
 | `setTheme(theme)` | Replaces the theme and redraws, without rerunning layout or re-measuring fonts. Accepts a full `Theme` or a `ThemeOverride`, merged via `resolveTheme` against the theme currently in effect — a `byEntityType` set earlier survives a plain theme swap. Safe for toggling between themes that share the same `typography`/`fonts` (e.g. a light/dark pair); changing those two groups needs a fresh `createDataGraph`. |
+| `setView(view): Promise<void>` | Switches between `"structure"` and `"graph"`. The first switch to `"graph"` dynamically imports the graph-view engine and computes aggregates, hence the promise — see [performance budgets](#performance-budgets) and the [renderer's graph view docs](./packages/renderer/README.md#graph-view). The current selection is carried over onto the nearest entity ancestor, since the graph view only knows entities. |
+| `currentView(): DataGraphView` | Returns `"structure"` or `"graph"`, whichever is active. |
 | `destroy()` | Tears down the Pixi application and releases all resources. |
+
+`DataGraphOptions.view?: "structure" \| "graph"` (default `"structure"`) picks the initial view at
+`createDataGraph` time; `setView`/`currentView` switch and query it afterwards. The graph view folds
+nothing: every entity is always visible there, and a header click just selects the card. `expand`/
+`collapse` remain structure-view-only.
 
 ## Themes
 
@@ -195,6 +235,177 @@ These are the budgets `packages/core/bench/bench.ts` checks on every run
 (via `pnpm bench`) against a synthetic `bigShop(10_000)` fixture — see that
 package's README for the latest numbers and any documented deviation.
 
+### Graph view
+
+| Property | Budget | Enforced by |
+| --- | --- | --- |
+| Card overlap after layout | Zero overlapping pairs, always. The stronger `separationMargin` gap between every pair is measured and asserted at 334 cards; past ~450 the iteration cap can leave a few pairs closer than the margin (still never overlapping) — see the note below | `packages/core/test/layout-graph.test.ts` |
+| Determinism | Pixel-identical positions across two runs on the same input | `packages/core/test/layout-graph.test.ts` |
+| Aggregate envelope overlap after layout | Zero overlapping pairs at 167 aggregates. Membership is a partition, so no two aggregates share a card and none of them are exempt from the budget. The demo's 108 aggregates also come out at zero, but that is **measured, not enforced** — no committed test runs at that scale | `packages/core/test/layout-graph.test.ts` ("leaves no two aggregate envelopes overlapping" / "separates two aggregates that a distance tie used to make overlap") |
+| Intra-aggregate geometry under cluster separation | Preserved to the rounding of one uniform per-cluster translation. **Enforced at < 1e-9 px** per intra-aggregate pair; worst case observed on the committed fixtures is **2.84e-14 px**, five orders of headroom. One fixture comes out at exactly 0 px, which is a rounding accident of its coordinates and not a class of inputs where exactness holds — the push is oblique, along the line of centres | `packages/core/test/cluster-separate.test.ts` |
+| `@defsquare/data-graph` bundle purity | `cytoscape` (~178 kB gzip) never enters a consumer's bundle unless it calls `setView("graph")` — the structure view alone doesn't pull it in | `packages/core/test/bundle-purity.test.ts` (core half) + `packages/renderer/test/bundle-purity.test.ts` (renderer half) |
+
+**Separation, measured.** After fcose runs, a relaxation pass (`separateOverlaps`)
+pushes cards apart until no two are closer than `separationMargin` (16 px by
+default), capped at `separationIterations` (3,000). The pass is load-bearing:
+fcose's raw output leaves 160 overlapping pairs at 334 cards (worst card 40.5%
+covered) and 448 pairs at 450 cards (worst card 90.8% covered). Zero *overlap*
+after the pass is robust and asserted at scale. The stronger *margin* guarantee is not unconditional: on this
+repo's fixtures the pass leaves **0** pairs under the margin at 334 cards (the
+scale the committed test asserts), **47** at 450 cards, and **289** at 900 —
+none of them overlapping, merely closer to each other than 16 px. Raising the
+cap to 10,000 clears all of them, at roughly 3× the pass's cost, so this is a
+tuning ceiling rather than a defect in the algorithm.
+
+Historical note: this pass used to compare penetration against zero, which
+kept its "nothing moved" early exit from ever firing — a pair settled exactly
+at the margin retains a residual penetration that still reads positive
+(**1.84e-11 px**, measured on the 334-card fixture by putting the comparison
+back to zero; earlier notes in this repo guessed 1e-13 and 1e-14, neither of
+which had been measured), so the loop kept "moving" picometers until the cap
+regardless of whether it had actually converged. That made the cost
+proportional to `separationIterations` (measured then on 334 cards: cap 3,000 →
+1.9 s, 10,000 → 6.3 s, 100,000 → 63.5 s). Fixed: the comparison is now against
+an epsilon (`packages/core/src/separate.ts`), so the early exit fires for real
+and the cap is a true ceiling again, not a fixed cost.
+
+What that fix is worth, measured on the same 334-card fixture (median of 3
+runs): full `layout()` **2,619 ms → 1,889 ms, −28%**; the separation pass alone
+goes from hitting all 3,000 passes to exiting at pass 1,999. Note what that
+second number says: those cards were **not** "already separated" and the input
+was not easy — the pass does real work for two thirds of the cap, and only the
+last third was floating-point noise. The fix removes the wasted third, not the
+pass. A regression guard now holds the epsilon in place: `separateOverlaps`
+returns the number of passes it actually ran, and
+`packages/core/test/separate.test.ts` asserts that count is strictly below the
+cap on a dense pile — an assertion that fails the moment the comparison goes
+back to zero (verified by doing exactly that).
+
+**That 28% is not a general win, and it did not fix the graph view's cost.** The
+saving is exactly the share of the cap the input was wasting, so it depends
+entirely on how early that input converges. On the demo's 350-entity dataset the
+early exit fires at pass **2,739 of 3,000** — 91% of the cap — so the fix buys
+only about **9%** there, and `setView("graph")` still costs **~4.2 s**. Those
+4.2 s are real relaxation work, not floating-point noise: no tuning of this
+comparison can recover them. Bringing that number down needs a different
+approach — a cheaper non-overlap algorithm, or moving the layout off the main
+thread — not a better epsilon.
+
+**Envelopes are circles.** An aggregate's envelope is the **minimal enclosing
+circle** of its cards' corners (Welzl's algorithm, `packages/core/src/hull.ts`),
+its radius grown by `hullPadding`. The input is deliberately **not shuffled**:
+Welzl's expected-linear bound relies on a random permutation, but this repo
+requires pixel determinism, and the clusters here are tiny — 4 points for the
+common single-card aggregate, 20 for the largest on the demo dataset. A fixed
+order is the right trade at that size; it would stop being one on aggregates of
+hundreds of cards. An earlier version drew a padded **convex hull** instead;
+circles replaced it so that one single shape is both spaced and painted (see
+below).
+
+**Cluster spacing, measured.** `separateOverlaps` keeps *cards* apart; it says
+nothing about *aggregates*, and without a second pass the envelopes interpenetrate
+badly — 911 of the 13,861 envelope pairs on `bigShop(3000)` overlap, and the mean
+edge-to-edge gap to a cluster's nearest neighbour is **−289.8 px**. So a second
+relaxation (`separateClusters`) runs after it, at cluster granularity: it pushes
+two clusters apart along the line of their centres until that distance reaches
+`r₁ + r₂ + clusterGap`, then translates each cluster's members **rigidly** by its
+circle's total displacement. It receives the same `hullPadding` the renderer
+paints with, so **the spaced shape is exactly the drawn shape** — the previous
+version relaxed axis-aligned bounding boxes while the renderer drew a convex
+hull, so the corridor it measured was not the corridor you looked at (that older
+box pass reported 310 overlapping pairs and a 0.7 px mean gap on the same
+fixture: a different, smaller shape, not a better result). Pushing along the
+centre line is also simpler than the box relaxation it replaces — one axis
+instead of a choice between two axial penetrations. That rigidity is what makes
+it safe: intra-aggregate geometry comes through untouched, and since nothing
+re-runs `separateOverlaps` afterwards, it is also what guarantees the pass
+introduces no card overlap. An entity in no aggregate is its own singleton
+cluster, so it is pushed out of a neighbour's envelope instead of being left
+inside it. Unlike `separateOverlaps`, its early exit compares against an epsilon
+rather than zero, so it actually converges and stops.
+
+**Aggregates that share an entity are merged** into a single rigid super-cluster
+(union-find) before the relaxation, rather than being separated. A shared entity
+is a full member of each of its aggregates, so giving it a displacement of its
+own — the average of its aggregates', in an earlier version — detaches it from
+its co-members as soon as a *third* cluster pushes one of them harder than the
+other; that version measurably broke rigidity (intra-aggregate distances 120 →
+62.5 px) and produced card overlaps. Merging removes the case rather than
+patching it.
+
+**That merge no longer fires, and it stays anyway.** Aggregate membership is now
+a strict partition (see [the core README](./packages/core/README.md#aggregates)):
+a distance tie is arbitrated by declaration order rather than shared, so no card
+belongs to two aggregates and the union-find never merges anything. It is kept
+because it is what *guarantees* the pass gives every card exactly one
+translation — that invariant belongs to the pass, not to a membership rule that
+is a product decision and could be relaxed again. It is documented as an
+inactive guarantee, not as dead code and not as a feature, and
+`packages/core/test/cluster-separate.test.ts` still exercises it on
+hand-built aggregate indexes.
+
+**What the partition rule bought, measured.** The demo's config declares two
+roots (`aggregates: ["Customer", "Product"]`) over a dataset where every `Order`
+references a `Customer` *and* a `Product`, so every order sits one hop from both.
+Under the retired overlap rule it was a full member of both, and the merge
+percolated. Measured on `bigShop(4000)` — 350 entities, 108 aggregates — with the
+same layout and the same circular envelopes, the membership rule the only
+difference:
+
+| | overlap on ties (retired) | arbitration (current) |
+| --- | --- | --- |
+| super-clusters | 9 | **116** |
+| largest block | 342 of 350 cards (97.7%) | **5 cards (1.4%)** |
+| overlapping envelope pairs | 3,520 of 5,778 (61%) | **0** |
+| canvas bbox | 7,199 × 4,588 | 18,714 × 19,984 |
+
+The 116 blocks are 78 `Customer` aggregates (26 of 5 cards, 26 of 4, 26 of 3),
+30 single-card `Product` aggregates, and the 8 `Category` entities no aggregate
+claims — membership follows references *inbound* to the root, and products point
+*at* categories. The price is a canvas about **11× larger by area**, which
+`fit()` absorbs by zooming out; the return is that every aggregate is a
+separately readable island instead of one blob of 342 cards.
+
+`clusterGap` defaults to **160 px**, chosen by measurement rather than taste —
+the sweep is recorded in `DEFAULTS` in `packages/core/src/layout-graph.ts`, and
+the value is settable per instance via `graphLayoutOptions` (see the renderer
+README). Correctness — zero overlapping envelope pairs — is already reached at
+80 px; everything above that buys corridor width, not correctness. On
+`bigShop(3000)` at 160 px: nearest-neighbour gap −289.8 px → 160.0 px, overlapping
+envelope pairs 911 → 0, overall bbox 3494×2969 → 8370×8418 (6.8× the area),
+fill 42.4% → 6.2%. Card overlap stays at zero at every value tested. Going
+further costs canvas faster than it buys legibility: 160 → 240 px is +38% area
+to move fill from 6.2% to 4.5%; already at 160 px `fit()` zooms out ~2.6×, so
+cards render around a third of their former size at overview and drop to a
+coarser LOD sooner.
+
+Note what this pass is **not**: it is not longer `idealEdgeLength` on
+cross-aggregate edges. That was tried and failed — fcose calibrates its
+internal repulsion scale on the *average* ideal edge length across all edges,
+so lengthening a subset inflates the whole layout instead of opening the gaps,
+and destroys the clustering signal. The comment at the `idealEdgeLength` call
+site records it.
+
+The graph view's organic layout (fcose) is seeded deterministically from node
+ids rather than left to its default randomization, which is what makes the
+determinism row above assertable.
+
+**Folding was removed from the graph view**, and with it the incremental
+relayout that used to keep already-placed cards from drifting when an
+aggregate was unfolded. That mechanism pinned every placed card through
+fcose's `fixedNodeConstraint`, and a committed test measured its median drift
+at 0px (against 1084px for an unpinned full relayout). Both the code and that
+test are gone: everything is visible at all times, so there is no incremental
+relayout left to stabilise, and a budget with no test behind it would be worse
+than no budget. The history lives on in
+`docs/superpowers/specs/2026-08-31-graph-view-aggregates-design.md`.
+
+Switching to the graph view for the first time dynamically imports
+`cytoscape` and its `fcose` layout plugin; a Vite production build of
+[`apps/demo`](./apps/demo) emits that as its own ~178 kB gzip chunk
+(`graph-layout-*.js`), separate from the main bundle, so a consumer who only
+ever uses the structure view never downloads it.
+
 ## Monorepo layout
 
 ```
@@ -215,12 +426,23 @@ pnpm install
 
 pnpm typecheck      # tsc --noEmit across every package
 pnpm build          # tsup build across every package
-pnpm test           # vitest across every package
+pnpm test           # vitest across every package — run `pnpm build` FIRST
 pnpm bench          # non-blocking perf bench (packages/core/bench/bench.ts)
 
 pnpm --filter demo dev   # run the demo app locally
-pnpm --filter demo e2e   # Playwright end-to-end tests against the demo
+pnpm --filter demo e2e   # Playwright e2e — build the renderer FIRST
 ```
+
+**Build before test.** Two suites read build output, and `dist/` is gitignored,
+so on a fresh clone both fail until something has been built:
+
+- `pnpm build` must precede `pnpm test` — `packages/core/test/bundle-purity.test.ts`
+  walks `packages/core/dist/index.js` to prove `cytoscape` stays out of the main
+  entry point's transitive closure. It fails with an actionable message rather
+  than skipping: a silent skip would give false assurance on a bundle budget.
+- `pnpm --filter @defsquare/data-graph build` must precede
+  `pnpm --filter demo e2e` — the demo imports the renderer's `dist/`, so the e2e
+  run otherwise exercises a stale (or missing) build.
 
 ## License
 
