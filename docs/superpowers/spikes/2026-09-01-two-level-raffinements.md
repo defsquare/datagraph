@@ -1,11 +1,12 @@
 # Sonde — raffinements du moteur de layout à deux niveaux
 
-**Statut** : en cours. Trois étapes décidées par l'utilisateur, remplies au fil
-de l'eau. A faite, B et C à venir.
+**Statut** : en cours. Étapes décidées par l'utilisateur, remplies au fil de
+l'eau. A et A-bis faites ; B et C à venir.
 
 | | étape | statut |
 |---|---|---|
 | A | placement intra-agrégat RADIAL (racine au centre, anneaux par distance) | **faite** |
+| A-bis | aiguillage radial / étagères par PROFONDEUR | **faite** |
 | B | bruit déterministe contre la régularité du pavage | à venir |
 | C | calibrage mesuré des constantes du niveau 2 | à venir |
 
@@ -31,6 +32,9 @@ son propre disque. En échange le disque enfle : le remplissage global tombe de
 **Sur ces deux jeux-là, le radial ne gagne rien et ne fait que coûter** — leurs
 agrégats font 1 à 5 cartes et n'ont aucune chaîne à redresser. Le gain n'existe
 qu'à partir d'agrégats profonds, qu'aucun jeu réel du dépôt ne contient encore.
+C'est ce constat qui a conduit à l'aiguillage de l'étape A-bis : les chiffres de
+cette section-ci sont donc ceux du RADIAL PARTOUT, un état intermédiaire que le
+moteur livré n'a plus.
 
 ### Le fixture, parce qu'il n'y en avait pas
 
@@ -157,7 +161,7 @@ Effets globaux, sur les deux jeux réels du dépôt :
 Le temps ne bouge pas : le placement reste linéaire en cartes et c'est la
 simulation O(k²) du niveau 2 qui domine.
 
-### L'hybride — chiffré, PAS retenu, décision laissée ouverte
+### L'hybride — chiffré ici, décidé en A-bis
 
 Distribution réelle des tailles d'agrégats, mesurée :
 
@@ -176,19 +180,75 @@ Un hybride « étagères en dessous d'un seuil, radial au-dessus » :
 
 `hybride ≤ 5` récupère **100 %** de la densité sur les deux jeux, tout en
 donnant le radial aux agrégats profonds. C'est tentant, et c'est précisément
-pourquoi il n'est pas retenu ici : **5 est exactement la taille maximale
+pourquoi il n'a pas été retenu : **5 est exactement la taille maximale
 d'agrégat des deux fixtures**. Un seuil choisi pour qu'aucun jeu existant ne
 prenne le chemin neuf est un seuil ajusté sur les fixtures, pas sur une raison —
 il ferait passer les chiffres au vert sans qu'on sache ce qu'il vaudra sur un
 jeu réel de forme différente.
 
-Ce qu'il faudrait pour trancher honnêtement : un critère dérivé de la GÉOMÉTRIE
-et non du cardinal — par exemple « radial si le placement radial ne dégrade pas
-le rayon de plus de X % », c'est-à-dire calculer les deux et garder le meilleur.
-C'est mesurable, ça ne dépend d'aucun seuil arbitraire, et ça coûte un packing
-de plus par agrégat (linéaire, négligeable). **Proposé, non fait** : c'est une
-décision de produit — veut-on la lisibilité radiale partout, ou seulement là où
-elle est gratuite ?
+---
+
+## Étape A-bis — l'aiguillage, par PROFONDEUR
+
+**Décision de l'utilisateur**, après le chiffrage ci-dessus : hybride, mais sur
+la profondeur et non sur le cardinal.
+
+> Radial si et seulement si **au moins un membre est à distance de référence
+> ≥ 2 de la racine** (BFS réel, ORPHELINS exclus du critère). Étagères sinon.
+
+**La justification.** Le mécanisme du radial est d'encoder la profondeur de
+référence en distance au centre. À profondeur ≤ 1, tous les non-racines sont
+équidistants de la racine : il n'y a rien à encoder, la structure lue par l'œil
+ne dit rien de plus que « ces cartes appartiennent à cette racine » — ce que
+l'enveloppe disait déjà —, et le radial n'apporte que son coût (×1,29 à ×2,03 de
+rayon, mesuré plus haut). Le critère **ne mentionne aucune taille**, donc il
+n'est pas ajusté aux fixtures : il est ajusté à la raison d'être du radial.
+
+**Pourquoi les orphelins sont exclus.** Un membre que le BFS local n'atteint pas
+— maillon intermédiaire masqué — reçoit en radial un anneau SYNTHÉTIQUE au-delà
+du dernier. Cet anneau ne traduit aucune profondeur de référence, seulement une
+absence d'information. Sans l'exclusion, un agrégat parfaitement plat dont une
+carte serait détachée basculerait en radial et en paierait le prix pour rien.
+
+**Le résultat, mesuré sur les trois fixtures :**
+
+| | étagères partout | radial partout | **hybride (livré)** |
+|---|---|---|---|
+| A `bigShop(3000)`, agrégats plats | 12,3 % | 7,8 % | **12,3 %** |
+| B démo, agrégats plats | 15,1 % | 10,9 % | **15,1 %** |
+| B, bbox | 8 083 × 8 437 | 9 710 × 9 780 | **8 083 × 8 437** |
+| B, réf. inter-agrégat | 1 364 px | 1 657 px | **1 364 px** |
+| `bigShopWithReviews`, 3 cartes, prof. 1 | étagères | radial | **étagères** |
+| `deepAggregate()`, 41 cartes, prof. 3 | réf. 591,4 px | réf. 363,0 px | **réf. 363,0 px** |
+| `deepAggregate()`, rang de la racine | 40/41 | 1/41 | **1/41** |
+
+Densité intégralement récupérée sur les jeux plats, gains radiaux intégralement
+conservés sur le jeu profond.
+
+Le couple qui montre que le critère lit bien la profondeur et non le cardinal, à
+5 cartes des deux côtés :
+
+| | forme | mode | rayon | rang de la racine |
+|---|---|---|---|---|
+| `deepAggregate(4, 0, 0)` | 4 commandes, profondeur 1 | étagères | 258 px | 4 / 5 |
+| `deepAggregate(2, 1, 0)` | 2 commandes + 2 lignes, profondeur 2 | **radial** | 602 px | **1 / 5** |
+
+Même nombre de cartes, modes différents — et le prix du radial (×2,33 de rayon
+ici) est payé exactement là où il achète quelque chose.
+
+**Question ouverte, consignée plutôt que devinée.** L'**étoile plate et LARGE**
+— profondeur 1, des dizaines de cartes — reste en étagères, alors que la
+centralité de la racine pourrait s'y défendre : avec 40 commandes sous un seul
+client, la racine se retrouve dans un coin du bloc, ce qui est le défaut même
+que le radial corrige ailleurs. Aucun jeu réel du dépôt ne présente cette forme.
+On tranchera si elle apparaît.
+
+L'autre piste, toujours non faite : un critère dérivé de la GÉOMÉTRIE plutôt que
+de la structure — calculer les deux placements et garder le meilleur rayon. Ça
+ne dépendrait d'aucun seuil et coûterait un packing de plus par agrégat
+(linéaire, négligeable). Elle règlerait l'étoile large du même coup, mais elle
+choisirait sur la densité seule, sans jamais tenir compte de la lisibilité — le
+radial serait alors écarté partout où il coûte, c'est-à-dire partout.
 
 ### Micro-variante essayée et écartée
 
@@ -224,7 +284,8 @@ mis à jour, pour porter les chiffres au lieu d'une estimation.
 
 ### Ce que l'étape A ne tranche pas
 
-1. **L'hybride ci-dessus**, laissé à l'utilisateur avec ses chiffres.
+1. **L'hybride ci-dessus** — tranché depuis, voir A-bis : aiguillage par
+   profondeur, pas par cardinal.
 2. **Le critère par disques englobants est conservateur.** Il ajoute un surcoût
    constant à la marge — 28,6 px mesurés entre deux cartes de `bigShop`, soit
    `ρ₁ + ρ₂ − (w₁ + w₂)/2`. Un test exact rectangle-rectangle récupérerait ces
@@ -237,3 +298,4 @@ mis à jour, pour porter les chiffres au lieu d'une estimation.
 4. **Rien n'oriente les anneaux entre agrégats.** Le niveau 2 tourne les disques
    librement ; un agrégat pourrait présenter ses feuilles vers son voisin plutôt
    que sa racine. Non sondé.
+

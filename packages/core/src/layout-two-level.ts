@@ -24,12 +24,13 @@
 // une PARTITION stricte (voir `aggregate.ts`), donc le problème se décompose
 // sans recouvrement de responsabilités.
 //
-//   1. INTRA-agrégat — chaque agrégat est packé indépendamment des autres :
-//      la RACINE AU CENTRE, les autres membres sur des anneaux concentriques,
-//      un anneau par distance de référence à la racine, avec la marge
-//      `cardGap` INCLUSE dans le placement. Le non-recouvrement des cartes
-//      d'un même agrégat est acquis par construction, pas par relaxation —
-//      voir la démonstration au-dessus de `packCluster`.
+//   1. INTRA-agrégat — chaque agrégat est packé indépendamment des autres, en
+//      RADIAL (racine au centre, un anneau par distance de référence) s'il a de
+//      la profondeur, en ÉTAGÈRES (lignes centrées) sinon ; l'aiguillage et sa
+//      justification sont au-dessus de `packCluster`. Dans les deux cas la
+//      marge `cardGap` est INCLUSE dans le placement, donc le non-recouvrement
+//      des cartes d'un même agrégat est acquis par construction et pas par
+//      relaxation.
 //   2. INTER-agrégat — chaque agrégat devient un disque rigide : le cercle
 //      englobant minimal de ses cartes plus `hullPadding`, c'est-à-dire
 //      exactement la forme que le renderer peint. Une entité hors agrégat est
@@ -75,30 +76,21 @@
 // CE QUE CE MOTEUR NE TRANCHE PAS (réserves de la sonde, reprises telles
 // quelles parce qu'aucune n'a été levée depuis) :
 //
-//   - RÉSERVE LEVÉE, et remplacée par son revers. Le packing intra-agrégat
-//     ignorait les arêtes ; il est désormais RADIAL et suit la connectivité
-//     (voir `packCluster`). Ce que ça a acheté, mesuré sur `deepAggregate()` —
-//     41 cartes, 4 niveaux : référence intra-agrégat moyenne 591,4 → 363,0 px,
-//     max 976,3 → 488,1 px, et la racine passe du 40e au 1er rang par
-//     proximité au centre de son disque (597,7 → 16,4 px).
+//   - RÉSERVE LEVÉE. Le packing intra-agrégat ignorait les arêtes ; il existe
+//     désormais en DEUX MODES, et le choix se fait par cluster sur la
+//     PROFONDEUR de références — voir l'exposé du critère au-dessus de
+//     `packCluster`, qui est l'endroit où cette histoire est racontée en
+//     entier.
 //
-//     Ce que ça COÛTE, et qui est la nouvelle réserve : le radial est moins
-//     dense que les étagères, partout. Un anneau coûte un diamètre de carte de
-//     rayon même s'il ne porte qu'une carte, donc le disque enfle avec la
-//     PROFONDEUR plus qu'avec le nombre de cartes. Mesuré, rayon du disque
-//     étagères → radial : 2 cartes 162 → 209 px (×1,29), 5 cartes sur 2
-//     anneaux 296 → 602 (×2,03), 10 cartes sur 3 anneaux 350 → 899 (×2,57),
-//     41 cartes 712 → 1 044 (×1,47). Globalement, sur les deux jeux réels du
-//     dépôt : remplissage 12,3 → 7,8 % (cœur) et 15,1 → 10,9 % (démo).
-//
-//     Il faut le dire net : sur CES deux jeux-là, le radial ne gagne rien —
-//     leurs agrégats font 1 à 5 cartes et n'ont pas de chaîne à redresser — et
-//     ne fait que coûter. Le gain n'existe qu'à partir d'agrégats profonds,
-//     qu'aucun jeu réel du dépôt ne contient encore. Un hybride (étagères en
-//     dessous d'un seuil, radial au-dessus) est chiffré dans le doc de sonde ;
-//     il n'est pas retenu ici parce que le seuil qui annule le coût sur ces
-//     jeux est exactement leur taille maximale d'agrégat, donc un seuil ajusté
-//     sur les fixtures et non sur une raison.
+//     En deux lignes : le radial (racine au centre, un anneau par distance)
+//     encode la profondeur en distance au centre, ce qui n'a de sens que s'il
+//     y a une profondeur à encoder ; les étagères, plus denses, prennent tout
+//     le reste. Mesuré sur `deepAggregate()` — 41 cartes, 4 niveaux :
+//     référence intra-agrégat moyenne 591,4 → 363,0 px, max 976,3 → 488,1 px,
+//     racine du 40e au 1er rang par proximité au centre (597,7 → 16,4 px). Et
+//     sur les deux jeux réels du dépôt, dont tous les agrégats sont plats, le
+//     remplissage ne bouge pas d'un dixième — 12,3 % (cœur) et 15,1 % (démo) —
+//     parce qu'ils restent en étagères.
 //   - O(k²) sur les agrégats : 143 ms à 167 disques dans la sonde, 194 ms ici
 //     une fois la passe dure resserrée. Mais la croissance est quadratique —
 //     mesuré à 500 disques (bigShop(9000), 1 000 cartes) : 3,6 s. Grille
@@ -266,17 +258,122 @@ function discRadiusOf(size: { width: number; height: number }): number {
 }
 
 /**
+ * Distance de référence de chaque membre à la racine, par BFS local sur les
+ * références INTRA-agrégat.
+ *
+ * Le parcours remonte de la CIBLE vers la SOURCE, comme `buildAggregates` : une
+ * commande pointe vers son client, donc elle est à distance 1 de lui. C'est ce
+ * qui fait coïncider la distance d'anneau avec la distance d'appartenance qui a
+ * formé le cluster. Les listes d'adjacence étant triées, la file est
+ * déterministe et les égalités sont départagées par id.
+ *
+ * Les membres NON ATTEINTS ne figurent pas dans `dist`. Ils existent :
+ * l'appartenance se calcule sur le graphe entier, la mise en page sur les
+ * entités VISIBLES, donc un maillon intermédiaire masqué détache tout ce qui
+ * pendait dessous. Ils sont rendus à part parce que les deux consommateurs les
+ * traitent différemment — le placement radial leur donne un anneau
+ * supplémentaire, le CRITÈRE de choix les ignore.
+ */
+function referenceDepths(
+  memberIds: NodeId[],
+  childrenOf: Map<NodeId, NodeId[]>,
+): { dist: Map<NodeId, number>; parent: Map<NodeId, NodeId>; maxDist: number; orphans: NodeId[] } {
+  const rootId = memberIds[0]!
+  const memberSet = new Set(memberIds)
+  const dist = new Map<NodeId, number>([[rootId, 0]])
+  const parent = new Map<NodeId, NodeId>()
+  const queue: NodeId[] = [rootId]
+  let maxDist = 0
+
+  for (let head = 0; head < queue.length; head++) {
+    const current = queue[head]!
+    const next = dist.get(current)! + 1
+    for (const child of childrenOf.get(current) ?? []) {
+      if (!memberSet.has(child) || dist.has(child)) continue
+      dist.set(child, next)
+      parent.set(child, current)
+      queue.push(child)
+      if (next > maxDist) maxDist = next
+    }
+  }
+
+  const orphans: NodeId[] = []
+  for (const id of memberIds) if (!dist.has(id)) orphans.push(id)
+  return { dist, parent, maxDist, orphans }
+}
+
+/**
+ * Packing en ÉTAGÈRES : lignes remplies de gauche à droite jusqu'à une largeur
+ * cible en √(aire totale), chaque ligne centrée.
+ *
+ * Trivial, déterministe, dense — et non-recouvrant par construction, la marge
+ * `gap` étant posée entre deux voisins de ligne comme entre deux lignes. Les
+ * lignes sont CENTRÉES et non alignées à gauche : un bloc centré donne un
+ * cercle englobant plus serré, donc un disque plus petit à écarter au niveau 2.
+ *
+ * La largeur cible en √(aire) vise un bloc à peu près carré ; `maxW` la borne
+ * par le bas pour qu'une carte plus large que la cible ne parte jamais seule
+ * sur une ligne débordante.
+ *
+ * C'est le mode le plus DENSE des deux, et c'est sa seule raison d'être ici :
+ * il ne dit rien de la connectivité, et pose la racine en tête de la première
+ * ligne, donc dans un coin. Voir `packCluster` pour savoir quand il l'emporte.
+ */
+function packShelf(
+  memberIds: NodeId[],
+  sizes: Map<NodeId, { width: number; height: number }>,
+  gap: number,
+): Map<NodeId, Rect> {
+  let totalArea = 0
+  let maxW = 0
+  for (const id of memberIds) {
+    const s = sizes.get(id)!
+    totalArea += (s.width + gap) * (s.height + gap)
+    if (s.width > maxW) maxW = s.width
+  }
+  const targetW = Math.max(maxW, Math.sqrt(totalArea))
+
+  const rows: { ids: NodeId[]; width: number; height: number }[] = []
+  let current: { ids: NodeId[]; width: number; height: number } = { ids: [], width: 0, height: 0 }
+  for (const id of memberIds) {
+    const s = sizes.get(id)!
+    const w = s.width + (current.ids.length > 0 ? gap : 0)
+    if (current.ids.length > 0 && current.width + w > targetW) {
+      rows.push(current)
+      current = { ids: [], width: 0, height: 0 }
+    }
+    current.ids.push(id)
+    current.width += current.ids.length > 1 ? s.width + gap : s.width
+    current.height = Math.max(current.height, s.height)
+  }
+  if (current.ids.length > 0) rows.push(current)
+
+  const blockW = Math.max(...rows.map((r) => r.width))
+  const local = new Map<NodeId, Rect>()
+  let y = 0
+  for (const row of rows) {
+    let x = (blockW - row.width) / 2
+    for (const id of row.ids) {
+      const s = sizes.get(id)!
+      local.set(id, { x, y, width: s.width, height: s.height })
+      x += s.width + gap
+    }
+    y += row.height + gap
+  }
+  return local
+}
+
+/**
  * Placement RADIAL : la racine au centre, les autres membres sur des anneaux
  * concentriques, un anneau par distance de référence à la racine.
  *
- * Il remplace un packing en étagères (lignes remplies de gauche à droite,
- * membres triés par id) qui ignorait complètement la connectivité. Ce que ça
- * coûtait, mesuré sur `deepAggregate()` — 41 cartes, quatre niveaux de
- * profondeur : la racine sortait **40e sur 41** par proximité au centre de son
- * propre disque, à 597,7 px de ce centre, et une référence intra-agrégat
- * mesurait 591,4 px en moyenne. Le tri par id posait la racine en tête de la
- * première ligne, c'est-à-dire dans un COIN du bloc — le point le plus éloigné
- * du centre du cercle englobant.
+ * Ce qu'il corrige, mesuré sur `deepAggregate()` — 41 cartes, quatre niveaux de
+ * profondeur — contre le packing en étagères : la racine sortait **40e sur 41**
+ * par proximité au centre de son propre disque, à 597,7 px de ce centre, et une
+ * référence intra-agrégat mesurait 591,4 px en moyenne. Le tri par id posait la
+ * racine en tête de la première ligne, c'est-à-dire dans un COIN du bloc — le
+ * point le plus éloigné du centre du cercle englobant. En radial : racine 1re,
+ * à 16,4 px du centre, référence moyenne 363,0 px et max 976,3 → 488,1 px.
  *
  * ── LA GARANTIE ────────────────────────────────────────────────────────────
  *
@@ -328,26 +425,22 @@ function discRadiusOf(size: { width: number; height: number }): number {
  * Le remplissage se termine toujours : `α ≤ π` pour toute carte (l'`asin` est
  * borné par π/2), donc au moins une carte tient sur chaque sous-anneau.
  *
- * ── DÉTERMINISME ───────────────────────────────────────────────────────────
+ * ── ORDRE ──────────────────────────────────────────────────────────────────
  *
- * BFS depuis la racine sur les références INTRA-agrégat, remontées de la cible
- * vers la source — le même sens que `buildAggregates`, ce qui fait coïncider la
- * distance d'anneau avec la distance d'appartenance. Les listes d'adjacence
- * sont triées, donc la file est déterministe et les égalités de distance sont
- * départagées par id. À l'intérieur d'un anneau, les cartes sont ordonnées par
- * ANGLE DU PARENT puis par id : un enfant se pose près de son parent, ce qui
- * est ce qui raccourcit les chaînes de références.
+ * À l'intérieur d'un anneau, les cartes sont ordonnées par ANGLE DU PARENT puis
+ * par id : un enfant se pose près de son parent, ce qui est ce qui raccourcit
+ * les chaînes de références. Les ORPHELINS (voir `referenceDepths`) forment un
+ * anneau supplémentaire au-delà du dernier ; ils n'ont pas de parent, retombent
+ * sur l'angle 0, et leur id tranche.
  */
-function packCluster(
+function packRadial(
   memberIds: NodeId[],
   sizes: Map<NodeId, { width: number; height: number }>,
   gap: number,
-  /** Membres du cluster référençant la clé — l'adjacence inverse, triée. */
-  childrenOf: Map<NodeId, NodeId[]>,
+  depths: ReturnType<typeof referenceDepths>,
 ): Map<NodeId, Rect> {
   const local = new Map<NodeId, Rect>()
   const rootId = memberIds[0]!
-  const memberSet = new Set(memberIds)
 
   const rectFor = (id: NodeId, cx: number, cy: number) => {
     const s = sizes.get(id)!
@@ -357,29 +450,8 @@ function packCluster(
   rectFor(rootId, 0, 0)
   if (memberIds.length === 1) return local
 
-  // BFS local. `parent` sert ensuite à ordonner chaque anneau par angle.
-  const dist = new Map<NodeId, number>([[rootId, 0]])
-  const parent = new Map<NodeId, NodeId>()
-  const queue: NodeId[] = [rootId]
-  let maxDist = 0
-  for (let head = 0; head < queue.length; head++) {
-    const current = queue[head]!
-    const next = dist.get(current)! + 1
-    for (const child of childrenOf.get(current) ?? []) {
-      if (!memberSet.has(child) || dist.has(child)) continue
-      dist.set(child, next)
-      parent.set(child, current)
-      queue.push(child)
-      if (next > maxDist) maxDist = next
-    }
-  }
-
-  // Membres non atteints par ce BFS. Ils EXISTENT : l'appartenance se calcule
-  // sur le graphe entier, la mise en page sur les entités VISIBLES, donc un
-  // maillon intermédiaire masqué détache tout ce qui pendait dessous. Ils
-  // partent sur un anneau supplémentaire plutôt que d'être posés sur la racine.
-  const orphans: NodeId[] = []
-  for (const id of memberIds) if (!dist.has(id)) orphans.push(id)
+  const { dist, parent, orphans } = depths
+  let maxDist = depths.maxDist
   if (orphans.length > 0) {
     maxDist++
     for (const id of orphans) dist.set(id, maxDist)
@@ -395,8 +467,6 @@ function packCluster(
   let prevMaxRho = discRadiusOf(sizes.get(rootId)!)
 
   for (let k = 1; k <= maxDist; k++) {
-    // Ordre : angle du parent, puis id. Un orphelin n'a pas de parent — il
-    // retombe sur l'angle 0, et son id tranche.
     const pending = rings[k]!.slice().sort((a, b) => {
       const pa = angleOf.get(parent.get(a) ?? rootId) ?? 0
       const pb = angleOf.get(parent.get(b) ?? rootId) ?? 0
@@ -457,6 +527,79 @@ function packCluster(
   }
 
   return local
+}
+
+/**
+ * Aiguillage entre les deux modes de placement, par cluster.
+ *
+ * ── LE CRITÈRE : LA PROFONDEUR, PAS LE CARDINAL ────────────────────────────
+ *
+ * Radial si et seulement si **au moins un membre est à distance de référence
+ * ≥ 2 de la racine**. Étagères sinon.
+ *
+ * Ce que fait le radial, c'est ENCODER LA PROFONDEUR DE RÉFÉRENCE EN DISTANCE
+ * AU CENTRE. À profondeur ≤ 1, il n'y a rien à encoder : tous les non-racines
+ * sont à la même distance, ils se retrouvent sur un unique anneau, et la
+ * structure lue par l'œil ne dit rien de plus que « ces cartes appartiennent à
+ * cette racine » — ce que l'enveloppe disait déjà. Le radial n'y apporte que
+ * son coût.
+ *
+ * Et ce coût est mesuré. Le radial est moins dense partout, parce qu'un anneau
+ * paie un diamètre de carte de rayon même s'il ne porte qu'une carte. Rayon du
+ * disque, étagères → radial : 2 cartes 162 → 209 px (×1,29), 3 cartes 225 → 335
+ * (×1,49), 5 cartes sur un anneau 258 → 371 (×1,44). Répercuté sur les jeux
+ * réels, en radial partout : remplissage 12,3 → 7,8 % sur `bigShop(3000)` et
+ * 15,1 → 10,9 % sur celui de la démo — pour zéro gain, leurs agrégats étant
+ * tous plats.
+ *
+ * Le critère ne mentionne AUCUNE taille, et c'est délibéré. Un seuil par
+ * cardinal aurait été ajusté aux fixtures : celui qui annulait le coût sur les
+ * jeux du dépôt valait exactement leur taille maximale d'agrégat (5), ce qui
+ * n'est pas une raison mais une coïncidence qu'on aurait gravée. Le critère de
+ * profondeur, lui, est ajusté à la RAISON D'ÊTRE du radial, et se prononce sans
+ * rien savoir du nombre de cartes.
+ *
+ * ── LES ORPHELINS SONT EXCLUS DU CRITÈRE ───────────────────────────────────
+ *
+ * Un membre non atteint par le BFS local (maillon intermédiaire masqué, voir
+ * `referenceDepths`) reçoit en radial un anneau SYNTHÉTIQUE au-delà du dernier.
+ * Cet anneau-là ne doit pas déclencher le radial : il ne traduit aucune
+ * profondeur de référence, seulement une absence d'information. Sans cette
+ * exclusion, un agrégat parfaitement plat dont une carte serait détachée
+ * basculerait en radial et en paierait le prix pour rien. Le critère lit donc
+ * `depths.dist`, qui ne contient que les membres réellement atteints.
+ *
+ * ── CE QUE LES DEUX MODES PARTAGENT ────────────────────────────────────────
+ *
+ * La même signature, et la même garantie : non-recouvrement avec marge `gap`
+ * par construction. Chacun l'obtient à sa manière — les étagères par des lignes
+ * et des colonnes séparées de `gap`, le radial par la géométrie des cordes
+ * démontrée au-dessus de `packRadial` —, et le reste du moteur n'a pas à savoir
+ * lequel a répondu.
+ */
+function packCluster(
+  memberIds: NodeId[],
+  sizes: Map<NodeId, { width: number; height: number }>,
+  gap: number,
+  /** Membres du cluster référençant la clé — l'adjacence inverse, triée. */
+  childrenOf: Map<NodeId, NodeId[]>,
+): Map<NodeId, Rect> {
+  if (memberIds.length === 1) {
+    // Une seule carte : les deux modes donnent le même résultat au recentrage
+    // près, et le BFS n'aurait rien à parcourir.
+    const s = sizes.get(memberIds[0]!)!
+    return new Map([[memberIds[0]!, { x: 0, y: 0, width: s.width, height: s.height }]])
+  }
+
+  const depths = referenceDepths(memberIds, childrenOf)
+  let deep = false
+  for (const d of depths.dist.values()) {
+    if (d >= 2) {
+      deep = true
+      break
+    }
+  }
+  return deep ? packRadial(memberIds, sizes, gap, depths) : packShelf(memberIds, sizes, gap)
 }
 
 function run(

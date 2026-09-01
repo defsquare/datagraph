@@ -251,33 +251,22 @@ describe("garanties de séparation, à l'échelle", () => {
       expect(intraTooClose).toBe(0)
       expect(tooClose).toBe(0)
 
-      // INTENTION PRÉSERVÉE, FORME CHANGÉE avec le passage au placement radial.
+      // Le minimum est atteint, et à `cardGap` EXACTEMENT : le packing pose la
+      // marge, il ne la dépasse pas « par sécurité ».
       //
-      // Cette assertion lisait `toBeCloseTo(CARD_GAP, 6)` : sous le packing en
-      // étagères, deux cartes voisines étaient séparées d'EXACTEMENT `cardGap`,
-      // parce que la marge y était posée sur un axe, entre deux rectangles
-      // alignés. Ce qu'elle défendait, c'est que le packing pose la marge sans
-      // la gaspiller.
+      // Cette assertion a fait un aller-retour qui vaut d'être consigné. Le
+      // placement radial l'avait cassée — sa garantie s'écrit sur les disques
+      // englobants, une condition suffisante et non nécessaire, qui ajoute un
+      // surcoût constant de 28,62 px —, et elle avait été remplacée par une
+      // borne plus le chiffre mesuré (44,62 px). L'aiguillage par profondeur la
+      // rétablit dans sa forme d'origine : tous les agrégats de `bigShop` sont
+      // PLATS (profondeur 1), donc packés en étagères, où la marge est posée
+      // sur un axe entre deux rectangles alignés et vaut exactement `cardGap`.
       //
-      // Le radial ne peut pas atteindre l'exactitude, et pas par négligence :
-      // sa garantie s'écrit sur les DISQUES ENGLOBANTS des cartes (voir la
-      // démonstration au-dessus de `packCluster`), qui est une condition
-      // suffisante, pas nécessaire. L'écart réel dépasse donc `cardGap` d'un
-      // surcoût géométrique — pour une paire posée à l'angle 0, exactement
-      // `ρ₁ + ρ₂ − (w₁ + w₂)/2`, la différence entre les demi-diagonales et les
-      // demi-largeurs.
-      //
-      // Ce surcoût est CONSTANT : il ne dépend pas de `cardGap`. C'est la forme
-      // sous laquelle l'intention survit, et c'est ce que le test « inclut le
-      // cardGap demandé » vérifie maintenant directement, en comparant deux
-      // valeurs de `cardGap` sur le même jeu. Ici on se contente de la borne et
-      // du chiffre mesuré.
-      expect(worst).toBeGreaterThanOrEqual(CARD_GAP - 1e-9)
-      // 44,62 px sur ce fixture, soit `cardGap` + 28,62 de surcoût de disque.
-      // C'est le chiffre de l'exécution, pas une cible : il bougerait si la
-      // taille des cartes de `bigShop` changeait. Il est pinné parce qu'une
-      // dérive silencieuse de ce surcoût est exactement ce qu'on veut voir.
-      expect(worst).toBeCloseTo(44.62, 1)
+      // La version « borne + surcoût » n'est pas perdue : elle a déménagé sur
+      // le chemin qui l'exerce, dans « inclut le cardGap demandé », qui tourne
+      // désormais sur un agrégat profond.
+      expect(worst).toBeCloseTo(CARD_GAP, 6)
     },
     30_000,
   )
@@ -430,49 +419,71 @@ describe("options", () => {
     expect(worst).toBeGreaterThanOrEqual(400 - 1e-6)
   })
 
-  it("inclut le cardGap demandé dans le packing, ADDITIVEMENT", async () => {
-    // INTENTION PRÉSERVÉE, FORME CHANGÉE (voir la note longue dans « laisse au
-    // moins cardGap »). Ce test assertait `toBeCloseTo(64, 6)` : sous le
-    // packing en étagères, l'écart valait exactement `cardGap`. Le placement
-    // radial y ajoute un surcoût géométrique constant, celui du critère par
-    // disques englobants, donc l'égalité exacte n'est plus atteignable.
-    //
-    // Mais la propriété qui compte l'est, et sous une forme plus forte que ce
-    // que testait l'ancienne version : `cardGap` entre ADDITIVEMENT dans le
-    // placement. Doubler la marge demandée déplace l'écart obtenu d'exactement
-    // la même quantité — le surcoût ne se met pas à l'échelle avec elle. Un
-    // moteur qui n'utiliserait `cardGap` qu'à moitié, ou qui le multiplierait
-    // par un facteur, échouerait ici alors qu'il passerait une simple borne
-    // inférieure.
-    //
-    // Sur `bigShop`, Customer#c0 tient exactement deux cartes — la racine et sa
-    // commande —, donc l'anneau 1 ne porte qu'une carte, posée à l'angle 0 : sa
-    // distance au centre vaut `ρ₁ + ρ₂ + cardGap` par construction, et l'écart
-    // sur l'axe x s'en déduit à `(w₁ + w₂)/2` près. La relation est exacte, pas
-    // approchée, ce qui autorise la tolérance serrée ci-dessous.
+  it("inclut le cardGap demandé dans le packing en étagères, EXACTEMENT", async () => {
+    // Chemin ÉTAGÈRES : `bigShop` n'a que des agrégats plats. Customer#c0 y
+    // tient deux cartes, la racine et sa commande, posées l'une sous l'autre et
+    // séparées d'exactement `cardGap`.
     const { graph, aggregates, visible } = setupOn(bigShop(600))
+    const result = await createTwoLevelLayoutEngine({ cardGap: 64 }).layout(
+      graph,
+      aggregates,
+      visible,
+    )
     const members = [...aggregates.aggregates.get("Customer#c0")!.memberIds]
     expect(members).toHaveLength(2)
+    const { px, py } = penetrations(
+      result.positions.get(members[0]!)!,
+      result.positions.get(members[1]!)!,
+    )
+    expect(Math.max(-px, -py)).toBeCloseTo(64, 6)
+  })
 
-    const separationWith = async (cardGap: number) => {
+  it("inclut le cardGap demandé dans le placement radial, ADDITIVEMENT", async () => {
+    // Chemin RADIAL, celui qui ne peut PAS atteindre l'égalité exacte : sa
+    // garantie s'écrit sur les disques englobants des cartes, une condition
+    // suffisante et non nécessaire, qui ajoute un surcoût géométrique.
+    //
+    // La propriété qui compte reste testable, et sous une forme plus forte que
+    // l'égalité : `cardGap` entre ADDITIVEMENT dans le placement. Augmenter la
+    // marge demandée de 48 px déplace l'écart obtenu d'exactement 48 px — le
+    // surcoût ne se met pas à l'échelle avec elle. Un moteur qui n'utiliserait
+    // `cardGap` qu'à moitié, ou qui le multiplierait par un facteur, échouerait
+    // ici alors qu'il passerait une simple borne inférieure.
+    //
+    // Le fixture doit être PROFOND pour emprunter ce chemin — c'est tout
+    // l'objet de l'aiguillage. `deepAggregate(1, 1, 0)` donne la plus petite
+    // forme profonde possible : racine ← commande ← ligne, une carte par
+    // anneau, donc une géométrie où l'écart minimal est celui de deux anneaux
+    // consécutifs, exactement `ρ₁ + ρ₂ + cardGap` par construction.
+    const { graph, aggregates, visible } = setupOn(deepAggregate(1, 1, 0), deepAggregateConfig)
+    const members = [...aggregates.aggregates.get("Customer#c0")!.memberIds]
+    expect(members).toHaveLength(3)
+
+    const minSeparationWith = async (cardGap: number) => {
       const result = await createTwoLevelLayoutEngine({ cardGap }).layout(graph, aggregates, visible)
-      const { px, py } = penetrations(
-        result.positions.get(members[0]!)!,
-        result.positions.get(members[1]!)!,
-      )
-      return Math.max(-px, -py)
+      const rects = members.map((id) => result.positions.get(id)!)
+      let worst = Infinity
+      for (let i = 0; i < rects.length; i++) {
+        for (let j = i + 1; j < rects.length; j++) {
+          const { px, py } = penetrations(rects[i]!, rects[j]!)
+          worst = Math.min(worst, Math.max(-px, -py))
+        }
+      }
+      return worst
     }
 
-    const small = await separationWith(16)
-    const large = await separationWith(64)
+    const small = await minSeparationWith(16)
+    const large = await minSeparationWith(64)
 
-    // Chaque écart dépasse la marge demandée — la garantie —, et l'excédent est
-    // le MÊME des deux côtés : c'est lui, le surcoût de disque, mesuré ici à
-    // 28,6 px sur ces deux cartes.
+    // Chaque écart dépasse la marge demandée — la garantie — et l'excédent est
+    // le MÊME des deux côtés : c'est le surcoût du critère par disques.
     expect(small).toBeGreaterThanOrEqual(16 - 1e-9)
     expect(large).toBeGreaterThanOrEqual(64 - 1e-9)
     expect(large - small).toBeCloseTo(64 - 16, 6)
     expect(small - 16).toBeCloseTo(large - 64, 6)
+    // Et le surcoût est bien réel, sinon ce test ne dirait rien de plus que le
+    // précédent : il vaut 45,5 px sur ces cartes-là.
+    expect(small - 16).toBeGreaterThan(1)
   })
 })
 
@@ -628,6 +639,91 @@ describe("placement radial intra-agrégat", () => {
     )
     expect([...a.positions.entries()]).toEqual([...b.positions.entries()])
     expect(a.clusters).toEqual(b.clusters)
+  })
+
+  it("choisit le mode par la PROFONDEUR, pas par le nombre de cartes", async () => {
+    // Le critère : radial si et seulement si un membre est à distance de
+    // référence ≥ 2 de la racine. Les deux cas ci-dessous ont le MÊME nombre de
+    // cartes (5) et des profondeurs différentes — c'est ce qui fait qu'un test
+    // sur le cardinal ne pourrait pas les distinguer, et que celui-ci le peut.
+    //
+    // Signature observable de chaque mode : en radial la racine est au centre
+    // de son disque ; en étagères elle est en tête de la première ligne, donc
+    // dans un coin, loin du centre. On mesure le rang de la racine par
+    // proximité au centre plutôt que d'inspecter l'interne.
+    const rootRankIn = async (data: unknown) => {
+      const { graph, aggregates, visible } = setupOn(data, deepAggregateConfig)
+      const result = await createTwoLevelLayoutEngine().layout(graph, aggregates, visible)
+      const aggregate = aggregates.aggregates.get("Customer#c0")!
+      const shape = result.clusters.find((c) => c.aggregateId === "Customer#c0")!
+      const ranked = [...aggregate.memberIds]
+        .map((id) => {
+          const r = result.positions.get(id)!
+          return { id, d: Math.hypot(r.x + r.width / 2 - shape.cx, r.y + r.height / 2 - shape.cy) }
+        })
+        .sort((a, b) => a.d - b.d)
+      return { rank: ranked.findIndex((x) => x.id === aggregate.rootId) + 1, r: shape.r, n: ranked.length }
+    }
+
+    // PLAT : 4 commandes sous la racine, profondeur 1. Rien à encoder en
+    // distance au centre, donc étagères — et la racine finit dans un coin.
+    const flat = await rootRankIn(deepAggregate(4, 0, 0))
+    expect(flat.n).toBe(5)
+    expect(flat.rank).toBeGreaterThan(1)
+
+    // PROFOND : 2 commandes, 1 ligne chacune, profondeur 2. Même cardinal,
+    // mode différent — la racine passe au centre.
+    const deep = await rootRankIn(deepAggregate(2, 1, 0))
+    expect(deep.n).toBe(5)
+    expect(deep.rank).toBe(1)
+
+    // Et le prix du radial est visible sur ce couple : à cardinal égal, le
+    // disque profond est nettement plus gros. Mesuré : 258 px contre 602.
+    expect(deep.r).toBeGreaterThan(flat.r * 1.5)
+  })
+
+  it("un orphelin ne fait pas basculer un agrégat plat en radial", async () => {
+    // Un membre non atteint par le BFS local — ici parce que le maillon
+    // intermédiaire est MASQUÉ — reçoit en radial un anneau synthétique
+    // au-delà du dernier. Cet anneau ne traduit aucune profondeur de
+    // référence, seulement une absence d'information, donc il ne doit PAS
+    // déclencher le radial. Sans l'exclusion des orphelins du critère, cet
+    // agrégat-ci basculerait et paierait le prix du radial pour rien.
+    //
+    // Montage : `deepAggregate(2, 1, 0)` est profond (racine ← commande ←
+    // ligne). En retirant les deux COMMANDES de `visible`, les deux lignes
+    // deviennent orphelines et ce qui reste — racine + 2 lignes — est plat.
+    const data = deepAggregate(2, 1, 0)
+    const { graph, aggregates } = setupOn(data, deepAggregateConfig)
+    const visible = new Set(
+      [...graph.nodes.values()]
+        .filter((n) => n.kind === "entity" && !n.id.startsWith("/orders/"))
+        .map((n) => n.id),
+    )
+    expect(visible.size).toBe(3)
+
+    const result = await createTwoLevelLayoutEngine().layout(graph, aggregates, visible)
+    expect(result.positions.size).toBe(3)
+
+    const shape = result.clusters.find((c) => c.aggregateId === "Customer#c0")!
+    const rootRect = result.positions.get("/customers/0")!
+    const rootDistance = Math.hypot(
+      rootRect.x + rootRect.width / 2 - shape.cx,
+      rootRect.y + rootRect.height / 2 - shape.cy,
+    )
+
+    // Signature des étagères : la racine n'est pas au centre. Si le critère
+    // comptait les orphelins, elle y serait, et ce disque serait bien plus gros.
+    expect(rootDistance).toBeGreaterThan(20)
+
+    // Les garanties tiennent quand même sur ce chemin dégénéré.
+    const rects = [...result.positions.values()]
+    for (let i = 0; i < rects.length; i++) {
+      for (let j = i + 1; j < rects.length; j++) {
+        const { px, py } = penetrations(rects[i]!, rects[j]!)
+        expect(px + CARD_GAP > 1e-9 && py + CARD_GAP > 1e-9).toBe(false)
+      }
+    }
   })
 
   it("raccourcit les références intra-agrégat", async () => {
