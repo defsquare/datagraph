@@ -10,9 +10,19 @@ import { separateClusters } from "../src/cluster-separate.js"
  * le renderer peint. */
 const PADDING = 18
 
-/** Un `AggregateIndex` monté à la main : ces tests portent sur la géométrie,
+/**
+ * Un `AggregateIndex` monté à la main : ces tests portent sur la géométrie,
  * pas sur la règle d'appartenance (couverte par `aggregate.test.ts`). Le
- * premier membre listé sert de racine. */
+ * premier membre listé sert de racine.
+ *
+ * Monter l'index à la main est ce qui permet d'exprimer un membre PARTAGÉ
+ * entre deux agrégats — ce que `buildAggregates` ne produit plus depuis que
+ * l'appartenance est une partition stricte. Les tests de partage ci-dessous
+ * ne décrivent donc plus une sortie atteignable du cœur : ils pinnent la
+ * GARANTIE de rigidité que porte l'union-find de la passe, aujourd'hui
+ * inactive, et qui redeviendrait charnière si la règle d'appartenance était un
+ * jour assouplie. Voir la documentation de `separateClusters`.
+ */
 function indexOf(spec: Record<string, NodeId[]>): AggregateIndex {
   const aggregates = new Map<string, Aggregate>()
   const byNode = new Map<NodeId, string[]>()
@@ -203,9 +213,11 @@ describe("separateClusters", () => {
   })
 
   it("leaves two aggregates that share a member exactly where they are", () => {
-    // Une entité partagée est membre à part entière de ses deux agrégats : les
-    // écarter la déchirerait. La passe les fusionne donc en un super-cluster —
-    // et ici ce bloc est tout le graphe, donc il n'y a plus rien à écarter.
+    // Garantie inactive sous la règle actuelle (voir `indexOf`), pinnée ici.
+    // Une entité partagée serait membre à part entière de ses deux agrégats :
+    // les écarter la déchirerait. La passe les fusionne donc en un
+    // super-cluster — et ici ce bloc est tout le graphe, donc il n'y a plus
+    // rien à écarter.
     const positions = rects({ "a/0": [0, 0], "s/0": [120, 0], "b/0": [240, 0] })
     const aggregates = indexOf({ "A#a": ["a/0", "s/0"], "B#b": ["b/0", "s/0"] })
     const before = new Map([...positions].map(([id, r]) => [id, { ...r }]))

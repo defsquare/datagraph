@@ -76,8 +76,13 @@ const STATUSES = ["en attente", "payée", "expédiée", "livrée", "retournée"]
 const PAYMENTS = ["carte bancaire", "PayPal", "virement", "chèque"];
 
 /** Huit catégories, dont le préfixe sert aussi de préfixe de référence
- * produit. `Category` est une entité mais PAS une racine d'agrégat : elle est
- * tirée dans l'agrégat des produits qui la référencent. */
+ * produit. `Category` est une entité mais PAS une racine d'agrégat, et elle
+ * n'appartient à AUCUN agrégat : l'appartenance remonte les références vers la
+ * racine, or un produit pointe VERS sa catégorie, jamais l'inverse. Les huit
+ * catégories sont donc dessinées seules, sans enveloppe — c'est le cas
+ * « entité hors de tout agrégat » que la démo exerce en vrai. (Le commentaire
+ * précédent disait qu'elles étaient tirées dans l'agrégat des produits qui les
+ * référencent : c'était faux, et dans le mauvais sens.) */
 const CATEGORIES = [
   { name: "Informatique", prefix: "INF" },
   { name: "Mobilier", prefix: "MOB" },

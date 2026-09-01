@@ -144,16 +144,22 @@ nothing inside an aggregate moves relative to anything else in it, at a gap
 of `clusterGap` (**160 px** by default). It pushes two clusters apart along the
 line of their centres until that distance reaches `r₁ + r₂ + clusterGap`, using
 the same `hullPadding` this package paints with — so the shape that gets spaced
-is exactly the shape you see. It only has something to do when
-aggregates don't share entities: two aggregates sharing a member are merged
-into one rigid block instead of being pulled apart, so once every aggregate
-ends up transitively linked by shared members — as happens with
-[`apps/demo`](../../apps/demo)'s two-root config, where 108 aggregates collapse
-into a single block of 342 of 350 cards — the pass has almost nothing left to
-separate: it still pushes apart the 8 `Category` entities that no aggregate
-claims, and nothing else. See the
+is exactly the shape you see. Every aggregate gets its own block: membership is
+a partition, so no two aggregates share a card and none of them are welded
+together. On [`apps/demo`](../../apps/demo)'s two-root config that is 116 blocks
+over 350 cards — 78 `Customer` aggregates of 3 to 5 cards, 30 single-card
+`Product` aggregates, and the 8 `Category` entities no aggregate claims — with
+zero overlapping envelope pairs after the pass.
+
+That used to read very differently. When an entity could belong to several
+aggregates at once, two aggregates sharing a member were merged into one rigid
+block rather than pulled apart (they can't be separated without tearing the
+shared card), and on this same config the merge percolated: 108 aggregates
+collapsed into a single block of 342 of 350 cards, and the pass had nothing left
+to space out. The membership rule now arbitrates ties instead of sharing, which
+is what brought the spacing back. See the
 [core README's Aggregates section](https://github.com/defsquare/data-graph/tree/main/packages/core#aggregates)
-for the rule and the measured numbers.
+for the rule and the measured before/after.
 
 How wide the corridors should be is a matter of eye, screen size and data
 density, so it is settable per instance rather than baked into core:

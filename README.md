@@ -141,9 +141,10 @@ doesn't exist).
 - `entities.<Type>.match` — selector for where instances of `<Type>` live in the document.
 - `entities.<Type>.id` — the field on each matched object that holds its unique id.
 - `references.<Type>.<field>` — declares `<Type>.<field>` as a foreign key pointing at another configured entity type.
-- `aggregates` — entity type names that are DDD aggregate roots, in declaration order. See
-  [the core package README](./packages/core/README.md#aggregates) for the membership rule and the
-  [graph view](./packages/renderer/README.md#graph-view) it powers.
+- `aggregates` — entity type names that are DDD aggregate roots, in declaration order. That order
+  is load-bearing: it decides which root claims an entity that reaches two of them at the same
+  distance. See [the core package README](./packages/core/README.md#aggregates) for the membership
+  rule and the [graph view](./packages/renderer/README.md#graph-view) it powers.
 - `maxNodes` — optional safety cap (default `50000`); `buildGraph` throws `GraphTooLargeError` past it.
 - `rootLabel` — label shown on the root node (default `"$"`, the root symbol of
   the same selector syntax `match` uses). Set it to something your users
@@ -240,7 +241,7 @@ package's README for the latest numbers and any documented deviation.
 | --- | --- | --- |
 | Card overlap after layout | Zero overlapping pairs, always. The stronger `separationMargin` gap between every pair is measured and asserted at 334 cards; past ~450 the iteration cap can leave a few pairs closer than the margin (still never overlapping) — see the note below | `packages/core/test/layout-graph.test.ts` |
 | Determinism | Pixel-identical positions across two runs on the same input | `packages/core/test/layout-graph.test.ts` |
-| Aggregate envelope overlap after layout | Zero overlapping pairs at 167 aggregates. Aggregates that genuinely share a member entity are merged into one rigid block instead of being separated, so their envelopes still cross — that is the intended behavior, not an exception to the budget | `packages/core/test/layout-graph.test.ts` ("leaves no two aggregate envelopes overlapping" / "merges two aggregates that share a member entity into one rigid block") |
+| Aggregate envelope overlap after layout | Zero overlapping pairs at 167 aggregates, and zero on the demo's 108. Membership is a partition, so no two aggregates share a card and none of them are exempt from the budget | `packages/core/test/layout-graph.test.ts` ("leaves no two aggregate envelopes overlapping" / "separates two aggregates that a distance tie used to make overlap") |
 | Intra-aggregate geometry under cluster separation | Preserved to the rounding of one uniform per-cluster translation. Measured worst case on the committed fixtures: **2.84e-14 px** (0 px where the push happens to be axis-aligned) | `packages/core/test/cluster-separate.test.ts` |
 | `@defsquare/data-graph` bundle purity | `cytoscape` (~178 kB gzip) never enters a consumer's bundle unless it calls `setView("graph")` — the structure view alone doesn't pull it in | `packages/core/test/bundle-purity.test.ts` (core half) + `packages/renderer/test/bundle-purity.test.ts` (renderer half) |
 
@@ -330,32 +331,40 @@ own — the average of its aggregates', in an earlier version — detaches it fr
 its co-members as soon as a *third* cluster pushes one of them harder than the
 other; that version measurably broke rigidity (intra-aggregate distances 120 →
 62.5 px) and produced card overlaps. Merging removes the case rather than
-patching it. The merge is transitive, and on hub-shaped data it can swallow the
-graph: with a shared catalogue of 3 products across 167 customers, 170
-aggregates collapse into 3 super-clusters (the largest 33% of all cards), and
-with a single shared product into one, where the pass has nothing left to
-separate. That is semantically right — those aggregates cannot be pulled apart
-without tearing a card — but it does mean cluster spacing is a no-op on such
-data. Single-root configurations (this repo's core fixtures) share nothing and
-are unaffected.
+patching it.
 
-**The demo now shows exactly that percolation**, deliberately. Its config
-declares two roots (`aggregates: ["Customer", "Product"]`) over a dataset where
-every `Order` references a `Customer` *and* a `Product`, so every order is one
-hop from both roots and is a full member of both aggregates. Measured on
-`bigShop(4000)` — 350 entities, 108 aggregates: the union-find collapses those
-108 aggregates into **9 super-clusters, the largest holding 342 of the 350
-cards (97.7%)**. The eight remaining singletons are the `Category` entities,
-which no aggregate claims (membership follows references *inbound* to the root,
-and products point *at* categories). `separateClusters` therefore has nothing
-left to space out inside the blob: it only pushes those eight categories away.
-Dropping back to `aggregates: ["Customer"]` on the same data gives **116
-super-clusters, the largest 5 cards (1.4%)** — 26 of 5, 26 of 4, 26 of 3 and 38
-singletons — and the pass does real work again, at the cost of a **11.7× larger
-canvas by area** (17,367×21,849 px versus 4,816×6,752 px — 3.6× wider and 3.2×
-taller, so `fit()` zooms out ~3.4×, since 116 blocks each claim a 160 px
-corridor). Two roots one hop apart is the configuration that turns
-cluster spacing off; it is not a defect, it is what the merge rule means.
+**That merge no longer fires, and it stays anyway.** Aggregate membership is now
+a strict partition (see [the core README](./packages/core/README.md#aggregates)):
+a distance tie is arbitrated by declaration order rather than shared, so no card
+belongs to two aggregates and the union-find never merges anything. It is kept
+because it is what *guarantees* the pass gives every card exactly one
+translation — that invariant belongs to the pass, not to a membership rule that
+is a product decision and could be relaxed again. It is documented as an
+inactive guarantee, not as dead code and not as a feature, and
+`packages/core/test/cluster-separate.test.ts` still exercises it on
+hand-built aggregate indexes.
+
+**What the partition rule bought, measured.** The demo's config declares two
+roots (`aggregates: ["Customer", "Product"]`) over a dataset where every `Order`
+references a `Customer` *and* a `Product`, so every order sits one hop from both.
+Under the retired overlap rule it was a full member of both, and the merge
+percolated. Measured on `bigShop(4000)` — 350 entities, 108 aggregates — with the
+same layout and the same circular envelopes, the membership rule the only
+difference:
+
+| | overlap on ties (retired) | arbitration (current) |
+| --- | --- | --- |
+| super-clusters | 9 | **116** |
+| largest block | 342 of 350 cards (97.7%) | **5 cards (1.4%)** |
+| overlapping envelope pairs | 3,520 of 5,778 (61%) | **0** |
+| canvas bbox | 7,199 × 4,588 | 18,714 × 19,984 |
+
+The 116 blocks are 78 `Customer` aggregates (26 of 5 cards, 26 of 4, 26 of 3),
+30 single-card `Product` aggregates, and the 8 `Category` entities no aggregate
+claims — membership follows references *inbound* to the root, and products point
+*at* categories. The price is a canvas about **11× larger by area**, which
+`fit()` absorbs by zooming out; the return is that every aggregate is a
+separately readable island instead of one blob of 342 cards.
 
 `clusterGap` defaults to **160 px**, chosen by measurement rather than taste —
 the sweep is recorded in `DEFAULTS` in `packages/core/src/layout-graph.ts`, and

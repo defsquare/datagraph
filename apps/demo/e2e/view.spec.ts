@@ -20,11 +20,12 @@ async function gotoReady(page: Page): Promise<void> {
 // La config de la demo declare `aggregates: ["Customer", "Product"]` (voir
 // `src/sample-data.ts`), mais son jeu par defaut ne compte que 8 entites : les
 // tests ci-dessous injectent par `setData` des jeux calibres pour ce qu'ils
-// prouvent — avec leur PROPRE config a une seule racine, pour isoler ce qu'ils
-// mesurent de la fusion des super-clusters qu'entraine la seconde racine. Le
-// dernier test du fichier, lui, travaille sur le jeu etendu reel de la demo et
-// sa vraie config, sans injection. Deux agregats (un par Customer), cinq
-// entites au total, toutes visibles en vue graphe : elle ne plie rien.
+// prouvent, avec leur PROPRE config a une seule racine — ils portent sur la
+// bascule de vue et les compteurs, pas sur l'arbitrage entre racines, qui est
+// couvert cote coeur (`aggregate.test.ts`). Le dernier test du fichier, lui,
+// travaille sur le jeu etendu reel de la demo et sa vraie config, sans
+// injection. Deux agregats (un par Customer), cinq entites au total, toutes
+// visibles en vue graphe : elle ne plie rien.
 const data = {
   customers: [
     { id: "c1", name: "Dupont", address: { city: "Paris" } },

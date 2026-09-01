@@ -14,9 +14,10 @@ export interface DataGraphConfig {
    * config plutôt que dénué de sens. Une chaîne vide est respectée. */
   rootLabel?: string
   /** Types d'entités qui sont racines d'agrégat, dans l'ordre de déclaration.
-   * Cet ordre ne joue aucun rôle dans l'appartenance — le chevauchement est
-   * autorisé, donc il n'y a rien à arbitrer — seulement dans l'ordre de
-   * peinture des enveloppes, pour que le rendu soit reproductible. */
+   * Cet ordre est PORTEUR : il arbitre les égalités de distance, donc il décide
+   * de l'agrégat d'une entité qui atteint deux racines aussi près l'une que
+   * l'autre (voir `buildAggregates`). Il fixe aussi l'ordre de peinture des
+   * enveloppes, pour que le rendu soit reproductible. */
   aggregates?: string[]
 }
 

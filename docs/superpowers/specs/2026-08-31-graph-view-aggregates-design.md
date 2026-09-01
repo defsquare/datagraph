@@ -29,8 +29,9 @@ Une **seconde vue**, dite « graphe », à côté de la vue structure existante 
 - les sommets sont les **entités** et rien d'autre ;
 - les arêtes sont les **références** et rien d'autre ;
 - les entités sont regroupées en **agrégats** déclarés dans la configuration,
-  dessinés comme des enveloppes ; une entité peut appartenir à plusieurs
-  agrégats à la fois.
+  dessinés comme des enveloppes ; ~~une entité peut appartenir à plusieurs
+  agrégats à la fois~~ RÉVISÉ : l'appartenance est une **partition** — voir la
+  section « Règle d'appartenance ».
 
 La vue structure actuelle — containment, ELK layered, expand/collapse du JSON —
 **n'est pas modifiée**. Les deux vues partagent la sélection.
@@ -42,25 +43,31 @@ La vue structure actuelle — containment, ELK layered, expand/collapse du JSON 
 | Sommets de la vue graphe | Entités seulement ; racine, tableaux et objets imbriqués ne sont pas dessinés |
 | Définition d'un cluster | Agrégat déclaré dans la config, pas de détection automatique |
 | Périmètre | Deux vues coexistantes, bascule explicite |
-| Appartenance multiple | Autorisée : une entité peut être dans plusieurs agrégats |
+| Appartenance multiple | ~~Autorisée : une entité peut être dans plusieurs agrégats~~ RÉVISÉ : **interdite**, l'égalité de distance est arbitrée par l'ordre de déclaration |
 | Forme des enveloppes | ~~Convexe matelassée (pas de bubble-sets concaves)~~ RÉVISÉ : **cercle englobant minimal** matelassé — voir `hull.ts` |
 | État initial des agrégats | Dépliés |
 
 ## Règle d'appartenance
 
-> Une entité E appartient à l'agrégat de racine R si R fait partie des racines
-> que E atteint **à distance minimale**, en suivant les références sortantes.
-> Une racine est à distance 0 d'elle-même.
+> Une entité E appartient à l'agrégat de racine R si R est **la gagnante** parmi
+> les racines que E atteint **à distance minimale**, en suivant les références
+> sortantes. Une racine est à distance 0 d'elle-même. À distance égale, gagne la
+> racine dont le TYPE est déclaré en premier dans `config.aggregates`, puis, à
+> type égal, celle dont l'id d'agrégat est le plus petit.
 
 Formellement : soit `d(E, R)` le nombre minimal d'arêtes `refEdge` sortantes
-menant de E à R. Soit `dmin(E) = min{ d(E, R) | R racine, d(E, R) fini }`.
-Alors E appartient à l'agrégat de R ssi `d(E, R) = dmin(E)`.
+menant de E à R. Soit `dmin(E) = min{ d(E, R) | R racine, d(E, R) fini }` et
+`S(E) = { R | d(E, R) = dmin(E) }`. Alors E appartient à l'agrégat `min S(E)`,
+pour l'ordre total (rang de déclaration du type, id d'agrégat).
+
+**L'appartenance est donc une PARTITION** : toute entité atteignant au moins une
+racine a exactement un agrégat.
 
 Cette règle a trois propriétés voulues :
 
-- **Le chevauchement n'apparaît que là où il est réel.** `Order o3 → Customer c1`
+- **L'égalité de distance est arbitrée, pas partagée.** `Order o3 → Customer c1`
   et `Order o3 → Product p9`, les deux types étant racines : égalité à 1 saut,
-  donc o3 appartient aux deux agrégats.
+  et `Customer` étant déclaré en premier, o3 rejoint son agrégat et lui seul.
 - **Elle est transitive quand il le faut.** `LineItem → Order → Customer` :
   le LineItem rejoint l'agrégat de Customer à 2 sauts.
 - **Elle borne l'explosion des hubs sans réglage.** Si `Customer → Country` et
@@ -69,11 +76,29 @@ Cette règle a trois propriétés voulues :
   Country à 2, il reste donc chez Customer. Aucun `maxDepth` à régler à
   l'aveugle.
 
+> **~~Chevauchement à égalité de distance~~ RETIRÉ.** La règle d'origine faisait
+> appartenir E à TOUTES les racines de `S(E)`, et le chevauchement était présenté
+> comme une capacité voulue : « le chevauchement n'apparaît que là où il est
+> réel ». Il l'était ; il coûtait la passe d'écartement des clusters. Une entité
+> partagée ne peut pas être arrachée à l'un de ses agrégats, donc
+> `separateClusters` fusionne par union-find tout agrégat relié par un membre
+> commun — et sur un graphe biparti la fusion percole. MESURÉ sur le jeu de la
+> démo (`bigShop(4000)`, 350 entités, 108 agrégats, deux racines déclarées, même
+> mise en page et mêmes enveloppes, seule la règle changeant) : avec
+> chevauchement, 9 super-clusters dont un de 342 cartes sur 350 (97,7 %) et
+> 3520 des 5778 paires d'enveloppes en recouvrement ; avec arbitrage, 116
+> super-clusters, le plus gros de 5 cartes (1,4 %), 0 paire en recouvrement. La
+> transitivité et la borne des hubs, elles, survivent intactes : seule la
+> branche « distance égale » change.
+
 Cas limites, tous à couvrir par des tests :
 
 - Une racine appartient toujours à son propre agrégat et à lui seul
   (`d(R, R) = 0`, minimal par construction) : une racine n'est jamais absorbée
   par une autre.
+- Deux racines du même type à distance égale : départagées par l'id d'agrégat,
+  pour que le résultat ne dépende ni de l'ordre du JSON ni de l'ordre de
+  parcours du BFS.
 - Une entité qui n'atteint aucune racine n'appartient à aucun agrégat. Elle est
   dessinée normalement, sans enveloppe.
 - Les `refEdge` cassées (`to === null` ou `dangling`) ne propagent rien.
@@ -102,9 +127,11 @@ export interface ValidatedConfig {
 
 `validateConfig` rejette avec `ConfigError("unknown-entity-type", …)` tout nom
 qui n'est pas un type d'entité déclaré, comme il le fait déjà pour
-`references`. L'ordre de déclaration est conservé : il ne joue aucun rôle dans
-l'appartenance (le chevauchement rend tout arbitrage inutile), seulement dans
-l'ordre de peinture des enveloppes, pour que le rendu soit reproductible.
+`references`. L'ordre de déclaration est conservé, et ~~il ne joue aucun rôle
+dans l'appartenance (le chevauchement rend tout arbitrage inutile)~~ RÉVISÉ :
+il est **porteur** — c'est lui qui arbitre les égalités de distance, donc qui
+décide de l'agrégat d'une entité. Il fixe aussi l'ordre de peinture des
+enveloppes, pour que le rendu soit reproductible.
 
 ### `aggregate.ts` — nouveau
 
@@ -120,8 +147,8 @@ export interface Aggregate {
 
 export interface AggregateIndex {
   aggregates: Map<string, Aggregate>
-  /** Plusieurs entrées pour une entité = chevauchement. Ordre stable :
-   *  celui de `ValidatedConfig.aggregates`, puis l'id de la racine. */
+  /** L'appartenance est une partition : exactement un id par entité. Le type
+   *  reste `string[]` — voir la garantie inactive de `cluster-separate.ts`. */
   byNode: Map<NodeId, string[]>
 }
 
@@ -131,9 +158,16 @@ export function buildAggregates(graph: Graph, config: ValidatedConfig): Aggregat
 Implémentation : un BFS **multi-source inverse** sur `refEdges`. On construit
 l'adjacence inverse (cible → sources), on initialise la file avec toutes les
 racines à distance 0, et on propage. Chaque nœud retient sa distance minimale
-et l'ensemble des racines atteintes à cette distance ; une racine découverte à
-une distance strictement supérieure à celle déjà connue est ignorée, une
-racine à distance égale s'ajoute (c'est ce qui produit le chevauchement).
+et UNE racine ; une racine découverte à une distance strictement supérieure à
+celle déjà connue est ignorée, une racine à distance égale ne remplace la
+racine tenue que si elle l'emporte pour l'ordre total (rang de déclaration, puis
+id).
+
+Le BFS ne propage que le gagnant de chaque prédécesseur, pas l'ensemble des
+racines qu'il atteint. C'est exact : `S(E)` est l'union des `S(P)` sur les
+successeurs P de E à distance minimale, et le minimum d'une union est le minimum
+des minima. C'est aussi ce qui rend le résultat indépendant de l'ordre de
+découverte, donc déterministe.
 
 Un seul parcours pour toutes les racines, donc linéaire en (entités +
 références) — pas un BFS par racine.
@@ -254,11 +288,12 @@ Le moteur, sur cytoscape + fcose (le couple validé par la sonde) :
    > fan-outs larges. Le mécanisme a été retiré. Ne pas le réintroduire sans
    > mesure contraire.
 
-   Le chevauchement ne dépend pas de ce mécanisme, et c'est ce qui a permis de
-   le retirer : une entité appartenant à deux agrégats est tirée vers ses deux
-   racines par ses propres références, et les enveloppes étant calculées par
-   agrégat à partir des positions de ses membres, elle tombe dans les deux
-   polygones.
+   Le regroupement vient donc uniquement des arêtes de référence déjà posées ;
+   seule l'enveloppe, tracée après coup à partir des positions obtenues, reste
+   propre à l'agrégat. (L'argument d'origine invoquait ici le chevauchement —
+   une entité partagée tombant naturellement dans les deux polygones — mais il
+   ne portait pas le retrait du centre virtuel, que la mesure ci-dessus suffit
+   à justifier ; il est caduc depuis que l'appartenance est une partition.)
 4. **Amorçage déterministe** : la position initiale de chaque sommet est
    dérivée d'un hachage de son `NodeId`, projetée sur un disque, et fcose
    tourne avec `randomize: false`. Le placement spectral aléatoire de fcose est
@@ -338,7 +373,20 @@ entité fusionnent** en un super-cluster, par union-find, avant la relaxation :
 une entité partagée est membre à part entière de chacun de ses agrégats, donc
 lui donner un déplacement propre la détacherait de ses co-membres. Des agrégats
 tricotés par une entité commune ne se séparent pas sans la déchirer ; ils se
-déplacent ensemble, et leurs enveloppes continuent de se croiser.
+déplacent ensemble.
+
+> **Garantie INACTIVE, et gardée telle quelle.** Depuis que l'appartenance est
+> une partition, aucune entité n'est partagée : l'union-find ne fusionne jamais
+> rien et un super-cluster est toujours exactement un agrégat. On le garde
+> quand même, et ce n'est ni du code mort ni une fonctionnalité — c'est ce qui
+> GARANTIT qu'une carte ne reçoit qu'une seule translation, donc que l'étape de
+> report reste rigide. Cette garantie appartient à la passe ; la règle
+> d'appartenance, elle, est un choix de produit qui peut être assoupli. Le
+> supprimer armerait un piège : la passe reprendrait alors silencieusement le
+> défaut décrit juste en dessous, sans qu'aucun test de la règle actuelle ne le
+> voie. `cluster-separate.test.ts` continue de le couvrir sur des index
+> d'agrégats montés à la main, seule voie qui sache encore exprimer un membre
+> partagé.
 
 > **Mesuré, pas supposé.** Une première version donnait à l'entité partagée la
 > MOYENNE des translations de ses agrégats, et se contentait d'exempter la
@@ -356,32 +404,48 @@ déplacent ensemble, et leurs enveloppes continuent de se croiser.
 > la convergence — c'est justement en croyant les deux couplés qu'on a manqué le
 > défaut.
 
-**Coût de la fusion, mesuré.** Elle est transitive : A partage avec B, B avec C,
-donc les trois n'en font qu'un. ~~Sur une racine unique (le cas du dépôt et de
-la démo) il n'y a aucun partage, donc aucune fusion.~~ RÉVISÉ : vrai pour les
-fixtures du dépôt (racine unique), plus pour la démo depuis qu'elle déclare
-deux racines — voir la mesure ci-dessous. Sur deux racines dont chaque
-commande référence son client ET son produit : 334 agrégats → 167 super-clusters
-de 3 cartes, sans effet visible. Mais avec un CATALOGUE partagé, la fusion
-dégénère : 20 produits → 20 super-clusters (le plus gros 19 cartes), 3 produits
-→ 3 super-clusters (le plus gros 113 cartes, 33 % du graphe), 1 produit → un
-seul super-cluster couvrant 100 % du graphe, où la passe ne peut plus rien
-écarter. C'est sémantiquement correct — ces agrégats sont réellement inséparables
-— mais l'effet pratique est que l'écartement ne s'applique pas à ces données-là.
-À savoir avant de compter dessus sur un modèle à hub.
+**~~Coût de la fusion, mesuré~~ — RETIRÉ avec le chevauchement.** Toute cette
+section décrivait la dégénérescence de la fusion sur un modèle à hub, et c'est
+elle qui a motivé le passage à une appartenance en partition. Elle est conservée
+comme trace de la mesure qui a justifié le changement, et ses chiffres ne
+décrivent plus le comportement actuel.
 
-> **La démo, mesurée après coup.** Son config déclare désormais deux racines
+> La fusion est transitive : A partage avec B, B avec C, donc les trois n'en font
+> qu'un. Sur deux racines dont chaque commande référence son client ET son
+> produit : 334 agrégats → 167 super-clusters de 3 cartes, sans effet visible.
+> Mais avec un CATALOGUE partagé, la fusion dégénérait : 20 produits → 20
+> super-clusters (le plus gros 19 cartes), 3 produits → 3 super-clusters (le plus
+> gros 113 cartes, 33 % du graphe), 1 produit → un seul super-cluster couvrant
+> 100 % du graphe, où la passe ne pouvait plus rien écarter. C'était
+> sémantiquement correct — ces agrégats étaient réellement inséparables — mais
+> l'effet pratique était que l'écartement ne s'appliquait pas à ces données-là.
+>
+> **La démo, mesurée après coup.** Son config déclare deux racines
 > (`aggregates: ["Customer", "Product"]`) sur `bigShop(4000)` — 350 entités,
 > 108 agrégats — où chaque `Order` référence un `Customer` ET un `Product` à
-> un saut, donc appartient aux deux à la fois : le graphe biparti percole. Sur
-> une seule racine (`["Customer"]`) : 116 super-clusters, le plus gros 5
-> cartes (1,4 %), bbox 17367 × 21849. Sur les deux racines réellement
-> déclarées : 9 super-clusters, le plus gros 342 des 350 cartes (97,7 %), bbox
-> 4816 × 6752 — la passe d'écartement n'a plus rien à séparer, hormis les 8
-> `Category` qu'aucun agrégat n'atteint. Même mécanique que le catalogue
-> partagé ci-dessus, mesurée cette fois sur les données que la démo expédie
-> réellement, et documentée dans `packages/core/README.md` (section
-> « Aggregates »).
+> un saut, donc appartenait aux deux à la fois : le graphe biparti percolait.
+> 9 super-clusters, le plus gros 342 des 350 cartes (97,7 %) — la passe
+> d'écartement n'avait plus rien à séparer, hormis les 8 `Category` qu'aucun
+> agrégat n'atteint.
+
+**Mesure de sortie, sur les mêmes données et la même géométrie**, seule la règle
+d'appartenance différant (`bigShop(4000)` de la démo, deux racines, enveloppes
+circulaires dans les deux colonnes) :
+
+| | chevauchement (retiré) | arbitrage (actuel) |
+|---|---|---|
+| super-clusters | 9 | **116** |
+| plus gros bloc | 342 des 350 cartes (97,7 %) | **5 cartes (1,4 %)** |
+| paires d'enveloppes en recouvrement | 3520 sur 5778 (61 %) | **0** |
+| bbox | 7199 × 4588 | 18714 × 19984 |
+
+Les 116 blocs sont 78 agrégats `Customer` (26 de 5 cartes, 26 de 4, 26 de 3),
+30 agrégats `Product` d'une seule carte, et les 8 `Category` qu'aucun agrégat ne
+réclame. Le prix est une bbox ~11× plus grande en aire, que `fit()` absorbe.
+Reste hors de portée de ce changement : un CATALOGUE partagé ne fusionne plus
+rien, mais rien ne garantit non plus que la répartition entre agrégats soit
+« jolie » sur un modèle à hub — l'arbitrage donne un résultat déterministe et
+lisible, pas nécessairement celui qu'un modélisateur aurait choisi.
 
 La sortie anticipée compare à une épsilon et non à zéro : elle se déclenche
 vraiment, contrairement à celle de `separateOverlaps`.
@@ -514,11 +578,13 @@ restent partagés entre les deux vues, avec les mêmes garanties qu'aujourd'hui.
 Le cœur est testable sans rendu, et c'est là que porte l'essentiel.
 
 **`aggregate.test.ts`** — la règle d'appartenance, cas par cas : appartenance
-simple à 1 saut ; transitivité à 2 sauts ; égalité de distance produisant un
-chevauchement ; racine jamais absorbée par une autre racine ; hub borné (le cas
-`Customer → Country` décrit plus haut) ; entité n'atteignant aucune racine ;
-référence cassée ne propageant rien ; cycle de références ; type racine sans
-instance ; ordre stable de `byNode`.
+simple à 1 saut ; transitivité à 2 sauts ; égalité de distance arbitrée par
+l'ordre de déclaration du type, et l'inversion de cet ordre qui renverse le
+gagnant ; égalité entre deux racines du MÊME type départagée par l'id ;
+invariant de partition (aucune entité dans deux agrégats) ; racine jamais
+absorbée par une autre racine ; hub borné (le cas `Customer → Country` décrit
+plus haut) ; entité n'atteignant aucune racine ; référence cassée ne propageant
+rien ; cycle de références ; type racine sans instance.
 
 **`hull.test.ts`** — cercle englobant minimal : cas nominal, un seul rectangle,
 deux rectangles, centres colinéaires, rectangles superposés identiques,
@@ -560,6 +626,7 @@ d'entités qui est plus petit et bien moins dense :
 | Ratio de bbox | ~1:1,5 (contre 1:21 aujourd'hui) |
 | ~~Remplissage~~ | RÉVISÉ : ~43 % atteint sans écartement des clusters, mais **6,2 %** au `clusterGap` de 160 px sur `bigShop(3000)` — prix assumé de l'écartement demandé, `fit()` recadrant de toute façon. (Le 7,9 % de la révision précédente était mesuré quand la passe relaxait des boîtes ; le cercle englobant est plus large, donc ouvre davantage.) |
 | Chevauchement de cartes | 0 |
+| Recouvrement d'enveloppes | 0 — acquis depuis que l'appartenance est une partition, y compris sur le jeu de la démo (108 agrégats, 5778 paires) |
 | `layout()` initial | < 3 s à 1000 entités |
 | Écart entre deux runs identiques | **0 px** (exigence, pas budget) |
 | ~~Dérive au dépliage, nœuds existants~~ | RETIRÉ : sans pli d'agrégat, il n'y a plus de dépliage |

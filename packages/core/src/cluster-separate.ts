@@ -70,20 +70,35 @@ interface SuperCluster {
  *    agrégats plus que l'autre — la rigidité tombe et des cartes se
  *    recouvrent. Fusionner est la formulation correcte : des agrégats tricotés
  *    par une entité commune ne peuvent pas être séparés sans déchirer cette
- *    carte, donc ils se déplacent ensemble. Leurs enveloppes continuent de se
- *    croiser, ce qui est le comportement voulu.
+ *    carte, donc ils se déplacent ensemble.
+ *
+ *    **Cette garantie ne se déclenche plus.** Depuis que l'appartenance est
+ *    une PARTITION stricte — `buildAggregates` arbitre les égalités de
+ *    distance par l'ordre de déclaration du type de la racine —, aucune entité
+ *    n'appartient à deux agrégats, donc l'union-find ne fusionne jamais rien
+ *    et un super-cluster est toujours exactement un agrégat.
+ *
+ *    Ce n'est pas pour autant du code mort, et ce n'est pas non plus une
+ *    fonctionnalité : c'est ce qui GARANTIT que la translation reste rigide.
+ *    L'étape 5 ne tient que parce qu'une carte n'appartient qu'à un seul
+ *    super-cluster, et c'est l'union-find qui l'assure — pas la règle
+ *    d'appartenance, qui est un choix de produit et peut changer. Le
+ *    supprimer laisserait un piège armé : la passe reprendrait alors
+ *    silencieusement le défaut mesuré ci-dessus, sans qu'aucun test de la
+ *    règle actuelle ne le voie. `cluster-separate.test.ts` continue de le
+ *    couvrir, sur des index d'agrégats montés à la main.
  *
  * Une entité hors de tout agrégat forme un cluster d'un seul : sans quoi elle
  * resterait posée à l'intérieur de l'enveloppe d'un voisin qui ne la contient
  * pas.
  *
- * Corollaire à garder en tête devant une sortie qui semble « ne rien faire » :
- * si TOUS les agrégats finissent transitivement reliés par un membre partagé
- * (union-find à une seule racine), il n'y a plus qu'un super-cluster, donc
- * rien à écarter — la passe est inerte, pas en panne. C'est exactement ce que
- * mesure `packages/core/README.md` (section « Aggregates ») sur le jeu de
- * démo une fois qu'il déclare deux racines d'agrégat partageant leurs
- * membres.
+ * Corollaire, à ne PLUS invoquer devant une sortie qui semble « ne rien
+ * faire » : quand tous les agrégats se retrouvaient transitivement reliés par
+ * un membre partagé, il n'y avait qu'un super-cluster et la passe était inerte
+ * — mesuré sur le jeu de la démo, 108 agrégats fondus en un bloc de 342 cartes
+ * sur 350. C'était le symptôme du chevauchement, et il a disparu avec lui :
+ * la même donnée donne aujourd'hui 116 super-clusters, le plus gros de 5
+ * cartes. Voir `packages/core/README.md`, section « Aggregates ».
  */
 export function separateClusters(
   positions: Map<NodeId, Rect>,
@@ -114,7 +129,8 @@ export function separateClusters(
 
   // 2. Union-find : deux groupes qui partagent une entité n'en font qu'un.
   //    La fusion est TRANSITIVE — A partage avec B, B avec C, donc les trois
-  //    se déplacent ensemble.
+  //    se déplacent ensemble. Ne se déclenche plus sous la règle
+  //    d'appartenance actuelle ; c'est voulu, voir la doc ci-dessus.
   const parent = groups.map((_, i) => i)
   const find = (i: number): number => {
     let root = i

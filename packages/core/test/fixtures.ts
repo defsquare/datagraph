@@ -21,8 +21,13 @@ export const shopConfig: DataGraphConfig = {
   references: { Order: { customerId: "Customer" } },
 }
 
-/** Un Order référence à la fois un Customer et un Product, les deux racines :
- * égalité de distance, donc chevauchement. */
+/**
+ * Un Order référence à la fois un Customer et un Product, les deux racines :
+ * égalité de distance, donc ARBITRAGE. Ce fixture existait pour produire un
+ * chevauchement ; il produit maintenant le cas limite de la règle de partition,
+ * et c'est le même graphe qui sert : `Customer` est déclaré avant `Product`,
+ * donc la commande lui revient et l'agrégat Product se réduit à sa racine.
+ */
 export const twoRootsData = {
   customers: [{ id: "c1", name: "Dupont" }],
   products: [{ id: "p9", name: "Vis" }],

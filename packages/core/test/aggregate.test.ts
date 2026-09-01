@@ -23,17 +23,66 @@ describe("buildAggregates", () => {
     expect(idx.byNode.get("/orders/1")).toBeUndefined()
   })
 
-  it("puts an entity in several aggregates when the distances tie", () => {
+  it("arbitrates a distance tie by declaration order of the root type", () => {
+    // /orders/0 est à un saut de Customer#c1 ET de Product#p9. La règle
+    // n'admet plus le partage : `Customer` est déclaré en premier dans
+    // `aggregates`, donc il emporte l'arbitrage, et Product#p9 se réduit à
+    // lui-même.
     const idx = index(twoRootsData, twoRootsConfig)
-    expect(idx.byNode.get("/orders/0")).toEqual(["Customer#c1", "Product#p9"])
+    expect(idx.byNode.get("/orders/0")).toEqual(["Customer#c1"])
     expect(idx.aggregates.get("Customer#c1")!.memberIds.has("/orders/0")).toBe(true)
-    expect(idx.aggregates.get("Product#p9")!.memberIds.has("/orders/0")).toBe(true)
+    expect(idx.aggregates.get("Product#p9")!.memberIds.has("/orders/0")).toBe(false)
+    expect([...idx.aggregates.get("Product#p9")!.memberIds]).toEqual(["/products/0"])
   })
 
-  it("orders byNode by declaration order of the root type", () => {
+  it("follows the declaration order, not the type name: reversing it flips the winner", () => {
+    // Même donnée, ordre de déclaration inversé : c'est Product qui gagne.
+    // C'est ce qui prouve que l'arbitrage lit bien `config.aggregates` et non
+    // un ordre alphabétique ou l'ordre de découverte du BFS.
     const reversed = { ...twoRootsConfig, aggregates: ["Product", "Customer"] }
     const idx = index(twoRootsData, reversed)
-    expect(idx.byNode.get("/orders/0")).toEqual(["Product#p9", "Customer#c1"])
+    expect(idx.byNode.get("/orders/0")).toEqual(["Product#p9"])
+    expect([...idx.aggregates.get("Customer#c1")!.memberIds]).toEqual(["/customers/0"])
+  })
+
+  it("breaks a tie WITHIN one root type by root id", () => {
+    // Deux racines du même type à la même distance : le rang de déclaration ne
+    // départage rien. L'id de la racine le fait, pour que le résultat soit
+    // stable d'une construction à l'autre.
+    const data = {
+      customers: [{ id: "c2", name: "Martin" }, { id: "c1", name: "Dupont" }],
+      orders: [{ id: "o1", buyerId: "c2", payerId: "c1" }],
+    }
+    const config = {
+      entities: {
+        Customer: { match: "$.customers[*]", id: "id" },
+        Order: { match: "$.orders[*]", id: "id" },
+      },
+      references: { Order: { buyerId: "Customer", payerId: "Customer" } },
+      aggregates: ["Customer"],
+    }
+    const idx = index(data, config)
+    // "Customer#c1" < "Customer#c2", et ce malgré l'ordre du tableau JSON qui
+    // place c2 en premier.
+    expect(idx.byNode.get("/orders/0")).toEqual(["Customer#c1"])
+  })
+
+  it("is a strict partition: no entity belongs to two aggregates", () => {
+    // L'invariant qui remplace le chevauchement. Vérifié sur le fixture qui
+    // existe précisément pour produire une égalité de distance.
+    const idx = index(twoRootsData, twoRootsConfig)
+    for (const ids of idx.byNode.values()) expect(ids).toHaveLength(1)
+
+    let members = 0
+    const seen = new Set<string>()
+    for (const aggregate of idx.aggregates.values()) {
+      for (const id of aggregate.memberIds) {
+        expect(seen.has(id)).toBe(false)
+        seen.add(id)
+        members++
+      }
+    }
+    expect(members).toBe(seen.size)
   })
 
   it("is transitive: a LineItem two hops away joins the Customer aggregate", () => {

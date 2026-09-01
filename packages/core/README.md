@@ -74,20 +74,28 @@ interface Aggregate {
 
 interface AggregateIndex {
   aggregates: Map<string, Aggregate>;
-  byNode: Map<NodeId, string[]>; // several entries for one node = overlap
+  // Membership is a partition, so every array holds exactly one id.
+  byNode: Map<NodeId, string[]>;
 }
 ```
 
 **The membership rule:** an entity `E` belongs to the aggregate rooted at `R`
-iff `d(E, R) = dmin(E)`, where `d` is the minimal number of outgoing
-references leading from `E` to `R`, and `dmin(E)` is the minimum of `d` over
-every root `E` can reach. A root is at distance `0` from itself.
+iff `R` is the **winner** among the roots at distance `dmin(E)` from `E`, where
+`d` is the minimal number of outgoing references leading from `E` to `R`, and
+`dmin(E)` is the minimum of `d` over every root `E` can reach. A root is at
+distance `0` from itself, so it always wins its own aggregate. Ties are broken
+by **declaration order of the root's entity type in `config.aggregates`**, then
+by aggregate id.
+
+**Membership is a partition:** every entity that reaches at least one root
+belongs to exactly one aggregate.
 
 This has three consequences worth knowing:
 
-- **Overlap when distances tie.** An entity that reaches two roots at the
-  same minimal distance belongs to both. Given both `Customer` and `Product`
-  declared as roots, and an `Order` referencing one of each:
+- **A distance tie is arbitrated, not shared.** An entity that reaches two
+  roots at the same minimal distance joins the one whose type is declared
+  first. Given both `Customer` and `Product` declared as roots, and an `Order`
+  referencing one of each:
 
   ```ts
   const data = {
@@ -104,8 +112,17 @@ This has three consequences worth knowing:
     references: { Order: { customerId: "Customer", productId: "Product" } },
     aggregates: ["Customer", "Product"],
   };
-  // -> byNode.get("/orders/0") === ["Customer#c1", "Product#p9"]
+  // "Customer" is declared first, so it wins:
+  // -> byNode.get("/orders/0")  === ["Customer#c1"]
+  // -> Product#p9.memberIds     === Set(["/products/0"])
+  //
+  // Swap the declaration order to ["Product", "Customer"] and the same data
+  // gives byNode.get("/orders/0") === ["Product#p9"] instead.
   ```
+
+  Two roots of the *same* type at the same distance are separated by
+  aggregate id (`"Customer#c1"` before `"Customer#c2"`), so the result never
+  depends on JSON order or on graph traversal order.
 
 - **Transitivity.** Membership isn't limited to direct references: a
   `LineItem` two hops from a `Customer` (`LineItem -> Order -> Customer`)
@@ -149,38 +166,42 @@ This has three consequences worth knowing:
 
 A dangling reference propagates nothing: an entity reachable only through a
 broken reference is left out of every aggregate. Declaration order in
-`config.aggregates` plays no role in membership (overlap is allowed, so
-there's nothing to arbitrate) — it only orders `byNode`'s entries and, in
-`@defsquare/data-graph`, the paint order of overlapping envelopes.
+`config.aggregates` is therefore **load-bearing**: it decides who wins a
+distance tie, and so which aggregate an entity ends up in. It also orders
+`byNode`'s entries and, in `@defsquare/data-graph`, the paint order of
+envelopes.
 
-**What overlap costs the graph view's cluster spacing.** The renderer spaces
-aggregate envelopes apart after layout (`separateClusters`,
-`packages/core/src/cluster-separate.ts`) so they read as separate islands.
-Two aggregates that share a member can't be pulled apart without tearing that
-entity out of one of them, so the pass first merges — by union-find,
-transitively — every aggregate connected by a shared member into one rigid
-block, and moves that block as a whole; blocks that don't share anything are
-what actually get pushed apart.
+**Why the rule arbitrates instead of sharing.** An earlier version let an
+entity belong to *every* root it reached at the minimal distance — overlap was
+presented as a feature. It cost the graph view its cluster spacing. That pass
+(`separateClusters`, `packages/core/src/cluster-separate.ts`) pushes aggregate
+envelopes apart so they read as separate islands, and two aggregates sharing a
+member can't be pulled apart without tearing that entity out of one of them; so
+the pass merges — by union-find, transitively — every aggregate connected by a
+shared member into one rigid block. With overlap, that merge percolated.
 
-That merge is now measured on the demo dataset (`bigShop(4000)`, 350
-entities, 108 aggregates), whose config declares two roots
-(`aggregates: ["Customer", "Product"]`): every `Order` references a
-`Customer` and a `Product` one hop away, so it's a full member of both, and
-the customer–product graph percolates almost entirely:
+Measured on the demo dataset (`bigShop(4000)`, 350 entities, 108 aggregates,
+`aggregates: ["Customer", "Product"]`, where every `Order` references a
+`Customer` *and* a `Product` one hop away), same layout and same geometry, only
+the membership rule differing:
 
-| | one root (`["Customer"]`) | two roots (`["Customer", "Product"]`) |
+| | overlap on ties (retired) | arbitration (current) |
 | --- | --- | --- |
-| super-clusters | 116 | 9 |
-| largest block | 5 cards (1.4%) | 342 of 350 cards (97.7%) |
-| canvas bbox | 17367 × 21849 | 4816 × 6752 |
+| super-clusters | 9 | **116** |
+| largest block | 342 of 350 cards (97.7%) | **5 cards (1.4%)** |
+| overlapping envelope pairs | 3520 of 5778 (61%) | **0** |
+| canvas bbox | 7199 × 4588 | 18714 × 19984 |
 
-With two roots the spacing pass has almost nothing left to separate — the 108
-envelopes stack into one blob, and only the 8 `Category` entities (which no
-aggregate claims) get pushed apart. This isn't a defect: the mechanism does
-exactly what a single-root config needs — it produced 116 separated islands
-above — and shared-member aggregates genuinely can't be spaced apart without
-tearing a card. It's simply moot once aggregates share entities, which is
-what the demo's two-root config now does.
+Under the current rule the 78 `Customer` aggregates hold 3 to 5 cards each (26
+of each size), the 30 `Product` roots become single-card aggregates, and the 8
+`Category` entities stay unclaimed as singletons — 116 blocks in all, every one
+of them actually spaced apart. The price is a canvas roughly 11× larger by area,
+which `fit()` absorbs.
+
+The union-find is still there and still tested. Under a partition it never
+merges anything, but it is what *guarantees* that a card receives exactly one
+translation and that the spacing stays rigid — that guarantee belongs to the
+pass, not to a membership rule that could be relaxed again later.
 
 `aggregates` is what powers the renderer's **graph view** — see the
 [renderer package README](https://github.com/defsquare/data-graph/tree/main/packages/renderer#graph-view)

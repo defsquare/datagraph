@@ -268,7 +268,13 @@ describe("cluster shapes", () => {
     expect(result.clusters.map((c) => c.aggregateId)).toEqual(["Customer#c1"])
   })
 
-  it("gives a shared entity a place inside both envelopes", async () => {
+  it("puts an arbitrated entity in exactly ONE envelope", async () => {
+    // /orders/0 est à un saut de Customer#c1 et de Product#p9 ; `Customer`
+    // étant déclaré en premier, il l'emporte. Le test qui vivait ici vérifiait
+    // l'inverse — que la carte tombait dans les DEUX enveloppes — au temps où
+    // l'appartenance autorisait le chevauchement. Il pinne maintenant la règle
+    // de partition, et pas seulement au niveau de l'index : géométriquement,
+    // la carte doit être HORS du disque de Product#p9.
     const graph = buildGraph(twoRootsData, twoRootsConfig)
     const aggregates = buildAggregates(graph, validateConfig(twoRootsConfig))
     const visible = new Set(
@@ -276,8 +282,21 @@ describe("cluster shapes", () => {
     )
     const result = await createGraphLayoutEngine().layout(graph, aggregates, visible)
     expect(result.clusters).toHaveLength(2)
-    for (const cluster of result.clusters) {
-      expect(aggregates.aggregates.get(cluster.aggregateId)!.memberIds.has("/orders/0")).toBe(true)
+
+    const owning = result.clusters.filter((c) =>
+      aggregates.aggregates.get(c.aggregateId)!.memberIds.has("/orders/0"),
+    )
+    expect(owning.map((c) => c.aggregateId)).toEqual(["Customer#c1"])
+
+    const other = result.clusters.find((c) => c.aggregateId === "Product#p9")!
+    const r = result.positions.get("/orders/0")!
+    for (const c of [
+      { x: r.x, y: r.y },
+      { x: r.x + r.width, y: r.y },
+      { x: r.x, y: r.y + r.height },
+      { x: r.x + r.width, y: r.y + r.height },
+    ]) {
+      expect(Math.hypot(c.x - other.cx, c.y - other.cy)).toBeGreaterThan(other.r)
     }
   })
 })
@@ -320,12 +339,14 @@ describe("cluster separation", () => {
     60_000,
   )
 
-  it("merges two aggregates that share a member entity into one rigid block", async () => {
-    // /orders/0 est à distance égale de Customer#c1 et Product#p9 : il
-    // appartient aux DEUX agrégats. Les écarter reviendrait à déchirer la
-    // carte partagée, donc la passe les FUSIONNE en un super-cluster qui se
-    // déplace d'un bloc. Leurs enveloppes se croisent alors par construction —
-    // c'est le seul cas où deux enveloppes ont le droit de se croiser.
+  it("separates two aggregates that a distance tie used to make overlap", async () => {
+    // Ce test vérifiait exactement l'inverse. /orders/0 est à distance égale de
+    // Customer#c1 et Product#p9 ; il appartenait alors aux DEUX agrégats, la
+    // passe les fusionnait en un super-cluster couvrant tout le graphe, et
+    // n'avait donc RIEN à écarter — les positions sortaient identiques à celles
+    // obtenues avec `clusterGap: 0`. L'arbitrage par ordre de déclaration
+    // supprime le partage : Customer#c1 garde la commande, Product#p9 se réduit
+    // à sa racine, les deux clusters sont disjoints et la passe travaille.
     const graph = buildGraph(twoRootsData, twoRootsConfig)
     const aggregates = buildAggregates(graph, validateConfig(twoRootsConfig))
     const visible = new Set(
@@ -335,16 +356,14 @@ describe("cluster separation", () => {
     expect(result.clusters).toHaveLength(2)
 
     const [a, b] = result.clusters
-    expect(circlesOverlap(a!, b!)).toBe(true)
+    expect(circlesOverlap(a!, b!)).toBe(false)
+    // Le couloir demandé est bien ouvert, bord à bord des disques peints.
+    expect(Math.hypot(a!.cx - b!.cx, a!.cy - b!.cy) - a!.r - b!.r).toBeGreaterThanOrEqual(160 - 1e-6)
 
-    // Cette assertion-là ne suffit PAS à prouver la fusion : les deux
-    // enveloppes contiennent la carte partagée, donc elles se croisent même si
-    // la passe les avait écartées. On compare donc aux positions obtenues avec
-    // la passe désactivée : sur ce fixture les deux agrégats couvrent toutes
-    // les entités et fusionnent en UN super-cluster, donc il ne reste rien à
-    // écarter et la passe ne doit RIEN déplacer.
+    // Et la passe a réellement déplacé quelque chose : comparé au même layout
+    // avec la passe désactivée, les positions diffèrent.
     const untouched = await createGraphLayoutEngine({ clusterGap: 0 }).layout(graph, aggregates, visible)
-    expect([...result.positions.entries()]).toEqual([...untouched.positions.entries()])
+    expect([...result.positions.entries()]).not.toEqual([...untouched.positions.entries()])
   })
 
   it("keeps the layout deterministic once clusters are separated", async () => {
