@@ -134,10 +134,22 @@ dans le packing local, linéaire et négligeable.
    ci-dessus sont ceux du PREMIER jeu de constantes essayé, ce qui suggère que
    l'architecture est robuste au réglage, mais un calibrage à la façon de
    `clusterGap` resterait à faire avant d'en faire le défaut.
+   > **LEVÉE depuis** (étape C de `2026-09-01-two-level-raffinements.md`) : le
+   > balayage a été fait, sur trois fixtures, et il CONFIRME les quatre valeurs.
+   > La suggestion ci-dessus se vérifie : l'architecture est bien robuste au
+   > réglage. Les tableaux sont dans les `DEFAULTS` du moteur.
 5. **La passe dure finale peut défaire un ressort** : la garantie d'écart prime
    sur la longueur d'arête. À 264 références sur 116 disques ça ne se voit pas
    (1 364 px de moyenne, contre 6 104 avant) ; un graphe inter-agrégat très
    dense pourrait se dégrader — non sondé.
+   > **SONDÉE depuis** (étape C) : le fixture `denseRefs()` — degré 12,0 contre
+   > 4,6 pour la démo — la rend observable. La dégradation est réelle et
+   > mesurée, mais elle vient de la FORCE DE RESSORT et non de la densité :
+   > au-delà de 0,15, les références inter-agrégats rallongent au lieu de
+   > raccourcir, parce que la passe dure contredit ce que les ressorts
+   > demandent. Les garanties, elles, tiennent sans exception (min nn = 160,00
+   > px dans les 27 configurations mesurées, y compris sur un graphe à hubs de
+   > degré max 40).
 
 ## Recommandation
 

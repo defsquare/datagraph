@@ -1,14 +1,14 @@
 # Sonde — raffinements du moteur de layout à deux niveaux
 
 **Statut** : en cours. Étapes décidées par l'utilisateur, remplies au fil de
-l'eau. A, A-bis et B faites ; C à venir.
+l'eau. Toutes faites : A, A-bis, B et C.
 
 | | étape | statut |
 |---|---|---|
 | A | placement intra-agrégat RADIAL (racine au centre, anneaux par distance) | **faite** |
 | A-bis | aiguillage radial / étagères par PROFONDEUR | **faite** |
 | B | bruit déterministe contre la régularité du pavage | **faite** |
-| C | calibrage mesuré des constantes du niveau 2 | à venir |
+| C | calibrage mesuré des constantes du niveau 2 | **faite** |
 
 Le moteur porté par ces trois étapes est `packages/core/src/layout-two-level.ts`.
 Sa sonde d'origine, et la comparaison qui a retiré le pipeline fcose, sont dans
@@ -414,3 +414,155 @@ désactive entièrement.
 3. **Aucune mesure perceptuelle.** « Le pavage ne se lit plus comme une grille »
    est un jugement d'œil sur quatre rendus, pas un critère. L'écart-type
    objective la variance, pas la lisibilité.
+
+---
+
+## Étape C — calibrage des quatre constantes du niveau 2
+
+**Question** : force de ressort 0,15, plafond de poids `min(1, w/2)`, gravité
+0,02, `simIterations` 400. C'était le premier jeu essayé, jamais balayé, et
+c'était documenté comme tel à quatre endroits. Que dit la mesure ?
+
+**Réponse courte** : elle CONFIRME les quatre. C'est l'une des trois issues
+prévues, et ce n'est pas une non-décision : « calibré » veut dire mesuré, pas
+nécessairement changé. Le balayage a en revanche produit deux résultats qui
+n'étaient pas cherchés — la réserve n°5 de la sonde d'origine est observable et
+son mécanisme identifié, et les constantes du niveau 2 interagissent avec le
+`jitter` de l'étape B.
+
+### Le fixture manquant
+
+Aucun jeu du dépôt n'avait un graphe inter-cluster dense : `bigShop(3000)` en a
+**zéro** arête, la démo un degré moyen de 4,6. La réserve n°5 (« un graphe
+inter-agrégat très dense pourrait se dégrader — non sondé ») était donc
+insondable faute de matériel.
+
+`denseRefs()` (dans `fixtures.ts`) : 40 clients, 40 produits, 3 commandes de 4
+produits. Chaque commande appartient à l'agrégat de son client par arbitrage,
+donc ses quatre références produit sont toutes inter-cluster. Résultat :
+**200 cartes, 80 clusters, 480 arêtes inter-cluster, degré moyen 12,0, max 12**.
+
+Le graphe est **régulier** — 12 partout — et c'est délibéré : la charge de
+ressort est la même sur toutes les arêtes, donc on mesure l'effet d'une
+constante et non celui d'une hétérogénéité de degré. L'adversité « hub » est
+atteignable par paramètre et mesurée séparément : `denseRefs(40, 8)` donne
+48 clusters, degré moyen 13,3 et **max 40**.
+
+Les garanties sur ce fixture (recouvrement 0, `clusterGap`, déterminisme,
+variante hub) sont assertées dans `layout-two-level.test.ts` **indépendamment du
+calibrage** — elles sont portées par le packing et la passe dure, donc elles
+doivent tenir à tout réglage.
+
+### Le balayage
+
+Trois fixtures, choisis pour épuiser les régimes : **A** `bigShop(3000)`
+(167 disques, zéro arête — seules gravité et collision agissent), **B** le jeu
+de la démo (116 disques, degré 4,6), **D** `denseRefs()` (80 disques, degré
+12,0). Métrique de qualité : longueur moyenne d'une référence INTER-agrégat.
+Un run par configuration — le moteur est déterministe.
+
+**Force de ressort** (réf. inter moyenne) :
+
+| | B | D | sd nn sur D |
+|---|---|---|---|
+| 0,05 | 2 084 | 1 699 | 13,1 |
+| 0,10 | 1 557 | 1 618 | 13,1 |
+| **0,15 — retenue** | 1 439 | **1 554** | 11,8 |
+| 0,25 | 1 418 | 1 611 | 7,9 |
+| 0,40 | 1 398 | 1 694 | 4,1 |
+
+**Plafond de poids `min(1, w/N)`** :
+
+| | B | D | sd nn sur D |
+|---|---|---|---|
+| N=1 | 1 341 | 1 570 | 4,7 |
+| **N=2 — retenu** | 1 439 | **1 554** | 11,8 |
+| N=4 | 1 753 | 1 589 | 11,7 |
+| N=8 | 2 155 | 1 756 | 12,1 |
+
+**Gravité** :
+
+| | A remplissage | B | D |
+|---|---|---|---|
+| 0,005 | 8,9 % | 1 445 | 1 543 |
+| 0,01 | 9,5 % | 1 407 | 1 614 |
+| **0,02 — retenue** | **10,3 %** | 1 439 | 1 554 |
+| 0,04 | 10,3 % | 1 497 | 1 572 |
+| 0,08 | 10,7 % | 1 687 | 1 685 |
+
+**Itérations** :
+
+| | A rempl. | B | D | sd nn sur D | ms (A/B/D) |
+|---|---|---|---|---|---|
+| 100 | 9,5 % | 1 609 | 1 742 | 4,1 | 66/45/39 |
+| 200 | 10,1 % | 1 487 | 1 647 | 4,4 | 53/36/23 |
+| **400 — retenues** | 10,3 % | 1 439 | **1 554** | 11,8 | 88/58/32 |
+| 800 | 10,7 % | 1 392 | 1 582 | 12,8 | 170/98/59 |
+| 1600 | 9,9 % | 1 392 | 1 560 | 13,0 | 342/187/117 |
+
+A est insensible à la force de ressort et au plafond de poids — il n'a aucune
+arête. C'est le contrôle du balayage : les lignes y sont rigoureusement
+identiques, ce qui confirme que ces deux constantes n'agissent que par les
+ressorts.
+
+### La réserve n°5, observée — et son vrai mécanisme
+
+« La passe dure finale peut défaire un ressort ; un graphe inter-agrégat très
+dense pourrait se dégrader. » C'est vrai, et D le montre : au-delà de 0,15, la
+longueur moyenne des références **RALLONGE** — 1 554 px à 0,15, 1 611 à 0,25,
+1 694 à 0,40. Plus les ressorts tirent, plus la passe dure doit les contredire,
+et le résultat net empire.
+
+Mais la mesure corrige la formulation de la réserve : **ce n'est pas la densité
+qui dégrade, c'est la force**. À 0,15, D se comporte très bien (1 554 px, son
+minimum). La densité rend le phénomène *visible* ; elle ne le cause pas. C'est
+aussi pourquoi 0,15 est retenue : c'est le point où les ressorts tirent le plus
+fort sans que la contrainte doive les défaire.
+
+### L'interaction non cherchée : constantes × jitter
+
+Les colonnes `sd nn` racontent une seconde histoire. Une force de ressort forte
+(0,25 → 7,9 ; 0,40 → 4,1) ou des poids non gradués (N=1 → 4,7) **recompriment le
+pavage** et défont le bruit de l'étape B : l'écart-type de l'écart au plus proche
+voisin retombe de 11,8 à 4,1 px, soit l'essentiel de ce que `jitter: 32` avait
+acheté. Un `simIterations` trop bas fait pareil pour une autre raison — à 100 ou
+200 la simulation n'a pas convergé assez pour que la variance s'exprime (4,1 et
+4,4).
+
+Les valeurs retenues sont donc aussi celles qui **laissent le jitter
+fonctionner**, ce qui n'était pas un critère au moment de le régler. Corollaire
+pratique : les constantes retenues étant celles du balayage de l'étape B, `sd nn`
+ne bouge pas d'un centième, et **l'amplitude 32 reste valide sans re-rendu**.
+
+### L'arbitrage décliné, exposé
+
+La grille croisée donne un gagnant sur B : `ressort 0,15 / gravité 0,01 / N=1`,
+référence moyenne **1 282 px contre 1 439**, soit −11 %. Il est écarté parce
+qu'il coûte, sur les deux autres fixtures, l'écart-type de D (11,8 → 6,3, donc le
+pavage) et 0,8 point de remplissage sur A (10,3 → 9,5 %).
+
+C'est un **jugement, pas une conclusion de la mesure** : B est un cas nominal
+parmi trois, et sacrifier le pavage de A et la densité de D pour 11 % sur lui
+seul est un mauvais échange — mais quelqu'un pourrait en juger autrement, et
+c'est pour ça que ce paragraphe existe.
+
+### Ce que l'étape C ne tranche pas
+
+1. **Aucun mécanisme nouveau n'a été essayé**, délibérément. Le balayage suggère
+   deux pistes qu'il ne faut pas confondre avec des réglages : une **gravité par
+   composante connexe** (sur A, la gravité est la seule force compactante et
+   agit globalement ; par composante, elle serrerait les îlots sans écraser
+   l'ensemble) et une **décroissance non linéaire d'`alpha`** (la moitié des
+   itérations sert des déplacements devenus minuscules). Notées, non
+   implémentées.
+2. **Le balayage est mono-objectif.** La longueur moyenne des références est la
+   métrique que les ressorts servent, mais rien ne mesure les CROISEMENTS
+   d'arêtes, qui pèsent au moins autant sur la lisibilité.
+3. **Trois fixtures ne sont pas une distribution.** A, B et D couvrent degré 0,
+   4,6 et 12,0 ; rien ne couvre un graphe inter-agrégat *déséquilibré* (quelques
+   composantes très denses et beaucoup d'isolées), qui est la forme la plus
+   probable sur des données réelles.
+4. **Le harnais de balayage n'est pas commité.** Il exigeait d'exposer les quatre
+   constantes en variables mutables du module — utile trente minutes, nuisible
+   ensuite. Les tableaux ci-dessus et ceux des `DEFAULTS` sont la trace ; le
+   refaire coûte le même patch temporaire.

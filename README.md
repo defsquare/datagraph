@@ -369,11 +369,34 @@ budget is spent on corridors instead of on padding.
 Three things the spike did **not** settle, restated here because they are still
 open: the intra-aggregate packing ignores edges (members are placed by id, which
 is invisible at 2–5 cards per aggregate and would not be on aggregates of
-dozens); the O(k²) simulation was measured at 3.6 s on 500 discs, so it needs a
-spatial grid before that cardinality is real; and the level-2 constants (spring
-force 0.15, weight capped at 2, gravity 0.02, 400 iterations) are the **first set
-tried**, never swept — which says the architecture is robust to tuning, not that
-these values are the right ones.
+dozens); and the O(k²) simulation was measured at 3.6 s on 500 discs, so it needs
+a spatial grid before that cardinality is real. The first of those has since been
+addressed by radial placement; the third reserve — that the level-2 constants
+were the first set tried and never swept — has since been **closed by
+measurement**, see below.
+
+**The level-2 constants are calibrated, and the sweep confirmed them.** Spring
+force 0.15, weight cap `min(1, w/2)`, gravity 0.02 and 400 iterations were
+originally the first set tried. A one-at-a-time sweep followed by a cross grid,
+over three fixtures chosen to exhaust the regimes — `bigShop(3000)` with *zero*
+inter-aggregate edges, the demo at mean degree 4.6, and a purpose-built
+`denseRefs()` at degree 12.0 — kept all four. Spring 0.15 is the exact minimum of
+mean inter-aggregate reference length on the dense fixture (1,554 px, against
+1,618 at 0.10 and 1,611 at 0.25): past it the springs pull hard enough that the
+hard pass must contradict them and references get *longer*, which is the spike's
+fifth reserve observed rather than hypothesised. 400 iterations is the knee —
+below it the layout has not converged, above it costs 2× for 3%.
+
+The sweep also turned up an interaction nobody had looked for: **the level-2
+constants and the jitter fight each other**. Strong springs (0.25, 0.40) or
+ungraded weights (`N=1`) recompress the tiling and undo the noise — the
+nearest-neighbour standard deviation on the dense fixture falls from 11.8 px to
+4.1, which is most of what `jitter: 32` bought. The retained values are therefore
+also the ones that *let the jitter work*, which was not a criterion when it was
+set. The full tables live in `DEFAULTS` in
+`packages/core/src/layout-two-level.ts`, and the one genuine trade-off that was
+declined — a config 11% better on the demo, at the cost of the tiling on the
+other two fixtures — is stated there rather than buried.
 
 **Envelopes are circles**, and that predates the current engine — it lives in
 `packages/core/src/hull.ts`, not in the layout, and it survived the engine swap

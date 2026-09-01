@@ -198,21 +198,76 @@ const DEFAULTS: Required<TwoLevelLayoutOptions> = {
   hullPadding: 18,
   cardGap: 16,
   clusterGap: 160,
-  // NON CALIBRÉ, et c'est un fait mesurable de la sonde, pas une omission :
-  // les chiffres ci-dessus (×11 à ×65, remplissage ×2 à ×5,4) sont ceux du
-  // PREMIER jeu de constantes essayé — 400 itérations, force de ressort 0,15,
-  // poids plafonné à 2, gravité 0,02 — sans aucun balayage de réglages. Cela
-  // suggère que l'architecture est robuste au réglage plus que ces valeurs ne
-  // sont bonnes. Un calibrage à la façon de `clusterGap` reste à faire — il ne
-  // l'a pas été avant que ce moteur devienne celui de la vue, et c'est un choix
-  // assumé : ces constantes ne portent aucune des garanties (voir juste en
-  // dessous), donc les régler achèterait de l'esthétique, pas de la justesse.
+  // CALIBRÉ, et « calibré » veut dire MESURÉ — pas nécessairement changé. Ces
+  // quatre constantes du niveau 2 (400 itérations, force de ressort 0,15,
+  // plafond de poids `min(1, w/2)`, gravité 0,02) étaient le PREMIER jeu
+  // essayé, ce que ce commentaire disait sans détour. Le balayage a été fait ;
+  // il les CONFIRME toutes les quatre, et c'est un résultat, pas une absence de
+  // résultat.
   //
-  // Ce que 400 achète : rien de la CORRECTION. Les garanties de sortie
-  // (non-recouvrement des cartes, écart des disques) sont portées par le
-  // packing et par la passe dure finale, pas par la simulation. Réduire ce
-  // nombre dégrade la longueur des références inter-agrégats et la compacité,
-  // jamais la justesse.
+  // Trois fixtures, choisis parce qu'ils épuisent les régimes du niveau 2 :
+  // **A** `bigShop(3000)` — 167 disques, ZÉRO arête, donc seules la gravité et
+  // la collision agissent ; **B** le jeu de la démo — 116 disques, degré moyen
+  // 4,6 ; **D** `denseRefs()` — 80 disques, degré 12,0 partout, le fixture de
+  // la réserve « un graphe inter-agrégat très dense pourrait se dégrader ».
+  // Métrique de qualité : la longueur moyenne d'une référence INTER-agrégat,
+  // celle que les ressorts servent. Le moteur étant déterministe, un run par
+  // configuration suffit.
+  //
+  //   FORCE DE RESSORT (réf. inter moyenne)      B       D      sd nn sur D
+  //     0,05                                   2084    1699       13,1
+  //     0,10                                   1557    1618       13,1
+  //     0,15  ← retenue                        1439  **1554**     11,8
+  //     0,25                                   1418    1611        7,9
+  //     0,40                                   1398    1694        4,1
+  //
+  // 0,15 est le MINIMUM EXACT sur D. Au-delà, les ressorts tirent si fort que
+  // la passe dure doit les contredire, et les références RALLONGENT au lieu de
+  // raccourcir — c'est précisément la réserve n°5 de la sonde, observée. Sur B,
+  // 0,40 gagne 3 % de longueur, pour un écart-type de voisinage divisé par 3.
+  //
+  //   PLAFOND DE POIDS min(1, w/N)               B       D      sd nn sur D
+  //     N=1 (aucune gradation)                  1341    1570        4,7
+  //     N=2  ← retenu                           1439  **1554**     11,8
+  //     N=4                                     1753    1589       11,7
+  //     N=8                                     2155    1756       12,1
+  //
+  //   GRAVITÉ                            A rempl.      B       D
+  //     0,005                               8,9 %    1445    1543
+  //     0,01                                9,5 %    1407    1614
+  //     0,02  ← retenue                  **10,3 %**  1439    1554
+  //     0,04                               10,3 %    1497    1572
+  //     0,08                               10,7 %    1687    1685   (339 passes dures)
+  //
+  //   ITÉRATIONS                         A rempl.      B       D      sd nn sur D   ms (A/B/D)
+  //     100                                 9,5 %    1609    1742        4,1        66/45/39
+  //     200                                10,1 %    1487    1647        4,4        53/36/23
+  //     400  ← retenues                    10,3 %    1439  **1554**     11,8        88/58/32
+  //     800                                10,7 %    1392    1582       12,8       170/98/59
+  //    1600                                 9,9 %    1392    1560       13,0      342/187/117
+  //
+  // CE QUE LE BALAYAGE A APPRIS, et qui n'était pas prévu : **les constantes du
+  // niveau 2 et le `jitter` interagissent**. Une force de ressort forte (0,25,
+  // 0,40) ou des poids non gradués (N=1) RECOMPRIMENT le pavage et défont le
+  // bruit — l'écart-type de l'écart au plus proche voisin tombe de 11,8 à 4,1
+  // px sur D, soit l'essentiel de ce que `jitter: 32` avait acheté. Un
+  // `simIterations` trop bas fait pareil, pour une autre raison : à 100 ou 200
+  // la simulation n'a pas convergé assez pour que la variance s'exprime (4,1 et
+  // 4,4). Les valeurs retenues sont donc aussi celles qui LAISSENT le jitter
+  // fonctionner, ce qui n'était pas un critère au moment de le régler.
+  //
+  // LE SEUL ARBITRAGE RÉEL, exposé plutôt que tranché en douce : la grille
+  // croisée donne `spring 0,15 / gravité 0,01 / N=1` meilleur sur B (référence
+  // 1282 contre 1439, −11 %). Il est écarté parce qu'il coûte l'écart-type de D
+  // (11,8 → 6,3) et 0,8 point de remplissage sur A. B est un cas nominal parmi
+  // trois ; sacrifier le pavage de A et la densité de D pour 11 % sur lui seul
+  // n'est pas un bon échange, et la mesure ne le dit pas — c'est un jugement,
+  // et il est ici pour être contesté.
+  //
+  // Ce que ces constantes N'ACHÈTENT PAS, à aucune valeur : la correction. Les
+  // garanties de sortie (non-recouvrement des cartes, écart des disques) sont
+  // portées par le packing et par la passe dure finale. `min nn = 160,00 px`
+  // dans les 27 configurations mesurées, sans exception.
   simIterations: 400,
   // RÉGLAGE D'ŒIL, comme `clusterGap`, et assumé comme tel — mais pas choisi
   // sans chiffres. Ce que le jitter corrige est un artefact visuel : sur des
