@@ -252,8 +252,9 @@ defaults were chosen against it; the code itself lives in git history and in
 | Determinism | **Bit-identical** positions *and* envelopes across two runs on the same input, including when the `visible` set is iterated in a different order. Seeded from node ids (FNV-1a); no `Math.random`, no `Date.now` | `packages/core/test/layout-two-level.test.ts` |
 | Aggregate envelope spacing after layout | Zero overlapping pairs at 167 aggregates, and every pair of discs at least `clusterGap` − 1e-6 apart edge to edge. This covers **painted envelopes and the singleton discs of entities in no aggregate alike** — the test builds the full disc set from the result, not just the emitted `clusters`. It is an output invariant of a final hard pass, not a convergence hope | `packages/core/test/layout-two-level.test.ts` |
 | Envelope fidelity | The disc that gets spaced is the disc that gets painted: each emitted `ClusterShape` matches the minimal enclosing circle recomputed from the final card positions to 1e-6, every member's corners lie inside it, and only real aggregates emit one | `packages/core/test/layout-two-level.test.ts` |
+| Jitter never weakens a guarantee | The virtual inflation applies to the simulation only: the final hard pass uses the true radius, and the emitted `ClusterShape` radii are **bit-identical** between `jitter: 0` and `jitter: 64` while the positions differ. Nearest-neighbour minimum stays at exactly `clusterGap` at every amplitude measured (0, 16, 32, 48, 64) | `packages/core/test/layout-two-level.test.ts` |
 | `setView("graph")` on the demo's 350-entity dataset | **Measured, not enforced.** 220–252 ms in Chromium over three isolated Playwright runs, against **4,310–4,484 ms** for the retired pipeline on the same machine — about **×19**. The committed assertion is only a 30 s collapse ceiling; the number is logged, not asserted, because a CI machine is not a developer's | `apps/demo/e2e/view.spec.ts` |
-| `@defsquare/data-graph` bundle purity | The graph view never enters a consumer's bundle unless it calls `setView("graph")` — the structure view alone doesn't pull it in. **What this is worth has collapsed, and the tests say so**: the chunk it keeps out went from **180.28 kB gzip to 2.59 kB** (5.67 kB raw) when `cytoscape` left, so a regression would now cost 2.59 kB on a 552 kB bundle. Both tests are kept for the *shape* they hold — the view loads lazily by construction, so whatever weight lands behind it next inherits that — not for the kilobytes | `packages/core/test/bundle-purity.test.ts` (core half) + `packages/renderer/test/bundle-purity.test.ts` (renderer half) |
+| `@defsquare/data-graph` bundle purity | The graph view never enters a consumer's bundle unless it calls `setView("graph")` — the structure view alone doesn't pull it in. **What this is worth has collapsed, and the tests say so**: the chunk it keeps out went from **180.28 kB gzip to 2.64 kB** (5.76 kB raw) when `cytoscape` left, so a regression would now cost 2.64 kB on a 552 kB bundle. Both tests are kept for the *shape* they hold — the view loads lazily by construction, so whatever weight lands behind it next inherits that — not for the kilobytes | `packages/core/test/bundle-purity.test.ts` (core half) + `packages/renderer/test/bundle-purity.test.ts` (renderer half) |
 
 **Two levels, because membership is a partition.** Every entity belongs to at
 most one aggregate (see [the core README](./packages/core/README.md#aggregates)),
@@ -274,6 +275,34 @@ so the problem splits cleanly in two and neither half has to repair the other:
    (springs, gravity, disc-disc collision, 400 iterations, FNV-1a seeding)
    places the discs, and a final hard pass makes
    `dist ≥ r₁ + r₂ + clusterGap` an output invariant.
+
+**Discs are virtually inflated during the simulation only.** Gravity and
+collision acting on discs of *equal* radius converge on hexagonal packing — it is
+the optimal packing of equal circles — and on a dataset of uniform aggregates with
+no edges between them that produced a lattice whose alignments ran across the
+whole canvas. Each cluster is therefore given a deterministic `jitter` (default
+**32 px**, `0` disables it), derived from an FNV-1a hash of its id, and the
+simulation works with `r + jitter`. The final hard pass uses the **true** radius,
+so the guarantee is untouched — nearest-neighbour minimum measured at exactly
+160.00 px for every amplitude from 0 to 64 — and the jitter never enters the
+enclosing circle or `ClusterShape`, so the painted shape is never inflated. What
+it buys is *variance*: neighbours settle across
+`[clusterGap, clusterGap + jitter₁ + jitter₂]` instead of all landing on
+`clusterGap`, and discs that no longer ask for the same room cannot form a
+lattice. This is the engine's only source of noise; there is still no
+`Math.random` and no `Date.now`, and determinism stays bit-for-bit.
+
+Three consequences worth naming. There is **no card separation pass at all** any
+more — two cards of different aggregates cannot overlap because their discs
+cannot. The cost no longer follows the number of cards but the number of
+aggregates, O(k² · iterations) on k discs plus a linear packing. And the table
+above lost a row it used to carry, *intra-aggregate geometry under cluster
+separation*: that budget existed because a relaxation pass could tear an
+aggregate apart, and the pass is gone. Nothing now runs between the packing,
+which fixes the geometry, and the output, which applies one translation per
+cluster — so the property is structural rather than enforced, and its observable
+consequence (margins holding to 1e-9 px) is asserted by the card-overlap row.
+Keeping a row with no test behind it would have been worse than dropping it.
 
 **Radial placement, and what it costs.** The first level used to be a *shelf*
 packing — members laid out in centred rows in id order, ignoring references
@@ -375,15 +404,15 @@ than no budget. The history lives on in
 Switching to the graph view for the first time still dynamically imports the
 `graph-layout` entry point, and a Vite production build of
 [`apps/demo`](./apps/demo) still emits it as its own chunk. That chunk is now
-**2.59 kB gzip** (5.67 kB raw), down from **180.28 kB** (577.17 kB) before
-`cytoscape` and `cytoscape-fcose` were removed — a factor of 70 — while the main
+**2.64 kB gzip** (5.76 kB raw), down from **180.28 kB** (577.17 kB) before
+`cytoscape` and `cytoscape-fcose` were removed — a factor of 68 — while the main
 chunk did not move (552.04 kB gzip either side, so nothing leaked into the
 barrel on the way). Removing the four packages that went with them (`cytoscape`,
 `cytoscape-fcose`, and their transitive `cose-base` and `layout-base`) is the
 whole of that saving.
 
 The entry point stays separate anyway, and the honest reason is no longer
-weight: 2.59 kB does not justify an architecture. It stays because the laziness
+weight: 2.64 kB does not justify an architecture. It stays because the laziness
 is then a property of the shape rather than of a review — `setView` is async for
 that reason, and whatever the graph view pulls in next is lazy by default — and
 because `./graph-layout` is a published subpath export. Both bundle-purity tests

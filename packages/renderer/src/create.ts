@@ -30,7 +30,7 @@ import {
 // du cœur ne couvre que le `dist/` du cœur, pas ce fichier-ci.
 //
 // Ce que ces deux lignes valent a changé d'échelle depuis le retrait de
-// l'ancien moteur : 2,59 ko gzip au lieu de 180,28. Elles restent parce
+// l'ancien moteur : 2,64 ko gzip au lieu de 180,28. Elles restent parce
 // qu'elles tiennent la FORME — la vue graphe se charge à la demande par
 // construction — et non plus parce qu'elles tiennent un poids. Le raisonnement
 // complet est dans les deux tests de pureté.
@@ -92,7 +92,7 @@ export interface DataGraphOptions {
    * CHANGEMENT D'API (0.x, sans couche de compatibilité). Ce champ portait des
    * `GraphLayoutOptions` — `{ hullPadding, separationMargin,
    * separationIterations, clusterGap }` —, il porte des `TwoLevelLayoutOptions`
-   * — `{ hullPadding, cardGap, clusterGap, simIterations }`. `hullPadding` et
+   * — `{ hullPadding, cardGap, clusterGap, simIterations, jitter }`. `hullPadding` et
    * `clusterGap` gardent leur nom, leur sens et leur défaut. Les deux autres
    * disparaissent parce que la passe qu'elles réglaient n'existe plus : le
    * nouveau moteur n'a AUCUNE passe de séparation de cartes, donc pas de
@@ -101,7 +101,11 @@ export interface DataGraphOptions {
    * d'être visée par une relaxation. Passer `separationMargin` ou
    * `separationIterations` est désormais une erreur de type : c'est voulu,
    * l'objet aurait été accepté et ignoré en silence.
-
+   *
+   * `jitter` (32 px par défaut) est le second réglage d'œil, ajouté après
+   * coup : l'amplitude du bruit déterministe qui empêche les enveloppes de se
+   * ranger en pavage hexagonal. `0` le désactive. Comme `clusterGap`, il ne
+   * peut dégrader aucune garantie — voir sa documentation côté cœur.
    */
   graphLayoutOptions?: TwoLevelLayoutOptions;
 }
@@ -337,7 +341,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
    * passé de 4 310–4 484 ms à 220–252 ms.
    *
    * L'`import()` reste dynamique. Le chunk qu'émet le build Vite de production
-   * d'`apps/demo` ne pèse plus que **2,59 ko gzip** (5,67 ko bruts, contre
+   * d'`apps/demo` ne pèse plus que **2,64 ko gzip** (5,76 ko bruts, contre
    * 180,28 / 577,17 avant le retrait), donc ce n'est plus le poids qui justifie
    * la paresse : c'est qu'elle est la forme par défaut de cette vue, et que
    * `setView` est asynchrone pour cette raison. Les deux tests de pureté de

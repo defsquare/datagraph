@@ -120,8 +120,8 @@ await graph.setView("graph");     // and switch again
 **Dynamic import.** The first switch to `"graph"` dynamically imports the layout
 engine, which is why `setView` returns a promise. That import is isolated behind
 the dynamic `import()`: in a Vite production build (see
-[`apps/demo`](../../apps/demo)) it lands in its own chunk — **2.59 kB gzip**,
-5.67 kB raw, measured — and never enters the bundle of a consumer that only ever
+[`apps/demo`](../../apps/demo)) it lands in its own chunk — **2.64 kB gzip**,
+5.76 kB raw, measured — and never enters the bundle of a consumer that only ever
 uses the structure view. Two tests guard it, one per half of the chain:
 `packages/core/test/bundle-purity.test.ts` walks the built chunk closure of the
 core's main entry point, so a careless barrel export can't regress it, and
@@ -133,8 +133,8 @@ bundle while leaving the rest of the suite green.
 That chunk used to weigh **180.28 kB gzip** (577.17 kB raw), essentially all of
 it `cytoscape` and its `fcose` plugin, which the previous layout engine imported.
 That engine has been removed and both dependencies with it — hence the factor of
-70. Be clear about what this does to the guarantee above: in kilobytes, it now
-guards almost nothing, and a regression would cost 2.59 kB. Both tests are kept
+68. Be clear about what this does to the guarantee above: in kilobytes, it now
+guards almost nothing, and a regression would cost 2.64 kB. Both tests are kept
 anyway, and their own comments say why: they hold the *shape* — the graph view
 loads lazily by construction, so whatever weight this view acquires next is lazy
 by default rather than by review.
@@ -174,7 +174,12 @@ full card diameter of radius even when it holds one card — which is exactly wh
 it is not applied to flat aggregates: at depth ≤ 1 there is no depth to encode as
 distance, so the mode would only cost. The criterion is depth, never card count.
 
-The
+**Envelopes are nudged out of a lattice.** Discs of equal radius under gravity
+and collision settle into hexagonal packing, so a dataset of uniform aggregates
+came out as a visible grid. Each cluster gets a deterministic `jitter` (default
+**32 px**, `0` disables) that inflates its radius *during the simulation only*:
+the guarantees and the painted circles are computed from the true radius and are
+bit-identical whatever the amplitude. The
 [root README](https://github.com/defsquare/data-graph#graph-view) carries the
 measured before/after on all of this.
 
@@ -212,7 +217,7 @@ const graph = createDataGraph(container, {
   config,
   view: "graph",
   // Any TwoLevelLayoutOptions field: clusterGap, hullPadding, cardGap,
-  // simIterations. Read once, when the graph view is first built.
+  // simIterations, jitter. Read once, when the graph view is first built.
   graphLayoutOptions: { clusterGap: 240 },
 });
 ```
@@ -223,7 +228,7 @@ object without depending on `@defsquare/data-graph-core` directly.
 > **API change (0.x, no compatibility shim).** `graphLayoutOptions` used to take
 > `GraphLayoutOptions` — `{ hullPadding, separationMargin, separationIterations,
 > clusterGap }`. It now takes `TwoLevelLayoutOptions` — `{ hullPadding, cardGap,
-> clusterGap, simIterations }`, and this package no longer re-exports the old
+> clusterGap, simIterations, jitter }`, and this package no longer re-exports the old
 > type. `hullPadding` and `clusterGap` keep their name, meaning and default, so
 > the common case (`{ clusterGap: 240 }`) is unaffected. The other two are gone
 > because the pass they tuned is gone: there is no card-separation pass to cap,

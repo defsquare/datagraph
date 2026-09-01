@@ -17,8 +17,8 @@ import { join } from "node:path";
  * L'ENJEU A CHANGÉ D'ORDRE DE GRANDEUR, et le dire fait partie du test. Ces
  * deux lignes gardaient ~178 ko gzip tant que l'ancien moteur importait
  * `cytoscape` + `cytoscape-fcose` ; ce moteur est retiré et le chunk mesure
- * désormais **2,59 ko gzip** au lieu de 180,28. Une régression coûterait donc
- * 2,59 ko, pas 178. Ce que ces deux lignes gardent encore, et qui n'a pas de
+ * désormais **2,64 ko gzip** au lieu de 180,28. Une régression coûterait donc
+ * 2,64 ko, pas 178. Ce que ces deux lignes gardent encore, et qui n'a pas de
  * substitut, c'est la FORME : la vue graphe est chargée à la demande par
  * construction, `setView` est asynchrone pour cette raison, et tout poids qu'on
  * ajoutera derrière cette vue héritera de la paresse au lieu d'avoir à la

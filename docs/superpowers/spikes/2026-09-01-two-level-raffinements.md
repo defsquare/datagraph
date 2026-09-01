@@ -1,13 +1,13 @@
 # Sonde — raffinements du moteur de layout à deux niveaux
 
 **Statut** : en cours. Étapes décidées par l'utilisateur, remplies au fil de
-l'eau. A et A-bis faites ; B et C à venir.
+l'eau. A, A-bis et B faites ; C à venir.
 
 | | étape | statut |
 |---|---|---|
 | A | placement intra-agrégat RADIAL (racine au centre, anneaux par distance) | **faite** |
 | A-bis | aiguillage radial / étagères par PROFONDEUR | **faite** |
-| B | bruit déterministe contre la régularité du pavage | à venir |
+| B | bruit déterministe contre la régularité du pavage | **faite** |
 | C | calibrage mesuré des constantes du niveau 2 | à venir |
 
 Le moteur porté par ces trois étapes est `packages/core/src/layout-two-level.ts`.
@@ -299,3 +299,118 @@ mis à jour, pour porter les chiffres au lieu d'une estimation.
    librement ; un agrégat pourrait présenter ses feuilles vers son voisin plutôt
    que sa racine. Non sondé.
 
+---
+
+## Étape B — bruit déterministe contre la régularité du pavage
+
+**Question** : le fixture A sort en pavage quasi hexagonal. C'est lisible mais
+ça se lit comme une grille, pas comme un graphe. Peut-on casser cette régularité
+sans toucher aux garanties ?
+
+**Réponse courte** : oui, avec un seul mécanisme, et sans que rien d'autre ne
+bouge. Un gonflement virtuel du rayon PENDANT la simulation seulement suffit :
+l'écart-type de l'écart au plus proche voisin passe de **0,00 à 12,02 px**, le
+minimum reste à **160,00 px exactement**, et les formes peintes sont
+bit-à-bit identiques à celles d'avant.
+
+### D'où vient le pavage
+
+Ce n'est pas un défaut de réglage, c'est le comportement correct de la
+simulation. Gravité + collision sur des disques de **même rayon** convergent
+vers l'empilement hexagonal — l'optimum de densité de cercles égaux. Le fixture
+A a 167 agrégats de taille identique et **aucune arête entre eux** : la
+simulation n'a donc que ces deux forces, et rien pour briser la symétrie.
+
+La signature chiffrée : l'**écart-type de l'écart bord à bord au plus proche
+voisin** entre disques vaut **0,00 px**. Tous les voisins exactement à
+`clusterGap`. C'est la définition d'un réseau.
+
+### Le mécanisme
+
+Chaque cluster reçoit `jitter_i = (FNV-1a de son id, normalisé 0..1) × jitter`,
+et la **simulation seule** travaille avec `r + jitter_i`. Le hachage porte un
+suffixe `:jitter` distinct de celui de l'amorçage, sans quoi les deux tirages
+seraient corrélés.
+
+Trois propriétés, dans l'ordre d'importance :
+
+1. **Les garanties sont rigoureusement inchangées.** La passe dure finale
+   utilise le VRAI rayon et le vrai `clusterGap` ; c'est elle, et elle seule,
+   qui porte l'invariant de sortie. Vérifié : `min nn = 160,00 px` à 0, 16, 32,
+   48 et 64. Un jitter arbitrairement grand ne produirait pas un recouvrement,
+   seulement un layout plus aéré.
+2. **La forme peinte n'est jamais gonflée.** Le jitter n'entre ni dans le cercle
+   englobant ni dans `ClusterShape`. Testé au bit près : les rayons émis à
+   `jitter: 0` et `jitter: 64` sont identiques, seules les positions diffèrent.
+3. **C'est la VARIANCE qui casse le pavage**, pas un déplacement. Les voisins se
+   posent dans `[clusterGap, clusterGap + jitter_i + jitter_j]` au lieu de tous
+   tomber sur `clusterGap` : des disques qui ne demandent plus la même place ne
+   peuvent plus former un réseau.
+
+C'est l'**unique** source de bruit du moteur. Aucun angle, aucune position ni
+aucune constante n'est perturbée ailleurs, et il n'y a toujours ni
+`Math.random` ni `Date.now` — le déterminisme au bit près reste testé.
+
+### Le balayage
+
+`bigShop(3000)`, le fixture qui isole l'effet (agrégats uniformes, zéro arête) :
+
+| jitter | é.-type nn | moyenne nn | **min nn** | remplissage | bbox |
+|---|---|---|---|---|---|
+| 0 | 0,00 px | 160,0 px | **160,00** | 12,3 % | 6 026 × 5 929 |
+| 16 | 6,36 px | 166,1 px | **160,00** | 11,2 % | 6 141 × 6 397 |
+| **32** | **12,02 px** | 177,9 px | **160,00** | **10,3 %** | 6 394 × 6 692 |
+| 48 | 17,65 px | 189,2 px | **160,00** | 9,8 % | 6 617 × 6 806 |
+| 64 | 22,72 px | 201,5 px | **160,00** | 8,9 % | 6 917 × 7 142 |
+
+Jeu de la démo, pour mémoire : 15,1 % à 0, 15,5 % à 16, 13,7 % à 32, 14,8 % à
+48, 14,0 % à 64. **Non monotone**, et c'est attendu : ses ressorts
+inter-agrégats rebattent la mise en page à chaque amplitude, donc la comparaison
+amplitude par amplitude n'y a pas de sens fin. Le choix se fait sur A, qui isole
+l'effet.
+
+### Le choix, à l'œil
+
+| jitter | rendu |
+|---|---|
+| 0 | ![jitter 0](./2026-09-01-jitter-00.svg) |
+| 16 | ![jitter 16](./2026-09-01-jitter-16.svg) |
+| **32 — retenu** | ![jitter 32](./2026-09-01-jitter-32.svg) |
+| 48 | ![jitter 48](./2026-09-01-jitter-48.svg) |
+
+Ce que les images montrent, et que l'écart-type chiffre :
+
+- **0** — réseau hexagonal franc. Les rangées et les diagonales s'alignent d'un
+  bord à l'autre de la toile.
+- **16** — le réseau est perturbé mais les alignements diagonaux survivent par
+  plaques. L'œil lit encore une grille. 6,36 px d'écart-type, soit 4 % de
+  `clusterGap` : trop peu pour désaligner quoi que ce soit.
+- **32** — plus aucun alignement long ne subsiste, et le champ reste
+  uniformément dense : ni trou ni grappe. C'est le point où le rendu cesse de se
+  lire comme une grille sans se lire comme du désordre.
+- **48** — la variance se voit comme telle, certains couloirs faisant
+  visiblement le double des autres. Ce n'est pas plus « vivant » qu'à 32, et ça
+  coûte 0,5 point de remplissage de plus.
+
+**32 retenu.** Coût : **2,0 points de remplissage** sur A (12,3 → 10,3 %) et une
+bbox de 6 026 × 5 929 à 6 394 × 6 692. C'est le prix de la variance : l'écart
+MOYEN monte de 160,0 à 177,9 px, puisque gonfler les disques pendant la
+simulation les fait converger un peu plus au large.
+
+C'est un réglage d'œil, exposé comme `clusterGap` l'est — `jitter: 0` le
+désactive entièrement.
+
+### Ce que l'étape B ne tranche pas
+
+1. **L'amplitude est constante pour tous les clusters.** Un jitter
+   proportionnel au rayon (`r × k` au lieu de `+ k px`) donnerait la même
+   variance relative aux gros et aux petits agrégats ; sur des jeux à tailles
+   très hétérogènes, le jitter absolu perturbe proportionnellement plus les
+   petits. Non sondé — les jeux du dépôt ont des agrégats de taille homogène.
+2. **Le pavage n'est cassé que là où il existait.** Sur un jeu à ressorts
+   denses, la topologie brise déjà la symétrie et le jitter n'a presque rien à
+   faire ; il continue pourtant de coûter sa variance. Un jitter modulé par le
+   degré inter-agrégat serait plus économe, et bien plus compliqué à justifier.
+3. **Aucune mesure perceptuelle.** « Le pavage ne se lit plus comme une grille »
+   est un jugement d'œil sur quatre rendus, pas un critère. L'écart-type
+   objective la variance, pas la lisibilité.

@@ -164,6 +164,16 @@ export interface TwoLevelLayoutOptions {
   clusterGap?: number
   /** Itérations de la simulation à ressorts du niveau 2. */
   simIterations?: number
+  /**
+   * Amplitude, en pixels, du gonflement virtuel des disques PENDANT la
+   * simulation — le bruit déterministe qui casse la régularité du pavage. `0`
+   * le désactive. Voir le commentaire au-dessus de `simR` pour le mécanisme et
+   * `DEFAULTS` pour le choix de l'amplitude.
+   *
+   * Ce réglage ne peut pas dégrader une garantie : la passe dure finale ignore
+   * le gonflement, et la forme peinte n'est jamais gonflée.
+   */
+  jitter?: number
 }
 
 const DEFAULTS: Required<TwoLevelLayoutOptions> = {
@@ -204,6 +214,47 @@ const DEFAULTS: Required<TwoLevelLayoutOptions> = {
   // nombre dégrade la longueur des références inter-agrégats et la compacité,
   // jamais la justesse.
   simIterations: 400,
+  // RÉGLAGE D'ŒIL, comme `clusterGap`, et assumé comme tel — mais pas choisi
+  // sans chiffres. Ce que le jitter corrige est un artefact visuel : sur des
+  // disques de MÊME rayon, gravité + collision convergent vers l'empilement
+  // hexagonal, qui est l'optimum de densité de cercles égaux. `bigShop(3000)`
+  // — 167 agrégats identiques, aucune arête entre eux — sortait en pavage
+  // hexagonal si régulier que les alignements traversaient toute la toile.
+  //
+  // La métrique qui objective ça est l'ÉCART-TYPE de l'écart bord à bord au
+  // plus proche voisin entre disques. À jitter nul il vaut **0,00 px** : tous
+  // les voisins exactement à `clusterGap`, ce qui EST la définition d'un
+  // réseau régulier. Balayage complet, `bigShop(3000)` :
+  //
+  //   jitter | é.-type nn | moyenne nn | min nn | remplissage |   bbox
+  //        0 |    0,00 px |   160,0 px | 160,00 |    12,3 %   | 6026×5929
+  //       16 |    6,36 px |   166,1 px | 160,00 |    11,2 %   | 6141×6397
+  //       32 |   12,02 px |   177,9 px | 160,00 |    10,3 %   | 6394×6692
+  //       48 |   17,65 px |   189,2 px | 160,00 |     9,8 %   | 6617×6806
+  //       64 |   22,72 px |   201,5 px | 160,00 |     8,9 %   | 6917×7142
+  //
+  // La colonne qui compte le plus est `min nn` : **160,00 à toutes les
+  // amplitudes**. La garantie ne bouge pas d'un centième, parce que la passe
+  // dure finale ignore le gonflement. Le jitter n'achète que de la variance.
+  //
+  // 32 RETENU, aux rendus (les quatre SVG sont dans la section B du doc de
+  // sonde). À 16 les alignements diagonaux survivent par plaques : l'œil lit
+  // encore un réseau. À 32 plus aucun alignement long ne subsiste, alors que le
+  // champ reste uniformément dense — ni trou ni grappe. À 48 la variance
+  // commence à se voir comme telle, avec des couloirs franchement plus larges
+  // que d'autres, sans que le rendu soit plus « vivant » qu'à 32 ; elle coûte
+  // 0,5 point de remplissage de plus pour ça.
+  //
+  // Ce que 32 coûte, précisément : sur `bigShop(3000)`, remplissage 12,3 →
+  // 10,3 % (−2,0 points) et bbox 6026×5929 → 6394×6692, parce que l'écart
+  // MOYEN monte de 160,0 à 177,9 px — gonfler les disques pendant la
+  // simulation les fait converger un peu plus au large. Sur le jeu de la démo
+  // le coût est dans le bruit et non monotone (15,1 % à 0, 15,5 % à 16, 13,7 %
+  // à 32, 14,8 % à 48) : ses ressorts inter-agrégats rebattent la mise en page
+  // à chaque amplitude, donc la comparaison amplitude par amplitude n'y a pas
+  // de sens fin. C'est le fixture SANS arête qui isole l'effet, et c'est sur
+  // lui que le choix se fait.
+  jitter: 32,
 }
 
 /** Hachage FNV-1a de l'id — le MÊME que celui du moteur retiré, et pour la
@@ -735,6 +786,49 @@ function run(
   // n'étant pas associative, on ne s'en remet pas à lui.
   const springs = [...edgeWeight.entries()].sort((x, y) => (x[0] < y[0] ? -1 : 1)).map(([, v]) => v)
 
+  // GONFLEMENT VIRTUEL — le bruit déterministe qui casse le pavage.
+  //
+  // Le problème : la gravité et la collision, sur des disques de MÊME rayon,
+  // convergent vers l'empilement hexagonal, qui est l'optimum de densité de
+  // cercles égaux. Sur `bigShop(3000)` — 167 agrégats identiques, aucune arête
+  // entre eux — le résultat est un pavage quasi hexagonal parfaitement
+  // régulier, et ça se lit comme une grille plutôt que comme un graphe. La
+  // signature chiffrée de cette régularité : l'écart au plus proche voisin
+  // entre disques a un écart-type de **0,00 px**, tout le monde exactement à
+  // `clusterGap`.
+  //
+  // Le mécanisme : chaque cluster se voit attribuer un rayon GONFLÉ, `r +
+  // jitter_i`, avec `jitter_i` tiré du hachage de son id — donc stable d'une
+  // exécution à l'autre, et sans rapport avec sa position d'amorçage (le
+  // hachage porte un suffixe distinct, sans quoi les deux tirages seraient
+  // corrélés). La SIMULATION SEULE travaille avec ce rayon gonflé.
+  //
+  // Trois propriétés, dans l'ordre d'importance :
+  //
+  // 1. **Les garanties sont rigoureusement inchangées.** La passe dure finale
+  //    utilise le VRAI rayon et le vrai `clusterGap` ; c'est elle, et elle
+  //    seule, qui porte l'invariant de sortie. Un jitter arbitrairement grand
+  //    ne pourrait pas produire un recouvrement, seulement un layout plus
+  //    aéré.
+  // 2. **La forme peinte n'est jamais gonflée.** `jitter` n'entre ni dans
+  //    `LocalCluster.r`, ni dans le cercle englobant, ni dans `ClusterShape` :
+  //    la forme dessinée reste exactement la forme minimale des cartes.
+  // 3. **C'est la variance qui casse le pavage**, pas un déplacement. Les
+  //    voisins se posent à un écart réparti dans
+  //    `[clusterGap, clusterGap + jitter_i + jitter_j]` au lieu de tous tomber
+  //    sur `clusterGap` : les disques ne peuvent plus former un réseau
+  //    régulier puisqu'ils ne demandent plus tous la même place.
+  //
+  // C'est l'UNIQUE source de bruit du moteur. Aucun angle, aucune position, ni
+  // aucune constante n'est perturbée ailleurs, et il n'y a toujours ni
+  // `Math.random` ni `Date.now` : le déterminisme au bit près reste testé.
+  const simR = clusters.map((c) => {
+    if (o.jitter <= 0) return c.r
+    // Suffixe `:jitter` : décorrèle ce tirage de celui de l'amorçage, qui
+    // hache le même id juste au-dessus.
+    return c.r + (hashOf(`${c.id}:jitter`) / 0xffffffff) * o.jitter
+  })
+
   // NIVEAU 2 : ressorts + gravité + collision disque-disque, sur k disques.
   // `alpha` décroît linéairement : recuit simple, les grands déplacements en
   // début de simulation, les ajustements à la fin.
@@ -750,7 +844,7 @@ function run(
       const d = Math.hypot(dx, dy) || 1
       // Longueur idéale = la position de repos autorisée par la contrainte de
       // collision. Un ressort ne demande donc jamais l'impossible.
-      const ideal = a.r + b.r + o.clusterGap
+      const ideal = simR[s.a]! + simR[s.b]! + o.clusterGap
       // Poids PLAFONNÉ : dix références entre deux agrégats ne doivent pas
       // tirer dix fois plus fort qu'une seule, sinon une paire très couplée
       // écrase le reste du graphe.
@@ -777,7 +871,7 @@ function run(
         const b = clusters[j]!
         const dx = b.x - a.x
         const dy = b.y - a.y
-        const min = a.r + b.r + o.clusterGap
+        const min = simR[i]! + simR[j]! + o.clusterGap
         const d = Math.hypot(dx, dy)
         if (d >= min) continue
         // Deux centres confondus : la direction de poussée est indéterminée.

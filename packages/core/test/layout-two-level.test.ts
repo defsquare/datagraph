@@ -756,6 +756,138 @@ describe("placement radial intra-agrégat", () => {
   })
 })
 
+describe("jitter — bruit déterministe contre la régularité du pavage", () => {
+  /**
+   * Écart-type de l'écart bord à bord au PLUS PROCHE VOISIN, sur tous les
+   * disques. C'est la métrique qui objective « le pavage est régulier » : dans
+   * un réseau, tous les voisins sont à la même distance, donc l'écart-type est
+   * nul. Le jitter n'existe que pour le faire monter.
+   */
+  function nearestNeighbourSd(result: GraphLayoutResult, aggregates: AggregateIndex): number {
+    const disks = disksOf(result, aggregates)
+    const gaps: number[] = []
+    for (let i = 0; i < disks.length; i++) {
+      let best = Infinity
+      for (let j = 0; j < disks.length; j++) {
+        if (i === j) continue
+        best = Math.min(best, diskGap(disks[i]!, disks[j]!))
+      }
+      gaps.push(best)
+    }
+    const mean = gaps.reduce((a, b) => a + b, 0) / gaps.length
+    return Math.sqrt(gaps.reduce((a, b) => a + (b - mean) ** 2, 0) / gaps.length)
+  }
+
+  // `bigShop(3000)` est LE fixture qui isole l'effet : 167 agrégats de taille
+  // identique et AUCUNE arête entre eux, donc la simulation n'a que la gravité
+  // et la collision, et converge vers l'empilement hexagonal — l'optimum de
+  // densité de cercles égaux. Sur un jeu à ressorts, la topologie brouillerait
+  // la mesure.
+  const flatSetup = () => setupOn(bigShop(3000))
+
+  it(
+    "sans jitter, tous les voisins sont exactement à clusterGap — le réseau",
+    async () => {
+      const { graph, aggregates, visible } = flatSetup()
+      const result = await createTwoLevelLayoutEngine({ jitter: 0 }).layout(
+        graph,
+        aggregates,
+        visible,
+      )
+      // Mesuré : 0,00 px. C'est la définition d'un pavage régulier, et c'est
+      // l'état que le défaut corrige.
+      expect(nearestNeighbourSd(result, aggregates)).toBeLessThan(0.5)
+    },
+    30_000,
+  )
+
+  it(
+    "le jitter par défaut casse ce réseau, et l'amplitude gradue l'effet",
+    async () => {
+      const { graph, aggregates, visible } = flatSetup()
+      const sdOf = async (jitter: number) => {
+        const result = await createTwoLevelLayoutEngine({ jitter }).layout(
+          graph,
+          aggregates,
+          visible,
+        )
+        return nearestNeighbourSd(result, aggregates)
+      }
+      // Mesuré : 0,00 / 6,36 / 12,02 / 17,65 px. La monotonie est la propriété
+      // qui compte — `jitter` gradue bien la variance, il ne la déclenche pas
+      // en tout ou rien.
+      const [none, small, mid, large] = [await sdOf(0), await sdOf(16), await sdOf(32), await sdOf(48)]
+      expect(none!).toBeLessThan(0.5)
+      expect(small!).toBeGreaterThan(3)
+      expect(mid!).toBeGreaterThan(small!)
+      expect(large!).toBeGreaterThan(mid!)
+      // Et le défaut est bien actif : sans argument, on obtient le régime de 32.
+      const byDefault = nearestNeighbourSd(
+        await createTwoLevelLayoutEngine().layout(graph, aggregates, visible),
+        aggregates,
+      )
+      expect(byDefault).toBeCloseTo(mid!, 6)
+    },
+    60_000,
+  )
+
+  it(
+    "le jitter ne touche NI les garanties NI les formes peintes",
+    async () => {
+      // Les deux invariants que ce mécanisme ne doit jamais entamer, et la
+      // raison pour laquelle il est sûr d'en faire un défaut.
+      //
+      // 1. La passe dure finale travaille sur le VRAI rayon, donc l'écart
+      //    garanti reste `clusterGap` quelle que soit l'amplitude. Mesuré :
+      //    min nn = 160,00 px à 0, 16, 32, 48 et 64.
+      // 2. Le gonflement n'entre pas dans le cercle englobant : à packing
+      //    identique, les rayons émis doivent être IDENTIQUES d'une amplitude à
+      //    l'autre. Seules les positions bougent.
+      const { graph, aggregates, visible } = flatSetup()
+      const quiet = await createTwoLevelLayoutEngine({ jitter: 0 }).layout(graph, aggregates, visible)
+      const loud = await createTwoLevelLayoutEngine({ jitter: 64 }).layout(graph, aggregates, visible)
+
+      for (const result of [quiet, loud]) {
+        const disks = disksOf(result, aggregates)
+        for (let i = 0; i < disks.length; i++) {
+          for (let j = i + 1; j < disks.length; j++) {
+            expect(diskGap(disks[i]!, disks[j]!)).toBeGreaterThanOrEqual(CLUSTER_GAP - 1e-6)
+          }
+        }
+      }
+
+      // Rayons identiques au bit près : le jitter est purement transitoire.
+      const radiiOf = (r: GraphLayoutResult) =>
+        [...r.clusters].sort((a, b) => (a.aggregateId < b.aggregateId ? -1 : 1)).map((c) => c.r)
+      expect(radiiOf(loud)).toEqual(radiiOf(quiet))
+
+      // Contre-garde : les POSITIONS, elles, doivent avoir bougé — sinon le
+      // test ci-dessus passerait aussi avec un jitter inopérant.
+      expect([...loud.positions.entries()]).not.toEqual([...quiet.positions.entries()])
+    },
+    60_000,
+  )
+
+  it("reste déterministe au bit près avec le jitter actif", async () => {
+    // Le jitter est la seule source de « hasard » du moteur, et elle est
+    // entièrement dérivée du hachage des ids. Deux exécutions doivent donc
+    // rester identiques au bit près — c'est ce qui distingue ce mécanisme d'un
+    // `Math.random`, qui donnerait le même rendu et casserait cette propriété.
+    const { graph, aggregates, visible } = setupOn(bigShop(600))
+    const a = await createTwoLevelLayoutEngine().layout(graph, aggregates, visible)
+    const b = await createTwoLevelLayoutEngine().layout(graph, aggregates, visible)
+    expect([...a.positions.entries()]).toEqual([...b.positions.entries()])
+    expect(a.clusters).toEqual(b.clusters)
+  })
+
+  it("deux amplitudes différentes donnent deux mises en page différentes", async () => {
+    const { graph, aggregates, visible } = setupOn(bigShop(600))
+    const a = await createTwoLevelLayoutEngine({ jitter: 16 }).layout(graph, aggregates, visible)
+    const b = await createTwoLevelLayoutEngine({ jitter: 48 }).layout(graph, aggregates, visible)
+    expect([...a.positions.entries()]).not.toEqual([...b.positions.entries()])
+  })
+})
+
 describe("entrées dégénérées", () => {
   it("un graphe sans entité rend un résultat vide", async () => {
     const graph = buildGraph({}, config)
