@@ -363,9 +363,12 @@ recouvrement de cartes n'y apparaît.
 > nulle part : la passe garantissait `gap` entre des boîtes qu'on ne voyait
 > jamais. Ses chiffres sur `bigShop(3000)` (310 paires en recouvrement, 0,7 px
 > d'écart moyen à gap 0) mesuraient donc une autre forme que celle affichée, et
-> ne sont pas comparables à ceux ci-dessus. La rigidité y était de surcroît bit
-> à bit par accident : une poussée axiale tombe sur des flottants exacts, ce que
-> la poussée le long des centres ne fait pas (écart maximal mesuré : 2,84e-14 px).
+> ne sont pas comparables à ceux ci-dessus. La rigidité y sortait de surcroît
+> bit à bit sur les fixtures du dépôt, et l'assertion d'égalité stricte qu'ils
+> portaient tenait de leurs coordonnées, pas de la passe : une translation par
+> un flottant quelconque n'est jamais exacte, quel que soit son axe. Le contrat
+> réel est « à l'arrondi d'une addition flottante près » — écart maximal mesuré
+> aujourd'hui : 2,84e-14 px, pour un budget tenu à 1e-9.
 
 Deux cas particuliers. Une entité sans agrégat forme un cluster d'un seul, pour
 être poussée hors des enveloppes voisines. Et **les agrégats qui partagent une

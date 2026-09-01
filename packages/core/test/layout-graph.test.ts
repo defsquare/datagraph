@@ -322,11 +322,17 @@ describe("cluster separation", () => {
       const result = await createGraphLayoutEngine().layout(graph, aggregates, visible)
       expect(result.clusters.length).toBeGreaterThan(150)
 
-      // Mesuré sans la passe (`clusterGap: 0`) sur ce même fixture : 310 paires
-      // d'enveloppes franchement superposées et 0,7 px d'écart moyen au plus
-      // proche voisin. Aucun agrégat ne partage de membre ici (chaque commande
-      // ne référence qu'un client), donc l'exemption ne s'applique pas : le
-      // compte attendu est zéro.
+      // Mesuré sans la passe (`clusterGap: 0`) sur ce même fixture : 911 paires
+      // d'enveloppes en recouvrement et −289,8 px d'écart bord à bord moyen au
+      // plus proche voisin. Ce sont les chiffres des CERCLES, la forme
+      // réellement tracée et réellement écartée ; le « 310 paires / 0,7 px »
+      // qui figurait ici mesurait les boîtes englobantes de la relaxation
+      // précédente (trace historique conservée dans `DEFAULTS`,
+      // `layout-graph.ts`).
+      //
+      // L'appartenance étant une partition, aucune entité n'est membre de deux
+      // agrégats : aucun cluster n'est fusionné avec un autre, donc le compte
+      // attendu est zéro sans exception.
       let overlapping = 0
       const circles = result.clusters
       for (let i = 0; i < circles.length; i++) {

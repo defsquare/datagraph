@@ -71,15 +71,20 @@ function intraDistances(positions: Map<NodeId, Rect>, members: NodeId[]): number
  * Rigidité : chaque carte d'un cluster encaisse la MÊME translation, donc les
  * distances intra-agrégat traversent la passe inchangées.
  *
- * À l'arrondi de cette translation près, et pas au bit près. La poussée se
- * fait maintenant le long de la droite des centres, donc ses deux composantes
- * sont quelconques : `(x₁ + d) − (x₂ + d)` ne redonne pas exactement
- * `x₁ − x₂`. Écart maximal MESURÉ sur les fixtures de ce fichier : 0 px sur
- * `twoTangledClusters` (poussée purement horizontale, exacte en binaire) et
- * **2,84e-14 px** sur le cas à trois clusters ci-dessous — quatorze ordres de
- * grandeur sous le pixel. La relaxation sur boîtes qu'on remplace poussait le
- * long d'un axe et tombait toujours sur 0 ; c'était une propriété du fixture,
- * pas de la passe.
+ * À l'arrondi de cette translation près, et pas au bit près. La poussée se fait
+ * le long de la droite des centres, donc ses deux composantes sont quelconques :
+ * `(x₁ + d) − (x₂ + d)` ne redonne pas exactement `x₁ − x₂`. Écart maximal
+ * MESURÉ sur les fixtures de ce fichier : **2,84e-14 px** — quatorze ordres de
+ * grandeur sous le pixel.
+ *
+ * `twoTangledClusters` tombe sur 0 px, et il faut savoir POURQUOI pour ne pas
+ * en tirer une règle. Ce n'est PAS parce que la poussée y serait axiale : elle
+ * vaut (−239,20063806701862 ; −34,1715197238598), mesurée. C'est un accident
+ * d'arrondi de ses coordonnées — les membres d'un même cluster y partagent leur
+ * x, donc les écarts en x restent nuls, et ce `dy`-là laisse par chance les
+ * écarts en y exacts. Le même fixture décalé de quelques dixièmes de pixel
+ * redonne 2,84e-14. Il n'existe pas de classe d'entrées où l'exactitude est
+ * garantie ; c'est bien `1e-9` qui est le contrat.
  */
 function expectRigid(after: number[], before: number[]): void {
   expect(after).toHaveLength(before.length)
@@ -139,8 +144,12 @@ describe("separateClusters", () => {
 
     separateClusters(positions, aggregates, 400, 3000, PADDING)
 
-    // Ici la poussée est purement horizontale et l'égalité est bit à bit ;
-    // c'est le fixture qui le permet, pas la passe — voir `expectRigid`.
+    // Égalité bit à bit sur CE fixture-ci. C'est un accident d'arrondi de ses
+    // coordonnées, pas une propriété de la passe (la poussée y est oblique —
+    // voir `expectRigid` pour le vecteur mesuré et la contre-mesure). Gardée
+    // comme canari : si elle tombe alors qu'`expectRigid` passe partout
+    // ailleurs, c'est que le calcul de la poussée a bougé sans que le contrat
+    // soit rompu — relire le vecteur avant de conclure à une régression.
     expect(intraDistances(positions, ["a/0", "a/1", "a/2"])).toEqual(beforeA)
     expect(intraDistances(positions, ["b/0", "b/1", "b/2"])).toEqual(beforeB)
   })
