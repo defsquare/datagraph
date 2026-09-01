@@ -27,6 +27,15 @@ import type { Rect } from "./layout.js"
  * Ces deux tiers de passes-là étaient du VRAI travail : l'entrée n'était ni
  * facile ni « déjà séparée », contrairement à ce que disait la note d'origine.
  *
+ * CE −28 % N'EST PAS UN GAIN GÉNÉRAL. Il vaut exactement la part du plafond que
+ * l'entrée gaspillait, donc il dépend entièrement de la précocité de la
+ * convergence. Sur le jeu de la démo (350 entités), la sortie tombe à la passe
+ * 2739 sur 3000 — 91 % du plafond — donc la correction n'y rachète que ~9 %, et
+ * `setView("graph")` y coûte toujours ~4,2 s. Ces 4,2 s sont du VRAI travail de
+ * relaxation, pas du bruit flottant : aucun réglage de cette comparaison ne les
+ * récupère. Les faire baisser demande autre chose — un algorithme de
+ * non-recouvrement moins cher, ou la mise en page hors du thread principal.
+ *
  * Ne PAS revenir à `<= 0` : ça réintroduit le plafond systématique. Cette
  * consigne est désormais tenue par un test — voir la valeur de retour.
  */

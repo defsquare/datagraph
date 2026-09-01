@@ -83,6 +83,12 @@ const DEFAULTS: Required<GraphLayoutOptions> = {
   // dernier tiers qui était du bruit. La correction supprime le tiers gaspillé,
   // pas la passe.
   //
+  // Et ce −28 % ne se transpose PAS : il vaut la part du plafond que l'entrée
+  // gaspillait. Sur le jeu de la démo (350 entités), la sortie tombe à la passe
+  // 2739 sur 3000, donc la correction n'y rachète que ~9 % et `setView("graph")`
+  // y coûte toujours ~4,2 s — du vrai travail de relaxation, hors d'atteinte de
+  // ce réglage. Voir la doc de `separate.ts`.
+  //
   // 3000 n'est par ailleurs pas suffisant à toute échelle, indépendamment de
   // ce défaut : il reste 47 paires sous la marge (jamais en recouvrement) à
   // 450 cartes et 289 à 900. Les relever demanderait 10 000 passes, soit ~3×

@@ -280,6 +280,16 @@ returns the number of passes it actually ran, and
 cap on a dense pile — an assertion that fails the moment the comparison goes
 back to zero (verified by doing exactly that).
 
+**That 28% is not a general win, and it did not fix the graph view's cost.** The
+saving is exactly the share of the cap the input was wasting, so it depends
+entirely on how early that input converges. On the demo's 350-entity dataset the
+early exit fires at pass **2,739 of 3,000** — 91% of the cap — so the fix buys
+only about **9%** there, and `setView("graph")` still costs **~4.2 s**. Those
+4.2 s are real relaxation work, not floating-point noise: no tuning of this
+comparison can recover them. Bringing that number down needs a different
+approach — a cheaper non-overlap algorithm, or moving the layout off the main
+thread — not a better epsilon.
+
 **Cluster spacing, measured.** `separateOverlaps` keeps *cards* apart; it says
 nothing about *aggregates*, and without a second pass the envelopes end up
 touching — 310 of the 13,861 envelope pairs on `bigShop(3000)` are frankly
