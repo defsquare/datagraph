@@ -143,7 +143,16 @@ interface Address {
 }
 
 function addressOf(seed: number): Address {
-  const place = CITIES[seed % CITIES.length]!;
+  // La ville N'EST PAS `seed % 20`. Le prénom du client est lui aussi tiré
+  // modulo 20 (`FIRST_NAMES` en compte autant), et deux index modulo la même
+  // taille se verrouillent l'un à l'autre : chaque Camille habiterait Paris,
+  // chaque Julien Marseille, sur des cartes qui affichent les deux champs. Et
+  // aucun simple facteur ne le décroise, puisque le résultat ne dépendrait
+  // toujours que de `seed % 20`. Il faut casser la période : le pas de 7
+  // balaie la table, le `+ seed / 20` la décale d'un cran à chaque tour
+  // complet des prénoms, donc un même prénom voit quatre villes différentes
+  // sur les 78 clients.
+  const place = CITIES[(seed * 7 + Math.floor(seed / CITIES.length)) % CITIES.length]!;
   return {
     street: `${1 + ((seed * 7) % 180)} ${STREETS[(seed * 5) % STREETS.length]!}`,
     postcode: place.postcode,
@@ -254,10 +263,28 @@ const COST_SKELETON = 5;
  * commandes chacun pour que le regroupement par agrégat soit visible.
  *
  * Les valeurs sont tirées de tables combinées par index, avec des pas premiers
- * entre eux avec la taille des tables : deux cartes voisines ne partagent ni
- * prénom, ni nom, ni ville, ni produit commandé. Et le `total` d'une commande
- * vaut EXACTEMENT le prix du produit référencé fois la quantité — un total
- * incohérent est ce qui trahit le plus vite une donnée fabriquée.
+ * avec la taille de la table qu'ils parcourent : deux cartes voisines ne
+ * partagent ni prénom, ni nom, ni ville, ni date d'inscription, ni produit
+ * commandé. Et le `total` d'une commande vaut EXACTEMENT le prix du produit
+ * référencé fois la quantité — un total incohérent est ce qui trahit le plus
+ * vite une donnée fabriquée.
+ *
+ * Deux pièges de périodicité, tous deux tombés une fois dans ce fichier et
+ * corrigés, à ne pas réintroduire :
+ *
+ * 1. **Un pas non premier avec la taille de la table** n'en parcourt qu'une
+ *    partie. `(i * 5) % 30` sur le catalogue ne servait que 24 produits sur 30
+ *    et donnait au client `i` et au client `i+6` le même panier ; `(i * 7) % 28`
+ *    sur le jour du mois n'a jamais rendu que le 1er, le 8, le 15 et le 22.
+ * 2. **Deux champs tirés modulo la MÊME taille se verrouillent l'un à
+ *    l'autre**, même avec des pas différents : prénom et ville, tous deux
+ *    modulo 20, donnaient une ville par prénom. Il faut casser la période, pas
+ *    seulement changer le facteur (voir `addressOf`).
+ *
+ * Mesuré sur les 78 clients produits : 78 noms distincts, 78 e-mails distincts,
+ * 78 dates d'inscription distinctes, 78 rues distinctes, 78 couples
+ * (prénom, ville) distincts, chaque prénom vu avec 3 ou 4 villes, et 0 total
+ * incohérent sur les 234 commandes.
  */
 export function bigShop(n: number) {
   const categories = CATEGORIES.map((c, i) => ({ id: `cat${i + 1}`, name: c.name }));
@@ -312,7 +339,12 @@ export function bigShop(n: number) {
       email: `${slug(first)}.${slug(last)}@example.fr`,
       address,
       segment: SEGMENTS[i % SEGMENTS.length]!,
-      signupDate: `2023-${pad2(1 + (i % 12))}-${pad2(1 + ((i * 7) % 28))}`,
+      // Jour de pas 11, PREMIER avec 28. Le pas de 7 écrit ici d'abord ne
+      // rendait que {0, 7, 14, 21} — tous les clients inscrits un 1er, 8, 15
+      // ou 22 — et, croisé au mois de période 12, ne laissait que
+      // ppcm(12, 4) = 12 dates distinctes pour 78 clients. Avec 11 : période
+      // ppcm(12, 28) = 84, donc 78 dates toutes différentes.
+      signupDate: `2023-${pad2(1 + (i % 12))}-${pad2(1 + ((i * 11) % 28))}`,
     });
 
     const count = 2 + (i % 3);

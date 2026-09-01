@@ -145,8 +145,10 @@ of `clusterGap` (**160 px** by default). It only has something to do when
 aggregates don't share entities: two aggregates sharing a member are merged
 into one rigid block instead of being pulled apart, so once every aggregate
 ends up transitively linked by shared members — as happens with
-[`apps/demo`](../../apps/demo)'s two-root config — the pass is left with
-nothing to separate. See the
+[`apps/demo`](../../apps/demo)'s two-root config, where 108 aggregates collapse
+into a single block of 342 of 350 cards — the pass has almost nothing left to
+separate: it still pushes apart the 8 `Category` entities that no aggregate
+claims, and nothing else. See the
 [core README's Aggregates section](https://github.com/defsquare/data-graph/tree/main/packages/core#aggregates)
 for the rule and the measured numbers.
 

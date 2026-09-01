@@ -61,26 +61,36 @@ const DEFAULTS: Required<GraphLayoutOptions> = {
   // comme un coût FIXE plutôt qu'un plafond, parce que la sortie anticipée de
   // `separateOverlaps` ne se déclenchait jamais — elle comparait la
   // pénétration à zéro, et une paire posée exactement à la marge garde une
-  // pénétration résiduelle de l'ordre de 1e-14 qui repasse le test `> 0` : la
-  // boucle continuait de « bouger » des picomètres jusqu'au plafond. Mesuré
-  // alors sur 334 cartes déjà séparées dès la 3000e passe : plafond 3000 →
-  // 1,9 s, plafond 10 000 → 6,3 s, plafond 100 000 → 63,5 s — linéaire dans le
-  // plafond, signature d'une sortie anticipée qui ne se déclenche jamais. Ces
-  // trois chiffres sont laissés tels quels comme trace historique ; ils ne
-  // décrivent plus le comportement actuel.
+  // pénétration résiduelle non nulle (1,84e-11 px mesuré, cf. `separate.ts` :
+  // le « 1e-14 » écrit ici n'avait jamais été relevé) qui repasse le test
+  // `> 0` : la boucle continuait de « bouger » des picomètres jusqu'au
+  // plafond. Mesuré alors sur 334 cartes : plafond 3000 → 1,9 s, plafond
+  // 10 000 → 6,3 s, plafond 100 000 → 63,5 s — linéaire dans le plafond,
+  // signature d'une sortie anticipée qui ne se déclenche jamais. Ces trois
+  // chiffres sont laissés tels quels comme trace historique ; ils ne décrivent
+  // plus le comportement actuel.
   //
   // CORRIGÉ dans `separate.ts` : la comparaison se fait désormais contre une
   // épsilon plutôt que contre zéro (voir sa doc). La sortie anticipée se
-  // déclenche réellement — mesurée à la passe 1998 sur ce même fixture de 334
+  // déclenche réellement — passe 1999 sur 3000 sur ce même fixture de 334
   // cartes — et `iterations` redevient un vrai PLAFOND : coûteux seulement
-  // quand la passe en a vraiment besoin, pas systématiquement.
+  // quand la passe en a vraiment besoin, pas systématiquement. Gain mesuré sur
+  // `layout()` complet : 2619 → 1889 ms, soit −28 %.
+  //
+  // ATTENTION à ne pas surestimer ce gain : ces 334 cartes n'étaient PAS
+  // « déjà séparées » comme le disait la note d'origine. La passe travaille
+  // vraiment jusqu'à la 1999e — les deux tiers du plafond — et ce n'est que le
+  // dernier tiers qui était du bruit. La correction supprime le tiers gaspillé,
+  // pas la passe.
   //
   // 3000 n'est par ailleurs pas suffisant à toute échelle, indépendamment de
   // ce défaut : il reste 47 paires sous la marge (jamais en recouvrement) à
   // 450 cartes et 289 à 900. Les relever demanderait 10 000 passes, soit ~3×
-  // le temps de la passe sur toute entrée qui converge avant le plafond. Le
-  // compromis est assumé et documenté dans la section « Graph view » du
-  // README.
+  // le temps de la passe sur les entrées qui n'ont PAS convergé avant le
+  // plafond — celles-là précisément. Une entrée qui converge avant, elle, ne
+  // paie rien de plus : c'est exactement ce que la correction de la sortie
+  // anticipée a acquis. Le compromis est assumé et documenté dans la section
+  // « Graph view » du README.
   separationIterations: 3000,
   // CALIBRÉ, pas choisi au goût. Balayage complet de `layout()` sur deux
   // fixtures à l'échelle, en mesurant l'écart bord à bord au plus proche

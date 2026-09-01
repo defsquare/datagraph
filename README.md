@@ -258,14 +258,27 @@ tuning ceiling rather than a defect in the algorithm.
 
 Historical note: this pass used to compare penetration against zero, which
 kept its "nothing moved" early exit from ever firing — a pair settled exactly
-at the margin retains ~1e-14 of residual penetration, which still reads
-positive, so the loop kept "moving" picometers until the cap regardless of
-whether it had actually converged. That made the cost proportional to
-`separationIterations` even on an easy input (measured then on 334 already-
-separated cards: cap 3,000 → 1.9 s, 10,000 → 6.3 s, 100,000 → 63.5 s). Fixed:
-the comparison is now against an epsilon (`packages/core/src/separate.ts`),
-so the early exit fires for real — measured at pass 1998 of 3,000 on that same
-fixture — and the cap is a true ceiling again, not a fixed cost.
+at the margin retains a residual penetration that still reads positive
+(**1.84e-11 px**, measured on the 334-card fixture by putting the comparison
+back to zero; earlier notes in this repo guessed 1e-13 and 1e-14, neither of
+which had been measured), so the loop kept "moving" picometers until the cap
+regardless of whether it had actually converged. That made the cost
+proportional to `separationIterations` (measured then on 334 cards: cap 3,000 →
+1.9 s, 10,000 → 6.3 s, 100,000 → 63.5 s). Fixed: the comparison is now against
+an epsilon (`packages/core/src/separate.ts`), so the early exit fires for real
+and the cap is a true ceiling again, not a fixed cost.
+
+What that fix is worth, measured on the same 334-card fixture (median of 3
+runs): full `layout()` **2,619 ms → 1,889 ms, −28%**; the separation pass alone
+goes from hitting all 3,000 passes to exiting at pass 1,999. Note what that
+second number says: those cards were **not** "already separated" and the input
+was not easy — the pass does real work for two thirds of the cap, and only the
+last third was floating-point noise. The fix removes the wasted third, not the
+pass. A regression guard now holds the epsilon in place: `separateOverlaps`
+returns the number of passes it actually ran, and
+`packages/core/test/separate.test.ts` asserts that count is strictly below the
+cap on a dense pile — an assertion that fails the moment the comparison goes
+back to zero (verified by doing exactly that).
 
 **Cluster spacing, measured.** `separateOverlaps` keeps *cards* apart; it says
 nothing about *aggregates*, and without a second pass the envelopes end up
@@ -310,9 +323,10 @@ and products point *at* categories). `separateClusters` therefore has nothing
 left to space out inside the blob: it only pushes those eight categories away.
 Dropping back to `aggregates: ["Customer"]` on the same data gives **116
 super-clusters, the largest 5 cards (1.4%)** — 26 of 5, 26 of 4, 26 of 3 and 38
-singletons — and the pass does real work again, at the cost of an 18× larger
-canvas (17,367×21,849 px versus 4,816×6,752 px, since 116 blocks each claim a
-160 px corridor). Two roots one hop apart is the configuration that turns
+singletons — and the pass does real work again, at the cost of a **11.7× larger
+canvas by area** (17,367×21,849 px versus 4,816×6,752 px — 3.6× wider and 3.2×
+taller, so `fit()` zooms out ~3.4×, since 116 blocks each claim a 160 px
+corridor). Two roots one hop apart is the configuration that turns
 cluster spacing off; it is not a defect, it is what the merge rule means.
 
 `clusterGap` defaults to **160 px**, chosen by measurement rather than taste —

@@ -3,14 +3,16 @@ import type { Rect } from "./layout.js"
 import type { NodeId } from "./model.js"
 
 /**
- * Seuil de comparaison des pénétrations. `separateOverlaps` compare à zéro, et
- * sa sortie anticipée ne se déclenche donc JAMAIS : une paire posée exactement
- * à la marge garde une pénétration résiduelle de l'ordre de 1e-14, qui repasse
- * le test `> 0` et fait « bouger » des picomètres jusqu'au plafond
- * d'itérations (le défaut est documenté dans le commentaire de `DEFAULTS`,
- * `layout-graph.ts`). On ne le reproduit pas ici : sous cette épsilon, une
- * paire est considérée à sa place, la passe converge et sort pour de bon.
- * 1e-6 px est six ordres de grandeur sous le pixel, donc sans effet visible.
+ * Seuil de comparaison des pénétrations. Une paire posée exactement à la marge
+ * garde une pénétration résiduelle non nulle (1,84e-11 px mesuré, cf.
+ * `separate.ts`) : comparée à zéro, elle repasse le test `> 0` et fait
+ * « bouger » des picomètres jusqu'au plafond d'itérations. Sous cette épsilon,
+ * elle est considérée à sa place, la passe converge et sort pour de bon. 1e-6
+ * px est six ordres de grandeur sous le pixel, donc sans effet visible.
+ *
+ * Cette passe-ci a toujours comparé à une épsilon ; `separateOverlaps`
+ * comparait à zéro et a été alignée dessus depuis (sa doc garde la mesure du
+ * défaut et de sa correction). Ce commentaire décrivait encore l'état d'avant.
  */
 const EPSILON = 1e-6
 
