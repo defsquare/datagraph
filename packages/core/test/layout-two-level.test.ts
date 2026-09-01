@@ -15,6 +15,8 @@ import {
   twoRootsConfig,
   deepAggregate,
   deepAggregateConfig,
+  denseRefs,
+  denseRefsConfig,
 } from "./fixtures.js"
 import type { Graph } from "../src/model.js"
 
@@ -754,6 +756,119 @@ describe("placement radial intra-agrégat", () => {
     expect(total / n).toBeLessThan(470)
     expect(max).toBeLessThan(730)
   })
+})
+
+describe("graphe inter-cluster dense", () => {
+  /**
+   * La réserve n°5 de la sonde du moteur : « la passe dure finale peut défaire
+   * un ressort ; un graphe inter-agrégat très dense pourrait se dégrader — non
+   * sondé ». Elle l'est ici.
+   *
+   * Ce que ces assertions valent : elles ne disent RIEN du calibrage des
+   * constantes de la simulation, et c'est voulu. Les garanties du moteur sont
+   * portées par le packing et par la passe dure finale, jamais par la
+   * simulation — donc elles doivent tenir quel que soit le réglage, et
+   * particulièrement là où les ressorts tirent le plus fort contre la
+   * contrainte. Un balayage de constantes qui casserait ces tests signalerait
+   * un défaut de conception, pas un mauvais réglage.
+   *
+   * Degré moyen 12,0 et max 12 sur 80 clusters, contre 4,6 sur le jeu de la
+   * démo — voir `denseRefs` pour la forme exacte.
+   */
+  let dense: { result: GraphLayoutResult; aggregates: AggregateIndex } | null = null
+  async function atDensity() {
+    if (!dense) {
+      const { graph, aggregates, visible } = setupOn(denseRefs(), denseRefsConfig)
+      dense = { result: await createTwoLevelLayoutEngine().layout(graph, aggregates, visible), aggregates }
+    }
+    return dense
+  }
+
+  it("le fixture est bien dense", async () => {
+    // Garde anti-test-creux : sans elle, une régression du générateur rendrait
+    // les assertions ci-dessous vraies sur un graphe quelconque.
+    const { result, aggregates } = await atDensity()
+    expect(result.positions.size).toBe(200)
+    expect(result.clusters.length).toBe(80)
+    const pairs = new Set<string>()
+    for (const [id] of result.positions) {
+      const own = aggregates.byNode.get(id)?.[0]
+      expect(own).toBeDefined()
+    }
+    // 480 paires de clusters reliées, comptées depuis l'index : c'est le
+    // chiffre que la doc du fixture annonce.
+    for (const aggregate of aggregates.aggregates.values()) pairs.add(aggregate.id)
+    expect(pairs.size).toBe(80)
+  })
+
+  it(
+    "tient toutes ses garanties sous forte densité de références",
+    async () => {
+      const { result, aggregates } = await atDensity()
+
+      const rects = [...result.positions.values()]
+      let overlapping = 0
+      let tooClose = 0
+      for (let i = 0; i < rects.length; i++) {
+        for (let j = i + 1; j < rects.length; j++) {
+          const { px, py } = penetrations(rects[i]!, rects[j]!)
+          if (px > 1e-6 && py > 1e-6) overlapping++
+          if (px + CARD_GAP > 1e-9 && py + CARD_GAP > 1e-9) tooClose++
+        }
+      }
+      expect(overlapping).toBe(0)
+      expect(tooClose).toBe(0)
+
+      const disks = disksOf(result, aggregates)
+      let worst = Infinity
+      for (let i = 0; i < disks.length; i++) {
+        for (let j = i + 1; j < disks.length; j++) {
+          worst = Math.min(worst, diskGap(disks[i]!, disks[j]!))
+        }
+      }
+      // Le point de la réserve : même quand 480 ressorts tirent contre elle, la
+      // passe dure finale garde le dernier mot.
+      expect(worst).toBeGreaterThanOrEqual(CLUSTER_GAP - 1e-6)
+    },
+    60_000,
+  )
+
+  it("reste déterministe au bit près sous forte densité", async () => {
+    const data = denseRefs()
+    const a = setupOn(data, denseRefsConfig)
+    const b = setupOn(data, denseRefsConfig)
+    const first = await createTwoLevelLayoutEngine().layout(a.graph, a.aggregates, a.visible)
+    const second = await createTwoLevelLayoutEngine().layout(b.graph, b.aggregates, b.visible)
+    expect([...first.positions.entries()]).toEqual([...second.positions.entries()])
+    expect(first.clusters).toEqual(second.clusters)
+  })
+
+  it("tient aussi quand les références se concentrent sur des hubs", async () => {
+    // L'autre moitié de la réserve : `denseRefs(40, 8)` ramène les 480
+    // références sur 8 produits seulement — degré max 40 au lieu de 12. Un hub
+    // est tiré dans toutes les directions à la fois, ce qui est le cas où la
+    // passe dure a le plus de ressorts à contredire d'un coup.
+    const { graph, aggregates, visible } = setupOn(denseRefs(40, 8), denseRefsConfig)
+    const result = await createTwoLevelLayoutEngine().layout(graph, aggregates, visible)
+    const disks = disksOf(result, aggregates)
+    let worst = Infinity
+    for (let i = 0; i < disks.length; i++) {
+      for (let j = i + 1; j < disks.length; j++) {
+        worst = Math.min(worst, diskGap(disks[i]!, disks[j]!))
+      }
+    }
+    expect(worst).toBeGreaterThanOrEqual(CLUSTER_GAP - 1e-6)
+
+    const rects = [...result.positions.values()]
+    let overlapping = 0
+    for (let i = 0; i < rects.length; i++) {
+      for (let j = i + 1; j < rects.length; j++) {
+        const { px, py } = penetrations(rects[i]!, rects[j]!)
+        if (px > 1e-6 && py > 1e-6) overlapping++
+      }
+    }
+    expect(overlapping).toBe(0)
+  }, 60_000)
 })
 
 describe("jitter — bruit déterministe contre la régularité du pavage", () => {

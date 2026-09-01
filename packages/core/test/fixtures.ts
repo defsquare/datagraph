@@ -181,6 +181,93 @@ export function deepAggregate(orders = 4, linesPerOrder = 3, serialsPerLine = 2)
   return { customers, orders: orderRows, lines, serials }
 }
 
+/**
+ * Un graphe INTER-CLUSTER dense — l'adversité qu'aucun autre fixture du dépôt
+ * ne produit, et la réserve n°5 de la sonde du moteur à deux niveaux
+ * (« la passe dure finale peut défaire un ressort ; un graphe inter-agrégat
+ * très dense pourrait se dégrader — non sondé »).
+ *
+ * **La forme d'adversité encodée.** Deux racines sont déclarées, `Customer` et
+ * `Product`. Chaque commande référence son client ET quatre produits ; par
+ * arbitrage (`Customer` déclaré en premier) elle appartient à l'agrégat du
+ * client, donc ses quatre références produit sont toutes INTER-cluster. Chaque
+ * produit, racine, est un cluster d'une seule carte, très référencé.
+ *
+ * Aux valeurs par défaut (40 clients, 40 produits, 3 commandes de 4 produits) :
+ * **200 cartes, 80 clusters, 480 arêtes inter-cluster**, soit un degré moyen de
+ * **12,0** et un degré max de **12** — contre 4,6 en moyenne sur le jeu de la
+ * démo, le plus dense qu'on avait, et 0 sur `bigShop`.
+ *
+ * Le graphe est donc **RÉGULIER** : chaque client touche exactement 12 produits
+ * et chaque produit exactement 12 clients, par construction. C'est délibéré et
+ * c'est ce qui en fait un bon fixture de calibrage — la charge de ressort est
+ * la même partout, donc ce qu'on mesure est l'effet d'une constante et non
+ * celui d'une hétérogénéité de degré. Dit autrement : il encode la densité
+ * PURE, sans confondre avec la forme.
+ *
+ * **L'adversité « hub » est atteignable par paramètre**, et n'est pas le
+ * défaut : réduire le nombre de produits concentre les références sur moins de
+ * racines. Mesuré — `denseRefs(40, 12)` donne 52 clusters, degré moyen 15,4 et
+ * **max 34** ; `denseRefs(40, 8)` donne 48 clusters, moyen 13,3 et **max 40**.
+ * Ce sont deux adversités différentes : la première (défaut) charge toutes les
+ * arêtes également, la seconde tire un petit nombre de clusters dans toutes les
+ * directions à la fois. Le calibrage se fait sur la première ; la seconde reste
+ * disponible pour sonder la réserve « un hub très référencé se dégrade-t-il ? »
+ * sans avoir à écrire un fixture de plus.
+ *
+ * **Choix des produits, et pourquoi ces trois nombres.** L'indice produit est
+ * `(7·i + 13·j + 17·k) mod P` — client i, commande j, position k. 7, 13 et 17
+ * sont premiers avec P = 40, donc : deux positions d'une même commande ne
+ * tombent jamais sur le même produit (les quatre valeurs de `17k mod 40` sont
+ * distinctes), deux commandes d'un même client ne se recouvrent pas
+ * entièrement, et deux clients ne tirent pas le même paquet. Un pas qui
+ * partagerait un facteur avec P replierait tout le monde sur un sous-ensemble
+ * des produits : le graphe paraîtrait dense en nombre d'arêtes tout en n'ayant
+ * qu'une poignée de hubs, et le fixture mesurerait autre chose que ce qu'il
+ * annonce.
+ */
+export function denseRefs(customers = 40, products = 40, orders = 3, perOrder = 4) {
+  const customerRows = []
+  const productRows = []
+  const orderRows = []
+
+  for (let p = 0; p < products; p++) {
+    productRows.push({ id: `p${p}`, name: `Produit ${p}`, price: 10 + p })
+  }
+  for (let i = 0; i < customers; i++) {
+    customerRows.push({ id: `c${i}`, name: `Client ${i}`, email: `c${i}@x.fr` })
+    for (let j = 0; j < orders; j++) {
+      const order: Record<string, unknown> = { id: `o${i}_${j}`, customerId: `c${i}`, total: i + j }
+      for (let k = 0; k < perOrder; k++) {
+        order[`productId${k}`] = `p${(7 * i + 13 * j + 17 * k) % products}`
+      }
+      orderRows.push(order)
+    }
+  }
+  return { customers: customerRows, products: productRows, orders: orderRows }
+}
+
+export const denseRefsConfig: DataGraphConfig = {
+  entities: {
+    Customer: { match: "$.customers[*]", id: "id" },
+    Product: { match: "$.products[*]", id: "id" },
+    Order: { match: "$.orders[*]", id: "id" },
+  },
+  references: {
+    Order: {
+      customerId: "Customer",
+      productId0: "Product",
+      productId1: "Product",
+      productId2: "Product",
+      productId3: "Product",
+    },
+  },
+  // `Customer` en premier : l'arbitrage lui donne les commandes, et les
+  // références produit deviennent toutes inter-cluster. Inverser l'ordre
+  // donnerait les commandes aux produits et changerait complètement la forme.
+  aggregates: ["Customer", "Product"],
+}
+
 export const deepAggregateConfig: DataGraphConfig = {
   entities: {
     Customer: { match: "$.customers[*]", id: "id" },
