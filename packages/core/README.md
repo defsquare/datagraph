@@ -207,10 +207,14 @@ of each size), the 30 `Product` roots become single-card aggregates, and the 8
 of them actually spaced apart. The price is a canvas roughly 11× larger by area,
 which `fit()` absorbs.
 
-The union-find is still there and still tested. Under a partition it never
-merges anything, but it is what *guarantees* that a card receives exactly one
-translation and that the spacing stays rigid — that guarantee belongs to the
-pass, not to a membership rule that could be relaxed again later.
+The union-find that carried this — the merge of aggregates sharing a member into
+one rigid block — went with the pass when it was removed. It had already been
+inert for a while, a partition giving it nothing to merge; it was kept as long as
+the pass existed because the guarantee it encoded (one card, one translation)
+belonged to the pass rather than to a membership rule that could be relaxed
+again. Nothing replaces it, because nothing needs to: the current engine packs
+each aggregate independently and never moves a card relative to its co-members
+at all.
 
 `aggregates` is what powers the renderer's **graph view** — see the
 [renderer package README](https://github.com/defsquare/data-graph/tree/main/packages/renderer#graph-view)

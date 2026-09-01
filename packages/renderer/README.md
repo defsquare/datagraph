@@ -120,23 +120,24 @@ await graph.setView("graph");     // and switch again
 **Dynamic import.** The first switch to `"graph"` dynamically imports the layout
 engine, which is why `setView` returns a promise. That import is isolated behind
 the dynamic `import()`: in a Vite production build (see
-[`apps/demo`](../../apps/demo)) it lands in its own chunk — **180.28 kB gzip**,
-577.17 kB raw, measured — and never enters the bundle of a consumer that only
-ever uses the structure view. Two tests guard it, one per half of the chain:
+[`apps/demo`](../../apps/demo)) it lands in its own chunk — **1.77 kB gzip**,
+3.75 kB raw, measured — and never enters the bundle of a consumer that only ever
+uses the structure view. Two tests guard it, one per half of the chain:
 `packages/core/test/bundle-purity.test.ts` walks the built chunk closure of the
 core's main entry point, so a careless barrel export can't regress it, and
 `packages/renderer/test/bundle-purity.test.ts` checks this package's sources for
 any static *value* import of that entry point — turning `create.ts`'s
-`import type` into a value import would put cytoscape in every consumer's bundle
-while leaving the rest of the suite green.
+`import type` into a value import would pull the graph view into every consumer's
+bundle while leaving the rest of the suite green.
 
-Almost all of that chunk is still `cytoscape` and its `fcose` plugin, and it is
-worth being precise about why. The engine this view now runs
-(`createTwoLevelLayoutEngine`) imports neither, so neither is *executed* any
-more; but the core exposes both engines from the same `./graph-layout` entry
-point, so both are still *shipped* in that chunk. Removing the old engine is what
-will make the chunk shrink; until then the size above is what a first switch to
-the graph view actually downloads.
+That chunk used to weigh **180.28 kB gzip** (577.17 kB raw), essentially all of
+it `cytoscape` and its `fcose` plugin, which the previous layout engine imported.
+That engine has been removed and both dependencies with it — hence the factor of
+102. Be clear about what this does to the guarantee above: in kilobytes, it now
+guards almost nothing, and a regression would cost 1.77 kB. Both tests are kept
+anyway, and their own comments say why: they hold the *shape* — the graph view
+loads lazily by construction, so whatever weight this view acquires next is lazy
+by default rather than by review.
 
 **No folding.** `expand`/`collapse` are structure-view operations (see the
 [root README's API table](https://github.com/defsquare/data-graph#public-api--datagraph));
@@ -180,8 +181,8 @@ what brought the spacing back — see the
 [core README's Aggregates section](https://github.com/defsquare/data-graph/tree/main/packages/core#aggregates)
 for the rule and the measured before/after. And until recently the spacing itself
 was done by two relaxation passes over the output of a global `fcose` layout
-(`separateOverlaps`, then `separateClusters`). Both still exist core-side and
-both are still tested; this view simply no longer runs them. On the demo's
+(`separateOverlaps`, then `separateClusters`); those passes and that engine have
+since been **removed from the core** along with `cytoscape`. On the demo's
 dataset the switch took `setView("graph")` from **4,310–4,484 ms to 220–252 ms**
 (measured in Chromium, three isolated runs each) and the canvas from
 18,714 × 19,984 to 8,083 × 8,437. The

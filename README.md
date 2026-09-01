@@ -238,20 +238,22 @@ package's README for the latest numbers and any documented deviation.
 ### Graph view
 
 The graph view runs the **two-level layout engine** (`createTwoLevelLayoutEngine`,
-`packages/core/src/layout-two-level.ts`). It replaced a global fcose layout
-followed by two repair passes; that older pipeline is still in the repo, still
-exported and still tested, but nothing in the renderer calls it any more. Its
-budgets are kept below as a dated historical trace rather than deleted.
+`packages/core/src/layout-two-level.ts`), and it is now the only one. It replaced
+a global fcose layout followed by two repair passes; that pipeline —
+`layout-graph.ts`, `separate.ts`, `cluster-separate.ts`, plus the `cytoscape` and
+`cytoscape-fcose` dependencies — has since been **removed from the repo**. What
+it measured is kept below as a dated historical trace, because several current
+defaults were chosen against it; the code itself lives in git history and in
+`docs/superpowers/spikes/2026-09-01-two-level-layout.md`.
 
 | Property | Budget | Enforced by |
 | --- | --- | --- |
-| Card overlap after layout | Zero overlapping pairs, **and** no pair closer than `cardGap` (16 px), at 334 cards. Both hold **by construction** rather than by relaxation: cards of one aggregate are packed with the margin already included, and two cards of different aggregates cannot come close because their discs are held apart. There is no iteration cap to run out of, so the margin no longer degrades with scale the way the retired pipeline's did | `packages/core/test/layout-two-level.test.ts` |
+| Card overlap after layout | Zero overlapping pairs, **and** no pair closer than `cardGap` (16 px), at 334 cards. Both hold **by construction** rather than by relaxation: cards of one aggregate are packed with the margin already included, and two cards of different aggregates cannot come close because their discs are held apart. There is no iteration cap to run out of, so the margin no longer degrades with scale the way the retired pipeline's did. Asserted with a **1e-9 px** tolerance, which is also what remains of the retired "intra-aggregate geometry" budget: the margin is exact in the packing's local frame, and the only thing applied afterwards is one translation per cluster | `packages/core/test/layout-two-level.test.ts` |
 | Determinism | **Bit-identical** positions *and* envelopes across two runs on the same input, including when the `visible` set is iterated in a different order. Seeded from node ids (FNV-1a); no `Math.random`, no `Date.now` | `packages/core/test/layout-two-level.test.ts` |
 | Aggregate envelope spacing after layout | Zero overlapping pairs at 167 aggregates, and every pair of discs at least `clusterGap` − 1e-6 apart edge to edge. This covers **painted envelopes and the singleton discs of entities in no aggregate alike** — the test builds the full disc set from the result, not just the emitted `clusters`. It is an output invariant of a final hard pass, not a convergence hope | `packages/core/test/layout-two-level.test.ts` |
 | Envelope fidelity | The disc that gets spaced is the disc that gets painted: each emitted `ClusterShape` matches the minimal enclosing circle recomputed from the final card positions to 1e-6, every member's corners lie inside it, and only real aggregates emit one | `packages/core/test/layout-two-level.test.ts` |
 | `setView("graph")` on the demo's 350-entity dataset | **Measured, not enforced.** 220–252 ms in Chromium over three isolated Playwright runs, against **4,310–4,484 ms** for the retired pipeline on the same machine — about **×19**. The committed assertion is only a 30 s collapse ceiling; the number is logged, not asserted, because a CI machine is not a developer's | `apps/demo/e2e/view.spec.ts` |
-| Intra-aggregate geometry under cluster separation | Preserved to the rounding of one uniform per-cluster translation. **Enforced at < 1e-9 px** per intra-aggregate pair; worst case observed on the committed fixtures is **2.84e-14 px**, five orders of headroom. One fixture comes out at exactly 0 px, which is a rounding accident of its coordinates and not a class of inputs where exactness holds — the push is oblique, along the line of centres. This budget belongs to `separateClusters`, which the graph view **no longer runs**; the pass and its test stay | `packages/core/test/cluster-separate.test.ts` |
-| `@defsquare/data-graph` bundle purity | `cytoscape` never enters a consumer's bundle unless it calls `setView("graph")` — the structure view alone doesn't pull it in. Still true, and still by the same mechanism, after the engine switch: the chunk is emitted at **180.28 kB gzip** (577.17 kB raw), of which ~178 kB is cytoscape, and it is still downloaded on that first switch. What changed is that the engine now running inside it never executes cytoscape. Dropping those kilobytes needs the old engine gone from the entry point, which is a separate step | `packages/core/test/bundle-purity.test.ts` (core half) + `packages/renderer/test/bundle-purity.test.ts` (renderer half) |
+| `@defsquare/data-graph` bundle purity | The graph view never enters a consumer's bundle unless it calls `setView("graph")` — the structure view alone doesn't pull it in. **What this is worth has collapsed, and the tests say so**: the chunk it keeps out went from **180.28 kB gzip to 1.77 kB** (3.75 kB raw) when `cytoscape` left, so a regression would now cost 1.77 kB on a 552 kB bundle. Both tests are kept for the *shape* they hold — the view loads lazily by construction, so whatever weight lands behind it next inherits that — not for the kilobytes | `packages/core/test/bundle-purity.test.ts` (core half) + `packages/renderer/test/bundle-purity.test.ts` (renderer half) |
 
 **Two levels, because membership is a partition.** Every entity belongs to at
 most one aggregate (see [the core README](./packages/core/README.md#aggregates)),
@@ -268,10 +270,17 @@ so the problem splits cleanly in two and neither half has to repair the other:
    places the discs, and a final hard pass makes
    `dist ≥ r₁ + r₂ + clusterGap` an output invariant.
 
-Two consequences worth naming. There is **no card separation pass at all** any
+Three consequences worth naming. There is **no card separation pass at all** any
 more — two cards of different aggregates cannot overlap because their discs
-cannot — and the cost no longer follows the number of cards but the number of
-aggregates, O(k² · iterations) on k discs plus a linear packing.
+cannot. The cost no longer follows the number of cards but the number of
+aggregates, O(k² · iterations) on k discs plus a linear packing. And the table
+above lost a row it used to carry, *intra-aggregate geometry under cluster
+separation*: that budget existed because a relaxation pass could tear an
+aggregate apart, and the pass is gone. Nothing now runs between the packing,
+which fixes the geometry, and the output, which applies one translation per
+cluster — so the property is structural rather than enforced, and its observable
+consequence (margins holding to 1e-9 px) is asserted by the card-overlap row.
+Keeping a row with no test behind it would have been worse than dropping it.
 
 **What the switch bought, measured.** The spike behind it
 (`docs/superpowers/spikes/2026-09-01-two-level-layout.md`) ran both engines with
@@ -329,111 +338,21 @@ than no budget. The history lives on in
 
 Switching to the graph view for the first time still dynamically imports the
 `graph-layout` entry point, and a Vite production build of
-[`apps/demo`](./apps/demo) still emits it as its own chunk — **180.28 kB gzip**,
-measured after the switch, essentially all of it `cytoscape` and its `fcose`
-plugin. The two-level engine imports neither, so none of that code runs any
-more, but it is still *shipped*, because the same entry point still exports the
-old engine. A consumer who only ever uses the structure view still never
-downloads it, which is the guarantee the two bundle-purity tests actually hold.
+[`apps/demo`](./apps/demo) still emits it as its own chunk. That chunk is now
+**1.77 kB gzip** (3.75 kB raw), down from **180.28 kB** (577.17 kB) before
+`cytoscape` and `cytoscape-fcose` were removed — a factor of 102 — while the main
+chunk did not move (552.04 kB gzip either side, so nothing leaked into the
+barrel on the way). Removing the four packages that went with them (`cytoscape`,
+`cytoscape-fcose`, and their transitive `cose-base` and `layout-base`) is the
+whole of that saving.
 
----
-
-**Historical trace — the pipeline the graph view used until the two-level
-switch.** The rest of this section, down to the end, describes
-`createGraphLayoutEngine` (`packages/core/src/layout-graph.ts`) and the two
-relaxation passes it drives. That engine is still exported and still covered by
-its own tests, but **the graph view no longer calls it**, so none of what
-follows describes what `setView("graph")` does today. It is kept, dated, because
-it is the baseline the current design was measured against and because the
-passes remain available to other callers.
-
-**Separation, measured.** After fcose runs, a relaxation pass (`separateOverlaps`)
-pushes cards apart until no two are closer than `separationMargin` (16 px by
-default), capped at `separationIterations` (3,000). The pass is load-bearing:
-fcose's raw output leaves 160 overlapping pairs at 334 cards (worst card 40.5%
-covered) and 448 pairs at 450 cards (worst card 90.8% covered). Zero *overlap*
-after the pass is robust and asserted at scale. The stronger *margin* guarantee is not unconditional: on this
-repo's fixtures the pass leaves **0** pairs under the margin at 334 cards (the
-scale the committed test asserts), **47** at 450 cards, and **289** at 900 —
-none of them overlapping, merely closer to each other than 16 px. Raising the
-cap to 10,000 clears all of them, at roughly 3× the pass's cost, so this is a
-tuning ceiling rather than a defect in the algorithm.
-
-Historical note: this pass used to compare penetration against zero, which
-kept its "nothing moved" early exit from ever firing — a pair settled exactly
-at the margin retains a residual penetration that still reads positive
-(**1.84e-11 px**, measured on the 334-card fixture by putting the comparison
-back to zero; earlier notes in this repo guessed 1e-13 and 1e-14, neither of
-which had been measured), so the loop kept "moving" picometers until the cap
-regardless of whether it had actually converged. That made the cost
-proportional to `separationIterations` (measured then on 334 cards: cap 3,000 →
-1.9 s, 10,000 → 6.3 s, 100,000 → 63.5 s). Fixed: the comparison is now against
-an epsilon (`packages/core/src/separate.ts`), so the early exit fires for real
-and the cap is a true ceiling again, not a fixed cost.
-
-What that fix is worth, measured on the same 334-card fixture (median of 3
-runs): full `layout()` **2,619 ms → 1,889 ms, −28%**; the separation pass alone
-goes from hitting all 3,000 passes to exiting at pass 1,999. Note what that
-second number says: those cards were **not** "already separated" and the input
-was not easy — the pass does real work for two thirds of the cap, and only the
-last third was floating-point noise. The fix removes the wasted third, not the
-pass. A regression guard now holds the epsilon in place: `separateOverlaps`
-returns the number of passes it actually ran, and
-`packages/core/test/separate.test.ts` asserts that count is strictly below the
-cap on a dense pile — an assertion that fails the moment the comparison goes
-back to zero (verified by doing exactly that).
-
-**That 28% is not a general win, and it did not fix the graph view's cost.** The
-saving is exactly the share of the cap the input was wasting, so it depends
-entirely on how early that input converges. On the demo's 350-entity dataset the
-early exit fires at pass **2,739 of 3,000** — 91% of the cap — so the fix buys
-only about **9%** there, and `setView("graph")` still costs **~4.2 s**. Those
-4.2 s are real relaxation work, not floating-point noise: no tuning of this
-comparison can recover them. Bringing that number down needs a different
-approach — a cheaper non-overlap algorithm, or moving the layout off the main
-thread — not a better epsilon.
-
-**Cluster spacing, measured.** `separateOverlaps` keeps *cards* apart; it says
-nothing about *aggregates*, and without a second pass the envelopes interpenetrate
-badly — 911 of the 13,861 envelope pairs on `bigShop(3000)` overlap, and the mean
-edge-to-edge gap to a cluster's nearest neighbour is **−289.8 px**. So a second
-relaxation (`separateClusters`) runs after it, at cluster granularity: it pushes
-two clusters apart along the line of their centres until that distance reaches
-`r₁ + r₂ + clusterGap`, then translates each cluster's members **rigidly** by its
-circle's total displacement. It receives the same `hullPadding` the renderer
-paints with, so **the spaced shape is exactly the drawn shape** — the previous
-version relaxed axis-aligned bounding boxes while the renderer drew a convex
-hull, so the corridor it measured was not the corridor you looked at (that older
-box pass reported 310 overlapping pairs and a 0.7 px mean gap on the same
-fixture: a different, smaller shape, not a better result). Pushing along the
-centre line is also simpler than the box relaxation it replaces — one axis
-instead of a choice between two axial penetrations. That rigidity is what makes
-it safe: intra-aggregate geometry comes through untouched, and since nothing
-re-runs `separateOverlaps` afterwards, it is also what guarantees the pass
-introduces no card overlap. An entity in no aggregate is its own singleton
-cluster, so it is pushed out of a neighbour's envelope instead of being left
-inside it. Unlike `separateOverlaps`, its early exit compares against an epsilon
-rather than zero, so it actually converges and stops.
-
-**Aggregates that share an entity are merged** into a single rigid super-cluster
-(union-find) before the relaxation, rather than being separated. A shared entity
-is a full member of each of its aggregates, so giving it a displacement of its
-own — the average of its aggregates', in an earlier version — detaches it from
-its co-members as soon as a *third* cluster pushes one of them harder than the
-other; that version measurably broke rigidity (intra-aggregate distances 120 →
-62.5 px) and produced card overlaps. Merging removes the case rather than
-patching it.
-
-**That merge no longer fires, and it stays anyway.** Aggregate membership is now
-a strict partition (see [the core README](./packages/core/README.md#aggregates)):
-a distance tie is arbitrated by declaration order rather than shared, so no card
-belongs to two aggregates and the union-find never merges anything. It is kept
-because it is what *guarantees* the pass gives every card exactly one
-translation — that invariant belongs to the pass, not to a membership rule that
-is a product decision and could be relaxed again. It is documented as an
-inactive guarantee, not as dead code and not as a feature, and
-`packages/core/test/cluster-separate.test.ts` still exercises it on
-hand-built aggregate indexes.
+The entry point stays separate anyway, and the honest reason is no longer
+weight: 1.77 kB does not justify an architecture. It stays because the laziness
+is then a property of the shape rather than of a review — `setView` is async for
+that reason, and whatever the graph view pulls in next is lazy by default — and
+because `./graph-layout` is a published subpath export. Both bundle-purity tests
+were kept and rewritten to say exactly that, rather than left asserting the
+absence of a string that no longer occurs anywhere in the repo.
 
 **What the partition rule bought, measured.** The demo's config declares two
 roots (`aggregates: ["Customer", "Product"]`) over a dataset where every `Order`
@@ -460,35 +379,64 @@ two-level engine mostly gave back: on the same data it lays those same 116 block
 out in 8,083 × 8,437 instead of 18,714 × 19,984, about **5.5× less area**, at
 15.1% fill instead of 2.8%.
 
-`clusterGap` defaults to **160 px**, chosen by measurement rather than taste. The
-sweep behind it was run on the old engine and is recorded in its `DEFAULTS`
-(`packages/core/src/layout-graph.ts`); the two-level engine inherits the value
-unchanged and unre-swept, deliberately, so that the spike could compare the two
-at equal guarantees. It stays settable per instance via `graphLayoutOptions` (see
-the renderer README). Correctness — zero overlapping envelope pairs — is already
-reached at
-80 px; everything above that buys corridor width, not correctness. On
-`bigShop(3000)` at 160 px: nearest-neighbour gap −289.8 px → 160.0 px, overlapping
-envelope pairs 911 → 0, overall bbox 3494×2969 → 8370×8418 (6.8× the area),
-fill 42.4% → 6.2%. Card overlap stays at zero at every value tested. Going
-further costs canvas faster than it buys legibility: 160 → 240 px is +38% area
-to move fill from 6.2% to 4.5%; already at 160 px `fit()` zooms out ~2.6×, so
-cards render around a third of their former size at overview and drop to a
-coarser LOD sooner.
+`clusterGap` defaults to **160 px**, chosen by measurement rather than taste, and
+settable per instance via `graphLayoutOptions` (see the renderer README). The
+sweep behind it was run on the retired engine — it is kept here because the
+current default is inherited from it, and because what it establishes about
+*corridor width versus canvas* does not depend on which engine opens the
+corridor. On `bigShop(3000)`, sweeping gap 0 / 80 / 160 / 240 / 320 / 400:
+correctness — zero overlapping envelope pairs — is already reached at **80 px**,
+and everything above that buys corridor width, not correctness. At 160 px the
+nearest-neighbour gap goes from −289.8 px (pass disabled) to 160.0 px and
+overlapping pairs from 911 to 0. Going further costs canvas faster than it buys
+legibility: 160 → 240 px was +38% area to move fill from 6.2% to 4.5%.
 
-Note what this pass is **not**: it is not longer `idealEdgeLength` on
-cross-aggregate edges. That was tried and failed — fcose calibrates its
-internal repulsion scale on the *average* ideal edge length across all edges,
-so lengthening a subset inflates the whole layout instead of opening the gaps,
-and destroys the clustering signal. The comment at the `idealEdgeLength` call
-site records it.
+The *area* figures from that sweep do **not** carry over, and are omitted here
+for that reason: they measured circles inflated by fcose's scattering, whereas
+the two-level engine's circles are minimal by construction — which is exactly
+why the same 160 px now yields 15.1% fill on the demo dataset where it yielded
+2.8%. The value has deliberately **not** been re-swept on the new engine, so that
+the spike could compare the two at equal guarantees; re-running it is the
+obvious next measurement if the default ever becomes a question again.
 
-That engine seeded fcose deterministically from node ids rather than leaving it
-to fcose's default randomization, which is what made its determinism assertable.
-The two-level engine keeps the same FNV-1a hash for the same purpose, but seeds
-*discs* rather than cards, and has no randomized library underneath it to
-override — which is why its determinism budget above can be stated bit-for-bit
-rather than to the pixel.
+---
+
+**Historical trace — the pipeline the graph view used until the two-level
+switch, removed from the repo since.** `createGraphLayoutEngine`
+(`layout-graph.ts`) asked fcose for a global layout of every card, then repaired
+it with `separateOverlaps` (cards) and `separateClusters` (envelopes). All three
+modules, their tests, and the `cytoscape` / `cytoscape-fcose` dependencies are
+gone; the code is in git history and the comparison that retired it is in
+`docs/superpowers/spikes/2026-09-01-two-level-layout.md`. What is kept here is
+only what still explains a current choice — the `clusterGap` sweep above, the
+partition-rule table above it — plus one lesson that outlived its code:
+
+> **An early exit compared against zero never fires.** `separateOverlaps` tested
+> residual penetration against `0` rather than an epsilon; a pair settled exactly
+> at the margin keeps a residual of **1.84e-11 px** (measured, on 334 cards),
+> which still reads positive, so the loop "moved" picometers until its cap every
+> single time. That turned `separationIterations` from a ceiling into a fixed
+> cost — cap 3,000 → 1.9 s, 10,000 → 6.3 s, 100,000 → 63.5 s, dead linear.
+> Comparing against an epsilon instead recovered **−28%** on that fixture. The
+> current engine's hard pass exits on the same principle, and its own tolerance
+> is documented where it is set; the earlier notes in this repo guessed 1e-13 and
+> 1e-14 for that residual, neither of which had ever been measured, which is the
+> other half of the lesson.
+
+Two dead ends recorded so they are not retried on a future engine: longer
+`idealEdgeLength` on cross-aggregate edges did **not** open corridors under fcose
+(it calibrates repulsion on the *average* ideal length across all edges, so
+lengthening a subset inflates everything and destroys the clustering signal); and
+a virtual centre node per aggregate pulled *disjoint components* together harder
+than it pulled co-members, leaving them 2.2–2.4× further apart than with no
+centre at all.
+
+The retired engine seeded fcose deterministically from node ids rather than
+leaving it to fcose's default randomization, which is what made its determinism
+assertable at all. The two-level engine keeps the same FNV-1a hash for the same
+purpose, but seeds *discs* rather than cards, and has no randomized library
+underneath it to override — which is why its determinism budget above is stated
+bit-for-bit rather than to the pixel.
 
 ## Monorepo layout
 

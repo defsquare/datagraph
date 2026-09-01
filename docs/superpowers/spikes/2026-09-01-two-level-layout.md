@@ -1,7 +1,18 @@
 # Sonde — layout de la vue graphe à deux niveaux
 
-**Statut** : sonde terminée, code jetable (`bench/layout-two-level.ts`,
-`bench/two-level-compare.ts`)
+> **Suite donnée (mise à jour après coup).** La recommandation ci-dessous a été
+> suivie en entier. Le moteur est porté dans
+> `packages/core/src/layout-two-level.ts`, la vue graphe tourne dessus, et
+> l'ancien pipeline — `layout-graph.ts`, `separate.ts`, `cluster-separate.ts`,
+> plus `cytoscape` et `cytoscape-fcose` — a été retiré du dépôt. Les deux
+> fichiers de bench sont partis avec lui : `two-level-compare.ts` comparait
+> deux moteurs dont un seul existe encore, et `layout-two-level.ts` faisait
+> doublon avec `src/`. Les quatre SVG restent. Tout ce qui suit décrit l'état
+> au moment de la sonde et n'a pas été réécrit.
+
+**Statut** : sonde terminée, recommandation suivie, code de bench retiré
+(`bench/layout-two-level.ts`, `bench/two-level-compare.ts` — voir l'historique
+git)
 **Question** : le pipeline actuel (fcose global → `separateOverlaps` →
 `separateClusters`) plafonne — 4,2 s à 350 entités, 2,8 % de remplissage, et
 trois passes qui se réparent l'une l'autre. Un layout à deux niveaux — packing
