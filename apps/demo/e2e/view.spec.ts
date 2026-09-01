@@ -231,9 +231,17 @@ test("la vue graphe tient sur le jeu de donnees etendu de la demo", async ({ pag
   await expect(page.locator("canvas")).toBeVisible()
   expect(errors).toEqual([])
 
-  // Temps mesure au passage (import dynamique + fcose + separation + rendu).
-  // Pas d'assertion serree : la machine de CI n'est pas celle du developpeur.
-  // Le plafond large n'attrape qu'un effondrement franc.
+  // Temps mesure au passage : import dynamique du chunk, mise en page a deux
+  // niveaux (packing intra-agregat + simulation sur les disques) et rendu.
+  //
+  // Pas d'assertion serree, et le plafond ne bouge pas : la machine de CI n'est
+  // pas celle du developpeur, et ce plafond large n'est la que pour attraper un
+  // effondrement franc. Ce qu'il vaut a change, en revanche, et c'est mesure ici
+  // meme, dans ce test, sur cette machine, en runs isoles (3 chacun) :
+  // l'ancien moteur (fcose + separateOverlaps + separateClusters) sortait a
+  // 4310-4484 ms, le moteur a deux niveaux sort a 220-252 ms — environ x19. Le
+  // plafond de 30 s couvrait l'ancien avec un facteur 7 ; il en couvre
+  // largement plus aujourd'hui, donc il reste utile sans etre a re-serrer.
   expect(ms).toBeLessThan(30_000)
   console.log(`[e2e] setView("graph") sur ${logical} noeuds logiques / 350 entites : ${ms.toFixed(0)} ms`)
 

@@ -117,18 +117,26 @@ await graph.setView("structure"); // switch back at runtime
 await graph.setView("graph");     // and switch again
 ```
 
-**Dynamic import.** The first switch to `"graph"` dynamically imports the
-organic layout engine (`cytoscape` + its `fcose` layout plugin), which is why
-`setView` returns a promise. That import is isolated behind the dynamic
-`import()`: in a Vite production build (see [`apps/demo`](../../apps/demo)),
-it lands in its own chunk — roughly **178 kB gzip** — and never enters the
-bundle of a consumer that only ever uses the structure view. Two tests guard
-it, one per half of the chain: `packages/core/test/bundle-purity.test.ts` walks
-the built chunk closure of the core's main entry point, so a careless barrel
-export can't regress it, and `packages/renderer/test/bundle-purity.test.ts`
-checks this package's sources for any static *value* import of that entry point
-— turning `create.ts`'s `import type` into a value import would put cytoscape
-in every consumer's bundle while leaving the rest of the suite green.
+**Dynamic import.** The first switch to `"graph"` dynamically imports the layout
+engine, which is why `setView` returns a promise. That import is isolated behind
+the dynamic `import()`: in a Vite production build (see
+[`apps/demo`](../../apps/demo)) it lands in its own chunk — **180.28 kB gzip**,
+577.17 kB raw, measured — and never enters the bundle of a consumer that only
+ever uses the structure view. Two tests guard it, one per half of the chain:
+`packages/core/test/bundle-purity.test.ts` walks the built chunk closure of the
+core's main entry point, so a careless barrel export can't regress it, and
+`packages/renderer/test/bundle-purity.test.ts` checks this package's sources for
+any static *value* import of that entry point — turning `create.ts`'s
+`import type` into a value import would put cytoscape in every consumer's bundle
+while leaving the rest of the suite green.
+
+Almost all of that chunk is still `cytoscape` and its `fcose` plugin, and it is
+worth being precise about why. The engine this view now runs
+(`createTwoLevelLayoutEngine`) imports neither, so neither is *executed* any
+more; but the core exposes both engines from the same `./graph-layout` entry
+point, so both are still *shipped* in that chunk. Removing the old engine is what
+will make the chunk shrink; until then the size above is what a first switch to
+the graph view actually downloads.
 
 **No folding.** `expand`/`collapse` are structure-view operations (see the
 [root README's API table](https://github.com/defsquare/data-graph#public-api--datagraph));
@@ -138,28 +146,47 @@ aggregate cards carry no chevron, and a header click selects the card just
 like a body click. An earlier version folded an aggregate onto its root card
 from that chevron; it was removed.
 
-**Cluster spacing.** Aggregate envelopes are spaced apart by a dedicated pass
-(`separateClusters`, core-side) that translates each cluster rigidly, so
-nothing inside an aggregate moves relative to anything else in it, at a gap
-of `clusterGap` (**160 px** by default). It pushes two clusters apart along the
-line of their centres until that distance reaches `r₁ + r₂ + clusterGap`, using
-the same `hullPadding` this package paints with — so the shape that gets spaced
-is exactly the shape you see. Every aggregate gets its own block: membership is
-a partition, so no two aggregates share a card and none of them are welded
-together. On [`apps/demo`](../../apps/demo)'s two-root config that is 116 blocks
-over 350 cards — 78 `Customer` aggregates of 3 to 5 cards, 30 single-card
-`Product` aggregates, and the 8 `Category` entities no aggregate claims — with
-zero overlapping envelope pairs after the pass.
+**Two-level layout.** The graph view lays itself out in two stages, and the split
+is what makes its guarantees structural rather than iterative. Each aggregate is
+first packed on its own — root card first, then members by id, in centred rows
+with a `cardGap` (**16 px** by default) already built into the packing. The
+packed block then becomes a rigid disc, the minimal enclosing circle of its cards
+plus `hullPadding`, which is exactly the shape this package paints; an entity in
+no aggregate becomes a singleton disc. A small simulation places those discs —
+cross-aggregate references pull as weighted springs — and a final hard pass
+guarantees that any two discs end up at least `clusterGap` (**160 px** by
+default) apart, edge to edge.
 
-That used to read very differently. When an entity could belong to several
-aggregates at once, two aggregates sharing a member were merged into one rigid
-block rather than pulled apart (they can't be separated without tearing the
+Two things follow that are worth relying on. Cards never need to be pushed apart
+afterwards: two cards of one aggregate are packed with the margin, and two cards
+of different aggregates cannot meet because their discs cannot. And the shape
+that gets spaced is not merely equal to the shape you see — it is the same
+circle, computed once from the packed block and translated with its cards.
+
+Every aggregate gets its own block: membership is a partition, so no two
+aggregates share a card and none are welded together. On
+[`apps/demo`](../../apps/demo)'s two-root config that is 116 blocks over 350
+cards — 78 `Customer` aggregates of 3 to 5 cards, 30 single-card `Product`
+aggregates, and the 8 `Category` entities no aggregate claims — with zero
+overlapping envelope pairs.
+
+That used to read very differently, twice over. When an entity could belong to
+several aggregates at once, two aggregates sharing a member were merged into one
+rigid block rather than pulled apart (they can't be separated without tearing the
 shared card), and on this same config the merge percolated: 108 aggregates
-collapsed into a single block of 342 of 350 cards, and the pass had nothing left
-to space out. The membership rule now arbitrates ties instead of sharing, which
-is what brought the spacing back. See the
+collapsed into a single block of 342 of 350 cards, and there was nothing left to
+space out. The membership rule now arbitrates ties instead of sharing, which is
+what brought the spacing back — see the
 [core README's Aggregates section](https://github.com/defsquare/data-graph/tree/main/packages/core#aggregates)
-for the rule and the measured before/after.
+for the rule and the measured before/after. And until recently the spacing itself
+was done by two relaxation passes over the output of a global `fcose` layout
+(`separateOverlaps`, then `separateClusters`). Both still exist core-side and
+both are still tested; this view simply no longer runs them. On the demo's
+dataset the switch took `setView("graph")` from **4,310–4,484 ms to 220–252 ms**
+(measured in Chromium, three isolated runs each) and the canvas from
+18,714 × 19,984 to 8,083 × 8,437. The
+[root README's graph-view budgets](https://github.com/defsquare/data-graph#graph-view)
+carry the full before/after.
 
 How wide the corridors should be is a matter of eye, screen size and data
 density, so it is settable per instance rather than baked into core:
@@ -169,23 +196,38 @@ const graph = createDataGraph(container, {
   data,
   config,
   view: "graph",
-  // Any GraphLayoutOptions field: clusterGap, hullPadding, separationMargin,
-  // separationIterations. Read once, when the graph view is first built.
+  // Any TwoLevelLayoutOptions field: clusterGap, hullPadding, cardGap,
+  // simIterations. Read once, when the graph view is first built.
   graphLayoutOptions: { clusterGap: 240 },
 });
 ```
 
-`GraphLayoutOptions` is re-exported from this package, so you can type the
+`TwoLevelLayoutOptions` is re-exported from this package, so you can type the
 object without depending on `@defsquare/data-graph-core` directly.
+
+> **API change (0.x, no compatibility shim).** `graphLayoutOptions` used to take
+> `GraphLayoutOptions` — `{ hullPadding, separationMargin, separationIterations,
+> clusterGap }`. It now takes `TwoLevelLayoutOptions` — `{ hullPadding, cardGap,
+> clusterGap, simIterations }`, and this package no longer re-exports the old
+> type. `hullPadding` and `clusterGap` keep their name, meaning and default, so
+> the common case (`{ clusterGap: 240 }`) is unaffected. The other two are gone
+> because the pass they tuned is gone: there is no card-separation pass to cap,
+> and the inter-card margin is now placed by the packing (`cardGap`, 16 px —
+> `separationMargin`'s old default) instead of being converged towards. Passing
+> the retired keys is a type error, which is the intent: silently accepting and
+> ignoring them would be worse.
 
 **Selection carry-over.** The graph view only knows entities — a structure
 node nested under one (e.g. an address object) has no counterpart there.
 Switching views while such a node is selected reassigns the selection to its
 nearest entity ancestor rather than dropping it.
 
-**Determinism.** The graph-view layout is deterministic to the pixel: two
-runs on identical input produce identical positions (seeded from node ids,
-not left to fcose's default randomization). Removing folding also removed the
+**Determinism.** The graph-view layout is deterministic **bit for bit**: two runs
+on identical input produce identical positions and identical envelopes, and the
+result does not depend on the iteration order of the visible-node set. Positions
+are seeded from node ids (FNV-1a) and there is no `Math.random` or `Date.now`
+anywhere in the engine — nor, since the two-level switch, any randomized layout
+library underneath it to override. Removing folding also removed the
 pinned incremental relayout that used to bound drift on already-placed cards
 when an aggregate was unfolded, along with the 0px-median-drift budget it
 enforced — there is no longer any incremental relayout to stabilise. See the

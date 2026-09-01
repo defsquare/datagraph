@@ -173,12 +173,21 @@ envelopes.
 
 **Why the rule arbitrates instead of sharing.** An earlier version let an
 entity belong to *every* root it reached at the minimal distance — overlap was
-presented as a feature. It cost the graph view its cluster spacing. That pass
-(`separateClusters`, `packages/core/src/cluster-separate.ts`) pushes aggregate
-envelopes apart so they read as separate islands, and two aggregates sharing a
-member can't be pulled apart without tearing that entity out of one of them; so
-the pass merges — by union-find, transitively — every aggregate connected by a
-shared member into one rigid block. With overlap, that merge percolated.
+presented as a feature. It cost the graph view its cluster spacing. The pass that
+did that spacing at the time (`separateClusters`,
+`packages/core/src/cluster-separate.ts`) pushes aggregate envelopes apart so they
+read as separate islands, and two aggregates sharing a member can't be pulled
+apart without tearing that entity out of one of them; so the pass merges — by
+union-find, transitively — every aggregate connected by a shared member into one
+rigid block. With overlap, that merge percolated.
+
+The graph view no longer runs that pass — it lays out on
+`createTwoLevelLayoutEngine` (`packages/core/src/layout-two-level.ts`), which
+packs each aggregate independently and then spaces the resulting discs. That
+makes the partition rule *more* load-bearing, not less: the two-level split is
+only sound because each entity belongs to exactly one block. The measurements
+below predate the switch and were taken with the old engine; they are what
+motivated the rule, and the rule is unchanged.
 
 Measured on the demo dataset (`bigShop(4000)`, 350 entities, 108 aggregates,
 `aggregates: ["Customer", "Product"]`, where every `Order` references a
