@@ -253,15 +253,18 @@ defaults were chosen against it; the code itself lives in git history and in
 | Aggregate envelope spacing after layout | Zero overlapping pairs at 167 aggregates, and every pair of discs at least `clusterGap` − 1e-6 apart edge to edge. This covers **painted envelopes and the singleton discs of entities in no aggregate alike** — the test builds the full disc set from the result, not just the emitted `clusters`. It is an output invariant of a final hard pass, not a convergence hope | `packages/core/test/layout-two-level.test.ts` |
 | Envelope fidelity | The disc that gets spaced is the disc that gets painted: each emitted `ClusterShape` matches the minimal enclosing circle recomputed from the final card positions to 1e-6, every member's corners lie inside it, and only real aggregates emit one | `packages/core/test/layout-two-level.test.ts` |
 | `setView("graph")` on the demo's 350-entity dataset | **Measured, not enforced.** 220–252 ms in Chromium over three isolated Playwright runs, against **4,310–4,484 ms** for the retired pipeline on the same machine — about **×19**. The committed assertion is only a 30 s collapse ceiling; the number is logged, not asserted, because a CI machine is not a developer's | `apps/demo/e2e/view.spec.ts` |
-| `@defsquare/data-graph` bundle purity | The graph view never enters a consumer's bundle unless it calls `setView("graph")` — the structure view alone doesn't pull it in. **What this is worth has collapsed, and the tests say so**: the chunk it keeps out went from **180.28 kB gzip to 1.77 kB** (3.75 kB raw) when `cytoscape` left, so a regression would now cost 1.77 kB on a 552 kB bundle. Both tests are kept for the *shape* they hold — the view loads lazily by construction, so whatever weight lands behind it next inherits that — not for the kilobytes | `packages/core/test/bundle-purity.test.ts` (core half) + `packages/renderer/test/bundle-purity.test.ts` (renderer half) |
+| `@defsquare/data-graph` bundle purity | The graph view never enters a consumer's bundle unless it calls `setView("graph")` — the structure view alone doesn't pull it in. **What this is worth has collapsed, and the tests say so**: the chunk it keeps out went from **180.28 kB gzip to 2.20 kB** (4.66 kB raw) when `cytoscape` left, so a regression would now cost 2.20 kB on a 552 kB bundle. Both tests are kept for the *shape* they hold — the view loads lazily by construction, so whatever weight lands behind it next inherits that — not for the kilobytes | `packages/core/test/bundle-purity.test.ts` (core half) + `packages/renderer/test/bundle-purity.test.ts` (renderer half) |
 
 **Two levels, because membership is a partition.** Every entity belongs to at
 most one aggregate (see [the core README](./packages/core/README.md#aggregates)),
 so the problem splits cleanly in two and neither half has to repair the other:
 
-1. **Inside an aggregate**, cards are shelf-packed — root first, then members by
-   id, rows centred, `cardGap` included in the packing. Non-overlap is a
-   property of the packing, not the result of a relaxation.
+1. **Inside an aggregate**, cards are placed **radially**: the root at the
+   centre, every other member on a concentric ring, one ring per reference
+   distance from the root (a local BFS along intra-aggregate references, ties
+   broken by id). `cardGap` is built into the placement, so non-overlap is a
+   property of the geometry rather than the result of a relaxation — the proof
+   is two inequalities, written out above `packCluster`.
 2. **Between aggregates**, each packed block becomes a rigid disc: the minimal
    enclosing circle of its cards plus `hullPadding`, which is exactly the shape
    the renderer paints. An entity in no aggregate is a singleton disc.
@@ -282,10 +285,38 @@ cluster — so the property is structural rather than enforced, and its observab
 consequence (margins holding to 1e-9 px) is asserted by the card-overlap row.
 Keeping a row with no test behind it would have been worse than dropping it.
 
-**What the switch bought, measured.** The spike behind it
+**Radial placement, and what it costs.** The first level used to be a *shelf*
+packing — members laid out in centred rows in id order, ignoring references
+entirely. On a deep aggregate that put the root in a **corner** of the block,
+which is the farthest point from the enclosing circle's centre: measured on a
+41-card, four-level fixture (`deepAggregate()`), the root ranked **40th of 41**
+by proximity to its own disc's centre, 597.7 px away from it. Radial placement
+fixes what it was meant to fix — mean intra-aggregate reference **591.4 → 363.0
+px**, max **976.3 → 488.1 px**, root centrality **597.7 → 16.4 px**, and the root
+now ranks 1st.
+
+It is also, uniformly, **less dense**, and that is structural rather than a
+tuning miss: a ring costs a full card diameter of radius even when it carries one
+card, so the disc grows with *depth* more than with card count. Disc radius, shelf
+→ radial: 2 cards 162 → 209 px, 5 cards over two rings 296 → 602, 10 cards over
+three rings 350 → 899, 41 cards 712 → 1,044. Globally, fill drops from **12.3% to
+7.8%** on the core fixture and **15.1% to 10.9%** on the demo's.
+
+Be plain about the balance: on both of those datasets the radial placement buys
+**nothing** — their aggregates hold 1 to 5 cards and have no chain to
+straighten — and only costs. The gain appears on deep aggregates, which no real
+dataset in this repo contains yet. A hybrid (shelf below a size threshold, radial
+above) is measured in
+`docs/superpowers/spikes/2026-09-01-two-level-raffinements.md` and **not**
+adopted: the threshold that would cancel the cost is exactly these fixtures'
+largest aggregate, which is a threshold fitted to the fixtures rather than to a
+reason.
+
+**What the two-level switch bought, measured.** The spike behind it
 (`docs/superpowers/spikes/2026-09-01-two-level-layout.md`) ran both engines with
 the same `clusterGap: 160` and `hullPadding: 18`, so the comparison is at equal
-guarantees:
+guarantees. Its fill figures below predate radial placement and were taken with
+the shelf packing:
 
 | | old (fcose + 2 passes) | two-level |
 | --- | --- | --- |
@@ -340,15 +371,15 @@ than no budget. The history lives on in
 Switching to the graph view for the first time still dynamically imports the
 `graph-layout` entry point, and a Vite production build of
 [`apps/demo`](./apps/demo) still emits it as its own chunk. That chunk is now
-**1.77 kB gzip** (3.75 kB raw), down from **180.28 kB** (577.17 kB) before
-`cytoscape` and `cytoscape-fcose` were removed — a factor of 102 — while the main
+**2.20 kB gzip** (4.66 kB raw), down from **180.28 kB** (577.17 kB) before
+`cytoscape` and `cytoscape-fcose` were removed — a factor of 82 — while the main
 chunk did not move (552.04 kB gzip either side, so nothing leaked into the
 barrel on the way). Removing the four packages that went with them (`cytoscape`,
 `cytoscape-fcose`, and their transitive `cose-base` and `layout-base`) is the
 whole of that saving.
 
 The entry point stays separate anyway, and the honest reason is no longer
-weight: 1.77 kB does not justify an architecture. It stays because the laziness
+weight: 2.20 kB does not justify an architecture. It stays because the laziness
 is then a property of the shape rather than of a review — `setView` is async for
 that reason, and whatever the graph view pulls in next is lazy by default — and
 because `./graph-layout` is a published subpath export. Both bundle-purity tests

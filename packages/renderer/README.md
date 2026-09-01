@@ -120,8 +120,8 @@ await graph.setView("graph");     // and switch again
 **Dynamic import.** The first switch to `"graph"` dynamically imports the layout
 engine, which is why `setView` returns a promise. That import is isolated behind
 the dynamic `import()`: in a Vite production build (see
-[`apps/demo`](../../apps/demo)) it lands in its own chunk — **1.77 kB gzip**,
-3.75 kB raw, measured — and never enters the bundle of a consumer that only ever
+[`apps/demo`](../../apps/demo)) it lands in its own chunk — **2.20 kB gzip**,
+4.66 kB raw, measured — and never enters the bundle of a consumer that only ever
 uses the structure view. Two tests guard it, one per half of the chain:
 `packages/core/test/bundle-purity.test.ts` walks the built chunk closure of the
 core's main entry point, so a careless barrel export can't regress it, and
@@ -133,8 +133,8 @@ bundle while leaving the rest of the suite green.
 That chunk used to weigh **180.28 kB gzip** (577.17 kB raw), essentially all of
 it `cytoscape` and its `fcose` plugin, which the previous layout engine imported.
 That engine has been removed and both dependencies with it — hence the factor of
-102. Be clear about what this does to the guarantee above: in kilobytes, it now
-guards almost nothing, and a regression would cost 1.77 kB. Both tests are kept
+82. Be clear about what this does to the guarantee above: in kilobytes, it now
+guards almost nothing, and a regression would cost 2.20 kB. Both tests are kept
 anyway, and their own comments say why: they hold the *shape* — the graph view
 loads lazily by construction, so whatever weight this view acquires next is lazy
 by default rather than by review.
@@ -149,9 +149,10 @@ from that chevron; it was removed.
 
 **Two-level layout.** The graph view lays itself out in two stages, and the split
 is what makes its guarantees structural rather than iterative. Each aggregate is
-first packed on its own — root card first, then members by id, in centred rows
-with a `cardGap` (**16 px** by default) already built into the packing. The
-packed block then becomes a rigid disc, the minimal enclosing circle of its cards
+first laid out on its own, **radially**: the root card at the centre, every other
+member on a concentric ring, one ring per reference distance from the root, with
+a `cardGap` (**16 px** by default) already built into the placement. The packed
+block then becomes a rigid disc, the minimal enclosing circle of its cards
 plus `hullPadding`, which is exactly the shape this package paints; an entity in
 no aggregate becomes a singleton disc. A small simulation places those discs —
 cross-aggregate references pull as weighted springs — and a final hard pass
@@ -159,10 +160,19 @@ guarantees that any two discs end up at least `clusterGap` (**160 px** by
 default) apart, edge to edge.
 
 Two things follow that are worth relying on. Cards never need to be pushed apart
-afterwards: two cards of one aggregate are packed with the margin, and two cards
+afterwards: two cards of one aggregate are placed with the margin, and two cards
 of different aggregates cannot meet because their discs cannot. And the shape
 that gets spaced is not merely equal to the shape you see — it is the same
 circle, computed once from the packed block and translated with its cards.
+
+Placing by reference distance rather than by id is what keeps a deep aggregate
+readable: its root sits at the centre instead of in a corner, and chains of
+references run outward instead of zigzagging. It costs density — a ring takes a
+full card diameter of radius even when it holds one card — so aggregates of a
+handful of cards come out **larger** than they did under the previous row-based
+packing, with no readability gain to show for it. The
+[root README](https://github.com/defsquare/data-graph#graph-view) carries the
+measured before/after on both counts.
 
 Every aggregate gets its own block: membership is a partition, so no two
 aggregates share a card and none are welded together. On

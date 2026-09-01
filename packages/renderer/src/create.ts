@@ -30,7 +30,7 @@ import {
 // du cœur ne couvre que le `dist/` du cœur, pas ce fichier-ci.
 //
 // Ce que ces deux lignes valent a changé d'échelle depuis le retrait de
-// l'ancien moteur : 1,77 ko gzip au lieu de 180,28. Elles restent parce
+// l'ancien moteur : 2,20 ko gzip au lieu de 180,28. Elles restent parce
 // qu'elles tiennent la FORME — la vue graphe se charge à la demande par
 // construction — et non plus parce qu'elles tiennent un poids. Le raisonnement
 // complet est dans les deux tests de pureté.
@@ -336,7 +336,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
    * passé de 4 310–4 484 ms à 220–252 ms.
    *
    * L'`import()` reste dynamique. Le chunk qu'émet le build Vite de production
-   * d'`apps/demo` ne pèse plus que **1,77 ko gzip** (3,75 ko bruts, contre
+   * d'`apps/demo` ne pèse plus que **2,20 ko gzip** (4,66 ko bruts, contre
    * 180,28 / 577,17 avant le retrait), donc ce n'est plus le poids qui justifie
    * la paresse : c'est qu'elle est la forme par défaut de cette vue, et que
    * `setView` est asynchrone pour cette raison. Les deux tests de pureté de

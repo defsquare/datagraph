@@ -8,12 +8,12 @@
 // inacceptable d'imposer à un consommateur de la seule vue structure. Ce moteur
 // est retiré, les deux dépendances avec lui, et le chunk que le build Vite de
 // production d'`apps/demo` émet ici est passé de **180,28 ko gzip** (577,17 ko
-// bruts) à **1,77 ko gzip** (3,75 ko bruts) — un facteur 102. Le chunk
+// bruts) à **2,20 ko gzip** (4,66 ko bruts) — un facteur 82. Le chunk
 // principal, lui, n'a pas bougé d'un octet significatif (552,04 ko gzip avant
 // comme après) : rien n'a fui dans le barrel au passage.
 //
 // Il reste séparé quand même, et il faut être honnête sur ce que ça vaut
-// désormais : PLUS RIEN en kilo-octets. 1,77 ko sur un bundle de démo à 552 ko
+// désormais : PLUS RIEN en kilo-octets. 2,20 ko sur un bundle de démo à 552 ko
 // gzip ne se défend pas par le poids. Ce que la séparation achète aujourd'hui
 // est d'une autre nature — le chargement de la vue graphe reste paresseux par
 // CONSTRUCTION et non par chance, donc ce que cette vue tirera demain le sera
