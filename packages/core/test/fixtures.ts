@@ -113,3 +113,85 @@ export const bigShopReviewsConfig: DataGraphConfig = {
   },
   aggregates: ["Customer"],
 }
+
+/**
+ * Longueurs de valeur du champ `note`, en nombre de caractères. La table sert à
+ * faire VARIER LA LARGEUR des cartes — `measureNode` dérive la largeur de la
+ * ligne la plus longue —, et sa taille (7) est choisie **première avec les
+ * arités** de l'arbre de `deepAggregate` (4, 3, 2, dont le PPCM est 12).
+ *
+ * PIÈGE DE PÉRIODICITÉ, et c'est la raison d'être de ce commentaire : indexer
+ * cette table par un compteur dont la période divise une arité donnerait à
+ * toutes les cartes d'un même anneau exactement la même largeur. Le placement
+ * radial deviendrait alors un cas parfaitement régulier — anneaux de cartes
+ * identiques —, et un test de non-recouvrement y passerait sans jamais exercer
+ * le calcul de circonférence sur des largeurs hétérogènes, qui est précisément
+ * ce que ce calcul doit gérer. 7 contre 12 garantit qu'un anneau mélange des
+ * largeurs, et que deux anneaux consécutifs n'ont pas le même motif.
+ */
+const NOTE_LENGTHS = [3, 17, 8, 29, 5, 22, 11]
+
+function noteOf(counter: number): string {
+  return "x".repeat(NOTE_LENGTHS[counter % NOTE_LENGTHS.length]!)
+}
+
+/**
+ * UN SEUL agrégat, gros et PROFOND — le cas qu'aucun autre fixture de ce
+ * fichier ne produit. `bigShop` fait des agrégats de 2 cartes et le jeu de la
+ * démo monte à 5 ; ici la chaîne de références descend sur quatre niveaux :
+ *
+ *   Customer  ←  Order  ←  OrderLine  ←  Serial
+ *   distance 0    dist. 1    dist. 2      dist. 3
+ *
+ * Le sens est celui de l'appartenance (`buildAggregates` remonte les références
+ * de la cible vers la source) : une commande *pointe vers* son client, une
+ * ligne *pointe vers* sa commande. La distance d'appartenance est donc bien la
+ * profondeur dans cet arbre, et c'est elle que le placement radial traduit en
+ * anneaux.
+ *
+ * Par défaut : 1 + 4 + 12 + 24 = **41 cartes en un seul agrégat**. Les trois
+ * arités sont paramétrables pour pousser plus haut (5, 3, 3 → 66 cartes) sans
+ * toucher aux tests qui dépendent du défaut.
+ *
+ * L'arbre est volontairement DÉSÉQUILIBRÉ en largeur de carte (voir
+ * `NOTE_LENGTHS`) et parfaitement équilibré en structure : le déséquilibre
+ * qu'on veut mesurer est celui des tailles, pas celui des degrés, sans quoi on
+ * ne saurait pas lequel des deux explique un résultat.
+ */
+export function deepAggregate(orders = 4, linesPerOrder = 3, serialsPerLine = 2) {
+  const customers = [{ id: "c0", name: "Client profond", email: "c0@x.fr", segment: "grand compte" }]
+  const orderRows = []
+  const lines = []
+  const serials = []
+
+  // Un compteur unique pour tout l'arbre, et non un par niveau : deux cartes de
+  // niveaux différents ne doivent pas hériter de la même largeur par accident
+  // de synchronisation des compteurs.
+  let counter = 0
+  for (let i = 0; i < orders; i++) {
+    orderRows.push({ id: `o${i}`, customerId: "c0", total: 100 + i, note: noteOf(counter++) })
+    for (let j = 0; j < linesPerOrder; j++) {
+      const lineId = `l${i}_${j}`
+      lines.push({ id: lineId, orderId: `o${i}`, sku: `SKU-${i}-${j}`, note: noteOf(counter++) })
+      for (let k = 0; k < serialsPerLine; k++) {
+        serials.push({ id: `s${i}_${j}_${k}`, lineId, note: noteOf(counter++) })
+      }
+    }
+  }
+  return { customers, orders: orderRows, lines, serials }
+}
+
+export const deepAggregateConfig: DataGraphConfig = {
+  entities: {
+    Customer: { match: "$.customers[*]", id: "id" },
+    Order: { match: "$.orders[*]", id: "id" },
+    OrderLine: { match: "$.lines[*]", id: "id" },
+    Serial: { match: "$.serials[*]", id: "id" },
+  },
+  references: {
+    Order: { customerId: "Customer" },
+    OrderLine: { orderId: "Order" },
+    Serial: { lineId: "OrderLine" },
+  },
+  aggregates: ["Customer"],
+}

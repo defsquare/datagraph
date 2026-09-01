@@ -25,10 +25,11 @@
 // sans recouvrement de responsabilités.
 //
 //   1. INTRA-agrégat — chaque agrégat est packé indépendamment des autres :
-//      racine en premier, puis membres triés par id, en étagères centrées avec
-//      la marge `cardGap` INCLUSE dans le packing. Le non-recouvrement des
-//      cartes d'un même agrégat est acquis par construction, pas par
-//      relaxation.
+//      la RACINE AU CENTRE, les autres membres sur des anneaux concentriques,
+//      un anneau par distance de référence à la racine, avec la marge
+//      `cardGap` INCLUSE dans le placement. Le non-recouvrement des cartes
+//      d'un même agrégat est acquis par construction, pas par relaxation —
+//      voir la démonstration au-dessus de `packCluster`.
 //   2. INTER-agrégat — chaque agrégat devient un disque rigide : le cercle
 //      englobant minimal de ses cartes plus `hullPadding`, c'est-à-dire
 //      exactement la forme que le renderer peint. Une entité hors agrégat est
@@ -74,10 +75,30 @@
 // CE QUE CE MOTEUR NE TRANCHE PAS (réserves de la sonde, reprises telles
 // quelles parce qu'aucune n'a été levée depuis) :
 //
-//   - Le packing intra-agrégat IGNORE les arêtes : les membres sont posés par
-//     id, pas par connectivité, donc une référence intra-agrégat peut traverser
-//     le bloc. Invisible à 2–5 cartes par agrégat (l'échelle des fixtures ici),
-//     réel sur des agrégats de dizaines de cartes.
+//   - RÉSERVE LEVÉE, et remplacée par son revers. Le packing intra-agrégat
+//     ignorait les arêtes ; il est désormais RADIAL et suit la connectivité
+//     (voir `packCluster`). Ce que ça a acheté, mesuré sur `deepAggregate()` —
+//     41 cartes, 4 niveaux : référence intra-agrégat moyenne 591,4 → 363,0 px,
+//     max 976,3 → 488,1 px, et la racine passe du 40e au 1er rang par
+//     proximité au centre de son disque (597,7 → 16,4 px).
+//
+//     Ce que ça COÛTE, et qui est la nouvelle réserve : le radial est moins
+//     dense que les étagères, partout. Un anneau coûte un diamètre de carte de
+//     rayon même s'il ne porte qu'une carte, donc le disque enfle avec la
+//     PROFONDEUR plus qu'avec le nombre de cartes. Mesuré, rayon du disque
+//     étagères → radial : 2 cartes 162 → 209 px (×1,29), 5 cartes sur 2
+//     anneaux 296 → 602 (×2,03), 10 cartes sur 3 anneaux 350 → 899 (×2,57),
+//     41 cartes 712 → 1 044 (×1,47). Globalement, sur les deux jeux réels du
+//     dépôt : remplissage 12,3 → 7,8 % (cœur) et 15,1 → 10,9 % (démo).
+//
+//     Il faut le dire net : sur CES deux jeux-là, le radial ne gagne rien —
+//     leurs agrégats font 1 à 5 cartes et n'ont pas de chaîne à redresser — et
+//     ne fait que coûter. Le gain n'existe qu'à partir d'agrégats profonds,
+//     qu'aucun jeu réel du dépôt ne contient encore. Un hybride (étagères en
+//     dessous d'un seuil, radial au-dessus) est chiffré dans le doc de sonde ;
+//     il n'est pas retenu ici parce que le seuil qui annule le coût sur ces
+//     jeux est exactement leur taille maximale d'agrégat, donc un seuil ajusté
+//     sur les fixtures et non sur une raison.
 //   - O(k²) sur les agrégats : 143 ms à 167 disques dans la sonde, 194 ms ici
 //     une fois la passe dure resserrée. Mais la croissance est quadratique —
 //     mesuré à 500 disques (bigShop(9000), 1 000 cartes) : 3,6 s. Grille
@@ -224,59 +245,217 @@ interface LocalCluster {
 }
 
 /**
- * Packing en étagères : lignes remplies de gauche à droite jusqu'à une largeur
- * cible en √(aire totale), chaque ligne centrée.
+ * Rayon du disque englobant d'une carte : la demi-diagonale.
  *
- * Trivial, déterministe, dense — et non-recouvrant par construction, la marge
- * `gap` étant posée entre deux voisins de ligne comme entre deux lignes. Les
- * lignes sont CENTRÉES et non alignées à gauche : un bloc centré donne un
- * cercle englobant plus serré, donc un disque plus petit à écarter au niveau 2.
+ * C'est la pièce qui rend la géométrie des anneaux traitable. Une carte est un
+ * rectangle axis-aligned posé à un angle quelconque autour d'un centre ; tester
+ * le recouvrement de deux rectangles ainsi disposés demande de raisonner sur
+ * quatre projections et deux positions angulaires. En les remplaçant par leurs
+ * disques englobants, la condition devient une seule inégalité de distance,
+ * indépendante de l'angle : deux cartes dont les disques sont disjoints d'au
+ * moins `gap` sont disjointes d'au moins `gap`.
  *
- * La largeur cible en √(aire) vise un bloc à peu près carré ; `maxW` la borne
- * par le bas pour qu'une carte plus large que la cible ne parte jamais seule
- * sur une ligne débordante.
+ * C'est une condition SUFFISANTE, pas nécessaire — donc conservatrice. Ce
+ * qu'elle coûte est borné et petit sur ces cartes : le disque déborde le
+ * rectangle de `(diagonale − largeur) / 2`, soit 7,1 px pour une carte de
+ * 340×100 et 4,6 px pour une de 140×49. Un test exact gagnerait ces quelques
+ * pixels au prix d'une garantie qu'on ne saurait plus écrire en une ligne.
+ */
+function discRadiusOf(size: { width: number; height: number }): number {
+  return Math.hypot(size.width, size.height) / 2
+}
+
+/**
+ * Placement RADIAL : la racine au centre, les autres membres sur des anneaux
+ * concentriques, un anneau par distance de référence à la racine.
+ *
+ * Il remplace un packing en étagères (lignes remplies de gauche à droite,
+ * membres triés par id) qui ignorait complètement la connectivité. Ce que ça
+ * coûtait, mesuré sur `deepAggregate()` — 41 cartes, quatre niveaux de
+ * profondeur : la racine sortait **40e sur 41** par proximité au centre de son
+ * propre disque, à 597,7 px de ce centre, et une référence intra-agrégat
+ * mesurait 591,4 px en moyenne. Le tri par id posait la racine en tête de la
+ * première ligne, c'est-à-dire dans un COIN du bloc — le point le plus éloigné
+ * du centre du cercle englobant.
+ *
+ * ── LA GARANTIE ────────────────────────────────────────────────────────────
+ *
+ * Non-recouvrement avec marge `gap`, par construction, en deux conditions
+ * indépendantes. On raisonne sur les disques englobants (`discRadiusOf`), donc
+ * sur des distances de centre à centre.
+ *
+ * **1. Entre deux cartes d'un même anneau.** Une carte de disque ρ posée à la
+ * distance R du centre se voit allouer la largeur angulaire
+ *
+ *     α = 2·asin((ρ + gap/2) / R)
+ *
+ * qui est exactement l'angle sous lequel on voit, depuis le centre, un disque
+ * de rayon `ρ + gap/2` centré à la distance R. Deux cartes consécutives i et j
+ * sont posées à un écart angulaire d'au moins `α_i/2 + α_j/2`. Leur distance
+ * de centre à centre est la corde `2R·sin(Δθ/2)`, et
+ *
+ *     2R·sin((x + y)/2)  ≥  R·sin x + R·sin y     avec x = asin(a/R), y = asin(b/R)
+ *
+ * parce que `sin x + sin y = 2·sin((x+y)/2)·cos((x−y)/2)` et que le cosinus
+ * vaut au plus 1. Le membre de droite vaut `a + b = ρ_i + ρ_j + gap`. La corde
+ * est donc toujours au moins égale à la somme des rayons plus la marge. C'est
+ * cette identité trigonométrique, et rien d'autre, qui porte la garantie
+ * intra-anneau — elle vaut pour toute paire, pas seulement pour des voisines,
+ * puisque l'écart angulaire ne fait que croître entre non-voisines.
+ *
+ * La condition de bouclage est donc `Σα_i ≤ 2π` : c'est elle qui garantit que
+ * la DERNIÈRE carte et la PREMIÈRE, qui se rejoignent par l'autre côté, sont
+ * elles aussi assez écartées.
+ *
+ * **2. Entre deux cartes d'anneaux différents.** Le rayon d'un anneau est posé
+ * à `R_k = R_{k−1} + ρmax_{k−1} + ρmax_k + gap`. Deux cartes d'anneaux
+ * différents sont donc distantes d'au moins `R_k − R_{k−1}` (le pire cas est
+ * l'alignement radial), soit au moins `ρ_i + ρ_j + gap`. Les anneaux non
+ * consécutifs le sont a fortiori, R croissant.
+ *
+ * ── SCISSION D'UN ANNEAU ───────────────────────────────────────────────────
+ *
+ * Un anneau de N cartes ne « déborde » jamais au sens où il échouerait : on
+ * pourrait toujours grossir R jusqu'à ce que `Σα ≤ 2π`. Mais ce R croît
+ * linéairement en N, alors que le scinder en deux demi-anneaux fait croître
+ * deux rayons de N/2 chacun — et deux anneaux séparés par une hauteur de carte
+ * coûtent bien moins que le double du rayon. On remplit donc l'anneau
+ * GLOUTONNEMENT au rayon minimal autorisé par la condition 2, et ce qui ne
+ * tient pas part sur un anneau suivant, à la MÊME distance logique. Les
+ * sous-anneaux se comportent en tout point comme des anneaux pour la condition
+ * 2, donc la garantie traverse la scission sans changement.
+ *
+ * Le remplissage se termine toujours : `α ≤ π` pour toute carte (l'`asin` est
+ * borné par π/2), donc au moins une carte tient sur chaque sous-anneau.
+ *
+ * ── DÉTERMINISME ───────────────────────────────────────────────────────────
+ *
+ * BFS depuis la racine sur les références INTRA-agrégat, remontées de la cible
+ * vers la source — le même sens que `buildAggregates`, ce qui fait coïncider la
+ * distance d'anneau avec la distance d'appartenance. Les listes d'adjacence
+ * sont triées, donc la file est déterministe et les égalités de distance sont
+ * départagées par id. À l'intérieur d'un anneau, les cartes sont ordonnées par
+ * ANGLE DU PARENT puis par id : un enfant se pose près de son parent, ce qui
+ * est ce qui raccourcit les chaînes de références.
  */
 function packCluster(
   memberIds: NodeId[],
   sizes: Map<NodeId, { width: number; height: number }>,
   gap: number,
+  /** Membres du cluster référençant la clé — l'adjacence inverse, triée. */
+  childrenOf: Map<NodeId, NodeId[]>,
 ): Map<NodeId, Rect> {
-  let totalArea = 0
-  let maxW = 0
-  for (const id of memberIds) {
-    const s = sizes.get(id)!
-    totalArea += (s.width + gap) * (s.height + gap)
-    if (s.width > maxW) maxW = s.width
-  }
-  const targetW = Math.max(maxW, Math.sqrt(totalArea))
-
-  const rows: { ids: NodeId[]; width: number; height: number }[] = []
-  let current: { ids: NodeId[]; width: number; height: number } = { ids: [], width: 0, height: 0 }
-  for (const id of memberIds) {
-    const s = sizes.get(id)!
-    const w = s.width + (current.ids.length > 0 ? gap : 0)
-    if (current.ids.length > 0 && current.width + w > targetW) {
-      rows.push(current)
-      current = { ids: [], width: 0, height: 0 }
-    }
-    current.ids.push(id)
-    current.width += current.ids.length > 1 ? s.width + gap : s.width
-    current.height = Math.max(current.height, s.height)
-  }
-  if (current.ids.length > 0) rows.push(current)
-
-  const blockW = Math.max(...rows.map((r) => r.width))
   const local = new Map<NodeId, Rect>()
-  let y = 0
-  for (const row of rows) {
-    let x = (blockW - row.width) / 2
-    for (const id of row.ids) {
-      const s = sizes.get(id)!
-      local.set(id, { x, y, width: s.width, height: s.height })
-      x += s.width + gap
-    }
-    y += row.height + gap
+  const rootId = memberIds[0]!
+  const memberSet = new Set(memberIds)
+
+  const rectFor = (id: NodeId, cx: number, cy: number) => {
+    const s = sizes.get(id)!
+    local.set(id, { x: cx - s.width / 2, y: cy - s.height / 2, width: s.width, height: s.height })
   }
+
+  rectFor(rootId, 0, 0)
+  if (memberIds.length === 1) return local
+
+  // BFS local. `parent` sert ensuite à ordonner chaque anneau par angle.
+  const dist = new Map<NodeId, number>([[rootId, 0]])
+  const parent = new Map<NodeId, NodeId>()
+  const queue: NodeId[] = [rootId]
+  let maxDist = 0
+  for (let head = 0; head < queue.length; head++) {
+    const current = queue[head]!
+    const next = dist.get(current)! + 1
+    for (const child of childrenOf.get(current) ?? []) {
+      if (!memberSet.has(child) || dist.has(child)) continue
+      dist.set(child, next)
+      parent.set(child, current)
+      queue.push(child)
+      if (next > maxDist) maxDist = next
+    }
+  }
+
+  // Membres non atteints par ce BFS. Ils EXISTENT : l'appartenance se calcule
+  // sur le graphe entier, la mise en page sur les entités VISIBLES, donc un
+  // maillon intermédiaire masqué détache tout ce qui pendait dessous. Ils
+  // partent sur un anneau supplémentaire plutôt que d'être posés sur la racine.
+  const orphans: NodeId[] = []
+  for (const id of memberIds) if (!dist.has(id)) orphans.push(id)
+  if (orphans.length > 0) {
+    maxDist++
+    for (const id of orphans) dist.set(id, maxDist)
+  }
+
+  const rings: NodeId[][] = Array.from({ length: maxDist + 1 }, () => [])
+  for (const id of memberIds) {
+    if (id !== rootId) rings[dist.get(id)!]!.push(id)
+  }
+
+  const angleOf = new Map<NodeId, number>([[rootId, 0]])
+  let prevR = 0
+  let prevMaxRho = discRadiusOf(sizes.get(rootId)!)
+
+  for (let k = 1; k <= maxDist; k++) {
+    // Ordre : angle du parent, puis id. Un orphelin n'a pas de parent — il
+    // retombe sur l'angle 0, et son id tranche.
+    const pending = rings[k]!.slice().sort((a, b) => {
+      const pa = angleOf.get(parent.get(a) ?? rootId) ?? 0
+      const pb = angleOf.get(parent.get(b) ?? rootId) ?? 0
+      return pa !== pb ? pa - pb : a < b ? -1 : 1
+    })
+
+    let from = 0
+    while (from < pending.length) {
+      // ρmax est pris sur tout ce qui RESTE à poser, et non sur ce qui tiendra
+      // sur ce sous-anneau : il faut R pour savoir ce qui tient, et ρmax pour
+      // savoir R. Prendre le max du reste est le choix conservateur, donc sûr.
+      let maxRho = 0
+      for (let i = from; i < pending.length; i++) {
+        maxRho = Math.max(maxRho, discRadiusOf(sizes.get(pending[i]!)!))
+      }
+      const R = prevR + prevMaxRho + maxRho + gap
+
+      const widths: number[] = []
+      let sum = 0
+      let to = from
+      while (to < pending.length) {
+        const rho = discRadiusOf(sizes.get(pending[to]!)!)
+        const a = 2 * Math.asin(Math.min(1, (rho + gap / 2) / R))
+        if (to > from && sum + a > 2 * Math.PI) break
+        widths.push(a)
+        sum += a
+        to++
+      }
+
+      // Le jeu restant est réparti également entre les N intervalles (les N−1
+      // internes plus celui du bouclage) : les cartes s'étalent au lieu de se
+      // tasser sur un arc en laissant un trou. Ça ne fait qu'AUGMENTER les
+      // écarts, donc la garantie est intacte.
+      const n = to - from
+      const slack = (2 * Math.PI - sum) / n
+
+      // Rotation rigide de tout le sous-anneau pour que sa première carte se
+      // pose à l'angle de son parent. Rigide, donc sans effet sur la garantie.
+      const firstParent = parent.get(pending[from]!)
+      const offset = (firstParent !== undefined ? (angleOf.get(firstParent) ?? 0) : 0) - widths[0]! / 2
+
+      let theta = offset
+      let placedMaxRho = 0
+      for (let i = from; i < to; i++) {
+        const id = pending[i]!
+        const a = widths[i - from]!
+        theta += i === from ? a / 2 : a / 2 + slack
+        angleOf.set(id, theta)
+        rectFor(id, R * Math.cos(theta), R * Math.sin(theta))
+        theta += a / 2
+        placedMaxRho = Math.max(placedMaxRho, discRadiusOf(sizes.get(id)!))
+      }
+
+      prevR = R
+      prevMaxRho = placedMaxRho
+      from = to
+    }
+  }
+
   return local
 }
 
@@ -314,7 +493,37 @@ function run(
     else members.set(cid, [id])
   }
 
-  // NIVEAU 1 : packing local de chaque cluster, racine en premier.
+  // Adjacence inverse INTRA-cluster : cible → sources qui la référencent, les
+  // deux bouts dans le même cluster. C'est ce qui donne au placement radial sa
+  // distance de référence ; le niveau 2 ignore ces arêtes-là, et se sert des
+  // arêtes INTER-cluster (plus bas), qui sont exactement les autres.
+  //
+  // Le sens est celui de `buildAggregates` — on remonte de la cible vers la
+  // source —, sans quoi la distance d'anneau ne coïnciderait pas avec la
+  // distance d'appartenance qui a formé le cluster.
+  const childrenOf = new Map<NodeId, NodeId[]>()
+  const entitySet = new Set(entityIds)
+  for (const edge of graph.refEdges) {
+    if (edge.to === null || edge.dangling) continue
+    if (!entitySet.has(edge.from) || !entitySet.has(edge.to)) continue
+    if (clusterOf.get(edge.from) !== clusterOf.get(edge.to)) continue
+    const list = childrenOf.get(edge.to)
+    if (list) list.push(edge.from)
+    else childrenOf.set(edge.to, [edge.from])
+  }
+  // Tri des listes d'adjacence : l'ordre de `graph.refEdges` ne doit pas
+  // transparaître dans la sortie. Dédoublonnage au passage — deux champs de la
+  // même carte peuvent référencer la même cible, ce qui la ferait compter deux
+  // fois dans un anneau.
+  for (const [key, list] of childrenOf) {
+    list.sort()
+    childrenOf.set(
+      key,
+      list.filter((id, i) => i === 0 || id !== list[i - 1]),
+    )
+  }
+
+  // NIVEAU 1 : packing local de chaque cluster, racine au centre.
   const clusters: LocalCluster[] = []
   for (const cid of [...members.keys()].sort()) {
     const agg = aggregates.aggregates.get(cid)
@@ -327,7 +536,7 @@ function run(
         ids.unshift(agg.rootId)
       }
     }
-    const local = packCluster(ids, sizes, o.cardGap)
+    const local = packCluster(ids, sizes, o.cardGap, childrenOf)
     const circle = enclosingCircle([...local.values()], o.hullPadding)
     for (const rect of local.values()) {
       rect.x -= circle.cx
@@ -361,8 +570,8 @@ function run(
 
   // Arêtes inter-clusters agrégées : une seule par paire d'agrégats, de poids
   // le nombre de références qui la traversent. Les références INTRA-agrégat
-  // sont ignorées — elles ne peuvent rien tirer, le bloc étant rigide.
-  const entitySet = new Set(entityIds)
+  // sont ignorées — elles ne peuvent rien tirer, le bloc étant rigide, et le
+  // placement radial les a déjà consommées au niveau 1.
   const edgeWeight = new Map<string, { a: number; b: number; w: number }>()
   const index = new Map<string, number>()
   clusters.forEach((c, i) => index.set(c.id, i))

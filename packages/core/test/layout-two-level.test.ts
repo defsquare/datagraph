@@ -7,7 +7,16 @@ import type { Rect } from "../src/layout.js"
 import type { GraphLayoutResult } from "../src/layout-two-level.js"
 import type { NodeId } from "../src/model.js"
 import { createTwoLevelLayoutEngine } from "../src/layout-two-level.js"
-import { shopData, shopConfig, bigShop, twoRootsData, twoRootsConfig } from "./fixtures.js"
+import {
+  shopData,
+  shopConfig,
+  bigShop,
+  twoRootsData,
+  twoRootsConfig,
+  deepAggregate,
+  deepAggregateConfig,
+} from "./fixtures.js"
+import type { Graph } from "../src/model.js"
 
 /** La config de `fixtures.ts` ne déclare pas d'agrégats ; le bench de la sonde
  * lui ajoute `aggregates: ["Customer"]`, et c'est cette config-là qui a produit
@@ -241,9 +250,34 @@ describe("garanties de séparation, à l'échelle", () => {
       }
       expect(intraTooClose).toBe(0)
       expect(tooClose).toBe(0)
-      // Le minimum est atteint, et à `cardGap` exactement : le packing pose
-      // bien la marge, il ne la dépasse pas « par sécurité ».
-      expect(worst).toBeCloseTo(CARD_GAP, 6)
+
+      // INTENTION PRÉSERVÉE, FORME CHANGÉE avec le passage au placement radial.
+      //
+      // Cette assertion lisait `toBeCloseTo(CARD_GAP, 6)` : sous le packing en
+      // étagères, deux cartes voisines étaient séparées d'EXACTEMENT `cardGap`,
+      // parce que la marge y était posée sur un axe, entre deux rectangles
+      // alignés. Ce qu'elle défendait, c'est que le packing pose la marge sans
+      // la gaspiller.
+      //
+      // Le radial ne peut pas atteindre l'exactitude, et pas par négligence :
+      // sa garantie s'écrit sur les DISQUES ENGLOBANTS des cartes (voir la
+      // démonstration au-dessus de `packCluster`), qui est une condition
+      // suffisante, pas nécessaire. L'écart réel dépasse donc `cardGap` d'un
+      // surcoût géométrique — pour une paire posée à l'angle 0, exactement
+      // `ρ₁ + ρ₂ − (w₁ + w₂)/2`, la différence entre les demi-diagonales et les
+      // demi-largeurs.
+      //
+      // Ce surcoût est CONSTANT : il ne dépend pas de `cardGap`. C'est la forme
+      // sous laquelle l'intention survit, et c'est ce que le test « inclut le
+      // cardGap demandé » vérifie maintenant directement, en comparant deux
+      // valeurs de `cardGap` sur le même jeu. Ici on se contente de la borne et
+      // du chiffre mesuré.
+      expect(worst).toBeGreaterThanOrEqual(CARD_GAP - 1e-9)
+      // 44,62 px sur ce fixture, soit `cardGap` + 28,62 de surcoût de disque.
+      // C'est le chiffre de l'exécution, pas une cible : il bougerait si la
+      // taille des cartes de `bigShop` changeait. Il est pinné parce qu'une
+      // dérive silencieuse de ce surcoût est exactement ce qu'on veut voir.
+      expect(worst).toBeCloseTo(44.62, 1)
     },
     30_000,
   )
@@ -396,21 +430,233 @@ describe("options", () => {
     expect(worst).toBeGreaterThanOrEqual(400 - 1e-6)
   })
 
-  it("inclut le cardGap demandé dans le packing", async () => {
+  it("inclut le cardGap demandé dans le packing, ADDITIVEMENT", async () => {
+    // INTENTION PRÉSERVÉE, FORME CHANGÉE (voir la note longue dans « laisse au
+    // moins cardGap »). Ce test assertait `toBeCloseTo(64, 6)` : sous le
+    // packing en étagères, l'écart valait exactement `cardGap`. Le placement
+    // radial y ajoute un surcoût géométrique constant, celui du critère par
+    // disques englobants, donc l'égalité exacte n'est plus atteignable.
+    //
+    // Mais la propriété qui compte l'est, et sous une forme plus forte que ce
+    // que testait l'ancienne version : `cardGap` entre ADDITIVEMENT dans le
+    // placement. Doubler la marge demandée déplace l'écart obtenu d'exactement
+    // la même quantité — le surcoût ne se met pas à l'échelle avec elle. Un
+    // moteur qui n'utiliserait `cardGap` qu'à moitié, ou qui le multiplierait
+    // par un facteur, échouerait ici alors qu'il passerait une simple borne
+    // inférieure.
+    //
+    // Sur `bigShop`, Customer#c0 tient exactement deux cartes — la racine et sa
+    // commande —, donc l'anneau 1 ne porte qu'une carte, posée à l'angle 0 : sa
+    // distance au centre vaut `ρ₁ + ρ₂ + cardGap` par construction, et l'écart
+    // sur l'axe x s'en déduit à `(w₁ + w₂)/2` près. La relation est exacte, pas
+    // approchée, ce qui autorise la tolérance serrée ci-dessous.
     const { graph, aggregates, visible } = setupOn(bigShop(600))
-    const result = await createTwoLevelLayoutEngine({ cardGap: 64 }).layout(
-      graph,
-      aggregates,
-      visible,
-    )
-    // Customer#c0 tient deux cartes : la racine et sa commande. Le packing les
-    // pose côte à côte, séparées par exactement `cardGap`.
     const members = [...aggregates.aggregates.get("Customer#c0")!.memberIds]
     expect(members).toHaveLength(2)
-    const a = result.positions.get(members[0]!)!
-    const b = result.positions.get(members[1]!)!
-    const { px, py } = penetrations(a, b)
-    expect(Math.max(-px, -py)).toBeCloseTo(64, 6)
+
+    const separationWith = async (cardGap: number) => {
+      const result = await createTwoLevelLayoutEngine({ cardGap }).layout(graph, aggregates, visible)
+      const { px, py } = penetrations(
+        result.positions.get(members[0]!)!,
+        result.positions.get(members[1]!)!,
+      )
+      return Math.max(-px, -py)
+    }
+
+    const small = await separationWith(16)
+    const large = await separationWith(64)
+
+    // Chaque écart dépasse la marge demandée — la garantie —, et l'excédent est
+    // le MÊME des deux côtés : c'est lui, le surcoût de disque, mesuré ici à
+    // 28,6 px sur ces deux cartes.
+    expect(small).toBeGreaterThanOrEqual(16 - 1e-9)
+    expect(large).toBeGreaterThanOrEqual(64 - 1e-9)
+    expect(large - small).toBeCloseTo(64 - 16, 6)
+    expect(small - 16).toBeCloseTo(large - 64, 6)
+  })
+})
+
+describe("placement radial intra-agrégat", () => {
+  /**
+   * Distance de référence à la racine, RECALCULÉE ICI à partir du graphe.
+   *
+   * Le moteur fait le même BFS pour construire ses anneaux ; le refaire dans le
+   * test est ce qui rend les assertions ci-dessous indépendantes. Comparer les
+   * anneaux du moteur à ses propres anneaux ne vérifierait rien.
+   *
+   * Sens de parcours : de la cible vers la source, comme `buildAggregates`.
+   */
+  function refDistances(graph: Graph, rootId: NodeId, members: Set<NodeId>): Map<NodeId, number> {
+    const incoming = new Map<NodeId, NodeId[]>()
+    for (const edge of graph.refEdges) {
+      if (edge.to === null || edge.dangling) continue
+      if (!members.has(edge.from) || !members.has(edge.to)) continue
+      const list = incoming.get(edge.to)
+      if (list) list.push(edge.from)
+      else incoming.set(edge.to, [edge.from])
+    }
+    const dist = new Map<NodeId, number>([[rootId, 0]])
+    const queue = [rootId]
+    for (let head = 0; head < queue.length; head++) {
+      const current = queue[head]!
+      for (const source of incoming.get(current) ?? []) {
+        if (dist.has(source)) continue
+        dist.set(source, dist.get(current)! + 1)
+        queue.push(source)
+      }
+    }
+    return dist
+  }
+
+  async function deepSetup(orders?: number, lines?: number, serials?: number) {
+    const data = deepAggregate(orders, lines, serials)
+    const { graph, aggregates, visible } = setupOn(data, deepAggregateConfig)
+    const result = await createTwoLevelLayoutEngine().layout(graph, aggregates, visible)
+    const aggregate = aggregates.aggregates.get("Customer#c0")!
+    const shape = result.clusters.find((c) => c.aggregateId === "Customer#c0")!
+    const dist = refDistances(graph, aggregate.rootId, aggregate.memberIds)
+    const radiusOf = (id: NodeId) => {
+      const r = result.positions.get(id)!
+      return Math.hypot(r.x + r.width / 2 - shape.cx, r.y + r.height / 2 - shape.cy)
+    }
+    return { graph, aggregates, visible, result, aggregate, shape, dist, radiusOf }
+  }
+
+  it("le fixture produit bien un gros agrégat profond", async () => {
+    // Garde anti-test-creux : si `deepAggregate` cessait de produire de la
+    // profondeur, toutes les assertions radiales ci-dessous passeraient sans
+    // rien exercer — un agrégat plat les vérifie trivialement.
+    const { aggregate, dist } = await deepSetup()
+    expect(aggregate.memberIds.size).toBe(41)
+    expect(Math.max(...dist.values())).toBe(3)
+    const perRing = [0, 1, 2, 3].map((d) => [...dist.values()].filter((x) => x === d).length)
+    expect(perRing).toEqual([1, 4, 12, 24])
+  })
+
+  it("la racine est la carte la plus proche du centre de son enveloppe", async () => {
+    // C'est le défaut que le radial corrige, et il était spectaculaire : sous
+    // le packing en étagères la racine sortait **40e sur 41**, à 597,7 px du
+    // centre de son propre disque, parce que le tri par id la posait en tête de
+    // la première ligne, c'est-à-dire dans un coin du bloc.
+    const { aggregate, radiusOf } = await deepSetup()
+    const ranked = [...aggregate.memberIds]
+      .map((id) => ({ id, r: radiusOf(id) }))
+      .sort((a, b) => a.r - b.r)
+    expect(ranked[0]!.id).toBe(aggregate.rootId)
+    // Et pas seulement première ex aequo : nettement plus proche que la
+    // suivante. Mesuré : 16,4 px contre 291,6 px.
+    expect(ranked[0]!.r).toBeLessThan(ranked[1]!.r / 2)
+  })
+
+  it("la distance au centre croît avec la distance de référence", async () => {
+    // La propriété qui définit le placement radial. Assertée sur la MOYENNE par
+    // anneau et non carte par carte : le centre du cercle englobant n'est pas
+    // exactement le centre de la racine (il est calculé sur les coins de toutes
+    // les cartes), donc deux cartes du même anneau n'ont pas exactement le même
+    // rayon, et une carte d'un anneau peut dépasser une carte du suivant de
+    // quelques pixels sans que la structure en anneaux soit en cause.
+    const { aggregate, dist, radiusOf } = await deepSetup()
+    const sums = new Map<number, { total: number; n: number }>()
+    for (const id of aggregate.memberIds) {
+      const d = dist.get(id)!
+      const acc = sums.get(d) ?? { total: 0, n: 0 }
+      acc.total += radiusOf(id)
+      acc.n++
+      sums.set(d, acc)
+    }
+    const means = [...sums.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v.total / v.n)
+    expect(means).toHaveLength(4)
+    for (let i = 1; i < means.length; i++) {
+      expect(means[i]!).toBeGreaterThan(means[i - 1]!)
+    }
+    // Strictement croissant ne suffirait pas : un écart d'un pixel passerait.
+    // Chaque anneau doit s'éloigner d'au moins une demi-carte.
+    for (let i = 1; i < means.length; i++) {
+      expect(means[i]! - means[i - 1]!).toBeGreaterThan(70)
+    }
+  })
+
+  it("tient ses garanties sur le gros agrégat, y compris à 66 cartes", async () => {
+    // Les garanties à l'échelle du dépôt sont vérifiées sur `bigShop`, dont
+    // TOUS les agrégats font 2 cartes : le placement radial n'y pose jamais
+    // qu'un seul anneau d'une seule carte. Rien là-dedans n'exerce le calcul de
+    // circonférence, la scission d'un anneau trop plein, ni l'empilement de
+    // plusieurs anneaux. C'est ce que ce test-ci couvre.
+    for (const [o, l, s] of [
+      [4, 3, 2], // 41 cartes, 3 anneaux
+      [5, 3, 3], // 66 cartes, dont un anneau de 45 — celui qui doit se scinder
+    ] as [number, number, number][]) {
+      const { result, aggregate, shape } = await deepSetup(o, l, s)
+      const rects = [...result.positions.values()]
+
+      let overlapping = 0
+      let tooClose = 0
+      for (let i = 0; i < rects.length; i++) {
+        for (let j = i + 1; j < rects.length; j++) {
+          const { px, py } = penetrations(rects[i]!, rects[j]!)
+          if (px > 1e-6 && py > 1e-6) overlapping++
+          if (px + CARD_GAP > 1e-9 && py + CARD_GAP > 1e-9) tooClose++
+        }
+      }
+      expect(overlapping).toBe(0)
+      expect(tooClose).toBe(0)
+
+      // Toutes les cartes tiennent dans l'enveloppe peinte.
+      for (const id of aggregate.memberIds) {
+        for (const corner of cornersOf(result.positions.get(id)!)) {
+          expect(Math.hypot(corner.x - shape.cx, corner.y - shape.cy)).toBeLessThanOrEqual(
+            shape.r + 1e-6,
+          )
+        }
+      }
+    }
+  }, 30_000)
+
+  it("reste déterministe au bit près sur un agrégat profond", async () => {
+    // Le radial ajoute un BFS, un tri par angle de parent et une trigonométrie
+    // dont l'ordre des opérations doit être reproductible. Le déterminisme
+    // asserté ailleurs sur `bigShop` n'exerce rien de tout ça : un anneau d'une
+    // carte n'a ni tri ni bouclage.
+    const data = deepAggregate()
+    const first = setupOn(data, deepAggregateConfig)
+    const second = setupOn(data, deepAggregateConfig)
+    const a = await createTwoLevelLayoutEngine().layout(first.graph, first.aggregates, first.visible)
+    const b = await createTwoLevelLayoutEngine().layout(
+      second.graph,
+      second.aggregates,
+      second.visible,
+    )
+    expect([...a.positions.entries()]).toEqual([...b.positions.entries()])
+    expect(a.clusters).toEqual(b.clusters)
+  })
+
+  it("raccourcit les références intra-agrégat", async () => {
+    // La raison d'être du changement. Chiffres mesurés sous le packing en
+    // étagères, sur ce même fixture : moyenne 591,4 px, max 976,3 px. Sous
+    // radial : 363,0 et 488,1. Les bornes ci-dessous sont posées à mi-chemin,
+    // assez larges pour ne pas casser au moindre pixel et assez serrées pour
+    // qu'un retour aux étagères les fasse tomber.
+    const { graph, aggregate, result } = await deepSetup()
+    const centreOf = (id: NodeId) => {
+      const r = result.positions.get(id)!
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 }
+    }
+    let total = 0
+    let max = 0
+    let n = 0
+    for (const edge of graph.refEdges) {
+      if (edge.to === null || edge.dangling) continue
+      if (!aggregate.memberIds.has(edge.from) || !aggregate.memberIds.has(edge.to)) continue
+      const p = centreOf(edge.from)
+      const q = centreOf(edge.to)
+      const d = Math.hypot(p.x - q.x, p.y - q.y)
+      total += d
+      n++
+      if (d > max) max = d
+    }
+    expect(n).toBe(40)
+    expect(total / n).toBeLessThan(470)
+    expect(max).toBeLessThan(730)
   })
 })
 

@@ -70,9 +70,29 @@ function fromThree(a: Point, b: Point, c: Point): Circle {
  * de la mise en page), et un mélange — même à graine fixe — est une pièce mobile
  * de plus sur ce chemin. Les tailles en jeu rendent l'arbitrage facile : un
  * cluster est ici un agrégat, soit 4 points pour le cas courant (une seule
- * carte) et 20 pour le plus gros mesuré sur le jeu de la démo (5 cartes). Un
- * ordre fixe est le bon compromis à cette échelle ; il cesserait de l'être sur
- * des agrégats de plusieurs centaines de cartes.
+ * carte) et 20 pour le plus gros mesuré sur le jeu de la démo (5 cartes).
+ *
+ * « Il cesserait de l'être sur des agrégats de plusieurs centaines de cartes »,
+ * disait cette note sans l'avoir mesuré. C'est maintenant chiffré, et c'est
+ * juste — avec une nuance qui compte depuis que le placement intra-agrégat est
+ * RADIAL (`layout-two-level.ts`). Le radial pose les cartes SUR DES CERCLES,
+ * donc une grande part des coins se retrouve près du bord du cercle englobant :
+ * c'est le cas adverse de Welzl non mélangé, celui qui force le plus de
+ * reconstructions du jeu de support. Mesuré, par appel, étagères → radial :
+ *
+ *    41 cartes (164 coins)    0,0187 → 0,0352 ms
+ *    66 cartes (264 coins)    0,0261 → 0,0686 ms
+ *   157 cartes (628 coins)    0,0673 → 0,2834 ms
+ *   297 cartes (1188 coins)   0,2158 → 1,6732 ms
+ *
+ * La croissance est bien superlinéaire sous radial (×7,2 en cartes → ×48 en
+ * temps), donc l'avertissement tient et arrive plus tôt qu'avant. Mais
+ * l'ARBITRAGE ne change pas : à l'échelle visée — 60 cartes dans le plus gros
+ * agrégat de test — c'est 0,07 ms par appel, et même à 297 cartes ces 1,7 ms
+ * pèsent 21 % d'un layout de 7,8 ms, très loin derrière la simulation O(k²) du
+ * niveau 2 (169 ms à 167 disques). Rien ici ne justifie d'introduire un mélange,
+ * donc l'ordre reste fixe. Ce qui justifierait de rouvrir la question : un
+ * agrégat unique de plusieurs centaines de cartes dans un jeu réel.
  */
 function welzl(points: Point[]): Circle {
   let circle: Circle = { cx: points[0]!.x, cy: points[0]!.y, r: 0 }
