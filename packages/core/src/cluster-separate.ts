@@ -72,6 +72,14 @@ function boundingBox(positions: Map<NodeId, Rect>, members: Iterable<NodeId>): R
  * Une entité hors de tout agrégat forme un cluster d'un seul : sans quoi elle
  * resterait posée à l'intérieur de l'enveloppe d'un voisin qui ne la contient
  * pas.
+ *
+ * Corollaire à garder en tête devant une sortie qui semble « ne rien faire » :
+ * si TOUS les agrégats finissent transitivement reliés par un membre partagé
+ * (union-find à une seule racine), il n'y a plus qu'un super-cluster, donc
+ * rien à écarter — la passe est inerte, pas en panne. C'est exactement ce que
+ * mesure `packages/core/README.md` (section « Aggregates ») sur le jeu de
+ * démo une fois qu'il déclare deux racines d'agrégat partageant leurs
+ * membres.
  */
 export function separateClusters(
   positions: Map<NodeId, Rect>,

@@ -319,8 +319,10 @@ déplacent ensemble, et leurs enveloppes continuent de se croiser.
 > défaut.
 
 **Coût de la fusion, mesuré.** Elle est transitive : A partage avec B, B avec C,
-donc les trois n'en font qu'un. Sur une racine unique (le cas du dépôt et de la
-démo) il n'y a aucun partage, donc aucune fusion. Sur deux racines dont chaque
+donc les trois n'en font qu'un. ~~Sur une racine unique (le cas du dépôt et de
+la démo) il n'y a aucun partage, donc aucune fusion.~~ RÉVISÉ : vrai pour les
+fixtures du dépôt (racine unique), plus pour la démo depuis qu'elle déclare
+deux racines — voir la mesure ci-dessous. Sur deux racines dont chaque
 commande référence son client ET son produit : 334 agrégats → 167 super-clusters
 de 3 cartes, sans effet visible. Mais avec un CATALOGUE partagé, la fusion
 dégénère : 20 produits → 20 super-clusters (le plus gros 19 cartes), 3 produits
@@ -329,6 +331,19 @@ seul super-cluster couvrant 100 % du graphe, où la passe ne peut plus rien
 écarter. C'est sémantiquement correct — ces agrégats sont réellement inséparables
 — mais l'effet pratique est que l'écartement ne s'applique pas à ces données-là.
 À savoir avant de compter dessus sur un modèle à hub.
+
+> **La démo, mesurée après coup.** Son config déclare désormais deux racines
+> (`aggregates: ["Customer", "Product"]`) sur `bigShop(4000)` — 350 entités,
+> 108 agrégats — où chaque `Order` référence un `Customer` ET un `Product` à
+> un saut, donc appartient aux deux à la fois : le graphe biparti percole. Sur
+> une seule racine (`["Customer"]`) : 116 super-clusters, le plus gros 5
+> cartes (1,4 %), bbox 17367 × 21849. Sur les deux racines réellement
+> déclarées : 9 super-clusters, le plus gros 342 des 350 cartes (97,7 %), bbox
+> 4816 × 6752 — la passe d'écartement n'a plus rien à séparer, hormis les 8
+> `Category` qu'aucun agrégat n'atteint. Même mécanique que le catalogue
+> partagé ci-dessus, mesurée cette fois sur les données que la démo expédie
+> réellement, et documentée dans `packages/core/README.md` (section
+> « Aggregates »).
 
 La sortie anticipée compare à une épsilon et non à zéro : elle se déclenche
 vraiment, contrairement à celle de `separateOverlaps`.

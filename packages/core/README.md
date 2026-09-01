@@ -153,6 +153,35 @@ broken reference is left out of every aggregate. Declaration order in
 there's nothing to arbitrate) — it only orders `byNode`'s entries and, in
 `@defsquare/data-graph`, the paint order of overlapping envelopes.
 
+**What overlap costs the graph view's cluster spacing.** The renderer spaces
+aggregate envelopes apart after layout (`separateClusters`,
+`packages/core/src/cluster-separate.ts`) so they read as separate islands.
+Two aggregates that share a member can't be pulled apart without tearing that
+entity out of one of them, so the pass first merges — by union-find,
+transitively — every aggregate connected by a shared member into one rigid
+block, and moves that block as a whole; blocks that don't share anything are
+what actually get pushed apart.
+
+That merge is now measured on the demo dataset (`bigShop(4000)`, 350
+entities, 108 aggregates), whose config declares two roots
+(`aggregates: ["Customer", "Product"]`): every `Order` references a
+`Customer` and a `Product` one hop away, so it's a full member of both, and
+the customer–product graph percolates almost entirely:
+
+| | one root (`["Customer"]`) | two roots (`["Customer", "Product"]`) |
+| --- | --- | --- |
+| super-clusters | 116 | 9 |
+| largest block | 5 cards (1.4%) | 342 of 350 cards (97.7%) |
+| canvas bbox | 17367 × 21849 | 4816 × 6752 |
+
+With two roots the spacing pass has almost nothing left to separate — the 108
+envelopes stack into one blob, and only the 8 `Category` entities (which no
+aggregate claims) get pushed apart. This isn't a defect: the mechanism does
+exactly what a single-root config needs — it produced 116 separated islands
+above — and shared-member aggregates genuinely can't be spaced apart without
+tearing a card. It's simply moot once aggregates share entities, which is
+what the demo's two-root config now does.
+
 `aggregates` is what powers the renderer's **graph view** — see the
 [renderer package README](https://github.com/defsquare/data-graph/tree/main/packages/renderer#graph-view)
 for `view`/`setView`/`currentView` and how aggregates are drawn.

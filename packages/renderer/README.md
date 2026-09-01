@@ -140,19 +140,15 @@ from that chevron; it was removed.
 
 **Cluster spacing.** Aggregate envelopes are spaced apart by a dedicated pass
 (`separateClusters`, core-side) that translates each cluster rigidly, so
-nothing inside an aggregate moves relative to anything else in it. Aggregates
-sharing an entity are merged into one rigid block rather than pulled apart.
-The gap is `clusterGap`, **160 px** by default and calibrated by measurement —
-see the
-[root README's graph-view budgets](https://github.com/defsquare/data-graph#graph-view)
-for the numbers and for what the merge costs on hub-shaped data.
-
-Two aggregate roots one hop apart from the same entity make that merge
-swallow the graph: [`apps/demo`](../../apps/demo) declares
-`aggregates: ["Customer", "Product"]` over orders that reference both, and its
-108 aggregates collapse into a single super-cluster of 342 of 350 cards. The
-pass is then a no-op — expect one dense blob of crossing envelopes, not
-separated islands. Numbers and the one-root comparison are in the root README.
+nothing inside an aggregate moves relative to anything else in it, at a gap
+of `clusterGap` (**160 px** by default). It only has something to do when
+aggregates don't share entities: two aggregates sharing a member are merged
+into one rigid block instead of being pulled apart, so once every aggregate
+ends up transitively linked by shared members — as happens with
+[`apps/demo`](../../apps/demo)'s two-root config — the pass is left with
+nothing to separate. See the
+[core README's Aggregates section](https://github.com/defsquare/data-graph/tree/main/packages/core#aggregates)
+for the rule and the measured numbers.
 
 How wide the corridors should be is a matter of eye, screen size and data
 density, so it is settable per instance rather than baked into core:
