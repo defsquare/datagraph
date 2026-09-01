@@ -22,22 +22,28 @@ import {
   type SearchIndex,
   type SearchResult,
 } from "@defsquare/data-graph-core";
-// `import type` UNIQUEMENT : ce point d'entrée tire cytoscape (~178 ko gzip) et
-// ne doit entrer dans le bundle que de qui bascule réellement en vue graphe.
-// Un import de type ne produit aucun code à l'exécution ; le seul chemin
-// d'exécution vers le moteur est l'`import()` dynamique de `ensureGraphEngine`.
+// `import type` UNIQUEMENT : ce point d'entrée tire cytoscape et ne doit entrer
+// dans le bundle que de qui bascule réellement en vue graphe. Un import de type
+// ne produit aucun code à l'exécution ; le seul chemin d'exécution vers le
+// moteur est l'`import()` dynamique de `ensureGraphEngine`.
 // `test/bundle-purity.test.ts` (côté renderer) garde ces deux lignes : le test
 // du cœur ne couvre que le `dist/` du cœur, pas ce fichier-ci.
+//
+// La vue utilise désormais `createTwoLevelLayoutEngine`, qui n'importe NI
+// cytoscape NI elkjs — mais le point d'entrée `./graph-layout`, lui, continue
+// d'exposer `createGraphLayoutEngine` à côté, donc l'`import()` reste soumis à
+// la même règle tant que l'ancien moteur y vit (son retrait est une étape à
+// part). Voir la mesure du chunk dans `ensureGraphEngine`.
 import type {
   GraphLayoutEngine,
-  GraphLayoutOptions,
   GraphLayoutResult,
+  TwoLevelLayoutOptions,
 } from "@defsquare/data-graph-core/graph-layout";
 // Relais et non réexport : `export … from "<ce specifier>"` est interdit par
 // `test/bundle-purity.test.ts`, y compris sous forme type-only. Réexporter le
 // symbole déjà importé ci-dessus donne le même service aux consommateurs sans
 // écrire la forme interdite.
-export type { GraphLayoutOptions };
+export type { TwoLevelLayoutOptions };
 import { entityAccentMap, resolveTheme, type Theme, type ThemeOverride } from "./theme.js";
 import { pixiFontRegistry } from "./font-registry.js";
 import { fontsReady, measureFontMetrics } from "./font-metrics.js";
@@ -74,14 +80,29 @@ export interface DataGraphOptions {
    * `"graph"` met en page les entités et leurs références, groupées par
    * agrégat. */
   view?: DataGraphView;
-  /** Réglages de la mise en page de la vue graphe, passés tels quels à
-   * `createGraphLayoutEngine`. Le plus utile est `clusterGap` (160 px par
-   * défaut), l'écart ouvert entre deux enveloppes d'agrégats : c'est un
-   * réglage d'œil, qui dépend de la densité des données et de la taille de
-   * l'écran, et il doit pouvoir se régler sans toucher au cœur. Les valeurs
-   * sont lues au premier passage en vue graphe ; les changer après coup
-   * demande de recréer l'instance. */
-  graphLayoutOptions?: GraphLayoutOptions;
+  /**
+   * Réglages de la mise en page de la vue graphe, passés tels quels à
+   * `createTwoLevelLayoutEngine`. Le plus utile reste `clusterGap` (160 px par
+   * défaut), l'écart ouvert entre deux enveloppes d'agrégats : c'est un réglage
+   * d'œil, qui dépend de la densité des données et de la taille de l'écran, et
+   * il doit pouvoir se régler sans toucher au cœur. Les valeurs sont lues au
+   * premier passage en vue graphe ; les changer après coup demande de recréer
+   * l'instance.
+   *
+   * CHANGEMENT D'API (0.x, sans couche de compatibilité). Ce champ portait des
+   * `GraphLayoutOptions` — `{ hullPadding, separationMargin,
+   * separationIterations, clusterGap }` —, il porte des `TwoLevelLayoutOptions`
+   * — `{ hullPadding, cardGap, clusterGap, simIterations }`. `hullPadding` et
+   * `clusterGap` gardent leur nom, leur sens et leur défaut. Les deux autres
+   * disparaissent parce que la passe qu'elles réglaient n'existe plus : le
+   * nouveau moteur n'a AUCUNE passe de séparation de cartes, donc pas de
+   * plafond d'itérations à régler, et la marge entre cartes est posée par le
+   * packing (`cardGap`, 16 px, l'ancienne valeur de `separationMargin`) au lieu
+   * d'être visée par une relaxation. Passer `separationMargin` ou
+   * `separationIterations` est désormais une erreur de type : c'est voulu,
+   * l'objet aurait été accepté et ignoré en silence.
+   */
+  graphLayoutOptions?: TwoLevelLayoutOptions;
 }
 
 export type DataGraphEvent = "select" | "followRef";
@@ -302,20 +323,32 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   }
 
   /**
-   * Charge le moteur organique à la demande. `cytoscape` pèse ~178 ko gzip —
-   * taille MESURÉE, celle du chunk `graph-layout-*.js` qu'émet le build Vite de
-   * production d'`apps/demo` (178,29 ko gzip) ; le ~183 ko encore lisible dans
-   * `docs/superpowers/` est l'estimation de la sonde d'avant intégration. Il
-   * ne doit entrer dans le bundle que de qui bascule réellement en vue graphe,
-   * jamais dans celui d'un consommateur de la seule vue structure. C'est
-   * pourquoi le cœur l'expose sur un point d'entrée séparé, et pourquoi cet
-   * `import()` dynamique est le SEUL chemin d'exécution vers lui (les types,
-   * eux, viennent d'un `import type`, qui ne produit aucun code).
+   * Charge le moteur de la vue graphe à la demande.
+   *
+   * C'est `createTwoLevelLayoutEngine` — packing en étagères intra-agrégat,
+   * puis simulation sur les agrégats devenus disques rigides. Il remplace
+   * `createGraphLayoutEngine` (fcose + `separateOverlaps` + `separateClusters`)
+   * sur la foi d'une sonde qui le mesure ×11 à ×65 plus rapide, ×2 à ×5,4 plus
+   * dense, à garanties égales : voir
+   * `docs/superpowers/spikes/2026-09-01-two-level-layout.md`. Sur le jeu étendu
+   * de la démo, `setView("graph")` passe de ~4,2 s à ~80 ms.
+   *
+   * L'`import()` reste dynamique, et ce n'est PAS une précaution devenue
+   * inutile. Le moteur appelé n'importe ni cytoscape ni elkjs, mais le point
+   * d'entrée `./graph-layout` expose encore `createGraphLayoutEngine` à côté de
+   * lui, et le chunk qu'émet le build Vite de production d'`apps/demo` pèse
+   * toujours **180,28 ko gzip** (577,17 ko bruts) — mesuré après la bascule.
+   * Rien n'a été élagué : `layout-graph.js` reste atteignable depuis ce point
+   * d'entrée, donc cytoscape reste dans le chunk. Ce qui a changé, c'est qu'il
+   * n'est plus EXÉCUTÉ. Retirer l'ancien moteur du cœur est ce qui fera tomber
+   * ces 180 ko ; jusque-là, la garantie que vendent les READMEs — cytoscape
+   * n'entre pas dans le bundle de qui n'utilise que la vue structure — tient
+   * exactement comme avant, et par le même mécanisme.
    */
   async function ensureGraphEngine(): Promise<GraphLayoutEngine> {
     if (!graphEngine) {
       const mod = await import("@defsquare/data-graph-core/graph-layout");
-      graphEngine = mod.createGraphLayoutEngine(options.graphLayoutOptions);
+      graphEngine = mod.createTwoLevelLayoutEngine(options.graphLayoutOptions);
     }
     return graphEngine;
   }

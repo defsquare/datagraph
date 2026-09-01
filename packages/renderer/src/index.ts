@@ -19,7 +19,14 @@ export type {
   // interdit toute forme `export … from` vers ce specifier, y compris
   // type-only. Passer par `create.ts`, qui en fait déjà un `import type`,
   // donne le type aux consommateurs sans toucher à cette garde.
-  GraphLayoutOptions,
+  //
+  // Remplace `GraphLayoutOptions`, qui ne type plus rien de cette API depuis
+  // que la vue graphe tourne sur le moteur à deux niveaux (voir
+  // `DataGraphOptions.graphLayoutOptions`). Le cœur l'exporte toujours, pour
+  // qui instancierait l'ancien moteur directement ; ce paquet-ci ne le relaie
+  // plus, parce qu'un type relayé qui n'est le type d'aucun de ses champs est
+  // une invitation à l'erreur.
+  TwoLevelLayoutOptions,
 } from "./create.js";
 
 export { Camera } from "./camera.js";
