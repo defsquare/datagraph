@@ -57,22 +57,30 @@ const DEFAULTS: Required<GraphLayoutOptions> = {
   // déplacement du test de non-recouvrement vers une vraie échelle : sur ce
   // fixture-là, il passait sans rien exercer.
   //
-  // CORRECTIF (revue finale) : `iterations` avait été documenté ici comme « un
-  // PLAFOND, pas un coût fixe », au motif que `separateOverlaps` sort dès
-  // qu'une passe ne bouge plus rien. C'est faux en pratique. Mesuré sur 334
-  // cartes déjà séparées dès la 3000e passe : plafond 3000 → 1,9 s, plafond
-  // 10 000 → 6,3 s, plafond 100 000 → 63,5 s. La sortie anticipée ne se
-  // déclenche jamais, parce qu'une paire posée exactement à la marge produit
-  // une pénétration résiduelle de l'ordre de 1e-14 qui repasse le test `> 0` :
-  // la boucle continue de « bouger » des picomètres jusqu'au plafond. Le coût
-  // est donc bien PROPORTIONNEL à ce chiffre, y compris sur une entrée facile.
+  // TRACE HISTORIQUE (défaut corrigé) : cette section documentait `iterations`
+  // comme un coût FIXE plutôt qu'un plafond, parce que la sortie anticipée de
+  // `separateOverlaps` ne se déclenchait jamais — elle comparait la
+  // pénétration à zéro, et une paire posée exactement à la marge garde une
+  // pénétration résiduelle de l'ordre de 1e-14 qui repasse le test `> 0` : la
+  // boucle continuait de « bouger » des picomètres jusqu'au plafond. Mesuré
+  // alors sur 334 cartes déjà séparées dès la 3000e passe : plafond 3000 →
+  // 1,9 s, plafond 10 000 → 6,3 s, plafond 100 000 → 63,5 s — linéaire dans le
+  // plafond, signature d'une sortie anticipée qui ne se déclenche jamais. Ces
+  // trois chiffres sont laissés tels quels comme trace historique ; ils ne
+  // décrivent plus le comportement actuel.
   //
-  // 3000 n'est par ailleurs pas suffisant à toute échelle : il reste 47 paires
-  // sous la marge (jamais en recouvrement) à 450 cartes et 289 à 900. Les
-  // relever demanderait 10 000 passes, soit ~3× le temps de la passe sur TOUTE
-  // entrée. Le compromis est assumé et documenté dans la section « Graph view »
-  // du README ; l'assainir demanderait d'abord de réparer la sortie anticipée
-  // (comparer à une épsilon plutôt qu'à zéro), ce qui déborde de cette revue.
+  // CORRIGÉ dans `separate.ts` : la comparaison se fait désormais contre une
+  // épsilon plutôt que contre zéro (voir sa doc). La sortie anticipée se
+  // déclenche réellement — mesurée à la passe 1998 sur ce même fixture de 334
+  // cartes — et `iterations` redevient un vrai PLAFOND : coûteux seulement
+  // quand la passe en a vraiment besoin, pas systématiquement.
+  //
+  // 3000 n'est par ailleurs pas suffisant à toute échelle, indépendamment de
+  // ce défaut : il reste 47 paires sous la marge (jamais en recouvrement) à
+  // 450 cartes et 289 à 900. Les relever demanderait 10 000 passes, soit ~3×
+  // le temps de la passe sur toute entrée qui converge avant le plafond. Le
+  // compromis est assumé et documenté dans la section « Graph view » du
+  // README.
   separationIterations: 3000,
   // CALIBRÉ, pas choisi au goût. Balayage complet de `layout()` sur deux
   // fixtures à l'échelle, en mesurant l'écart bord à bord au plus proche

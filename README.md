@@ -254,10 +254,18 @@ repo's fixtures the pass leaves **0** pairs under the margin at 334 cards (the
 scale the committed test asserts), **47** at 450 cards, and **289** at 900 —
 none of them overlapping, merely closer to each other than 16 px. Raising the
 cap to 10,000 clears all of them, at roughly 3× the pass's cost, so this is a
-tuning ceiling rather than a defect in the algorithm. Note also that the pass
-does not converge-and-exit in practice — floating-point jitter keeps its
-"nothing moved" early exit from firing — so its cost is proportional to
-`separationIterations` even on an easy input.
+tuning ceiling rather than a defect in the algorithm.
+
+Historical note: this pass used to compare penetration against zero, which
+kept its "nothing moved" early exit from ever firing — a pair settled exactly
+at the margin retains ~1e-14 of residual penetration, which still reads
+positive, so the loop kept "moving" picometers until the cap regardless of
+whether it had actually converged. That made the cost proportional to
+`separationIterations` even on an easy input (measured then on 334 already-
+separated cards: cap 3,000 → 1.9 s, 10,000 → 6.3 s, 100,000 → 63.5 s). Fixed:
+the comparison is now against an epsilon (`packages/core/src/separate.ts`),
+so the early exit fires for real — measured at pass 1998 of 3,000 on that same
+fixture — and the cap is a true ceiling again, not a fixed cost.
 
 **Cluster spacing, measured.** `separateOverlaps` keeps *cards* apart; it says
 nothing about *aggregates*, and without a second pass the envelopes end up

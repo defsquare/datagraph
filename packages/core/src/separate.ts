@@ -2,6 +2,20 @@ import type { NodeId } from "./model.js"
 import type { Rect } from "./layout.js"
 
 /**
+ * Seuil de comparaison des pénétrations. Comparer à zéro empêchait la sortie
+ * anticipée de se déclencher : une paire posée exactement à la marge garde une
+ * pénétration résiduelle de l'ordre de 1e-13, qui repassait le test `> 0` et
+ * faisait « bouger » des picomètres jusqu'au plafond d'itérations — mesuré à
+ * l'époque : 3000 → 1,9 s, 10 000 → 6,3 s, 100 000 → 63,5 s, linéaire dans le
+ * plafond (voir `DEFAULTS` dans `layout-graph.ts`, qui documentait ce défaut
+ * comme un coût fixe assumé — c'est corrigé ici). Sous cette épsilon, une
+ * paire est considérée à sa place, la passe converge et sort pour de bon.
+ * 1e-6 px est six ordres de grandeur sous le pixel, donc sans effet visible.
+ * Ne PAS revenir à `<= 0` : ça réintroduit le plafond systématique.
+ */
+const EPSILON = 1e-6
+
+/**
  * Écarte les rectangles qui se chevauchent, **en place**, par relaxation : à
  * chaque passe, toute paire en collision est repoussée le long de son axe de
  * moindre pénétration, chaque carte encaissant la moitié du déplacement.
@@ -58,7 +72,7 @@ export function separateOverlaps(
             const b = positions.get(other)!
             const ox = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x) + margin
             const oy = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y) + margin
-            if (ox <= 0 || oy <= 0) continue
+            if (ox <= EPSILON || oy <= EPSILON) continue
 
             moved = true
             if (ox < oy) {
