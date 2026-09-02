@@ -15,8 +15,9 @@ you tell it which paths in your data are *entities* (e.g. `Customer`,
 `Order.customerId → Customer`). It then builds a graph with two edge kinds —
 containment (parent/child structure) and reference (real foreign keys) — and
 renders only what's expanded, so a 10,000-node dataset stays smooth: pan,
-zoom, expand/collapse, click a reference to jump to its target, and search
-across every field.
+zoom, expand/collapse, drag a card (or a whole aggregate, in the graph view)
+out of the way, click a reference to jump to its target, and search across
+every field.
 
 Two views are built in. The default **structure view** lays out the
 containment tree (parent/child, ELK layered). An optional **graph view**
@@ -179,7 +180,10 @@ Returned by `createDataGraph(container, options)`.
 `DataGraphOptions.view?: "structure" \| "graph"` (default `"structure"`) picks the initial view at
 `createDataGraph` time; `setView`/`currentView` switch and query it afterwards. The graph view folds
 nothing: every entity is always visible there, and a header click just selects the card. `expand`/
-`collapse` remain structure-view-only.
+`collapse` remain structure-view-only. Cards can be dragged in both views; in the graph view,
+dragging an aggregate's envelope moves the whole aggregate rigidly. Neither is persisted — the next
+relayout recomputes positions (see the
+[renderer's Navigation section](./packages/renderer/README.md#navigation)).
 
 ## Themes
 

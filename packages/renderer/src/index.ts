@@ -37,6 +37,7 @@ export {
   drawEdges,
   drawEdgeHitAreas,
   drawClusters,
+  drawClusterHitAreas,
   drawSelectionOverlay,
   drawSearchHighlights,
   lodForScale,

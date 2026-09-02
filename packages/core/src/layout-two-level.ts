@@ -168,7 +168,7 @@ export interface TwoLevelLayoutOptions {
    * Amplitude, en pixels, du gonflement virtuel des disques PENDANT la
    * simulation — le bruit déterministe qui casse la régularité du pavage. `0`
    * le désactive. Voir le commentaire au-dessus de `simR` pour le mécanisme et
-   * `DEFAULTS` pour le choix de l'amplitude.
+   * `TWO_LEVEL_LAYOUT_DEFAULTS` pour le choix de l'amplitude.
    *
    * Ce réglage ne peut pas dégrader une garantie : la passe dure finale ignore
    * le gonflement, et la forme peinte n'est jamais gonflée.
@@ -176,7 +176,21 @@ export interface TwoLevelLayoutOptions {
   jitter?: number
 }
 
-const DEFAULTS: Required<TwoLevelLayoutOptions> = {
+/**
+ * Les valeurs par défaut, EXPORTÉES — et pas seulement parce que c'est plus
+ * poli. Le renderer a besoin de `hullPadding` pour recalculer l'enveloppe d'un
+ * agrégat quand une carte est déplacée à la souris : sans cette constante, il
+ * en garderait une copie, et le jour où la valeur bouge ici les enveloppes
+ * peintes après un déplacement ne coïncideraient plus avec celles que le moteur
+ * calcule — un décalage silencieux de 18 px, visible seulement après un drag.
+ *
+ * Il la lit par le NAMESPACE de l'`import()` dynamique de la vue graphe, celui
+ * de `ensureGraphEngine`, et non par un import statique : les deux tests de
+ * pureté de bundle exigent que ce module ne soit atteignable que par là. C'est
+ * gratuit — la constante n'a de sens qu'en vue graphe, donc exactement quand ce
+ * module est déjà chargé.
+ */
+export const TWO_LEVEL_LAYOUT_DEFAULTS: Required<TwoLevelLayoutOptions> = {
   // Repris du moteur retiré sans les rejuger : ce sont les mêmes formes
   // dessinées et le même contrat visuel. La sonde a mesuré les deux moteurs
   // avec ces valeurs des deux côtés, pour comparer à garanties égales.
@@ -1065,7 +1079,7 @@ function run(
  * `layoutstop` de cytoscape).
  */
 export function createTwoLevelLayoutEngine(opts: TwoLevelLayoutOptions = {}): GraphLayoutEngine {
-  const options: Required<TwoLevelLayoutOptions> = { ...DEFAULTS, ...opts }
+  const options: Required<TwoLevelLayoutOptions> = { ...TWO_LEVEL_LAYOUT_DEFAULTS, ...opts }
   return {
     async layout(graph, aggregates, visible, metrics = DEFAULT_METRICS) {
       return run(graph, aggregates, visible, metrics, options)

@@ -1,5 +1,6 @@
-import { describe, it, expect } from "vitest";
-import { classifyWheel, normalizeWheelDelta, type WheelSignal } from "../src/camera.js";
+import { describe, it, expect, afterEach, vi } from "vitest";
+import { Container } from "pixi.js";
+import { Camera, classifyWheel, normalizeWheelDelta, type WheelSignal } from "../src/camera.js";
 
 /** Un `WheelEvent` minimal : `classifyWheel` ne lit que ces quatre champs. */
 function wheel(partial: Partial<WheelSignal> = {}): WheelSignal {
@@ -60,5 +61,73 @@ describe("classifyWheel", () => {
 
   it("un evenement nul ne zoome pas", () => {
     expect(classifyWheel(wheel())).toBe("pan");
+  });
+});
+
+describe("Camera — inhibition du pan", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** Le pan est cable sur des ecouteurs DOM natifs (canvas + window) : on les
+   * capture au lieu de faire tourner un vrai navigateur, comme
+   * `classifyWheel` est teste sur un `WheelEvent` fabrique. */
+  function mountCamera(isBlocked: () => boolean) {
+    const handlers = new Map<string, (event: unknown) => void>();
+    const record =
+      (scope: string) =>
+      (type: string, handler: (event: unknown) => void): void => {
+        handlers.set(`${scope}:${type}`, handler);
+      };
+    const canvas = {
+      addEventListener: record("canvas"),
+      removeEventListener: () => {},
+    } as unknown as HTMLCanvasElement;
+    vi.stubGlobal("window", { addEventListener: record("window"), removeEventListener: () => {} });
+
+    const stage = new Container();
+    const camera = new Camera(stage, canvas, { isBlocked });
+    return {
+      stage,
+      camera,
+      down: (clientX: number, clientY: number) =>
+        handlers.get("canvas:pointerdown")!({ button: 0, clientX, clientY }),
+      move: (clientX: number, clientY: number) => handlers.get("window:pointermove")!({ clientX, clientY }),
+    };
+  }
+
+  it("deplace la toile quand rien ne bloque", () => {
+    const { stage, down, move } = mountCamera(() => false);
+    down(100, 100);
+    move(150, 120);
+    expect(stage.position.x).toBe(50);
+    expect(stage.position.y).toBe(20);
+  });
+
+  it("ne deplace rien pendant qu'une carte est deplacee", () => {
+    // Le meme geste, avec un drag de carte en cours : la toile doit rester
+    // immobile, sans quoi la carte fuirait sous le curseur au double de la
+    // vitesse du pointeur.
+    let blocked = false;
+    const { stage, down, move } = mountCamera(() => blocked);
+    down(100, 100);
+    move(150, 100);
+    blocked = true;
+    move(300, 100);
+    move(400, 100);
+    expect(stage.position.x).toBe(50);
+  });
+
+  it("ne rattrape pas le chemin parcouru pendant l'inhibition", () => {
+    // La garde est au MOVE et non au DOWN : le pan reprend donc en cours de
+    // geste, et il doit repartir de la DERNIERE position vue, pas de celle
+    // d'avant l'inhibition — sinon la toile saute au relachement de la carte.
+    let blocked = true;
+    const { stage, down, move } = mountCamera(() => blocked);
+    down(100, 100);
+    move(300, 100);
+    blocked = false;
+    move(310, 100);
+    expect(stage.position.x).toBe(10);
   });
 });

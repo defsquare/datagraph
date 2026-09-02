@@ -23,6 +23,11 @@
 // d'enjeu dans sa documentation.
 export {
   createTwoLevelLayoutEngine,
+  // Republié pour le renderer, qui recalcule l'enveloppe d'un agrégat pendant
+  // le déplacement d'une carte à la souris et doit le faire avec le MÊME
+  // `hullPadding` que le moteur. Il le lit sur le namespace de son `import()`
+  // dynamique, seule voie autorisée vers ce point d'entrée.
+  TWO_LEVEL_LAYOUT_DEFAULTS,
   type ClusterShape,
   type GraphLayoutEngine,
   type GraphLayoutResult,

@@ -66,7 +66,28 @@ graph.on("select", (node) => console.log("selected:", node.label));
 | Pinch (trackpad) | Zoom at the cursor |
 | Mouse wheel | Zoom at the cursor |
 | <kbd>Ctrl</kbd> + wheel | Zoom at the cursor |
-| Click and drag | Pan |
+| Click and drag on the background | Pan |
+| Click and drag on a card | Move that card |
+| Click and drag on an aggregate envelope (graph view) | Move the whole aggregate |
+
+Dragging a card works in both views. The gesture splits from a plain click at
+4 px of pointer travel: below that the click still selects, folds or follows a
+reference, above it the card follows the cursor (and the canvas stays put —
+panning is inhibited for the duration). In the graph view the aggregate's
+envelope is recomputed as the card moves, so it keeps enclosing every member.
+
+Grabbing an envelope — anywhere inside the disc that isn't covered by a card or
+a reference's click area — moves the whole aggregate **rigidly**: the circle is
+translated, its radius untouched, and every member card goes with it. Hit
+testing runs top-down, so cards and edges always win over the disc beneath
+them; only the empty part of an envelope grabs it. The same 4 px threshold
+applies, and a plain click on an envelope does nothing — an aggregate is not
+selectable.
+
+**Moves are not persisted, by design.** They mutate the current layout only:
+the next relayout — expand/collapse, `setData`, a view switch — recomputes
+positions and wipes them. A drag is a reading gesture ("get this card out of my
+way"), not an edit of the layout.
 
 Trackpad pinch and <kbd>Ctrl</kbd>+wheel are the same browser event, so both
 are always recognised as zoom. Telling a plain mouse wheel apart from a

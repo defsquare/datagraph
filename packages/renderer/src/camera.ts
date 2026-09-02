@@ -78,6 +78,25 @@ export function classifyWheel(event: WheelSignal): "zoom" | "pan" {
   return "pan";
 }
 
+export interface CameraOptions {
+  /**
+   * Consulté à chaque mouvement pour savoir si le déplacement doit être rendu
+   * à quelqu'un d'autre — en pratique : une carte est en cours de déplacement,
+   * et déplacer la toile en même temps ferait fuir la carte sous le curseur.
+   *
+   * C'est un prédicat, relu à chaque `pointermove`, et surtout PAS un test fait
+   * une fois au `pointerdown`. La raison est un ordre qu'on ne contrôle pas :
+   * le pan est câblé sur des écouteurs DOM natifs du canvas, le déplacement de
+   * carte sur les événements fédérés de Pixi, qui sont émis depuis le
+   * gestionnaire natif de Pixi lui-même. Qui voit le `pointerdown` en premier
+   * dépend de l'ordre d'enregistrement des deux, c'est-à-dire de l'ordre de
+   * construction dans `create.ts` — une dépendance invisible et qu'un
+   * réarrangement innocent casserait. Au MOVE, le drag de carte est déjà armé
+   * quel que soit cet ordre.
+   */
+  isBlocked?: () => boolean;
+}
+
 /**
  * Owns pan/zoom for the world `stage` container: drag-to-pan via pointer
  * events, two-finger swipe to pan, pinch and mouse wheel to zoom centered on
@@ -86,14 +105,16 @@ export function classifyWheel(event: WheelSignal): "zoom" | "pan" {
 export class Camera {
   private readonly stage: Container;
   private readonly canvas: HTMLCanvasElement;
+  private readonly isBlocked: (() => boolean) | undefined;
   private currentScale = 1;
   private dragging = false;
   private lastClientX = 0;
   private lastClientY = 0;
 
-  constructor(stage: Container, canvas: HTMLCanvasElement) {
+  constructor(stage: Container, canvas: HTMLCanvasElement, options: CameraOptions = {}) {
     this.stage = stage;
     this.canvas = canvas;
+    this.isBlocked = options.isBlocked;
 
     this.canvas.addEventListener("pointerdown", this.handlePointerDown);
     window.addEventListener("pointermove", this.handlePointerMove);
@@ -147,6 +168,14 @@ export class Camera {
 
   private readonly handlePointerMove = (event: PointerEvent): void => {
     if (!this.dragging) return;
+    if (this.isBlocked?.()) {
+      // On mémorise quand même la position : sans ça, tout le chemin parcouru
+      // pendant l'inhibition serait rattrapé d'un bond au premier mouvement
+      // libre — la toile sauterait au relâchement de la carte.
+      this.lastClientX = event.clientX;
+      this.lastClientY = event.clientY;
+      return;
+    }
     const dx = event.clientX - this.lastClientX;
     const dy = event.clientY - this.lastClientY;
     this.lastClientX = event.clientX;

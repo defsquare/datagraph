@@ -7,6 +7,7 @@ import {
   CollapseState,
   createLayoutEngine,
   DEFAULT_METRICS,
+  enclosingCircle,
   validateConfig,
   type AggregateIndex,
   type DataGraphConfig,
@@ -51,6 +52,7 @@ import { Camera, type Size } from "./camera.js";
 import {
   drawEdgeHitAreas,
   drawEdges,
+  drawClusterHitAreas,
   drawClusters,
   drawNode,
   drawSearchHighlights,
@@ -58,6 +60,7 @@ import {
   lodForScale,
   type Lod,
 } from "./draw.js";
+import { attachDrag, TAP_THRESHOLD } from "./drag.js";
 import { Emitter } from "./events.js";
 
 /** `"structure"` met en page l'arbre de containment ; `"graph"` met en page les
@@ -160,9 +163,6 @@ export interface DataGraph {
   destroy(): void;
 }
 
-// Movement (in screen px) tolerated between pointerdown and pointertap before
-// a gesture is treated as a drag/pan rather than a click.
-const TAP_THRESHOLD = 4;
 // Duration of the expand/collapse node-position transition.
 const TRANSITION_MS = 200;
 
@@ -196,6 +196,75 @@ export function nearestEntityAncestor(graph: Graph, id: NodeId): NodeId | null {
   return null;
 }
 
+/**
+ * Recalcule EN PLACE l'enveloppe d'un agrégat depuis les positions courantes de
+ * ses membres.
+ *
+ * C'est exactement le calcul du moteur — `enclosingCircle` des rects des
+ * membres, plus `hullPadding` —, refait ici pendant qu'une carte est déplacée à
+ * la souris. Le refaire plutôt que de translater le cercle est ce qui le rend
+ * juste : sortir une carte de son agrégat doit gonfler l'enveloppe, la ramener
+ * doit la resserrer, et un cercle qu'on se contenterait de suivre ne ferait ni
+ * l'un ni l'autre.
+ *
+ * La mutation en place n'est pas une économie : le `ClusterShape` passé ici EST
+ * celui de `graphLayout.clusters`, et c'est par là que le prochain
+ * `clustersFor()` verra la nouvelle forme. Les membres sans position (non
+ * visibles) sont ignorés — l'enveloppe ne décrit que ce qui est peint.
+ *
+ * Le paramètre est typé structurellement plutôt qu'en `ClusterShape` : la
+ * fonction n'a besoin que du disque, et s'en tenir là la rend testable sans
+ * fabriquer un agrégat ni toucher au point d'entrée de la vue graphe.
+ */
+export function recomputeClusterCircle(
+  cluster: { cx: number; cy: number; r: number },
+  memberIds: Iterable<NodeId>,
+  positions: Map<NodeId, Rect>,
+  padding: number,
+): void {
+  const rects: Rect[] = [];
+  for (const memberId of memberIds) {
+    const rect = positions.get(memberId);
+    if (rect) rects.push(rect);
+  }
+  const circle = enclosingCircle(rects, padding);
+  cluster.cx = circle.cx;
+  cluster.cy = circle.cy;
+  cluster.r = circle.r;
+}
+
+/**
+ * Translate EN PLACE un agrégat entier : son disque et les rects de tous ses
+ * membres qui ont une position, du même delta.
+ *
+ * Rien n'est recalculé, et c'est la différence de nature avec
+ * `recomputeClusterCircle` : déplacer un agrégat est un geste RIGIDE. Le disque
+ * était le cercle englobant minimal de ses cartes avant le geste, il l'est
+ * encore après, puisque tout a bougé ensemble — c'est d'ailleurs exactement ce
+ * que fait le moteur, qui calcule l'enveloppe une fois sur le bloc packé puis
+ * la translate avec ses cartes. Recalculer ici ne changerait rien au résultat
+ * et coûterait un Welzl par image.
+ *
+ * Les membres sans position (non visibles) sont ignorés, comme partout
+ * ailleurs : la mise en page ne décrit que ce qui est peint.
+ */
+export function translateCluster(
+  cluster: { cx: number; cy: number; r: number },
+  memberIds: Iterable<NodeId>,
+  positions: Map<NodeId, Rect>,
+  dx: number,
+  dy: number,
+): void {
+  cluster.cx += dx;
+  cluster.cy += dy;
+  for (const memberId of memberIds) {
+    const rect = positions.get(memberId);
+    if (!rect) continue;
+    rect.x += dx;
+    rect.y += dy;
+  }
+}
+
 function buildLayoutEngine(elkWorkerUrl: string | URL | undefined): LayoutEngine {
   if (!elkWorkerUrl) return createLayoutEngine();
   // NOTE: elk.bundled.js's `workerUrl` path only spawns a real worker when
@@ -211,8 +280,14 @@ function buildLayoutEngine(elkWorkerUrl: string | URL | undefined): LayoutEngine
  * a pointer cursor, and a `pointertap` handler gated by a `TAP_THRESHOLD`px
  * movement check against the matching `pointerdown` (so a drag-to-pan
  * gesture that starts/ends over the object never fires `onTap`).
+ *
+ * Le seuil vient de `drag.ts`, qui porte l'autre moitié du même partage : ce
+ * qui n'est plus un tap ici est exactement ce qui devient un déplacement de
+ * carte là-bas. Exporté pour que ce partage soit testable de bout en bout
+ * (`test/drag.test.ts`) — ce n'est pas une API publique du paquet, `index.ts`
+ * ne le relaie pas.
  */
-function attachTap(target: Container, onTap: (event: FederatedPointerEvent) => void): void {
+export function attachTap(target: Container, onTap: (event: FederatedPointerEvent) => void): void {
   target.eventMode = "static";
   target.cursor = "pointer";
   let downX = 0;
@@ -251,6 +326,14 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   // Les enveloppes d'agrégats forment le calque le plus bas : elles passent
   // derrière les arêtes et les cartes. Vide en vue structure.
   let clustersGraphics = new Graphics();
+  // Les cibles de saisie des enveloppes, juste AU-DESSUS de leur visuel et SOUS
+  // tout le reste. La profondeur est ce qui règle l'arbitrage des gestes : le
+  // hit-testing de Pixi va du haut vers le bas, donc une carte, une zone de
+  // clic d'arête ou l'overlay attrapent le pointeur avant le disque, et seul
+  // le vide d'une enveloppe la fait saisir. Calque séparé du visuel parce que
+  // ce dernier est détruit et repeint à chaque image d'un déplacement — voir
+  // `drawClusterHitAreas`.
+  const clusterHitLayer = new Container();
   let edgesGraphics = new Graphics();
   const edgeHitLayer = new Container();
   const nodesLayer = new Container();
@@ -261,7 +344,14 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   // les références sortantes du nœud sélectionné dans `overlayGraphics`, le
   // calque le plus haut, où elles passent donc par-dessus tout.
   let overlayGraphics = new Container();
-  world.addChild(clustersGraphics, edgesGraphics, edgeHitLayer, nodesLayer, overlayGraphics);
+  world.addChild(
+    clustersGraphics,
+    clusterHitLayer,
+    edgesGraphics,
+    edgeHitLayer,
+    nodesLayer,
+    overlayGraphics,
+  );
 
   // Le bail d'atlas de cette instance. Les atlas Pixi sont globaux par nom,
   // donc partagés entre instances ; le registre les compte par référence et ne
@@ -282,6 +372,18 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   let aggregateIndex: AggregateIndex | undefined;
   let graphLayout: GraphLayoutResult | undefined;
   let graphEngine: GraphLayoutEngine | undefined;
+  // La marge d'enveloppe EFFECTIVE de la vue graphe — celle avec laquelle le
+  // moteur a calculé les disques, et donc la seule avec laquelle on ait le
+  // droit de les recalculer quand une carte bouge. Renseignée en même temps que
+  // le moteur, dont elle sort : le défaut vient du cœur (voir
+  // `ensureGraphEngine`), jamais d'une copie locale du nombre.
+  let graphHullPadding = 0;
+  // Vrai entre le franchissement du seuil et le relâchement, pendant qu'une
+  // carte OU une enveloppe d'agrégat est déplacée — les deux gestes sont le
+  // même du point de vue de la caméra. Un seul lecteur : elle, dont il inhibe
+  // le pan (sans quoi le contenu saisi fuirait sous le curseur au double de la
+  // vitesse du pointeur). Le reste passe par `dragCard`/`dragCluster`.
+  let contentDragging = false;
   // The config currently in effect — `options.config` initially, replaced by
   // whatever setData() was last called with. setData(data) (config omitted)
   // reuses this rather than re-reading options.config, so a second setData
@@ -351,6 +453,14 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     if (!graphEngine) {
       const mod = await import("@defsquare/data-graph-core/graph-layout");
       graphEngine = mod.createTwoLevelLayoutEngine(options.graphLayoutOptions);
+      // C'est ici, et NULLE PART ailleurs, qu'on apprend la marge d'enveloppe
+      // par défaut : le namespace du module chargé la porte, donc le renderer
+      // la connaît sans en garder de copie et sans importer statiquement ce
+      // point d'entrée — ce que les deux tests de pureté interdisent. Le
+      // déplacement d'une carte en a besoin pour recalculer les disques comme
+      // le moteur les a calculés, et il n'y a de disques qu'en vue graphe,
+      // c'est-à-dire exactement quand ce module est déjà chargé.
+      graphHullPadding = options.graphLayoutOptions?.hullPadding ?? mod.TWO_LEVEL_LAYOUT_DEFAULTS.hullPadding;
     }
     return graphEngine;
   }
@@ -530,6 +640,171 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     world.addChild(overlayGraphics);
   }
 
+  // Les calques du fond sont repeints d'un bloc à chaque `rebuild()`, mais
+  // AUSSI, pour les enveloppes et les arêtes, à chaque image d'un déplacement :
+  // ils sont donc extraits ici plutôt que recopiés. Chacun se détruit avant de
+  // se reconstruire — `destroy()` détache du parent, d'où le `addChildAt` qui
+  // suit, qui réinsère à la profondeur voulue. Les index sont ceux de
+  // l'`addChild` initial du monde, et n'ont de sens qu'avec lui sous les yeux.
+  function redrawClusters(): void {
+    clustersGraphics.destroy();
+    clustersGraphics = drawClusters(clustersFor(), theme);
+    world.addChildAt(clustersGraphics, 0);
+  }
+
+  function redrawEdges(): void {
+    const positions = activePositions();
+    if (!graph || !positions) return;
+    edgesGraphics.destroy();
+    // Index 2 : le fond est occupé par le visuel des enveloppes (0) puis par
+    // leurs cibles de saisie (1).
+    edgesGraphics = drawEdges(graph, positions, theme, currentLod, view === "graph" ? "ref" : "contain");
+    world.addChildAt(edgesGraphics, 2);
+  }
+
+  /**
+   * Les cibles de saisie des enveloppes. Vide hors vue graphe, qui est la seule
+   * à en avoir.
+   *
+   * Contrairement au visuel des enveloppes, ce calque n'est PAS refait pendant
+   * un déplacement : les containers de saisie sont déplacés (par
+   * `dragCluster`), pas reconstruits — autrement le geste détruirait le
+   * container qui le porte à sa première image.
+   */
+  function redrawClusterHitAreas(): void {
+    for (const child of clusterHitLayer.removeChildren()) child.destroy();
+    if (view !== "graph" || !graphLayout || !aggregateIndex) return;
+    const index = aggregateIndex;
+    for (const { cluster, container } of drawClusterHitAreas(graphLayout.clusters)) {
+      const aggregate = index.aggregates.get(cluster.aggregateId);
+      // Une enveloppe sans agrégat n'a pas de membres à emporter : la peindre
+      // reste juste, la rendre saisissable ne le serait pas. Le cas ne se
+      // produit pas aujourd'hui (le moteur ne publie d'enveloppe que pour un
+      // agrégat), d'où la destruction du container plutôt qu'une garde plus
+      // haut.
+      if (!aggregate) {
+        container.destroy();
+        continue;
+      }
+      attachDrag(container, {
+        scale: () => camera?.scale() ?? 1,
+        onStart: beginDrag,
+        onMove: (dx, dy) => dragCluster(cluster, aggregate.memberIds, container, dx, dy),
+        // Pas de rafraîchissement des cibles de saisie au relâchement :
+        // `dragCluster` a déjà tenu celle-ci à jour, et la refaire ici
+        // détruirait le container depuis son propre écouteur.
+        onEnd: () => endDrag(false),
+      });
+      clusterHitLayer.addChild(container);
+    }
+  }
+
+  /** Les zones de clic des arêtes. Volontairement ABSENTES de la boucle de
+   * déplacement d'une carte : ce sont des polygones épais, un par arête, et les
+   * refaire à chaque image coûterait cher pour une cible qu'on ne peut de toute
+   * façon pas viser tant qu'un bouton est enfoncé. Elles sont donc remises à
+   * jour au relâchement. */
+  function redrawEdgeHitAreas(): void {
+    for (const child of edgeHitLayer.removeChildren()) child.destroy();
+    const positions = activePositions();
+    if (!graph || !positions) return;
+    for (const hit of drawEdgeHitAreas(graph, positions)) {
+      attachTap(hit.graphics, () => followRef(hit.edge));
+      edgeHitLayer.addChild(hit.graphics);
+    }
+  }
+
+  /** Les deux bouts communs à tout déplacement, carte ou agrégat. */
+  function beginDrag(): void {
+    contentDragging = true;
+    // Une transition de dépliage encore en vol repositionnerait les cartes à
+    // chaque image, en concurrence avec le pointeur : le geste de
+    // l'utilisateur a le dernier mot.
+    cancelAnimation();
+  }
+
+  /** `refreshClusterHits` : à passer quand le geste a pu DÉFORMER une
+   * enveloppe, c'est-à-dire après un déplacement de carte, qui en recalcule le
+   * cercle. Un déplacement d'agrégat, lui, translate sa cible de saisie au fil
+   * du geste et ne doit surtout pas la reconstruire depuis son propre
+   * écouteur. */
+  function endDrag(refreshClusterHits: boolean): void {
+    contentDragging = false;
+    redrawEdgeHitAreas();
+    if (refreshClusterHits && view === "graph") redrawClusterHitAreas();
+  }
+
+  /**
+   * Une image d'un déplacement d'agrégat : le disque et toutes ses cartes
+   * suivent le pointeur d'un bloc, sans se déformer.
+   *
+   * La cible de saisie est déplacée avec eux plutôt que refaite : c'est elle
+   * qui porte les écouteurs du geste en cours, et la reconstruire le tuerait
+   * net. Même absence de persistance que pour une carte — le prochain re-layout
+   * écrase ces coordonnées.
+   */
+  function dragCluster(
+    cluster: { cx: number; cy: number; r: number },
+    memberIds: Set<NodeId>,
+    hit: Container,
+    dxWorld: number,
+    dyWorld: number,
+  ): void {
+    const positions = activePositions();
+    if (!positions) return;
+    translateCluster(cluster, memberIds, positions, dxWorld, dyWorld);
+    for (const memberId of memberIds) {
+      const rect = positions.get(memberId);
+      const nodeView = nodeViews.get(memberId);
+      if (rect && nodeView) nodeView.position.set(rect.x, rect.y);
+    }
+    hit.position.set(cluster.cx, cluster.cy);
+    redrawClusters();
+    redrawEdges();
+    redrawOverlay();
+  }
+
+  /**
+   * Une image d'un déplacement de carte à la souris : la position de la carte
+   * dans la mise en page courante suit le pointeur, et tout ce qui en dépend
+   * est repeint.
+   *
+   * Les positions sont mutées EN PLACE dans le `layoutResult`/`graphLayout`
+   * courant, sans aucune persistance : le prochain re-layout (déplier, replier,
+   * `setData`, bascule de vue) reprend la main et écrase ces coordonnées. C'est
+   * un choix, pas un oubli — un déplacement est ici un geste de lecture (« ôte
+   * cette carte de mon chemin »), pas une édition de la mise en page.
+   *
+   * `rebuild()` n'est PAS appelé : il détruirait et recréerait toutes les
+   * cartes, donc le container que `attachDrag` tient sous le curseur. Seuls les
+   * calques dépendant de la position sont repeints.
+   */
+  function dragCard(id: NodeId, nodeView: Container, dxWorld: number, dyWorld: number): void {
+    const positions = activePositions();
+    const rect = positions?.get(id);
+    if (!positions || !rect) return;
+    rect.x += dxWorld;
+    rect.y += dyWorld;
+    nodeView.position.set(rect.x, rect.y);
+    redrawEdges();
+    // En vue graphe, la carte déplacée emporte l'enveloppe de son agrégat : une
+    // enveloppe qui ne suivrait pas laisserait la carte flotter dehors, ce qui
+    // dirait le contraire de ce que la vue affirme. Une carte hors agrégat n'a
+    // pas d'enveloppe — la boucle n'en trouve simplement aucune.
+    if (view === "graph" && graphLayout && aggregateIndex) {
+      for (const cluster of graphLayout.clusters) {
+        const aggregate = aggregateIndex.aggregates.get(cluster.aggregateId);
+        if (!aggregate?.memberIds.has(id)) continue;
+        recomputeClusterCircle(cluster, aggregate.memberIds, positions, graphHullPadding);
+        redrawClusters();
+        // Les agrégats sont une PARTITION : une carte n'appartient qu'à un seul
+        // d'entre eux, il n'y a rien à chercher après celui-ci.
+        break;
+      }
+    }
+    redrawOverlay();
+  }
+
   function rebuild(): void {
     const positions = activePositions();
     if (!graph || !positions) return;
@@ -537,28 +812,24 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     // destroyed below — cancel it first so its next tick can't run against
     // stale/destroyed Containers.
     cancelAnimation();
+    // Même raisonnement pour un déplacement en cours, de carte ou d'agrégat :
+    // les containers qui portent ses écouteurs vont être détruits, donc son
+    // `onEnd` ne viendra jamais. Sans cette remise à zéro, un zoom molette
+    // pendant un drag (le ticker reconstruit au changement de LOD) laisserait
+    // le pan de la caméra inhibé pour le reste de la session.
+    contentDragging = false;
     currentLod = lodForScale(camera ? camera.scale() : 1);
 
     for (const child of nodesLayer.removeChildren()) child.destroy({ children: true });
     nodeViews.clear();
-    for (const child of edgeHitLayer.removeChildren()) child.destroy();
 
     // Les atlas doivent exister avant que `drawNode` n'en dérive les noms.
     if (useBitmapText) fontLease.sync(theme);
 
-    clustersGraphics.destroy();
-    clustersGraphics = drawClusters(clustersFor(), theme);
-    world.addChildAt(clustersGraphics, 0);
-
-    edgesGraphics.destroy();
-    // Index 1, et non 0 : le calque des enveloppes occupe désormais le fond.
-    edgesGraphics = drawEdges(graph, positions, theme, currentLod, view === "graph" ? "ref" : "contain");
-    world.addChildAt(edgesGraphics, 1);
-
-    for (const hit of drawEdgeHitAreas(graph, positions)) {
-      attachTap(hit.graphics, () => followRef(hit.edge));
-      edgeHitLayer.addChild(hit.graphics);
-    }
+    redrawClusters();
+    redrawClusterHitAreas();
+    redrawEdges();
+    redrawEdgeHitAreas();
 
     const visible = activeVisible();
     for (const id of visible) {
@@ -583,6 +854,20 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       );
       nodeView.position.set(rect.x, rect.y);
       attachTap(nodeView, (event) => handleNodeTap(node, nodeView, event));
+      // Les deux câblages sont complémentaires et non concurrents : ils
+      // partagent le même seuil, `attachTap` ne réagit qu'en deçà et
+      // `attachDrag` qu'au-delà (voir `drag.ts`). Un clic sélectionne, plie ou
+      // suit une référence ; un clic maintenu qui bouge déplace la carte.
+      attachDrag(nodeView, {
+        scale: () => camera?.scale() ?? 1,
+        onStart: beginDrag,
+        onMove: (dx, dy) => dragCard(id, nodeView, dx, dy),
+        // `true` : déplacer une carte a rebattu le cercle de son agrégat, donc
+        // la zone de saisie de celui-ci est périmée. La refaire ici est sans
+        // danger — elle ne touche pas au container de la carte, qui porte le
+        // geste en train de se terminer.
+        onEnd: () => endDrag(true),
+      });
       nodesLayer.addChild(nodeView);
       nodeViews.set(id, nodeView);
     }
@@ -859,7 +1144,11 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
 
     container.appendChild(app.canvas);
     app.stage.addChild(world);
-    camera = new Camera(world, app.canvas);
+    // Le pan de la toile, le déplacement d'une carte et celui d'une enveloppe
+    // partent du même bouton : seul CE QU'ON PRESSE les départage, et la caméra
+    // n'a aucun moyen de le savoir depuis ses écouteurs natifs. C'est donc le
+    // renderer qui le lui dit, par ce prédicat relu à chaque mouvement.
+    camera = new Camera(world, app.canvas, { isBlocked: () => contentDragging });
 
     currentConfig = options.config;
     graph = buildGraph(options.data, currentConfig);

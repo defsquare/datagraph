@@ -1,4 +1,4 @@
-import { BitmapText, Container, Graphics, Rectangle, Text } from "pixi.js";
+import { BitmapText, Circle, Container, Graphics, Rectangle, Text } from "pixi.js";
 import {
   badgeTextFor,
   headerTextFor,
@@ -584,9 +584,14 @@ export function drawSearchHighlights(
  * L'enveloppe est le cercle englobant minimal des cartes de l'agrégat, calculé
  * côté cœur (`enclosingCircle`). Ce qu'on peint ici n'est pas seulement égal à
  * ce que la mise en page a espacé : c'est le MÊME disque. `layout-two-level.ts`
- * le calcule une fois sur le bloc packé, puis le translate avec ses cartes ;
- * aucun recalcul après coup ne peut faire diverger la forme espacée de la forme
- * tracée. Un rayon nul ou négatif n'est pas une surface et est ignoré.
+ * le calcule une fois sur le bloc packé, puis le translate avec ses cartes.
+ * Un rayon nul ou négatif n'est pas une surface et est ignoré.
+ *
+ * Une seule chose recalcule ce disque après la mise en page : le déplacement
+ * d'une carte à la souris (`recomputeClusterCircle`, dans `create.ts`), qui
+ * refait le MÊME calcul avec le MÊME `hullPadding` — celui que le moteur
+ * expose. Le déplacement d'un agrégat entier, lui, ne recalcule rien : il
+ * translate le disque avec ses cartes, exactement comme le moteur le fait.
  */
 export function drawClusters(
   clusters: { circle: { cx: number; cy: number; r: number }; color: string }[],
@@ -601,4 +606,43 @@ export function drawClusters(
     g.stroke({ width: 1.5, color: cluster.color, alpha: 0.35 });
   }
   return g;
+}
+
+/**
+ * Les cibles de SAISIE des enveloppes : un container vide et transparent par
+ * disque, sans autre rôle que de recevoir le pointeur.
+ *
+ * Séparer la cible du visuel n'est pas un raffinement, c'est la condition pour
+ * que le geste existe : le Graphics des enveloppes est détruit et reconstruit à
+ * chaque image d'un déplacement, donc des écouteurs posés dessus mourraient à
+ * la première frame du drag qu'ils viennent de démarrer. Même partage que les
+ * arêtes et leur `edgeHitLayer`.
+ *
+ * Le container est POSITIONNÉ sur le centre du disque et sa `hitArea` est un
+ * cercle centré sur l'origine locale, plutôt qu'un cercle en coordonnées monde
+ * sur un container à l'origine. Déplacer l'agrégat se résume alors à écrire sa
+ * position, comme pour une carte, au lieu de muter la géométrie de la zone
+ * sensible à chaque image.
+ *
+ * L'objet d'entrée est rendu TEL QUEL (et non copié) : c'est le `ClusterShape`
+ * de la mise en page, et le déplacement le mute en place pour que le prochain
+ * repeint voie la nouvelle forme.
+ */
+export function drawClusterHitAreas<T extends { cx: number; cy: number; r: number }>(
+  clusters: T[],
+): { cluster: T; container: Container }[] {
+  const hits: { cluster: T; container: Container }[] = [];
+  for (const cluster of clusters) {
+    if (!(cluster.r > 0)) continue;
+    const container = new Container();
+    container.position.set(cluster.cx, cluster.cy);
+    container.hitArea = new Circle(0, 0, cluster.r);
+    container.eventMode = "static";
+    // `grab` et non `pointer` : ce disque ne mène nulle part et ne sélectionne
+    // rien, il se saisit. Le passage à `grabbing` pendant le geste est déjà
+    // porté par `attachDrag`.
+    container.cursor = "grab";
+    hits.push({ cluster, container });
+  }
+  return hits;
 }
