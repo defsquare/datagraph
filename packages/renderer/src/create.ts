@@ -61,6 +61,7 @@ import {
   type Lod,
 } from "./draw.js";
 import { attachDrag, TAP_THRESHOLD } from "./drag.js";
+import { attachHover } from "./hover.js";
 import { Emitter } from "./events.js";
 
 /** `"structure"` met en page l'arbre de containment ; `"graph"` met en page les
@@ -165,6 +166,19 @@ export interface DataGraph {
 
 // Duration of the expand/collapse node-position transition.
 const TRANSITION_MS = 200;
+
+/**
+ * Le grossissement d'une carte au survol, en fraction de sa taille : 2,5 % à
+ * pleine intensité.
+ *
+ * Volontairement au bord du perceptible. Une carte fait typiquement 200 px de
+ * large, donc le lift la déborde de 2,5 px de chaque côté — assez pour que
+ * l'œil voie ce que le pointeur désigne au milieu de dizaines de voisines, trop
+ * peu pour recouvrir la carte d'à côté (le moteur en sépare les cartes de
+ * `cardGap`, 16 px) ou pour donner l'impression que la mise en page bouge. Le
+ * survol est un repère, pas un événement.
+ */
+const HOVER_LIFT = 0.025;
 
 function boundsOf(positions: Map<NodeId, Rect>): Rect {
   let minX = Infinity;
@@ -384,6 +398,15 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   // le pan (sans quoi le contenu saisi fuirait sous le curseur au double de la
   // vitesse du pointeur). Le reste passe par `dragCard`/`dragCluster`.
   let contentDragging = false;
+  // L'intensité de survol de chaque enveloppe, indexée par agrégat. Elle vit
+  // ICI et non sur le container de saisie parce que ce n'est pas lui qui la
+  // peint : le visuel des enveloppes est un unique Graphics détruit et repeint
+  // d'un bloc (`redrawClusters`), qui a donc besoin de lire l'état de TOUTES les
+  // enveloppes à chaque passage. Indexée par `aggregateId` et non par container
+  // pour la même raison — c'est la clé que `clustersFor()` a sous la main.
+  // Vidée par `redrawClusterHitAreas`, qui détruit les containers qui
+  // l'alimentent (voir là-bas).
+  const clusterHover = new Map<string, number>();
   // The config currently in effect — `options.config` initially, replaced by
   // whatever setData() was last called with. setData(data) (config omitted)
   // reuses this rather than re-reading options.config, so a second setData
@@ -530,7 +553,11 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
    * l'accent du type de la racine, comme pour les cartes. Cette résolution
    * reste ici, et pas dans `drawClusters` : la fonction de dessin ne prend que
    * de la donnée nue, donc elle se teste sans graphe ni index d'agrégats. */
-  function clustersFor(): { circle: { cx: number; cy: number; r: number }; color: string }[] {
+  function clustersFor(): {
+    circle: { cx: number; cy: number; r: number };
+    color: string;
+    hover: number;
+  }[] {
     if (view !== "graph" || !graph || !graphLayout) return [];
     const current = graph;
     return graphLayout.clusters.map((cluster) => {
@@ -538,6 +565,10 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       return {
         circle: { cx: cluster.cx, cy: cluster.cy, r: cluster.r },
         color: root ? accentFor(root) : theme.edge.border,
+        // Relayée et non stockée dans la forme : `graphLayout.clusters` est la
+        // sortie du moteur, et y greffer un état d'interface le rendrait
+        // dépendant de qui le survole.
+        hover: clusterHover.get(cluster.aggregateId) ?? 0,
       };
     });
   }
@@ -672,6 +703,17 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
    * container qui le porte à sa première image.
    */
   function redrawClusterHitAreas(): void {
+    // Les intensités de survol sont stockées hors des containers, mais elles en
+    // DÉPENDENT : ce sont eux qui les alimentent, et ceux qu'on détruit juste
+    // en dessous n'émettront jamais le `pointerout` qui aurait rendu leur
+    // enveloppe au repos. Sans cette remise à zéro, une enveloppe survolée au
+    // moment d'un rebuild — ou au relâchement d'un drag de carte, qui repasse
+    // ici — resterait allumée pour toujours. Le repeint n'a lieu que si quelque
+    // chose était effectivement allumé : le cas courant ne paie rien.
+    if (clusterHover.size > 0) {
+      clusterHover.clear();
+      redrawClusters();
+    }
     for (const child of clusterHitLayer.removeChildren()) child.destroy();
     if (view !== "graph" || !graphLayout || !aggregateIndex) return;
     const index = aggregateIndex;
@@ -694,6 +736,23 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
         // `dragCluster` a déjà tenu celle-ci à jour, et la refaire ici
         // détruirait le container depuis son propre écouteur.
         onEnd: () => endDrag(false),
+      });
+      // Le survol est posé sur la CIBLE DE SAISIE et non sur le visuel : ce
+      // container-ci survit aux repeints de l'enveloppe, qui est justement la
+      // raison de son existence. Des écouteurs sur le Graphics mourraient à la
+      // première image du survol qu'ils viennent de démarrer.
+      //
+      // Pas de `cancel()` au début d'un drag d'agrégat, à la différence des
+      // cartes : rien n'est ici déformé par le survol (il ne change que des
+      // couleurs), le pointeur est toujours dessus pendant le geste, et
+      // l'éteindre dirait faussement qu'on a lâché.
+      attachHover(container, {
+        ticker: app.ticker,
+        isBlocked: () => contentDragging,
+        onFrame: (t) => {
+          clusterHover.set(cluster.aggregateId, t);
+          redrawClusters();
+        },
       });
       clusterHitLayer.addChild(container);
     }
@@ -854,13 +913,48 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       );
       nodeView.position.set(rect.x, rect.y);
       attachTap(nodeView, (event) => handleNodeTap(node, nodeView, event));
+      // Le « lift » du survol : la carte grossit de `HOVER_LIFT` AUTOUR DE SON
+      // CENTRE. Pixi met l'origine d'un container en haut à gauche, donc une
+      // simple échelle la ferait pousser vers le bas-droite ; la position est
+      // décalée d'une demi-croissance pour compenser. Ce décalage reste LOCAL à
+      // ce rappel : le rect de la mise en page, lui, garde la convention
+      // top-left que suivent `dragCard`, `dragCluster` et `animatePositions`.
+      //
+      // Le rect est RELU à chaque image plutôt que capturé : un déplacement le
+      // mute en place, et une copie figée ramènerait la carte à son point de
+      // départ au premier survol d'après le geste.
+      const hover = attachHover(nodeView, {
+        ticker: app.ticker,
+        // Pendant un déplacement, la carte saisie doit rester exactement sous
+        // le pointeur : la grossir la ferait décrocher de lui.
+        isBlocked: () => contentDragging,
+        onFrame: (t) => {
+          const live = activePositions()?.get(id);
+          if (!live) return;
+          const scale = 1 + HOVER_LIFT * t;
+          nodeView.scale.set(scale);
+          nodeView.position.set(
+            live.x - ((scale - 1) * live.width) / 2,
+            live.y - ((scale - 1) * live.height) / 2,
+          );
+        },
+      });
       // Les deux câblages sont complémentaires et non concurrents : ils
       // partagent le même seuil, `attachTap` ne réagit qu'en deçà et
       // `attachDrag` qu'au-delà (voir `drag.ts`). Un clic sélectionne, plie ou
       // suit une référence ; un clic maintenu qui bouge déplace la carte.
       attachDrag(nodeView, {
         scale: () => camera?.scale() ?? 1,
-        onStart: beginDrag,
+        onStart: () => {
+          // Le survol est annulé AVANT que le geste ne prenne la main : il
+          // laisserait sinon la carte à une échelle et à un décalage que
+          // `dragCard` ne connaît pas, et la carte suivrait le pointeur avec un
+          // biais d'une demi-croissance pour tout le reste du geste.
+          // `isBlocked` ne suffit pas — il empêche un survol de COMMENCER, pas
+          // celui qui est déjà là de rester peint.
+          hover.cancel();
+          beginDrag();
+        },
         onMove: (dx, dy) => dragCard(id, nodeView, dx, dy),
         // `true` : déplacer une carte a rebattu le cercle de son agrégat, donc
         // la zone de saisie de celui-ci est périmée. La refaire ici est sans

@@ -31,6 +31,77 @@ describe("drawClusters", () => {
     expect(bounds.maxY).toBeGreaterThan(89);
   });
 
+  /** Les styles effectivement émis, dans l'ordre : c'est là que vivent l'alpha
+   * et l'épaisseur, et les lire directement évite d'inférer un rendu depuis des
+   * bornes. */
+  function styles(g: ReturnType<typeof drawClusters>) {
+    return g.context.instructions.map((instruction) => {
+      const style = (instruction.data as { style: { alpha: number; width?: number } }).style;
+      return { action: instruction.action, alpha: style.alpha, width: style.width };
+    });
+  }
+
+  it("peint au repos quand aucune intensite de survol n'est donnee", () => {
+    // Le champ est optionnel : tout appelant qui l'ignore doit obtenir
+    // exactement le rendu d'avant le survol.
+    const [fill, stroke] = styles(
+      drawClusters([{ circle: { cx: 0, cy: 0, r: 10 }, color: "#ff0000" }], theme),
+    );
+    expect(fill!.alpha).toBeCloseTo(0.08, 6);
+    expect(stroke!.alpha).toBeCloseTo(0.35, 6);
+    expect(stroke!.width).toBeCloseTo(1.5, 6);
+  });
+
+  it("renforce fond, contour et trait a l'intensite maximale", () => {
+    const [fill, stroke] = styles(
+      drawClusters([{ circle: { cx: 0, cy: 0, r: 10 }, color: "#ff0000", hover: 1 }], theme),
+    );
+    expect(fill!.alpha).toBeCloseTo(0.15, 6);
+    expect(stroke!.alpha).toBeCloseTo(0.6, 6);
+    expect(stroke!.width).toBeCloseTo(2, 6);
+  });
+
+  it("interpole lineairement entre les deux etats", () => {
+    // L'intensite arrive deja adoucie par `attachHover` : interpoler une
+    // seconde fois par une courbe ici doublerait l'easing et rendrait la montee
+    // molle au depart.
+    const [fill, stroke] = styles(
+      drawClusters([{ circle: { cx: 0, cy: 0, r: 10 }, color: "#ff0000", hover: 0.5 }], theme),
+    );
+    expect(fill!.alpha).toBeCloseTo(0.115, 6);
+    expect(stroke!.alpha).toBeCloseTo(0.475, 6);
+    expect(stroke!.width).toBeCloseTo(1.75, 6);
+  });
+
+  it("borne une intensite hors de [0,1]", () => {
+    // Aucune source ne devrait en produire, mais un alpha superieur a 1 ou
+    // negatif serait un rendu invalide et pas seulement laid.
+    const over = styles(
+      drawClusters([{ circle: { cx: 0, cy: 0, r: 10 }, color: "#f00", hover: 4 }], theme),
+    );
+    const under = styles(
+      drawClusters([{ circle: { cx: 0, cy: 0, r: 10 }, color: "#f00", hover: -2 }], theme),
+    );
+    expect(over[0]!.alpha).toBeCloseTo(0.15, 6);
+    expect(under[0]!.alpha).toBeCloseTo(0.08, 6);
+  });
+
+  it("n'applique l'intensite qu'a l'enveloppe qui la porte", () => {
+    // Le rendu est par enveloppe : survoler l'une ne doit pas allumer sa
+    // voisine, qui reste peinte au repos dans le meme Graphics.
+    const s = styles(
+      drawClusters(
+        [
+          { circle: { cx: 0, cy: 0, r: 10 }, color: "#f00", hover: 1 },
+          { circle: { cx: 100, cy: 0, r: 10 }, color: "#0f0" },
+        ],
+        theme,
+      ),
+    );
+    expect(s[0]!.alpha).toBeCloseTo(0.15, 6);
+    expect(s[2]!.alpha).toBeCloseTo(0.08, 6);
+  });
+
   it("skips a circle of non-positive radius", () => {
     const g = drawClusters([{ circle: { cx: 10, cy: 10, r: 0 }, color: "#fff" }], theme);
     // Aucune instruction émise : un disque de rayon nul n'est pas une surface.

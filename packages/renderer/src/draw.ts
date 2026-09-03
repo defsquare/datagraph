@@ -653,16 +653,36 @@ export function drawSearchHighlights(
  * translate le disque avec ses cartes, exactement comme le moteur le fait.
  */
 export function drawClusters(
-  clusters: { circle: { cx: number; cy: number; r: number }; color: string }[],
+  clusters: {
+    circle: { cx: number; cy: number; r: number };
+    color: string;
+    /**
+     * Intensité du survol, de 0 (au repos) à 1 (survolée). Absente vaut 0 : le
+     * rendu au repos est celui d'avant le survol, au chiffre près.
+     *
+     * La valeur arrive DÉJÀ adoucie par `attachHover` (ease-out quad) ; on
+     * n'interpole donc ici que linéairement, sans quoi la courbe s'appliquerait
+     * deux fois et la montée partirait mollement.
+     */
+    hover?: number;
+  }[],
   theme: Theme,
 ): Graphics {
   const g = new Graphics();
   for (const cluster of clusters) {
     const { cx, cy, r } = cluster.circle;
     if (!(r > 0)) continue;
+    // Bornage défensif : aucune source ne produit d'intensité hors de [0,1],
+    // mais un alpha > 1 ou négatif ne serait pas seulement laid, il serait
+    // invalide pour le renderer.
+    const t = Math.min(1, Math.max(0, cluster.hover ?? 0));
     g.circle(cx, cy, r);
-    g.fill({ color: cluster.color, alpha: 0.08 });
-    g.stroke({ width: 1.5, color: cluster.color, alpha: 0.35 });
+    // Les trois paliers montent ensemble : le fond seul ferait une tache sans
+    // contour net, le contour seul un cerne sans corps. C'est leur montée
+    // simultanée qui fait lire l'enveloppe comme un objet qu'on peut saisir —
+    // ce qu'elle est, puisque c'est ce disque qui déplace l'agrégat entier.
+    g.fill({ color: cluster.color, alpha: 0.08 + t * (0.15 - 0.08) });
+    g.stroke({ width: 1.5 + t * (2 - 1.5), color: cluster.color, alpha: 0.35 + t * (0.6 - 0.35) });
   }
   return g;
 }
