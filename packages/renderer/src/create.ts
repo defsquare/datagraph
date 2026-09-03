@@ -60,6 +60,7 @@ import { fontsReady, measureFontMetrics } from "./font-metrics.js";
 import { Camera, type Size } from "./camera.js";
 import {
   drawEdgeHitAreas,
+  drawEdgeLabels,
   drawEdges,
   drawClusterHitAreas,
   drawClusters,
@@ -457,6 +458,14 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   // `drawClusterHitAreas`.
   const clusterHitLayer = new Container();
   let edgesGraphics = new Graphics();
+  // Les étiquettes des références sortantes de la sélection. Un calque À PART et
+  // non des enfants d'`edgesGraphics` : celui-ci est un Graphics, qui ne porte
+  // que de la géométrie, alors qu'une étiquette est un Text dans une pilule.
+  // Reconstruit par `redrawEdges` — c'est la même donnée (les arêtes, la
+  // sélection) qui les gouverne tous les deux, les séparer les ferait diverger.
+  // `null` tant qu'aucun rebuild n'a eu lieu, et au LOD 2 où il n'y a rien à
+  // écrire.
+  let edgeLabelsView: Container | null = null;
   const edgeHitLayer = new Container();
   const nodesLayer = new Container();
   // Les arêtes restent SOUS les cartes, au repos : une référence remonte
@@ -956,6 +965,31 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       metrics,
     );
     world.addChildAt(edgesGraphics, 2);
+
+    // AU-DESSUS des cartes, comme le surlignage de sélection : une étiquette
+    // posée sous les cartes disparaissait dès qu'une voisine chevauchait son
+    // bout de trait (constaté sur la démo), or c'est précisément l'information
+    // que la sélection est censée révéler. L'occlusion inverse — l'étiquette
+    // sur une carte — reste rare (elle vit au tiers du lien, entre les cartes)
+    // et transitoire : elle part avec la sélection.
+    edgeLabelsView?.destroy({ children: true });
+    edgeLabelsView = null;
+    // Rien au LOD 2, comme les arêtes : le texte n'y est ni lisible ni
+    // rentable, et il n'y a plus de trait à annoter.
+    if (currentLod !== 2) {
+      // `selectedNodeId()` : une sélection d'AGRÉGAT rend `null` par cette
+      // lucarne, et n'étiquette donc rien — c'est voulu, l'agrégat ne désigne
+      // aucun champ d'où une référence partirait.
+      edgeLabelsView = drawEdgeLabels(
+        graph,
+        positions,
+        theme,
+        selectedNodeId(),
+        useBitmapText,
+        metrics,
+      );
+      world.addChild(edgeLabelsView);
+    }
   }
 
   /**

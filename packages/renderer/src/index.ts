@@ -36,6 +36,7 @@ export {
   drawNode,
   drawEdges,
   drawEdgeHitAreas,
+  drawEdgeLabels,
   drawClusters,
   drawClusterHitAreas,
   drawSelectionOverlay,

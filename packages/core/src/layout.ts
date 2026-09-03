@@ -57,30 +57,37 @@ export function anchorRectFor(
 }
 
 /**
- * Le rect qui ancre `id` DANS CE QUI EST À L'ÉCRAN : son propre ancrage s'il en
- * a un, sinon celui de son plus proche ancêtre qui en a un.
+ * La CARTE qui représente `id` à l'écran : la sienne si elle est dessinée,
+ * sinon celle de son plus proche ancêtre qui en a une.
  *
- * `anchorRectFor` résout l'élision, pas l'INVISIBILITÉ : un nœud replié, ou
- * simplement hors de la vue courante, n'est dans `positions` ni lui ni comme
- * ligne, et son ancrage est alors `undefined`. Remonter la chaîne de parenté
- * donne le point d'attache que la vue montre effectivement de lui — la carte du
- * value object si elle est dépliée, la bande `lines [ n items ]` sinon, la carte
- * de l'entité en vue graphe.
- *
- * C'est ce qui permet à une arête issue d'un value object d'être TRACÉE quelle
- * que soit la vue, au lieu de disparaître avec la carte qui la portait.
+ * Un nœud élidé, replié, ou simplement absent de la vue courante n'est JAMAIS
+ * dans `positions` : remonter `parentId` jusqu'au premier id qui s'y trouve
+ * suffit donc à désigner la carte que la vue montre effectivement de lui — la
+ * carte du value object si elle est dépliée, celle de l'entité hôte sinon.
  * `undefined` ne subsiste que si rien de la lignée n'est à l'écran, et l'arête
  * n'a alors effectivement aucun départ à montrer.
+ *
+ * Pourquoi la CARTE et non la bande de la ligne qui porte le nœud caché : faire
+ * partir l'arête de la bande était un DEMI-SIGNAL. La bande dit « ça sort d'ici »
+ * mais pas d'où exactement, et rien ne distinguait une arête hissée depuis un
+ * value object caché d'une référence portée en propre par l'entité — les deux
+ * quittaient la même carte, l'une un peu plus bas que l'autre. Le détail est
+ * passé à la SÉLECTION, qui étiquette chaque arête sortante du chemin instancié
+ * (`lines[0].productRef` contre `customerId`) : la vue au repos reste sobre, et
+ * qui veut savoir sélectionne. Voir `drawEdgeLabels` côté renderer.
+ *
+ * La passe de CONTAINMENT, elle, garde `anchorRectFor` : déplier un tableau doit
+ * continuer à se lire comme sortant de son jeton, ce qui est un signal ENTIER —
+ * la ligne dépliée est précisément ce que le dépliage montre.
  */
-export function visibleAnchorRectFor(
+export function nearestCardRectFor(
   graph: Graph,
   positions: Map<NodeId, Rect>,
   id: NodeId,
-  metrics: NodeMetrics = DEFAULT_METRICS,
 ): Rect | undefined {
   let current: NodeId | null = id
   while (current !== null) {
-    const rect = anchorRectFor(graph, positions, current, metrics)
+    const rect = positions.get(current)
     if (rect) return rect
     const node: GraphNode | undefined = graph.nodes.get(current)
     if (!node) return undefined

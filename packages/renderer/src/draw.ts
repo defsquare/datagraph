@@ -5,7 +5,7 @@ import {
   arrayTokenTextFor,
   arrayTokenWidth,
   anchorRectFor,
-  visibleAnchorRectFor,
+  nearestCardRectFor,
   isValueOnlyRow,
   DEFAULT_METRICS,
   type ArrayRow,
@@ -591,6 +591,29 @@ function centerOf(rect: Rect): { x: number; y: number } {
   return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
 }
 
+/**
+ * Les deux extrémités du segment d'une arête de référence : chaque bout sort du
+ * côté qui fait face à l'AUTRE carte, sinon la ligne passe sous la carte source
+ * (le calque des arêtes est au-dessous des cartes).
+ *
+ * Ce calcul existait en trois exemplaires — tracé, zones de clic, surlignage de
+ * sélection — que rien n'obligeait à rester d'accord, et qui ne l'étaient
+ * d'ailleurs plus. Une seule définition, désormais partagée aussi par les
+ * étiquettes : une zone de clic ou un surlignage posés ailleurs que le trait
+ * sont des bogues qu'aucun test de tracé ne peut voir.
+ */
+function refEdgeEnds(
+  from: Rect,
+  to: Rect,
+): { start: { x: number; y: number }; end: { x: number; y: number } } {
+  const fromCenter = centerOf(from);
+  const toCenter = centerOf(to);
+  return {
+    start: anchorOnRect(from, toCenter.x, toCenter.y),
+    end: anchorOnRect(to, fromCenter.x, fromCenter.y),
+  };
+}
+
 /** Relation dominante de la vue : l'arbre de containment (vue structure) ou les
  * seules références (vue graphe). */
 export type EdgeMode = "contain" | "ref";
@@ -717,22 +740,17 @@ export function drawEdges(
     for (const edge of graph.refEdges) {
       if (edge.dangling || edge.to === null) continue;
       if (!inPass(edge, pass.full)) continue;
-      // Le DÉPART est HISSÉ jusqu'au plus proche ancêtre visible : la carte du
-      // value object si elle est dépliée, la bande de la ligne `lines
-      // [ n items ]` si le tableau est replié, la carte de l'entité en vue
-      // graphe. Une référence portée par un value object reste ainsi tracée
-      // dans toutes les vues, au lieu de disparaître avec la carte qui la
-      // porte. L'ARRIVÉE, elle, se lit toujours dans `positions` : une cible
+      // Le DÉPART est HISSÉ jusqu'à la plus proche CARTE : celle du value object
+      // si elle est dépliée, celle de l'entité hôte sinon. Une référence portée
+      // par un value object reste ainsi tracée dans toutes les vues, au lieu de
+      // disparaître avec la carte qui la porte ; de quelle LIGNE elle part est
+      // dit par l'étiquette de sélection (`drawEdgeLabels`), pas par le point
+      // d'attache. L'ARRIVÉE, elle, se lit toujours dans `positions` : une cible
       // hors de l'écran n'a pas d'arête à montrer.
-      const from = visibleAnchorRectFor(graph, positions, edge.from, metrics);
+      const from = nearestCardRectFor(graph, positions, edge.from);
       const to = positions.get(edge.to);
       if (!from || !to) continue;
-      // Chaque bout sort du côté qui fait face à l'autre carte, sinon la ligne
-      // passe sous la carte source (calque des arêtes au-dessous des cartes).
-      const fromCenter = centerOf(from);
-      const toCenter = centerOf(to);
-      const start = anchorOnRect(from, toCenter.x, toCenter.y);
-      const end = anchorOnRect(to, fromCenter.x, fromCenter.y);
+      const { start, end } = refEdgeEnds(from, to);
       const x1 = start.x;
       const y1 = start.y;
       const x2 = end.x;
@@ -768,6 +786,129 @@ export function drawEdges(
   return g;
 }
 
+/** Distance du départ à laquelle l'étiquette se pose, le long du segment, et
+ * décalage perpendiculaire qui l'écarte du trait. Assez près pour que l'œil
+ * rattache l'étiquette à SON arête quand plusieurs quittent la même carte,
+ * assez loin pour ne pas chevaucher la carte de départ. */
+/**
+ * Position des étiquettes le long du lien, en FRACTION de sa longueur et non en
+ * pixels fixes : plusieurs arêtes quittent la même carte par des points
+ * voisins, et à 24 px du départ elles ne se sont pas encore écartées — leurs
+ * étiquettes se recouvraient (constaté sur la démo, sélection de #p16). À un
+ * tiers du trajet, la divergence des traits a fait le travail d'espacement.
+ *
+ * Les étiquettes d'une même sélection sont en plus ÉTAGÉES (`i % 3`) : deux
+ * arêtes quasi parallèles resteraient proches à fraction égale, l'étagement les
+ * sépare le long de leur propre trait. Le plafond (0.38 + 2×0.14 = 0.66) garde
+ * l'étiquette nettement du côté de la SOURCE : au-delà, elle se lirait comme
+ * désignant la cible.
+ */
+const LABEL_ALONG_FRACTION = 0.38;
+const LABEL_STAGGER_FRACTION = 0.14;
+const LABEL_ASIDE = 10;
+const LABEL_HEIGHT = 15;
+const LABEL_RADIUS = 7.5;
+const LABEL_PADDING_X = 6;
+
+/**
+ * L'étiquette de chaque référence SORTANTE du nœud sélectionné, posée près de
+ * son départ.
+ *
+ * C'est la moitié « divulgation progressive » du tracé des références : le
+ * départ d'une arête est toujours une CARTE (voir `nearestCardRectFor`), ce qui
+ * garde la vue au repos sobre mais ne dit pas de quelle LIGNE la référence part.
+ * L'étiquette porte ce détail, et seulement quand on l'a demandé en
+ * sélectionnant la source.
+ *
+ * Deux textes, selon ce que la sélection désigne :
+ * - `field` seul quand la sélection EST le nœud porteur (référence directe de
+ *   l'entité, ou carte du value object elle-même) — le chemin depuis la carte
+ *   sélectionnée n'a qu'un segment, l'écrire en toutes lettres serait bavard ;
+ * - `label.field` (`lines[0].productRef`) quand c'est l'ENTITÉ déclarante qui
+ *   est sélectionnée alors que la ligne est portée par un value object caché.
+ *   Le label du nœud porteur est le chemin INSTANCIÉ, indice compris : il
+ *   désigne l'élément exact, ce que `lines[*].productRef` de la config ne fait
+ *   pas.
+ *
+ * Rien à la sélection de la CIBLE (une arête entrante ne se lit pas depuis un
+ * champ de la carte sélectionnée), rien pour une sélection d'agrégat (l'appelant
+ * passe alors `null`), rien pour une référence cassée — elle n'est pas tracée,
+ * et une étiquette flottant sans trait ne désignerait rien.
+ *
+ * La pilule (fond de carte, contour de bordure) est ce qui rend l'étiquette
+ * lisible par-dessus une enveloppe d'agrégat ou une autre arête ; sans elle le
+ * texte se confond avec le fond teinté de la vue graphe.
+ *
+ * PURE, comme le reste du fichier : `selectedId` est un id nu, pas la notion de
+ * sélection — c'est l'appelant qui sait qui est sélectionné et ce que la vue
+ * courante en fait.
+ */
+export function drawEdgeLabels(
+  graph: Graph,
+  positions: Map<NodeId, Rect>,
+  theme: Theme,
+  selectedId: NodeId | null,
+  useBitmapText: boolean,
+  metrics: NodeMetrics = DEFAULT_METRICS,
+): Container {
+  const container = new Container();
+  if (selectedId === null) return container;
+
+  let labelIndex = 0;
+  for (const edge of graph.refEdges) {
+    if (edge.dangling || edge.to === null) continue;
+    if (edge.from !== selectedId && edge.fromEntity !== selectedId) continue;
+    // Mêmes extrémités que le trait qu'elle annote : une étiquette calculée
+    // autrement flotterait à côté de son arête dès que le départ est hissé.
+    const from = nearestCardRectFor(graph, positions, edge.from);
+    const to = positions.get(edge.to);
+    if (!from || !to) continue;
+    const { start, end } = refEdgeEnds(from, to);
+
+    const text =
+      edge.from === selectedId
+        ? edge.field
+        : `${graph.nodes.get(edge.from)?.label ?? edge.from}.${edge.field}`;
+
+    // Le repère du segment : `u` vers l'arrivée, sa perpendiculaire pour
+    // écarter du trait. Un segment de longueur nulle (deux cartes confondues)
+    // n'a pas de direction — l'horizontale est le repli, l'étiquette restant
+    // posée au point de départ.
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const len = Math.hypot(dx, dy);
+    const ux = len > 0 ? dx / len : 1;
+    const uy = len > 0 ? dy / len : 0;
+    const fraction = LABEL_ALONG_FRACTION + (labelIndex % 3) * LABEL_STAGGER_FRACTION;
+    labelIndex++;
+    const along = len * fraction;
+    const cx = start.x + ux * along - uy * LABEL_ASIDE;
+    const cy = start.y + uy * along + ux * LABEL_ASIDE;
+
+    // Largeur BUDGÉTÉE à l'avance en avances moyennes, comme `measureNode` et
+    // `arrayTokenWidth` : la mesure réelle d'un `Text` dépend du canvas, donc du
+    // runtime, et la pilule doit garder la même géométrie partout.
+    const width = text.length * charWidthFor("badge", metrics) + 2 * LABEL_PADDING_X;
+
+    const pill = new Graphics();
+    pill
+      .roundRect(cx - width / 2, cy - LABEL_HEIGHT / 2, width, LABEL_HEIGHT, LABEL_RADIUS)
+      .fill(theme.surface.card)
+      .stroke({ width: 1, color: theme.edge.border });
+    container.addChild(pill);
+
+    // Texte CENTRÉ dans la pilule et non calé sur son bord : la largeur est un
+    // budget en avances moyennes, donc presque toujours un peu large pour le
+    // texte réel — un calage à gauche laisserait alors du vide à droite, que
+    // l'œil lit comme un défaut d'alignement.
+    const label = createLabel(text, theme, "badge", theme.edge.ref, useBitmapText);
+    label.position.set(Math.round(cx - label.width / 2), Math.round(cy - label.height / 2));
+    container.addChild(label);
+  }
+
+  return container;
+}
+
 export interface EdgeHit {
   edge: RefEdge;
   graphics: Graphics;
@@ -789,16 +930,15 @@ export function drawEdgeHitAreas(graph: Graph, positions: Map<NodeId, Rect>): Ed
   const hits: EdgeHit[] = [];
   for (const edge of graph.refEdges) {
     if (edge.to === null || edge.dangling) continue;
-    const from = positions.get(edge.from);
+    // Même DÉPART hissé que `drawEdges` — sa plus proche carte, pas son propre
+    // rect : une référence portée par un value object caché est tracée depuis
+    // la carte hôte, et une zone de clic lue dans `positions` n'existait alors
+    // pas du tout, laissant un trait visible mais inerte.
+    const from = nearestCardRectFor(graph, positions, edge.from);
     if (!from) continue;
     const to = positions.get(edge.to);
     if (!to) continue;
-    // Mêmes ancrages que `drawEdges` : la zone de clic doit rester posée sur
-    // le trait, pas sur l'ancien segment milieu-droit → milieu-gauche.
-    const fromCenter = centerOf(from);
-    const toCenter = centerOf(to);
-    const start = anchorOnRect(from, toCenter.x, toCenter.y);
-    const end = anchorOnRect(to, fromCenter.x, fromCenter.y);
+    const { start, end } = refEdgeEnds(from, to);
     const g = new Graphics();
     g.moveTo(start.x, start.y)
       .lineTo(end.x, end.y)
@@ -866,17 +1006,19 @@ export function drawSelectionOverlay(
   let hasRefs = false;
   const resolved: { x1: number; y1: number; x2: number; y2: number }[] = [];
   for (const edge of graph.refEdges) {
-    if (edge.from !== selectedId) continue;
+    // Même règle que `drawEdgeLabels` : une arête appartient aussi à son entité
+    // déclarante. Sans `fromEntity`, sélectionner l'entité étiquetterait une
+    // arête hissée SANS la surligner — deux réponses contradictoires au même
+    // geste, sur le même trait.
+    if (edge.from !== selectedId && edge.fromEntity !== selectedId) continue;
     if (edge.to === null || edge.dangling) continue;
-    const from = positions.get(edge.from);
+    // Même DÉPART hissé que `drawEdges` : le surlignage doit RECOUVRIR le
+    // trait, donc il ne peut pas résoudre son point d'attache autrement que lui.
+    const from = nearestCardRectFor(graph, positions, edge.from);
     if (!from) continue;
     const to = positions.get(edge.to);
     if (!to) continue;
-    // Mêmes ancrages que `drawEdges` : le surlignage doit recouvrir le trait.
-    const fromCenter = centerOf(from);
-    const toCenter = centerOf(to);
-    const start = anchorOnRect(from, toCenter.x, toCenter.y);
-    const end = anchorOnRect(to, fromCenter.x, fromCenter.y);
+    const { start, end } = refEdgeEnds(from, to);
     // La ligne s'arrête au pied de la flèche pour ne pas la traverser.
     const len = Math.hypot(end.x - start.x, end.y - start.y);
     const t = len > ARROW_LENGTH ? (len - ARROW_LENGTH) / len : 1;

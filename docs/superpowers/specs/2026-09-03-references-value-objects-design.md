@@ -122,3 +122,69 @@ détail de la démo, `CollapseState`, l'élision des tableaux, `measureNode`.
   graphe, arête `Cart → Product` tracée et appartenance d'agrégat correcte ;
   en vue structure, dépliage du jeton puis clic sur la ligne `productRef`
   d'une carte `CartLine` → navigation vers `#prod-1`.
+
+## Addendum 2026-09-03 : divulgation progressive au lieu de l'ancrage sur ligne
+
+### Le demi-signal constaté
+
+Le §3 ci-dessus faisait partir une arête de référence hissée de la **bande de la
+ligne du jeton** (`visibleAnchorRectFor`). À l'usage, c'est un demi-signal : la
+bande dit « ça sort d'ici », mais pas d'où exactement, et surtout **rien ne
+distingue une arête hissée d'une référence directe**. Les deux quittent la même
+carte, l'une simplement un peu plus bas que l'autre — un écart de quelques
+pixels que le lecteur ne peut ni nommer ni comparer, et qui disparaît dès que
+deux références partent de bandes voisines. On payait une complexité de tracé
+(deux notions d'ancrage, trois copies du calcul d'extrémités à tenir d'accord)
+pour une information que personne ne pouvait lire.
+
+### La décision
+
+Le détail passe à la **sélection**, seul moment où on l'a demandé. Le tracé au
+repos redevient simple et honnête — une arête part d'une carte —, et qui veut
+savoir de quelle ligne clique dessus.
+
+### Les trois règles
+
+1. **Le départ d'une arête de RÉFÉRENCE est une carte.** `nearestCardRectFor(graph,
+   positions, id)` remplace `visibleAnchorRectFor` : remontée de `parentId`
+   jusqu'au premier id présent dans `positions` (un nœud élidé ou replié n'y est
+   jamais), `undefined` si rien de la lignée n'est à l'écran. Ni `metrics`, ni
+   bande de ligne. La passe de **containment** garde `anchorRectFor` : là le
+   dépliage sort visuellement du jeton, et c'est un signal ENTIER — la ligne
+   dépliée est précisément ce que le geste montre.
+2. **La sélection de la SOURCE étiquette ses arêtes sortantes.** `drawEdgeLabels`
+   (pure, dans `draw.ts`) pose sur chaque arête sortante — au premier tiers du
+   lien, en fraction de sa longueur et étagée d'un cran par étiquette, parce
+   qu'à distance fixe du départ des arêtes voisines pas encore écartées
+   superposaient leurs pilules — une pilule portant : `customerId` si `edge.from === selectedId` (référence directe, ou
+   sélection de la carte value object elle-même) ; `lines[0].productRef` si
+   `edge.fromEntity === selectedId && edge.from !== selectedId` — le label du
+   nœud porteur, donc le chemin **instancié**, indice compris. Rien à la
+   sélection de la cible, rien pour une sélection d'agrégat (`selectedNodeId()`
+   rend `null`), rien au repos, rien pour une arête dangling (elle n'est pas
+   tracée). Rendues aux LOD 0 et 1, absentes au LOD 2, comme les arêtes.
+3. **Le hissage LOGIQUE ne bouge pas.** `fromEntity`, l'appartenance d'agrégat,
+   le layout deux niveaux et l'estompage `inPass` sont inchangés : c'est
+   seulement le point d'attache VISUEL qui change.
+
+### Effet de bord réparé
+
+Les trois copies du calcul d'extrémités (`drawEdges`, `drawEdgeHitAreas`,
+`drawSelectionOverlay`) sont factorisées en `refEdgeEnds`, et les deux dernières
+résolvent désormais leur départ par `nearestCardRectFor` comme le tracé. Elles
+lisaient `positions.get(edge.from)` : une référence portée par un value object
+caché était donc **tracée mais sans zone de clic ni surlignage possible**.
+
+
+### Retouches après essai sur la démo (même jour)
+
+- Étiquettes posées en **fraction du lien** (0.38 + 0.14 par étiquette, plafond
+  0.66) et non à 24 px du départ : les arêtes voisines ne divergent pas encore
+  si près de la carte, et leurs pilules se recouvraient (constaté sur #p16).
+- Calque des étiquettes **au-dessus des cartes** : posées dessous, elles
+  disparaissaient sous toute carte chevauchant leur bout de trait — or c'est
+  l'information que la sélection est censée révéler. L'occlusion inverse est
+  rare (mi-lien, entre les cartes) et transitoire.
+- Le **surlignage de sélection** suit la même règle d'appartenance que les
+  étiquettes (`from` OU `fromEntity`) : sélectionner l'entité étiquetait une
+  arête hissée sans la surligner — deux réponses contradictoires au même geste.

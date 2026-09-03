@@ -30,7 +30,7 @@ export {
   createLayoutEngine,
   rowRectFor,
   anchorRectFor,
-  visibleAnchorRectFor,
+  nearestCardRectFor,
   type Rect,
   type LayoutResult,
   type LayoutEngine,

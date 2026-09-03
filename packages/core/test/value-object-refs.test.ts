@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { buildGraph } from "../src/build.js"
 import { buildAggregates } from "../src/aggregate.js"
 import { validateConfig, type DataGraphConfig } from "../src/config.js"
-import { anchorRectFor, visibleAnchorRectFor, rowRectFor, type Rect } from "../src/layout.js"
+import { anchorRectFor, nearestCardRectFor, rowRectFor, type Rect } from "../src/layout.js"
 import { DEFAULT_METRICS } from "../src/measure.js"
 
 /**
@@ -190,33 +190,37 @@ describe("appartenance d'agrégat via une arête hissée", () => {
   })
 })
 
-describe("visibleAnchorRectFor", () => {
+describe("nearestCardRectFor", () => {
   const g = buildGraph(cartData, cartConfig)
   const CART: Rect = { x: 0, y: 0, width: 200, height: 120 }
   const LINE: Rect = { x: 400, y: 40, width: 180, height: 100 }
 
   it("rend la carte du nœud quand elle est à l'écran", () => {
     const positions = new Map([["/carts/0", CART], ["/carts/0/lines/0", LINE]])
-    expect(visibleAnchorRectFor(g, positions, "/carts/0/lines/0")).toEqual(LINE)
+    expect(nearestCardRectFor(g, positions, "/carts/0/lines/0")).toEqual(LINE)
   })
 
-  it("remonte jusqu'à la bande du jeton quand la carte est cachée", () => {
+  it("remonte jusqu'à la carte de l'entité hôte quand la sienne est cachée", () => {
     // `/carts/0/lines/0` n'est pas positionné (tableau replié), et son parent
     // `/carts/0/lines` est ÉLIDÉ : deux remontées sont nécessaires, ce qu'une
     // résolution à un seul niveau raterait.
     const positions = new Map([["/carts/0", CART]])
+    expect(nearestCardRectFor(g, positions, "/carts/0/lines/0")).toEqual(CART)
+    // Et surtout PAS la bande de la ligne `lines` : c'est le demi-signal
+    // abandonné — le départ est la carte, le détail est porté par l'étiquette
+    // de sélection.
     const rows = g.nodes.get("/carts/0")!.rows
     const rowIndex = rows.findIndex((r) => r.key === "lines")
     expect(rowIndex).toBeGreaterThanOrEqual(0)
-    expect(visibleAnchorRectFor(g, positions, "/carts/0/lines/0")).toEqual(
+    expect(nearestCardRectFor(g, positions, "/carts/0/lines/0")).not.toEqual(
       rowRectFor(CART, rowIndex, DEFAULT_METRICS),
     )
-    // C'est bien plus que ce que sait faire `anchorRectFor` seul : lui s'arrête
-    // à l'élision et ne voit rien pour une carte simplement absente.
+    // `anchorRectFor`, lui, s'arrête à l'élision et ne voit rien pour une carte
+    // simplement absente : c'est bien une remontée de plus.
     expect(anchorRectFor(g, positions, "/carts/0/lines/0")).toBeUndefined()
   })
 
   it("rend undefined quand rien de la lignée n'est à l'écran", () => {
-    expect(visibleAnchorRectFor(g, new Map(), "/carts/0/lines/0")).toBeUndefined()
+    expect(nearestCardRectFor(g, new Map(), "/carts/0/lines/0")).toBeUndefined()
   })
 })

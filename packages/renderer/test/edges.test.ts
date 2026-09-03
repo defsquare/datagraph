@@ -526,9 +526,13 @@ describe("drawSelectionOverlay — le surlignage suit le style de l'arête", () 
 /**
  * Une référence déclarée par chemin part du nœud qui PORTE la ligne — un value
  * object, qui n'a le plus souvent aucune carte à l'écran : replié en vue
- * structure, inexistant en vue graphe. Son départ est donc HISSÉ jusqu'au plus
- * proche ancêtre visible, faute de quoi l'arête ne serait pas tracée du tout et
- * la relation disparaîtrait de la vue qui est censée la montrer.
+ * structure, inexistant en vue graphe. Son départ est donc HISSÉ jusqu'à la plus
+ * proche CARTE, faute de quoi l'arête ne serait pas tracée du tout et la
+ * relation disparaîtrait de la vue qui est censée la montrer.
+ *
+ * Et bien la carte, pas la bande de la ligne : partir de la bande ne
+ * distinguait pas une arête hissée d'une référence directe, c'était un
+ * demi-signal. Le détail est passé aux étiquettes de sélection.
  */
 describe("drawEdges — départ hissé d'une référence portée par un value object", () => {
   const theme = resolveTheme(undefined);
@@ -538,7 +542,8 @@ describe("drawEdges — départ hissé d'une référence portée par un value ob
   const PRODUCT = { x: 600, y: 0, width: 160, height: 60 };
   const LINE = { x: 300, y: 200, width: 180, height: 100 };
 
-  /** La bande de la ligne `lines` sur la carte du panier — l'ancre du jeton. */
+  /** La bande de la ligne `lines` sur la carte du panier — l'ancre que le tracé
+   * n'utilise justement PLUS. */
   const rows = graph.nodes.get("/carts/0")!.rows;
   const band = rowRectFor(CART, rows.findIndex((r) => r.key === "lines"), DEFAULT_METRICS);
 
@@ -552,18 +557,18 @@ describe("drawEdges — départ hissé d'une référence portée par un value ob
     expect(graph.refEdges[0]!.fromEntity).toBe("/carts/0");
   });
 
-  it("part de la bande du jeton quand la carte source est absente de positions", () => {
+  it("part de la CARTE hôte quand la carte source est absente de positions", () => {
     // C'est exactement la vue graphe, et la vue structure repliée : `lines` est
     // élidé et `/carts/0/lines/0` n'a pas de rect.
     const positions = new Map([["/carts/0", CART], ["/products/0", PRODUCT]]);
     const g = drawEdges(graph, positions, theme, 0, "ref");
-    const start = anchorOnRect(band, PRODUCT.x + PRODUCT.width / 2, PRODUCT.y + PRODUCT.height / 2);
+    const start = anchorOnRect(CART, PRODUCT.x + PRODUCT.width / 2, PRODUCT.y + PRODUCT.height / 2);
     const path = firstPath(g, 0);
     expect(path[0].action).toBe("moveTo");
     expect(path[0].data).toEqual([start.x, start.y]);
-    // Et non le milieu de la carte : la bande est plus bas que l'en-tête, ce
-    // qui est précisément ce qui fait lire l'arête comme sortant du jeton.
-    expect(start.y).not.toBeCloseTo(CART.y + CART.height / 2, 5);
+    // Et surtout pas la bande du jeton : c'est le demi-signal abandonné.
+    const onBand = anchorOnRect(band, PRODUCT.x + PRODUCT.width / 2, PRODUCT.y + PRODUCT.height / 2);
+    expect(path[0].data).not.toEqual([onBand.x, onBand.y]);
   });
 
   it("part de la carte du value object dès qu'elle est dépliée", () => {
@@ -613,5 +618,35 @@ describe("drawEdges — départ hissé d'une référence portée par un value ob
     const strokes = (g.context.instructions as any[]).filter((x) => x.action === "stroke");
     expect(strokes).toHaveLength(1);
     expect(strokes[0].data.style.alpha).toBe(DIM_ALPHA);
+  });
+});
+
+/**
+ * Le surlignage de sélection obéit à la MÊME règle d'appartenance que les
+ * étiquettes : une arête est aussi celle de son entité déclarante. Sans quoi
+ * sélectionner le panier étiquetterait `lines[0].productRef` sans surligner le
+ * trait — deux réponses contradictoires au même geste.
+ */
+describe("drawSelectionOverlay — une arête hissée appartient aussi à son entité", () => {
+  const theme = resolveTheme(undefined);
+  const graph = buildGraph(cartData, cartConfig);
+  const positions = new Map([
+    ["/carts/0", { x: 0, y: 0, width: 200, height: 120 }],
+    ["/products/0", { x: 0, y: 400, width: 200, height: 80 }],
+  ]);
+
+  function refStrokes(selectedId: string): number {
+    const g = drawSelectionOverlay(graph, positions, theme, selectedId, "ref");
+    // Anneau de carte + (éventuel) trait de référence : le trait est le stroke
+    // qui suit l'anneau, la tête de flèche son fill.
+    return (g.context.instructions as any[]).filter((x) => x.action === "stroke").length;
+  }
+
+  it("surligne l'arête du value object quand l'ENTITÉ est sélectionnée", () => {
+    expect(refStrokes("/carts/0")).toBe(2);
+  });
+
+  it("ne surligne rien sur la CIBLE : la règle reste celle de la source", () => {
+    expect(refStrokes("/products/0")).toBe(1);
   });
 });
