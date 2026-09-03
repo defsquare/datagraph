@@ -118,3 +118,53 @@ test("en vue structure, deplier le jeton rend la carte de la ligne et son bouton
 
   expect(errors).toEqual([])
 })
+
+test("cliquer le trait d'une reference hissee navigue vers sa cible", async ({ page }) => {
+  // Le comportement est le meme que pour toute reference — un seul geste, un
+  // seul sens — mais il repose sur un maillon discret : la zone de clic de
+  // l'arete HISSE son depart comme le trace (`nearestCardRectFor`). Avant
+  // cette repose, le trait d'un value object cache etait visible mais inerte,
+  // et rien d'autre que ce test ne couvre le clic de bout en bout.
+  const errors: string[] = []
+  page.on("pageerror", e => errors.push(String(e)))
+
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await gotoReady(page)
+  await page.evaluate(() => {
+    const g = (window as any).__graph
+    ;(window as any).__followed = null
+    g.on("followRef", (e: any) => ((window as any).__followed = e))
+  })
+  await page.evaluate(() => (window as any).__graph.setView("graph"))
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__graph.currentView()))
+    .toBe("graph")
+  await page.evaluate(() => (window as any).__graph.select("/products/1"))
+  await page.evaluate(() => (window as any).__graph.focus("/customers/1"))
+  await page.waitForTimeout(700)
+
+  // Aucune API publique n'expose la geometrie des aretes : on BALAIE une
+  // petite grille la ou la mise en page — deterministe — pose le trait
+  // p16 → c2, et on s'arrete au premier clic qui le touche. Les clics rates
+  // selectionnent au pire une carte ou une enveloppe, sans bouger la camera.
+  const box = (await page.locator("canvas").boundingBox())!
+  let followed: any = null
+  outer: for (let y = 220; y <= 350; y += 7) {
+    for (let x = 480; x <= 555; x += 5) {
+      await page.mouse.click(box.x + x, box.y + y)
+      followed = await page.evaluate(() => (window as any).__followed)
+      if (followed) break outer
+    }
+  }
+
+  // L'evenement porte l'arete COMPLETE : l'hote sait de quelle ligne du
+  // tableau elle vient, pas seulement ou elle va.
+  expect(followed).not.toBeNull()
+  expect(followed.fromEntity).toBe("/products/1")
+  expect(followed.from).toMatch(/^\/products\/1\/reviews\//)
+  expect(followed.field).toBe("customerId")
+
+  // Et le clic a navigue : la cible est selectionnee.
+  await expect(page.locator("#selection-label")).toContainText("Customer #c")
+  expect(errors).toEqual([])
+})
