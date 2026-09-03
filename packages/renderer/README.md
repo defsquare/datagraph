@@ -69,6 +69,9 @@ graph.on("select", (node) => console.log("selected:", node.label));
 | Click and drag on the background | Pan |
 | Click and drag on a card | Move that card |
 | Click and drag on an aggregate envelope (graph view) | Move the whole aggregate |
+| Click on an aggregate envelope (graph view) | Select the whole aggregate |
+| Click on the empty background | Clear the selection |
+| <kbd>Esc</kbd> | Clear the selection |
 
 Dragging a card works in both views. The gesture splits from a plain click at
 4 px of pointer travel: below that the click still selects, folds or follows a
@@ -81,8 +84,14 @@ a reference's click area — moves the whole aggregate **rigidly**: the circle i
 translated, its radius untouched, and every member card goes with it. Hit
 testing runs top-down, so cards and edges always win over the disc beneath
 them; only the empty part of an envelope grabs it. The same 4 px threshold
-applies, and a plain click on an envelope does nothing — an aggregate is not
-selectable.
+applies: below it the gesture is a plain click, which **selects the whole
+aggregate** — the envelope lights up to its full hover intensity (no extra
+ring), and everything that has no link to the aggregate dims. Selecting an
+aggregate and selecting a card are mutually exclusive; either replaces the
+other, and both are cleared by the same gestures. A cluster selection is a
+graph-view notion only, so `setView("structure")` drops it (a card selection is
+still carried over onto its nearest entity ancestor). No event is emitted —
+`select` carries a `GraphNode`, and an aggregate is not one.
 
 **Moves are not persisted, by design.** They mutate the current layout only:
 the next relayout — expand/collapse, `setData`, a view switch — recomputes
@@ -103,6 +112,42 @@ partly hidden — deliberately, since drawing every reference over every card it
 crosses is noise most of the time. Selecting a node is what reveals its
 references: `select()` redraws the selected node's outgoing references in the
 selection colour on the topmost layer, where they run over everything.
+
+**Selecting also dims everything unrelated.** Cards and edges that have no link
+to the selection drop to 25 % opacity, in both views, and so do the aggregate
+envelopes of the graph view.
+
+- **Selecting a card** keeps at full opacity: the card itself, the source *and*
+  target of each of its references (a broken reference points at nobody, so it
+  pulls in nothing), its containment parent and its direct children.
+- **Selecting an aggregate** (graph view) keeps at full opacity: every member,
+  plus every outside card that has a reference to or from a member. Edges are
+  read against the *members*, so an aggregate's internal edges and the ones
+  crossing its boundary stay full, while an edge between two outside neighbours
+  recedes — it says nothing about the block you pointed at.
+- **Envelopes** are read against the cards they hold: an envelope dims only when
+  *none* of its members stayed full. One related member is enough to keep it
+  lit, since the envelope is then the only thing showing where that member
+  lives — and the selected aggregate stays lit for the same reason, without
+  needing a rule of its own. Both of an envelope's alphas (fill and stroke) are
+  multiplied by the same 25 %; its stroke *width* is not, since that says how
+  big the disc is, not how much it matters. Hovering a dimmed envelope still
+  brightens it, from the back: the hover intensity and the dimming multiply
+  rather than override each other.
+
+Cards are dimmed with a shared Pixi `AlphaFilter`, not with `container.alpha`. A
+card is painted in layers inside a single `Graphics` (a full-card accent
+background, then the body over it), and container alpha applies per primitive:
+the now-translucent body let the accent show through, and a dimmed card rendered
+as a flat slab of its accent colour. The filter flattens the card to a texture
+first and applies the alpha to that, so a dimmed card looks exactly like a normal
+one, only ghosted. Dimmed cards stay clickable either way — Pixi hit-tests
+geometry, not opacity.
+
+Clearing the selection restores everything: click the empty background (a real
+click — a pan past the same 4 px threshold does not count — and not on a card, a
+reference's click area or an envelope), or press <kbd>Esc</kbd>. Neither gesture
+emits an event; selection state is read from `select`.
 
 Zoom is bounded to `[0.02, 3]`. `fit()` never scales past `1` — magnifying a
 bitmap-font atlas baked at its nominal size is what made text look soft — so a

@@ -1,4 +1,11 @@
-import { Application, Container, Graphics, type FederatedPointerEvent } from "pixi.js";
+import {
+  AlphaFilter,
+  Application,
+  Container,
+  Graphics,
+  type FederatedPointerEvent,
+  type Rectangle,
+} from "pixi.js";
 import ELK from "elkjs/lib/elk.bundled.js";
 import {
   buildAggregates,
@@ -9,6 +16,7 @@ import {
   DEFAULT_METRICS,
   enclosingCircle,
   validateConfig,
+  type Aggregate,
   type AggregateIndex,
   type DataGraphConfig,
   type Diagnostic,
@@ -61,6 +69,7 @@ import {
   type Lod,
 } from "./draw.js";
 import { attachDrag, TAP_THRESHOLD } from "./drag.js";
+import { clusterDimmed, clusterRelatedIds, DIM_ALPHA, relatedIds } from "./focus.js";
 import { attachHover } from "./hover.js";
 import { Emitter } from "./events.js";
 
@@ -179,6 +188,55 @@ const TRANSITION_MS = 200;
  * survol est un repère, pas un événement.
  */
 const HOVER_LIFT = 0.025;
+
+// L'autre réglage d'œil de l'interaction, `DIM_ALPHA`, ne peut pas vivre ici :
+// il est partagé avec `drawEdges`, et `draw.ts` important ce fichier fermerait
+// un cycle. Il est dans `focus.ts`, avec la fonction qui décide QUI est estompé.
+
+/**
+ * Le filtre qui estompe une carte, PARTAGÉ par toutes les cartes de toutes les
+ * instances.
+ *
+ * Un filtre, et pas `container.alpha`. Une carte est peinte EN COUCHES dans un
+ * seul Graphics — un fond accent qui occupe toute la carte, puis le corps
+ * par-dessus (voir `drawNode`) —, et `alpha` s'applique primitive par primitive :
+ * le corps devenu translucide laisse voir l'accent qu'il recouvrait, et la carte
+ * estompée se rendait comme un pavé plein de sa couleur d'accent. L'`AlphaFilter`
+ * aplatit d'abord la carte en une texture, PUIS lui applique l'alpha : le visuel
+ * reste exactement celui d'une carte normale, simplement fantomatique. C'est ce
+ * que dit la doc de Pixi (« use this instead of Container's alpha property to
+ * avoid visual layering of individual elements »).
+ *
+ * Instancié PARESSEUSEMENT, et c'est nécessaire : le constructeur d'un filtre
+ * Pixi compile son `GlProgram`, ce qui crée un canvas de test et exige donc un
+ * `document`. Le construire au chargement du module ferait échouer l'import de
+ * ce fichier sous l'environnement Node de vitest, où plusieurs tests l'importent
+ * pour `attachTap`/`createBackgroundHit`/`recomputeClusterCircle`.
+ *
+ * Une seule instance, partagée : un filtre n'a d'état que son alpha, qui est ici
+ * une constante. Il n'est jamais détruit — `destroy()` n'a rien à en libérer
+ * qu'une autre instance ne puisse encore utiliser.
+ *
+ * `padding` vaut 0 (défaut de `Filter`), donc le filtre n'élargit pas les bornes
+ * de la carte et le `cullArea` que `drawNode` pose reste exact.
+ */
+let sharedDimFilters: AlphaFilter[] | undefined;
+function dimFilters(): AlphaFilter[] {
+  sharedDimFilters ??= [new AlphaFilter({ alpha: DIM_ALPHA })];
+  return sharedDimFilters;
+}
+
+/**
+ * Ce que désigne la sélection : une CARTE ou un AGRÉGAT entier (vue graphe
+ * seulement, la seule à peindre des enveloppes).
+ *
+ * Un type somme plutôt que deux champs qui pourraient être renseignés ensemble :
+ * les deux sélections s'excluent, et l'exprimer dans le type évite d'avoir à le
+ * maintenir à la main à chaque geste. L'API publique, elle, ne connaît toujours
+ * que la sélection NODALE — `select(id)`, l'événement `"select"` et l'anneau de
+ * `drawSelectionOverlay` ne voient un id que quand `kind === "node"`.
+ */
+type Selection = { kind: "node"; id: NodeId } | { kind: "cluster"; aggregateId: string };
 
 function boundsOf(positions: Map<NodeId, Rect>): Rect {
   let minX = Infinity;
@@ -319,6 +377,54 @@ export function attachTap(target: Container, onTap: (event: FederatedPointerEven
 }
 
 /**
+ * Le FOND de la toile en tant que cible de clic : un container vide et
+ * transparent, couvrant `hitArea`, dont le tap appelle `onTap`. Destiné à être
+ * inséré SOUS tout le reste, où il est le seul objet que le pointeur puisse
+ * atteindre sur le vide.
+ *
+ * Pourquoi un calque dédié et pas `app.stage` lui-même, qu'il suffirait de
+ * passer en `"static"` avec une `hitArea` : parce que le hit-testing de Pixi
+ * HÉRITE le mode d'événement en descendant (`EventBoundary.hitTestRecursive`
+ * repasse le mode du parent dès qu'il est interactif). Un stage `"static"`
+ * rendrait donc interactifs tous ses descendants, Graphics décoratifs compris —
+ * et le premier d'entre eux touché AVALERAIT le hit, la boucle s'arrêtant au
+ * premier enfant qui répond : l'anneau de sélection ou un surlignage de
+ * recherche empêcherait de cliquer la carte qu'il recouvre. Un frère de plus
+ * bas niveau n'a pas cet effet — il n'est consulté que si rien au-dessus n'a
+ * répondu, c'est-à-dire sur le vide.
+ *
+ * Deux conditions au tap, et il faut les deux. `event.target === background` :
+ * le `pointertap` d'une carte ou d'une zone de clic d'arête REMONTE jusqu'ici,
+ * et sans ce test tout clic désélectionnerait juste après avoir sélectionné. Le
+ * seuil de `TAP_THRESHOLD` px : le pan de la caméra part du même bouton sur le
+ * même vide et émet lui aussi un `pointertap` à l'arrivée. C'est le partage de
+ * `attachTap`/`attachDrag`, avec la même constante — mais écrit ici plutôt que
+ * délégué à `attachTap`, qui poserait un curseur `"pointer"` sur la totalité du
+ * canvas.
+ *
+ * Exporté pour la même raison qu'`attachTap` : le geste se teste ainsi sans
+ * canvas ni WebGL. Ce n'est pas une API publique du paquet, `index.ts` ne le
+ * relaie pas.
+ */
+export function createBackgroundHit(hitArea: Rectangle, onTap: () => void): Container {
+  const background = new Container();
+  background.eventMode = "static";
+  background.hitArea = hitArea;
+  let downX = 0;
+  let downY = 0;
+  background.on("pointerdown", (event: FederatedPointerEvent) => {
+    downX = event.global.x;
+    downY = event.global.y;
+  });
+  background.on("pointertap", (event: FederatedPointerEvent) => {
+    if (event.target !== background) return;
+    if (Math.hypot(event.global.x - downX, event.global.y - downY) > TAP_THRESHOLD) return;
+    onTap();
+  });
+  return background;
+}
+
+/**
  * Creates a DataGraph instance: builds the graph from `data`/`config`,
  * initializes Pixi (async), lays out the initially-visible nodes, and
  * renders them. Returns immediately; await `.ready` before calling `fit()`
@@ -413,7 +519,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   // without a config keeps whatever the *previous* setData installed.
   let currentConfig: DataGraphConfig = options.config;
   let currentLod: Lod = 0;
-  let selectedId: NodeId | null = null;
+  let selection: Selection | null = null;
   // Current search() results, and the nextMatch/prevMatch cursor into them
   // (-1 = no current match, i.e. right after a fresh search() or before any
   // search has run). Reset to [] / -1 by search("") and by setData().
@@ -549,26 +655,93 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     return collapseState?.visibleNodeIds() ?? new Set();
   }
 
+  /** L'id du NŒUD sélectionné, ou `null` — y compris quand c'est un agrégat qui
+   * est sélectionné. C'est par cette lucarne que passe tout ce qui ne connaît
+   * que la sélection nodale : l'API publique, l'événement `"select"` et
+   * `drawSelectionOverlay`. */
+  function selectedNodeId(): NodeId | null {
+    return selection?.kind === "node" ? selection.id : null;
+  }
+
+  /**
+   * L'agrégat sélectionné, résolu contre l'index COURANT.
+   *
+   * La résolution est refaite à chaque lecture plutôt que gardée dans l'état :
+   * un `setData` ou un échec de la vue graphe peuvent remplacer l'index sous une
+   * sélection qui le désignait, et un agrégat qui n'existe plus doit se lire
+   * comme « pas de sélection » — ce que fait `undefined` chez tous les appelants
+   * — plutôt que de laisser l'estompage tourner sur un fantôme.
+   */
+  function selectedAggregate(): Aggregate | undefined {
+    if (selection?.kind !== "cluster") return undefined;
+    return aggregateIndex?.aggregates.get(selection.aggregateId);
+  }
+
+  /**
+   * L'ensemble d'ids que `drawEdges` garde à pleine opacité.
+   *
+   * Pour une carte, c'est le SINGLETON de son id : le rendu est alors
+   * exactement celui d'avant la sélection d'agrégat, arête par arête. Pour un
+   * agrégat, ce sont ses MEMBRES, et pas l'ensemble plus large que les cartes
+   * utilisent (`clusterRelatedIds`) : une arête est pleine dès qu'elle touche le
+   * bloc, donc les internes et les traversantes le sont, tandis qu'une arête
+   * entre deux voisins extérieurs recule — elle ne dit rien du bloc désigné.
+   */
+  function edgeFocusIds(): ReadonlySet<NodeId> | null {
+    if (selection === null) return null;
+    if (selection.kind === "node") return new Set([selection.id]);
+    return selectedAggregate()?.memberIds ?? null;
+  }
+
   /** Les enveloppes à peindre : vide en vue structure. La couleur vient de
-   * l'accent du type de la racine, comme pour les cartes. Cette résolution
-   * reste ici, et pas dans `drawClusters` : la fonction de dessin ne prend que
+   * l'accent du type de la racine, comme pour les cartes ; l'estompage, de la
+   * sélection courante confrontée aux membres de l'agrégat. Ces résolutions
+   * restent ici, et pas dans `drawClusters` : la fonction de dessin ne prend que
    * de la donnée nue, donc elle se teste sans graphe ni index d'agrégats. */
   function clustersFor(): {
     circle: { cx: number; cy: number; r: number };
     color: string;
     hover: number;
+    dim: boolean;
   }[] {
     if (view !== "graph" || !graph || !graphLayout) return [];
     const current = graph;
+    const selectedAggregateId = selection?.kind === "cluster" ? selection.aggregateId : null;
+    // Calculé UNE fois pour toutes les enveloppes : `focusKeep()` balaie toutes
+    // les références du graphe, et le rappeler par enveloppe rendrait le repeint
+    // quadratique alors qu'il tourne à chaque image d'un déplacement.
+    const keep = focusKeep();
+    const aggregates = aggregateIndex?.aggregates;
     return graphLayout.clusters.map((cluster) => {
       const root = current.nodes.get(cluster.rootId);
+      const members = aggregates?.get(cluster.aggregateId)?.memberIds;
       return {
         circle: { cx: cluster.cx, cy: cluster.cy, r: cluster.r },
         color: root ? accentFor(root) : theme.edge.border,
+        // Une enveloppe recule quand AUCUN de ses membres n'est lié à la
+        // sélection ; celle qui est sélectionnée reste donc pleine sans cas
+        // particulier (voir `clusterDimmed`).
+        //
+        // Une enveloppe dont l'agrégat manque à l'index reste PLEINE plutôt que
+        // de s'estomper par défaut : on ne sait alors rien de ses membres, et le
+        // même raisonnement vaut ici que pour la sélection fantôme de
+        // `focusKeep()` — mieux vaut ne rien estomper que d'estomper sur une
+        // information qu'on n'a pas.
+        dim: members ? clusterDimmed(keep, members) : false,
         // Relayée et non stockée dans la forme : `graphLayout.clusters` est la
         // sortie du moteur, et y greffer un état d'interface le rendrait
         // dépendant de qui le survole.
-        hover: clusterHover.get(cluster.aggregateId) ?? 0,
+        //
+        // La sélection d'un agrégat le peint à son intensité de survol PLEINE,
+        // et pas par un anneau de plus : l'enveloppe a déjà un état « allumé »
+        // que le survol fait connaître, et le réutiliser dit « celui-ci » sans
+        // ajouter de vocabulaire visuel. Le `max` est ce qui empêche le survol
+        // de FAIRE BAISSER l'enveloppe sélectionnée quand le pointeur la quitte
+        // (`attachHover` y écrit alors des valeurs décroissantes jusqu'à 0).
+        hover: Math.max(
+          clusterHover.get(cluster.aggregateId) ?? 0,
+          cluster.aggregateId === selectedAggregateId ? 1 : 0,
+        ),
       };
     });
   }
@@ -664,11 +837,65 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     overlayGraphics = new Container();
     const positions = activePositions();
     if (graph && positions) {
-      overlayGraphics.addChild(drawSelectionOverlay(graph, positions, theme, selectedId));
+      // La sélection NODALE seulement : un agrégat sélectionné se signale par
+      // son enveloppe (voir `clustersFor`), pas par l'anneau d'une carte.
+      overlayGraphics.addChild(drawSelectionOverlay(graph, positions, theme, selectedNodeId()));
       const currentId = searchResults[searchCursor]?.nodeId ?? null;
       overlayGraphics.addChild(drawSearchHighlights(positions, theme, visibleMatchIds(), currentId));
     }
     world.addChild(overlayGraphics);
+  }
+
+  /**
+   * L'ensemble des cartes à garder à pleine opacité, ou `null` s'il n'y a rien à
+   * estomper. Une propriété du GRAPHE et pas de la mise en page, donc identique
+   * dans les deux vues.
+   *
+   * Deux unités de sélection, deux règles, toutes deux déléguées à `focus.ts`
+   * (pur, testable) : autour d'une carte, son voisinage à distance 1 ; autour
+   * d'un agrégat, ses membres plus tout ce qui leur parle.
+   */
+  function focusKeep(): Set<NodeId> | null {
+    const aggregate = selectedAggregate();
+    if (aggregate) return clusterRelatedIds(graph?.refEdges ?? [], aggregate.memberIds);
+    const id = selectedNodeId();
+    const focused = id !== null ? graph?.nodes.get(id) : undefined;
+    return relatedIds(
+      graph?.refEdges ?? [],
+      // L'id du NŒUD retrouvé, et pas celui de la sélection : une sélection qui
+      // ne désigne plus rien dans le graphe courant n'a pas de voisinage, donc
+      // pas d'estompage — plutôt que d'estomper tout sauf un fantôme. Même
+      // raison pour l'agrégat ci-dessus, résolu contre l'index courant.
+      focused?.id ?? null,
+      focused?.parentId ?? null,
+      focused?.childIds ?? [],
+    );
+  }
+
+  /**
+   * Estompe chaque carte sans lien avec la sélection, et rend les autres.
+   *
+   * Un `AlphaFilter` PARTAGÉ et non `container.alpha` : voir `dimFilters()`,
+   * qui porte le pourquoi — une carte est peinte en couches, et l'alpha de
+   * container s'applique couche par couche, ce qui la réduisait à un pavé de sa
+   * couleur d'accent. Le filtre aplatit d'abord, estompe ensuite.
+   *
+   * Sans sélection, `focusKeep()` renvoie `null` et tout se retrouve sans
+   * filtre — c'est aussi le chemin de la désélection, qui n'a donc rien de
+   * particulier à restaurer. Le test `filters?.length` évite de poser un
+   * `FilterEffect` sur les cartes qui n'en ont jamais eu, c'est-à-dire sur
+   * toutes, au repos.
+   *
+   * Rien à faire pour garder les cartes estompées cliquables : le hit-testing
+   * de Pixi est géométrique et ignore l'opacité, filtre compris.
+   */
+  function applyFocusDim(): void {
+    const keep = focusKeep();
+    for (const [id, nodeView] of nodeViews) {
+      if (nodeView.destroyed) continue;
+      if (keep !== null && !keep.has(id)) nodeView.filters = dimFilters();
+      else if (nodeView.filters?.length) nodeView.filters = null;
+    }
   }
 
   // Les calques du fond sont repeints d'un bloc à chaque `rebuild()`, mais
@@ -689,7 +916,16 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     edgesGraphics.destroy();
     // Index 2 : le fond est occupé par le visuel des enveloppes (0) puis par
     // leurs cibles de saisie (1).
-    edgesGraphics = drawEdges(graph, positions, theme, currentLod, view === "graph" ? "ref" : "contain");
+    // `drawEdges` estompe les arêtes qui ne touchent aucun id de l'ensemble, et
+    // `null` (rien de sélectionné) rend le tracé nu.
+    edgesGraphics = drawEdges(
+      graph,
+      positions,
+      theme,
+      currentLod,
+      view === "graph" ? "ref" : "contain",
+      edgeFocusIds(),
+    );
     world.addChildAt(edgesGraphics, 2);
   }
 
@@ -737,6 +973,19 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
         // détruirait le container depuis son propre écouteur.
         onEnd: () => endDrag(false),
       });
+      // Même complémentarité que sur les cartes, avec le même seuil :
+      // `attachTap` ne réagit qu'en deçà, `attachDrag` qu'au-delà. Un clic net
+      // sélectionne l'agrégat, un clic maintenu qui bouge le déplace.
+      //
+      // Conséquence assumée : un tap DANS une enveloppe mais hors de toute carte
+      // tombait déjà sur cette cible-ci et n'y trouvait rien à faire ; il
+      // sélectionne désormais l'agrégat, ce qui est la seule chose qu'il puisse
+      // vouloir dire.
+      attachTap(container, () => doSelectCluster(cluster.aggregateId));
+      // `attachTap` vient de poser `"pointer"` : on rend la main ouverte, qui
+      // dit le geste dominant du disque (voir `drawClusterHitAreas`). L'ordre
+      // compte — la reposer avant `attachTap` ne servirait à rien.
+      container.cursor = "grab";
       // Le survol est posé sur la CIBLE DE SAISIE et non sur le visuel : ce
       // container-ci survit aux repeints de l'enveloppe, qui est justement la
       // raison de son existence. Des écouteurs sur le Graphics mourraient à la
@@ -967,6 +1216,10 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     }
 
     redrawOverlay();
+    // En DERNIER : les cartes viennent d'être recréées à alpha 1, et c'est ici
+    // qu'une sélection survivant au rebuild (dépliage, changement de LOD,
+    // bascule de vue) retrouve son estompage.
+    applyFocusDim();
   }
 
   function fitInternal(): void {
@@ -1086,13 +1339,64 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     animatePositions(prevPositions, layoutResult.positions);
   }
 
+  /** Tout ce qu'un changement de sélection repeint. Les enveloppes n'en font
+   * partie qu'en vue graphe, la seule qui en ait : ailleurs `clustersFor()`
+   * rend un tableau vide et le repeint serait un détour sans effet. */
+  function redrawSelection(): void {
+    if (view === "graph") redrawClusters();
+    redrawOverlay();
+    // Les arêtes portent la moitié de l'estompage : elles sont repeintes avec
+    // la nouvelle sélection, les cartes reçoivent leur filtre.
+    redrawEdges();
+    applyFocusDim();
+  }
+
   function doSelect(id: NodeId): void {
     if (!graph) return;
     const node = graph.nodes.get(id);
     if (!node) return;
-    selectedId = id;
-    redrawOverlay();
+    // Remplace une éventuelle sélection d'agrégat : les deux s'excluent, ce que
+    // le type porte déjà.
+    selection = { kind: "node", id };
+    redrawSelection();
     emitter.emit("select", node);
+  }
+
+  /**
+   * Sélectionne un AGRÉGAT entier : son enveloppe s'allume et tout ce qui ne lui
+   * parle pas s'estompe.
+   *
+   * Aucun événement public, à la différence de `doSelect`. `"select"` porte un
+   * `GraphNode` et un agrégat n'en est pas un ; en émettre un sur sa racine
+   * mentirait à l'hôte sur ce qui a été désigné, et inventer un événement
+   * d'agrégat agrandirait l'API pour un geste dont personne n'a encore demandé
+   * la notification.
+   *
+   * Un agrégat inconnu de l'index courant n'est pas sélectionnable : la garde
+   * évite d'installer une sélection que tous les lecteurs traiteraient ensuite
+   * comme absente.
+   */
+  function doSelectCluster(aggregateId: string): void {
+    if (view !== "graph" || !aggregateIndex?.aggregates.has(aggregateId)) return;
+    selection = { kind: "cluster", aggregateId };
+    redrawSelection();
+  }
+
+  /**
+   * Vide la sélection et défait tout ce qu'elle avait posé : l'anneau et les
+   * références surlignées de l'overlay, l'estompage des cartes, celui des
+   * arêtes, l'enveloppe allumée.
+   *
+   * Aucun événement public : la sélection est un état que l'hôte lit par
+   * `"select"`, et inventer un `"deselect"` ici agrandirait l'API pour un geste
+   * qui ne fait que revenir au repos. Sans sélection, il n'y a rien à défaire —
+   * d'où le retour immédiat, qui évite plusieurs repeints par touche Échap tapée
+   * dans le vide.
+   */
+  function doDeselect(): void {
+    if (selection === null) return;
+    selection = null;
+    redrawSelection();
   }
 
   /** Always emits "followRef" (even for a dangling edge, so a host can show
@@ -1205,6 +1509,34 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     return result;
   }
 
+  /** Le fond cliquable, glissé sous le monde. La `hitArea` est
+   * `app.renderer.screen`, que Pixi mute EN PLACE à chaque redimensionnement :
+   * la zone suit donc le canvas sans qu'on ait à la rafraîchir. Le container
+   * reste à l'origine du stage, hors du monde, donc ses coordonnées locales
+   * sont déjà celles de l'écran, quel que soit le zoom. */
+  function attachBackgroundDeselect(): void {
+    // Index 0 : sous le monde, donc consulté en dernier par le hit-testing, qui
+    // parcourt les enfants du plus haut au plus bas.
+    app.stage.addChildAt(createBackgroundHit(app.renderer.screen, doDeselect), 0);
+  }
+
+  /**
+   * Échap désélectionne. L'écouteur est posé sur `window` et non sur le canvas :
+   * la toile n'a pas le focus clavier (elle n'est pas focusable), donc un
+   * écouteur local ne verrait jamais la touche.
+   *
+   * Posé de façon SYNCHRONE, à la création, et retiré par `destroy()` : le
+   * poser dans l'initialisation asynchrone laisserait un `destroy()` appelé
+   * pendant celle-ci enregistrer l'écouteur APRÈS son propre retrait, et fuir
+   * pour le reste de la session. La garde `destroyed` couvre le reste.
+   */
+  const handleKeyDown = (event: KeyboardEvent): void => {
+    if (destroyed) return;
+    if (event.key !== "Escape") return;
+    doDeselect();
+  };
+  window.addEventListener("keydown", handleKeyDown);
+
   const ready = (async () => {
     await app.init({
       background: theme.surface.canvas,
@@ -1238,6 +1570,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
 
     container.appendChild(app.canvas);
     app.stage.addChild(world);
+    attachBackgroundDeselect();
     // Le pan de la toile, le déplacement d'une carte et celui d'une enveloppe
     // partent du même bouton : seul CE QU'ON PRESSE les départage, et la caméra
     // n'a aucun moyen de le savoir depuis ses écouteurs natifs. C'est donc le
@@ -1367,7 +1700,9 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     layoutResult = newLayout;
     currentConfig = config;
     refreshEntityAccents(config);
-    selectedId = null;
+    // Nodale comme d'agrégat : les deux sont indexées par une clé du graphe
+    // remplacé.
+    selection = null;
     searchResults = [];
     searchCursor = -1;
 
@@ -1504,9 +1839,19 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       if (!current) return;
       view = next;
 
-      // La vue graphe ne connaît que des entités : reporter la sélection sur
-      // l'entité englobante plutôt que de la perdre.
-      if (view === "graph" && selectedId) selectedId = nearestEntityAncestor(current, selectedId);
+      if (view === "graph") {
+        // La vue graphe ne connaît que des entités : reporter la sélection sur
+        // l'entité englobante plutôt que de la perdre.
+        if (selection?.kind === "node") {
+          const nearest = nearestEntityAncestor(current, selection.id);
+          selection = nearest === null ? null : { kind: "node", id: nearest };
+        }
+      } else if (selection?.kind === "cluster") {
+        // Symétrique, et sans report possible : une sélection d'agrégat n'a de
+        // sens que là où des enveloppes sont peintes. La reporter sur la racine
+        // de l'agrégat désignerait une carte que l'utilisateur n'a pas choisie.
+        selection = null;
+      }
 
       rebuild();
       // Recadrer ICI est légitime : les deux vues n'ont aucun repère commun.
@@ -1523,6 +1868,9 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       destroyed = true;
       camera?.dispose();
       camera = null;
+      // Le seul écouteur global qui ne soit pas porté par la caméra ni par le
+      // stage (que `app.destroy` emporte) : il faut le retirer à la main.
+      window.removeEventListener("keydown", handleKeyDown);
       // Libère la part de cette instance dans les atlas partagés : ils ne sont
       // désinstallés que si plus aucune autre instance ne les porte.
       fontLease.dispose();

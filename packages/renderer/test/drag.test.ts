@@ -1,8 +1,21 @@
 import { describe, it, expect } from "vitest";
-import { Container, type FederatedPointerEvent } from "pixi.js";
+import {
+  Container,
+  EventBoundary,
+  extensions,
+  FederatedContainer,
+  Graphics,
+  Rectangle,
+  type FederatedPointerEvent,
+} from "pixi.js";
 import type { NodeId, Rect } from "@defsquare/data-graph-core";
 import { attachDrag, TAP_THRESHOLD } from "../src/drag.js";
-import { attachTap, recomputeClusterCircle, translateCluster } from "../src/create.js";
+import {
+  attachTap,
+  createBackgroundHit,
+  recomputeClusterCircle,
+  translateCluster,
+} from "../src/create.js";
 import { drawClusterHitAreas } from "../src/draw.js";
 
 /** Un `FederatedPointerEvent` minimal : `attachDrag` et `attachTap` ne lisent
@@ -488,5 +501,183 @@ describe("drag d'une enveloppe", () => {
 
     expect(cluster).toEqual({ cx: 150, cy: 20, r: 180 });
     expect(positions.get("/a")).toMatchObject({ x: 0, y: 0 });
+  });
+});
+
+/**
+ * Le tap sur une enveloppe, qui SÉLECTIONNE l'agrégat. C'est le même partage que
+ * sur les cartes — `attachTap` en deçà du seuil, `attachDrag` au-delà —, monté
+ * ici sur la cible de saisie d'une enveloppe. Ce qu'on veut tenir : les deux
+ * câblages ne se marchent pas dessus, et le déplacement ne sélectionne jamais en
+ * passant.
+ */
+describe("tap sur une enveloppe", () => {
+  /** Reproduit le câblage de `redrawClusterHitAreas()` : drag, puis tap, puis
+   * le curseur de saisie reposé — c'est cet ordre qui est testé plus bas. */
+  function mount() {
+    let selections = 0;
+    let moves = 0;
+    const { container } = drawClusterHitAreas([{ cx: 0, cy: 0, r: 100 }])[0]!;
+    attachDrag(container, {
+      scale: () => 1,
+      onMove: () => {
+        moves++;
+      },
+    });
+    attachTap(container, () => {
+      selections++;
+    });
+    container.cursor = "grab";
+    return {
+      container,
+      get selections() {
+        return selections;
+      },
+      get moves() {
+        return moves;
+      },
+    };
+  }
+
+  it("selectionne l'agregat sur un clic net", () => {
+    const m = mount();
+    m.container.emit("pointerdown", pointer(50, 50));
+    m.container.emit("pointertap", pointer(50, 50));
+    expect(m.selections).toBe(1);
+    expect(m.moves).toBe(0);
+  });
+
+  it("tolere le geste EXACTEMENT au seuil", () => {
+    // Même égalité stricte que partout ailleurs : à 4 px pile, c'est encore un
+    // tap, et `attachDrag` n'a rien démarré.
+    const m = mount();
+    m.container.emit("pointerdown", pointer(50, 50));
+    m.container.emit("globalpointermove", pointer(50 + TAP_THRESHOLD, 50));
+    m.container.emit("pointertap", pointer(50 + TAP_THRESHOLD, 50));
+    expect(m.selections).toBe(1);
+    expect(m.moves).toBe(0);
+  });
+
+  it("ne selectionne pas quand le geste est devenu un deplacement", () => {
+    // Sans le seuil partagé, déplacer un agrégat le sélectionnerait aussi au
+    // relâchement — deux gestes pour le prix d'un.
+    const m = mount();
+    m.container.emit("pointerdown", pointer(50, 50));
+    m.container.emit("globalpointermove", pointer(50 + TAP_THRESHOLD + 1, 50));
+    m.container.emit("pointerup", pointer(50 + TAP_THRESHOLD + 1, 50));
+    m.container.emit("pointertap", pointer(50 + TAP_THRESHOLD + 1, 50));
+    expect(m.moves).toBeGreaterThan(0);
+    expect(m.selections).toBe(0);
+  });
+
+  it("garde la main ouverte malgre attachTap", () => {
+    // `attachTap` pose `"pointer"` : le câblage la repose en `"grab"` juste
+    // après, parce que le geste dominant du disque reste la saisie. L'ordre est
+    // ce qui le rend vrai, d'où ce test.
+    expect(mount().container.cursor).toBe("grab");
+  });
+
+  it("restaure la main ouverte apres un deplacement", () => {
+    // `attachDrag` capture le curseur au franchissement du seuil : il doit donc
+    // retrouver `"grab"` et pas le `"pointer"` d'`attachTap`.
+    const m = mount();
+    m.container.emit("pointerdown", pointer(50, 50));
+    m.container.emit("globalpointermove", pointer(80, 50));
+    expect(m.container.cursor).toBe("grabbing");
+    m.container.emit("pointerup", pointer(80, 50));
+    expect(m.container.cursor).toBe("grab");
+  });
+});
+
+/**
+ * Le tap sur le FOND de la toile, qui désélectionne. Deux mécanismes se
+ * partagent le même vide et le même bouton : le pan de la caméra (écouteurs DOM
+ * natifs) et ce tap-ci (événements fédérés Pixi). Ce qui les départage est le
+ * seuil de `TAP_THRESHOLD`, exactement comme entre `attachTap` et `attachDrag`.
+ */
+describe("tap sur le fond de la toile", () => {
+  /** Même minimalisme que `pointer` ci-dessus, plus la CIBLE : c'est elle qui
+   * distingue un tap sur le vide d'un tap remonté depuis une carte. */
+  function tap(x: number, y: number, target: Container): FederatedPointerEvent {
+    return { button: 0, global: { x, y }, target } as unknown as FederatedPointerEvent;
+  }
+
+  function mount() {
+    let taps = 0;
+    const background = createBackgroundHit(new Rectangle(0, 0, 800, 600), () => {
+      taps++;
+    });
+    return {
+      background,
+      get taps() {
+        return taps;
+      },
+    };
+  }
+
+  it("desélectionne sur un vrai tap du vide", () => {
+    const m = mount();
+    m.background.emit("pointerdown", tap(400, 300, m.background));
+    m.background.emit("pointertap", tap(400, 300, m.background));
+    expect(m.taps).toBe(1);
+  });
+
+  it("ne desélectionne pas quand le geste a depasse le seuil", () => {
+    // C'est un pan de la toile : il finit lui aussi par un `pointertap` sur le
+    // fond, et sans le seuil chaque déplacement de la vue viderait la
+    // sélection.
+    const m = mount();
+    m.background.emit("pointerdown", tap(400, 300, m.background));
+    m.background.emit("pointertap", tap(400 + TAP_THRESHOLD + 1, 300, m.background));
+    expect(m.taps).toBe(0);
+  });
+
+  it("tolere le geste EXACTEMENT au seuil", () => {
+    // Même égalité stricte que `attachTap` : à 4 px pile, c'est encore un tap.
+    const m = mount();
+    m.background.emit("pointerdown", tap(400, 300, m.background));
+    m.background.emit("pointertap", tap(400 + TAP_THRESHOLD, 300, m.background));
+    expect(m.taps).toBe(1);
+  });
+
+  it("ignore un tap remonte depuis une carte", () => {
+    // Le `pointertap` d'une carte remonte jusqu'au fond ; sans le test de
+    // cible, tout clic désélectionnerait juste après avoir sélectionné.
+    const m = mount();
+    const card = new Container();
+    m.background.emit("pointerdown", tap(400, 300, card));
+    m.background.emit("pointertap", tap(400, 300, card));
+    expect(m.taps).toBe(0);
+  });
+
+  it("n'est atteint par le hit-testing que sur le vide", () => {
+    // La raison d'être du calque dédié : le hit-testing de Pixi HÉRITE le mode
+    // d'événement en descendant. Un `app.stage` passé en `"static"` rendrait
+    // interactif le moindre Graphics décoratif, qui avalerait alors le clic de
+    // la carte qu'il recouvre. Ce test monte exactement cette scène — un
+    // surlignage plein écran AU-DESSUS d'une carte — et vérifie les deux
+    // réponses : la carte sous le décor, le fond sur le vide.
+    // Pixi n'installe la couche d'événements fédérés sur `Container` que via
+    // son extension de navigateur, absente sous l'environnement Node de
+    // vitest : sans ce mixin, `hitTestRecursive` échoue sur un
+    // `isInteractive` inexistant. On monte donc la MÊME couche que celle qui
+    // tourne dans le navigateur, plutôt que d'en simuler une.
+    extensions.mixin(Container, FederatedContainer);
+
+    const stage = new Container();
+    stage.addChild(createBackgroundHit(new Rectangle(0, 0, 800, 600), () => {}));
+    const background = stage.children[0]!;
+
+    const world = new Container();
+    const card = new Container();
+    card.eventMode = "static";
+    card.hitArea = new Rectangle(100, 100, 200, 60);
+    const decoration = new Graphics().rect(0, 0, 800, 600).fill("#ffffff");
+    world.addChild(card, decoration);
+    stage.addChild(world);
+
+    const boundary = new EventBoundary(stage);
+    expect(boundary.hitTest(150, 120)).toBe(card);
+    expect(boundary.hitTest(600, 500)).toBe(background);
   });
 });

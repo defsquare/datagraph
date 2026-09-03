@@ -11,6 +11,7 @@ import {
   type RefEdge,
 } from "@defsquare/data-graph-core";
 import type { Theme, TypeStyle } from "./theme.js";
+import { DIM_ALPHA } from "./focus.js";
 import { fontNameFor, type TextRole } from "./font-registry.js";
 
 export type { TextRole };
@@ -383,6 +384,25 @@ export type EdgeMode = "contain" | "ref";
  *
  * Renvoie un Graphics vide en LOD 2 (les arêtes ne sont ni lisibles ni
  * rentables à ce niveau de dézoom).
+ *
+ * `focusIds` estompe tout ce qui ne touche AUCUN des nœuds focalisés (la
+ * sélection, côté `create.ts`). Un `stroke()` ne porte qu'UN style, donc l'alpha
+ * ne peut pas se poser arête par arête sans rendre un appel de tracé par arête :
+ * chaque groupe de couleur se scinde en deux passes, l'estompée d'abord — les
+ * arêtes de la sélection passent ainsi par-dessus — puis la pleine. `focusIds`
+ * nul laisse la passe estompée vide, et le tracé est alors exactement celui
+ * d'avant l'estompage, à l'instruction près.
+ *
+ * Un ENSEMBLE et non un id unique, parce que la vue graphe a deux unités de
+ * sélection : une carte, dont l'ensemble est le singleton (et le rendu est alors
+ * strictement celui d'avant), et un agrégat, dont l'ensemble est celui de ses
+ * MEMBRES. Passer les membres — et non l'ensemble « lié » plus large de
+ * `clusterRelatedIds` — est ce qui donne la bonne lecture : les arêtes internes
+ * au bloc et celles qui le traversent restent pleines, tandis qu'une arête entre
+ * deux voisins extérieurs, qui ne dit rien du bloc, recule.
+ *
+ * La fonction reste PURE et ne prend que de la donnée nue : un ensemble d'ids,
+ * pas la notion de sélection ni l'état d'interface qui la porte.
  */
 export function drawEdges(
   graph: Graph,
@@ -390,92 +410,128 @@ export function drawEdges(
   theme: Theme,
   lod: Lod,
   mode: EdgeMode = "contain",
+  focusIds: ReadonlySet<NodeId> | null = null,
 ): Graphics {
   const g = new Graphics();
   if (lod === 2) return g;
+
+  /** L'arête appartient-elle à la passe d'alpha `full` ? Sans focus, tout est
+   * de la passe pleine et la passe estompée n'émet aucune instruction. */
+  const inPass = (from: NodeId, to: NodeId | null, full: boolean): boolean =>
+    (focusIds === null || focusIds.has(from) || (to !== null && focusIds.has(to))) === full;
+
+  // Estompée d'abord, pleine ensuite : les arêtes de la sélection sont ainsi
+  // peintes par-dessus les autres, dans un Graphics unique où seul l'ordre
+  // d'émission règle le recouvrement. Sans focus il n'y a qu'une passe — non
+  // par économie, mais pour que « aucun focus » et « tracé d'avant l'estompage »
+  // soient le même chemin de code, et pas deux qui doivent se ressembler.
+  const PASSES: { alpha: number; full: boolean }[] =
+    focusIds === null
+      ? [{ alpha: 1, full: true }]
+      : [
+          { alpha: DIM_ALPHA, full: false },
+          { alpha: 1, full: true },
+        ];
 
   // En mode `"ref"` (vue graphe), le containment n'est pas la relation montrée :
   // seules les références le sont. Deux entités imbriquées l'une dans l'autre
   // sont toutes deux positionnées, et tracer leur arête de containment
   // ajouterait une relation qui n'appartient pas à cette vue.
   if (mode === "contain") {
-    let hasContain = false;
-    for (const edge of graph.containEdges) {
+    for (const pass of PASSES) {
+      let hasContain = false;
+      for (const edge of graph.containEdges) {
+        if (!inPass(edge.from, edge.to, pass.full)) continue;
+        const from = positions.get(edge.from);
+        const to = positions.get(edge.to);
+        if (!from || !to) continue;
+        const x1 = from.x + from.width;
+        const y1 = from.y + from.height / 2;
+        const x2 = to.x;
+        const y2 = to.y + to.height / 2;
+        const dx = Math.max(24, (x2 - x1) / 2);
+        g.moveTo(x1, y1);
+        g.bezierCurveTo(x1 + dx, y1, x2 - dx, y2, x2, y2);
+        hasContain = true;
+      }
+      if (hasContain) {
+        g.stroke({ width: theme.strokes.edge, color: theme.edge.contain, alpha: pass.alpha });
+      }
+    }
+  }
+
+  for (const pass of PASSES) {
+    let hasRef = false;
+    const resolved: { x1: number; y1: number; x2: number; y2: number }[] = [];
+    for (const edge of graph.refEdges) {
+      if (edge.dangling || edge.to === null) continue;
+      if (!inPass(edge.from, edge.to, pass.full)) continue;
       const from = positions.get(edge.from);
       const to = positions.get(edge.to);
       if (!from || !to) continue;
+      // Chaque bout sort du côté qui fait face à l'autre carte, sinon la ligne
+      // passe sous la carte source (calque des arêtes au-dessous des cartes).
+      const fromCenter = centerOf(from);
+      const toCenter = centerOf(to);
+      const start = anchorOnRect(from, toCenter.x, toCenter.y);
+      const end = anchorOnRect(to, fromCenter.x, fromCenter.y);
+      const x1 = start.x;
+      const y1 = start.y;
+      const x2 = end.x;
+      const y2 = end.y;
+      // La ligne s'arrête au pied de la flèche pour ne pas la traverser.
+      const len = Math.hypot(x2 - x1, y2 - y1);
+      const t = len > ARROW_LENGTH ? (len - ARROW_LENGTH) / len : 1;
+      const ex = x1 + (x2 - x1) * t;
+      const ey = y1 + (y2 - y1) * t;
+      if (mode === "ref") {
+        // Vue graphe : la référence EST la relation montrée, pas une décoration
+        // posée au-dessus du containment. Le pointillé signifie « secondaire » ;
+        // il serait à contresens dans une vue dont c'est tout le propos. Trait
+        // plein, donc — un seul segment au lieu des N tirets de `dashedLine`,
+        // ce qui rend les deux modes distinguables au comptage d'instructions.
+        g.moveTo(x1, y1);
+        g.lineTo(ex, ey);
+      } else {
+        dashedLine(g, x1, y1, ex, ey);
+      }
+      resolved.push({ x1, y1, x2, y2 });
+      hasRef = true;
+    }
+    if (hasRef) {
+      // Les têtes de flèche sont des triangles pleins : leur `fill()` ne peut
+      // pas partager le `stroke()` des traits, et suit donc son alpha de passe.
+      g.stroke({ width: theme.strokes.edge, color: theme.edge.ref, alpha: pass.alpha });
+      for (const r of resolved) arrowHead(g, r.x1, r.y1, r.x2, r.y2);
+      g.fill({ color: theme.edge.ref, alpha: pass.alpha });
+    }
+  }
+
+  for (const pass of PASSES) {
+    let hasDangling = false;
+    for (const edge of graph.refEdges) {
+      if (!edge.dangling) continue;
+      // Un moignon ne touche le focus que par sa SOURCE : son autre bout ne
+      // mène nulle part, et `inPass` ne peut donc l'apparier à personne.
+      if (!inPass(edge.from, edge.to, pass.full)) continue;
+      const from = positions.get(edge.from);
+      if (!from) continue;
       const x1 = from.x + from.width;
       const y1 = from.y + from.height / 2;
-      const x2 = to.x;
-      const y2 = to.y + to.height / 2;
-      const dx = Math.max(24, (x2 - x1) / 2);
-      g.moveTo(x1, y1);
-      g.bezierCurveTo(x1 + dx, y1, x2 - dx, y2, x2, y2);
-      hasContain = true;
+      const x2 = x1 + DANGLING_STUB_LENGTH;
+      const y2 = y1;
+      dashedLine(g, x1, y1, x2, y2);
+      const r = DANGLING_CROSS_RADIUS;
+      g.moveTo(x2 - r, y2 - r);
+      g.lineTo(x2 + r, y2 + r);
+      g.moveTo(x2 + r, y2 - r);
+      g.lineTo(x2 - r, y2 + r);
+      hasDangling = true;
     }
-    if (hasContain) g.stroke({ width: theme.strokes.edge, color: theme.edge.contain });
-  }
-
-  let hasRef = false;
-  const resolved: { x1: number; y1: number; x2: number; y2: number }[] = [];
-  for (const edge of graph.refEdges) {
-    if (edge.dangling || edge.to === null) continue;
-    const from = positions.get(edge.from);
-    const to = positions.get(edge.to);
-    if (!from || !to) continue;
-    // Chaque bout sort du côté qui fait face à l'autre carte, sinon la ligne
-    // passe sous la carte source (calque des arêtes au-dessous des cartes).
-    const fromCenter = centerOf(from);
-    const toCenter = centerOf(to);
-    const start = anchorOnRect(from, toCenter.x, toCenter.y);
-    const end = anchorOnRect(to, fromCenter.x, fromCenter.y);
-    const x1 = start.x;
-    const y1 = start.y;
-    const x2 = end.x;
-    const y2 = end.y;
-    // La ligne s'arrête au pied de la flèche pour ne pas la traverser.
-    const len = Math.hypot(x2 - x1, y2 - y1);
-    const t = len > ARROW_LENGTH ? (len - ARROW_LENGTH) / len : 1;
-    const ex = x1 + (x2 - x1) * t;
-    const ey = y1 + (y2 - y1) * t;
-    if (mode === "ref") {
-      // Vue graphe : la référence EST la relation montrée, pas une décoration
-      // posée au-dessus du containment. Le pointillé signifie « secondaire » ;
-      // il serait à contresens dans une vue dont c'est tout le propos. Trait
-      // plein, donc — un seul segment au lieu des N tirets de `dashedLine`,
-      // ce qui rend les deux modes distinguables au comptage d'instructions.
-      g.moveTo(x1, y1);
-      g.lineTo(ex, ey);
-    } else {
-      dashedLine(g, x1, y1, ex, ey);
+    if (hasDangling) {
+      g.stroke({ width: theme.strokes.edge, color: theme.edge.dangling, alpha: pass.alpha });
     }
-    resolved.push({ x1, y1, x2, y2 });
-    hasRef = true;
   }
-  if (hasRef) {
-    g.stroke({ width: theme.strokes.edge, color: theme.edge.ref });
-    for (const r of resolved) arrowHead(g, r.x1, r.y1, r.x2, r.y2);
-    g.fill(theme.edge.ref);
-  }
-
-  let hasDangling = false;
-  for (const edge of graph.refEdges) {
-    if (!edge.dangling) continue;
-    const from = positions.get(edge.from);
-    if (!from) continue;
-    const x1 = from.x + from.width;
-    const y1 = from.y + from.height / 2;
-    const x2 = x1 + DANGLING_STUB_LENGTH;
-    const y2 = y1;
-    dashedLine(g, x1, y1, x2, y2);
-    const r = DANGLING_CROSS_RADIUS;
-    g.moveTo(x2 - r, y2 - r);
-    g.lineTo(x2 + r, y2 + r);
-    g.moveTo(x2 + r, y2 - r);
-    g.lineTo(x2 - r, y2 + r);
-    hasDangling = true;
-  }
-  if (hasDangling) g.stroke({ width: theme.strokes.edge, color: theme.edge.dangling });
 
   return g;
 }
@@ -665,6 +721,19 @@ export function drawClusters(
      * deux fois et la montée partirait mollement.
      */
     hover?: number;
+    /**
+     * Vrai quand l'enveloppe n'a aucun lien avec la sélection courante : ses
+     * deux alphas sont alors multipliés par `DIM_ALPHA`. Absent vaut faux, donc
+     * un appelant qui ignore le champ obtient le rendu d'avant l'estompage.
+     *
+     * Un BOOLÉEN et pas un facteur numérique : l'estompage n'a que deux états —
+     * la question posée à `focus.ts` est « lié ou pas », jamais « à quel point ».
+     * Un facteur laisserait chaque appelant choisir le sien, et c'est justement
+     * ce que `DIM_ALPHA` interdit pour que cartes, arêtes et enveloppes reculent
+     * du même pas. Qui décide reste `create.ts` (`clustersFor`), qui seul
+     * connaît la sélection ; ce qu'on peint alors est fixé ici.
+     */
+    dim?: boolean;
   }[],
   theme: Theme,
 ): Graphics {
@@ -676,13 +745,26 @@ export function drawClusters(
     // mais un alpha > 1 ou négatif ne serait pas seulement laid, il serait
     // invalide pour le renderer.
     const t = Math.min(1, Math.max(0, cluster.hover ?? 0));
+    // L'estompage MULTIPLIE l'état de survol au lieu de s'y substituer : une
+    // enveloppe estompée que le pointeur traverse répond quand même, en restant
+    // au fond. Le survol dit « celle-ci est saisissable », l'estompage « celle-ci
+    // ne parle pas à la sélection » — deux informations qui ne s'annulent pas.
+    const dim = cluster.dim === true ? DIM_ALPHA : 1;
     g.circle(cx, cy, r);
     // Les trois paliers montent ensemble : le fond seul ferait une tache sans
     // contour net, le contour seul un cerne sans corps. C'est leur montée
     // simultanée qui fait lire l'enveloppe comme un objet qu'on peut saisir —
     // ce qu'elle est, puisque c'est ce disque qui déplace l'agrégat entier.
-    g.fill({ color: cluster.color, alpha: 0.08 + t * (0.15 - 0.08) });
-    g.stroke({ width: 1.5 + t * (2 - 1.5), color: cluster.color, alpha: 0.35 + t * (0.6 - 0.35) });
+    //
+    // L'ÉPAISSEUR du trait, elle, échappe à l'estompage : elle dit la taille de
+    // l'objet, pas son importance, et l'amincir en plus de le pâlir ferait
+    // rentrer l'enveloppe estompée dans la précision du sub-pixel.
+    g.fill({ color: cluster.color, alpha: (0.08 + t * (0.15 - 0.08)) * dim });
+    g.stroke({
+      width: 1.5 + t * (2 - 1.5),
+      color: cluster.color,
+      alpha: (0.35 + t * (0.6 - 0.35)) * dim,
+    });
   }
   return g;
 }
@@ -717,9 +799,11 @@ export function drawClusterHitAreas<T extends { cx: number; cy: number; r: numbe
     container.position.set(cluster.cx, cluster.cy);
     container.hitArea = new Circle(0, 0, cluster.r);
     container.eventMode = "static";
-    // `grab` et non `pointer` : ce disque ne mène nulle part et ne sélectionne
-    // rien, il se saisit. Le passage à `grabbing` pendant le geste est déjà
-    // porté par `attachDrag`.
+    // `grab` et non `pointer` : un tap sur ce disque sélectionne bien son
+    // agrégat, mais le geste DOMINANT reste la saisie — le tap n'en est que
+    // l'en-deçà, sous le seuil. `create.ts` repose ce curseur après
+    // `attachTap`, qui le remplacerait par `pointer`. Le passage à `grabbing`
+    // pendant le geste est déjà porté par `attachDrag`.
     container.cursor = "grab";
     hits.push({ cluster, container });
   }

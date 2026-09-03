@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildGraph } from "@defsquare/data-graph-core";
 import { anchorOnRect, drawEdgeHitAreas, drawEdges, drawSelectionOverlay } from "../src/draw.js";
+import { DIM_ALPHA } from "../src/focus.js";
 import { resolveTheme } from "../src/theme.js";
 import { shopData, shopConfig } from "./fixtures.js";
 
@@ -100,6 +101,195 @@ describe("drawEdges — mode structure vs mode graphe", () => {
     for (const mode of ["contain", "ref"] as const) {
       expect(drawEdges(graph, positions, theme, 2, mode).context.instructions.length).toBe(0);
     }
+  });
+});
+
+/**
+ * L'estompage : quand une carte est sélectionnée, une arête qui ne la touche
+ * pas recule au second plan. Un `stroke()` ne porte qu'un seul style, donc
+ * l'alpha ne peut pas se poser arête par arête : chaque groupe de couleur se
+ * scinde en DEUX passes, l'estompée puis la pleine, et c'est ce découpage que
+ * le test observe — le nombre d'instructions et l'alpha de chacune.
+ *
+ * Le focus est un ENSEMBLE d'ids depuis que l'agrégat est lui aussi
+ * sélectionnable. Ce bloc-ci ne passe que des SINGLETONS : c'est la sélection
+ * d'une carte, et il tient qu'elle rend exactement ce qu'elle rendait quand la
+ * signature portait un id unique. Le cas à plusieurs ids a son propre bloc plus
+ * bas.
+ */
+describe("drawEdges — estompage autour du focus", () => {
+  const theme = resolveTheme(undefined);
+  const graph = buildGraph(shopData, shopConfig);
+
+  const positions = new Map<string, { x: number; y: number; width: number; height: number }>();
+  let i = 0;
+  for (const id of graph.nodes.keys()) {
+    positions.set(id, { x: (i % 4) * 400, y: Math.floor(i / 4) * 200, width: 160, height: 60 });
+    i++;
+  }
+
+  /** L'action et l'alpha de chaque instruction, dans l'ordre d'émission. */
+  function passes(g: ReturnType<typeof drawEdges>): [string, number][] {
+    return (g.context.instructions as any[]).map((x) => [x.action, x.data.style.alpha]);
+  }
+
+  // La seule référence résolue du fixture part de `/orders/0`, la seule cassée
+  // de `/orders/1` : focaliser l'une ou l'autre suffit à couvrir les deux
+  // côtés de chaque groupe.
+  const SOURCE = "/orders/0";
+  const ELSEWHERE = "/customers/1";
+
+  it("draws exactly as before when nothing is focused", () => {
+    // Garde de non-régression : `focusIds` est optionnel, et l'omettre ou passer
+    // `null` doit rendre le tracé d'avant la fonctionnalité, à l'instruction
+    // près — donc aucune passe estompée, puisqu'il n'y a rien à estomper.
+    const none = drawEdges(graph, positions, theme, 0, "contain");
+    const explicit = drawEdges(graph, positions, theme, 0, "contain", null);
+    expect(passes(explicit)).toEqual(passes(none));
+    expect(passes(none)).toEqual([
+      ["stroke", 1],
+      ["stroke", 1],
+      ["fill", 1],
+      ["stroke", 1],
+    ]);
+  });
+
+  it("splits containment into a dimmed and a full pass around the focus", () => {
+    const g = drawEdges(graph, positions, theme, 0, "contain", new Set([SOURCE]));
+    // Containment estompé puis plein, la référence sortante du focus (trait +
+    // tête de flèche) à pleine opacité, et le moignon d'`/orders/1`, qui ne
+    // touche pas le focus, estompé.
+    expect(passes(g)).toEqual([
+      ["stroke", DIM_ALPHA],
+      ["stroke", 1],
+      ["stroke", 1],
+      ["fill", 1],
+      ["stroke", DIM_ALPHA],
+    ]);
+  });
+
+  it("dims a reference that touches neither end of the focus", () => {
+    const g = drawEdges(graph, positions, theme, 0, "contain", new Set([ELSEWHERE]));
+    // `/customers/1` n'est ni la source ni la cible de la référence résolue :
+    // trait ET tête de flèche reculent, y compris le moignon.
+    expect(passes(g)).toEqual([
+      ["stroke", DIM_ALPHA],
+      ["stroke", 1],
+      ["stroke", DIM_ALPHA],
+      ["fill", DIM_ALPHA],
+      ["stroke", DIM_ALPHA],
+    ]);
+  });
+
+  it("keeps a reference at full opacity from its TARGET as well", () => {
+    // Une référence entrante lie autant que sortante : la cible sélectionnée
+    // doit garder son arête au premier plan.
+    const g = drawEdges(graph, positions, theme, 0, "ref", new Set(["/customers/0"]));
+    expect(passes(g)).toEqual([
+      ["stroke", 1],
+      ["fill", 1],
+      ["stroke", DIM_ALPHA],
+    ]);
+  });
+
+  it("still draws no containment in ref mode, focused or not", () => {
+    const g = drawEdges(graph, positions, theme, 0, "ref", new Set([SOURCE]));
+    // Trois instructions : la référence du focus (trait + flèche) et le
+    // moignon estompé. Aucune passe de containment, ni pleine ni estompée.
+    expect(passes(g)).toHaveLength(3);
+  });
+
+  it("draws nothing at LOD 2, focus or not", () => {
+    expect(drawEdges(graph, positions, theme, 2, "contain", new Set([SOURCE])).context.instructions).toHaveLength(0);
+  });
+});
+
+/**
+ * Le focus à PLUSIEURS ids : c'est ce que passe la sélection d'un agrégat, dont
+ * l'ensemble est celui de ses MEMBRES. La règle est la même qu'au singleton —
+ * une arête est pleine si l'un de ses bouts est dans l'ensemble —, mais elle
+ * produit alors une lecture que le singleton ne peut pas donner : les arêtes
+ * INTERNES au bloc et celles qui le TRAVERSENT restent pleines, et seules celles
+ * dont aucun bout n'appartient au bloc reculent.
+ */
+describe("drawEdges — estompage autour d'un ensemble de membres", () => {
+  const theme = resolveTheme(undefined);
+  const graph = buildGraph(shopData, shopConfig);
+
+  const positions = new Map<string, { x: number; y: number; width: number; height: number }>();
+  let i = 0;
+  for (const id of graph.nodes.keys()) {
+    positions.set(id, { x: (i % 4) * 400, y: Math.floor(i / 4) * 200, width: 160, height: 60 });
+    i++;
+  }
+
+  function passes(g: ReturnType<typeof drawEdges>): [string, number][] {
+    return (g.context.instructions as any[]).map((x) => [x.action, x.data.style.alpha]);
+  }
+
+  it("garde pleine chaque arête dont UN bout est dans l'ensemble", () => {
+    // Un bloc qui tiendrait les deux commandes : la référence résolue part de
+    // l'un, le moignon de l'autre, donc plus rien n'est estompé — là où le
+    // singleton `/orders/0` laissait le moignon d'`/orders/1` en arrière (voir
+    // le bloc précédent).
+    const both = new Set(["/orders/0", "/orders/1"]);
+    expect(passes(drawEdges(graph, positions, theme, 0, "ref", both))).toEqual([
+      ["stroke", 1],
+      ["fill", 1],
+      ["stroke", 1],
+    ]);
+    // La preuve que c'est bien l'appartenance du SECOND id qui l'a rendu plein.
+    expect(passes(drawEdges(graph, positions, theme, 0, "ref", new Set(["/orders/0"])))).toEqual([
+      ["stroke", 1],
+      ["fill", 1],
+      ["stroke", DIM_ALPHA],
+    ]);
+  });
+
+  it("garde pleine une arête TRAVERSANTE, prise par sa cible", () => {
+    // Un bloc côté clients : la référence entre dans le bloc sans en partir, et
+    // reste pleine. Le moignon, lui, ne le touche par aucun bout.
+    const customers = new Set(["/customers/0", "/customers/1"]);
+    expect(passes(drawEdges(graph, positions, theme, 0, "ref", customers))).toEqual([
+      ["stroke", 1],
+      ["fill", 1],
+      ["stroke", DIM_ALPHA],
+    ]);
+  });
+
+  it("estompe tout quand l'ensemble ne touche aucune arête", () => {
+    // Un bloc de nœuds sans aucune référence : rien ne lui parle, donc tout
+    // recule — y compris la tête de flèche, qui suit l'alpha de sa passe.
+    const unrelated = new Set(["/orders/0/lines/0", "/orders/0/lines/1"]);
+    expect(passes(drawEdges(graph, positions, theme, 0, "ref", unrelated))).toEqual([
+      ["stroke", DIM_ALPHA],
+      ["fill", DIM_ALPHA],
+      ["stroke", DIM_ALPHA],
+    ]);
+  });
+
+  it("scinde aussi le containment en deux passes", () => {
+    // Même découpage qu'au singleton : un ensemble non nul suffit à ouvrir la
+    // passe estompée, quel que soit son cardinal.
+    const g = drawEdges(graph, positions, theme, 0, "contain", new Set(["/orders/0", "/orders/1"]));
+    expect(passes(g)).toEqual([
+      ["stroke", DIM_ALPHA],
+      ["stroke", 1],
+      ["stroke", 1],
+      ["fill", 1],
+      ["stroke", 1],
+    ]);
+  });
+
+  it("estompe tout avec un ensemble VIDE, qui n'est pas l'absence de focus", () => {
+    // `null` dit « aucune sélection », l'ensemble vide dirait « une sélection
+    // que personne ne touche ». Les deux ne peuvent pas se confondre, sans quoi
+    // un agrégat introuvable rendrait le graphe entier au premier plan.
+    expect(passes(drawEdges(graph, positions, theme, 0, "ref", new Set()))).toEqual([
+      ["stroke", DIM_ALPHA],
+      ["fill", DIM_ALPHA],
+      ["stroke", DIM_ALPHA],
+    ]);
   });
 });
 

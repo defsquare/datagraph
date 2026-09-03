@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { Circle } from "pixi.js";
 import { drawClusterHitAreas, drawClusters } from "../src/draw.js";
+import { DIM_ALPHA } from "../src/focus.js";
 import { resolveTheme } from "../src/theme.js";
 
 describe("drawClusters", () => {
@@ -102,6 +103,60 @@ describe("drawClusters", () => {
     expect(s[2]!.alpha).toBeCloseTo(0.08, 6);
   });
 
+  it("peint pleinement quand aucun estompage n'est demande", () => {
+    // Le champ est optionnel, comme `hover` : un appelant qui l'ignore obtient
+    // exactement le rendu d'avant l'estompage. C'est aussi le cas « aucune
+    // selection », que `clustersFor` traduit par `dim: false` partout.
+    const [fill, stroke] = styles(
+      drawClusters([{ circle: { cx: 0, cy: 0, r: 10 }, color: "#f00", dim: false }], theme),
+    );
+    expect(fill!.alpha).toBeCloseTo(0.08, 6);
+    expect(stroke!.alpha).toBeCloseTo(0.35, 6);
+  });
+
+  it("estompe fond et contour d'une enveloppe sans lien avec la selection", () => {
+    const [fill, stroke] = styles(
+      drawClusters([{ circle: { cx: 0, cy: 0, r: 10 }, color: "#f00", dim: true }], theme),
+    );
+    expect(fill!.alpha).toBeCloseTo(0.08 * DIM_ALPHA, 6);
+    expect(stroke!.alpha).toBeCloseTo(0.35 * DIM_ALPHA, 6);
+  });
+
+  it("laisse l'epaisseur du trait intacte en estompant", () => {
+    // L'epaisseur dit la taille de l'objet, pas son importance : l'amincir en
+    // plus de le palir ferait rentrer l'enveloppe dans le sub-pixel.
+    const [, stroke] = styles(
+      drawClusters([{ circle: { cx: 0, cy: 0, r: 10 }, color: "#f00", dim: true }], theme),
+    );
+    expect(stroke!.width).toBeCloseTo(1.5, 6);
+  });
+
+  it("multiplie l'estompage par l'intensite de survol au lieu de s'y substituer", () => {
+    // Une enveloppe estompee que le pointeur traverse repond quand meme, en
+    // restant au fond : les deux informations ne s'annulent pas.
+    const [fill, stroke] = styles(
+      drawClusters([{ circle: { cx: 0, cy: 0, r: 10 }, color: "#f00", hover: 1, dim: true }], theme),
+    );
+    expect(fill!.alpha).toBeCloseTo(0.15 * DIM_ALPHA, 6);
+    expect(stroke!.alpha).toBeCloseTo(0.6 * DIM_ALPHA, 6);
+  });
+
+  it("n'estompe que l'enveloppe qui le demande", () => {
+    // Le rendu est par enveloppe : estomper l'une ne doit pas faire reculer sa
+    // voisine, peinte dans le meme Graphics.
+    const s = styles(
+      drawClusters(
+        [
+          { circle: { cx: 0, cy: 0, r: 10 }, color: "#f00", dim: true },
+          { circle: { cx: 100, cy: 0, r: 10 }, color: "#0f0", dim: false },
+        ],
+        theme,
+      ),
+    );
+    expect(s[0]!.alpha).toBeCloseTo(0.08 * DIM_ALPHA, 6);
+    expect(s[2]!.alpha).toBeCloseTo(0.08, 6);
+  });
+
   it("skips a circle of non-positive radius", () => {
     const g = drawClusters([{ circle: { cx: 10, cy: 10, r: 0 }, color: "#fff" }], theme);
     // Aucune instruction émise : un disque de rayon nul n'est pas une surface.
@@ -153,12 +208,14 @@ describe("drawClusterHitAreas", () => {
     expect(hit.cursor).toBe("grab");
   });
 
-  it("n'ecoute aucun tap : une enveloppe ne se selectionne pas", () => {
-    // Un tap sur une enveloppe doit rester inerte. Le prouver par l'absence
-    // d'ecouteur plutot que par un clic simule : c'est la propriete qu'on veut
-    // tenir, et elle ne depend d'aucun seuil.
+  it("ne cable aucun comportement : la cible est nue", () => {
+    // Un tap sur une enveloppe selectionne bien son agregat, mais c'est
+    // `create.ts` qui le cable — comme le drag et le survol. Cette fonction-ci
+    // ne rend qu'une geometrie sensible au pointeur, sans quoi elle ne se
+    // testerait plus sans index d'agregats ni instance.
     const hit = drawClusterHitAreas([{ cx: 0, cy: 0, r: 10 }])[0]!.container;
     expect(hit.listenerCount("pointertap")).toBe(0);
+    expect(hit.listenerCount("pointerdown")).toBe(0);
   });
 
   it("ignore un rayon non positif", () => {

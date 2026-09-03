@@ -163,7 +163,7 @@ Returned by `createDataGraph(container, options)`.
 | `expand(id): Promise<void>` | **Structure-view operation.** Expands a node (reveals its children), re-lays-out, and animates the transition. In the graph view it updates the (invisible) containment state but has no visible effect — see [graph view](./packages/renderer/README.md#graph-view). |
 | `collapse(id): Promise<void>` | **Structure-view operation.** Collapses a node (hides its children) and animates the transition. Same graph-view caveat as `expand`. |
 | `focus(id)` | Expands every collapsed ancestor of `id` as needed, then centers the camera on it. |
-| `select(id)` | Marks a node as selected (drawn with a selection overlay) and emits a `select` event. |
+| `select(id)` | Marks a node as selected (drawn with a selection overlay, everything unrelated dimmed — cards, edges, and the graph view's aggregate envelopes) and emits a `select` event. In the graph view a click on an aggregate's envelope selects that whole aggregate instead — same dimming, no event, and either selection replaces the other. Clicking the empty background or pressing <kbd>Esc</kbd> clears the selection — see [dimming](./packages/renderer/README.md#navigation). |
 | `search(query): SearchResult[]` | Full-text search across every node label, entity id, and row key/value; returns all matches and resets the next/prev cursor. |
 | `nextMatch(): SearchResult \| null` | Advances to the next search result (circular), auto-expanding and focusing it. |
 | `prevMatch(): SearchResult \| null` | Same as `nextMatch`, in reverse. |
@@ -173,7 +173,7 @@ Returned by `createDataGraph(container, options)`.
 | `stats(): { logicalNodeCount, visibleNodeCount }` | Counters for a host status bar: `logicalNodeCount` is every node in the built graph, `visibleNodeCount` is how many are currently expanded/rendered. |
 | `refEdges(from): RefEdge[]` | The outgoing reference edges of node `from`, so a host can offer "follow reference" affordances without knowing graph internals. |
 | `setTheme(theme)` | Replaces the theme and redraws, without rerunning layout or re-measuring fonts. Accepts a full `Theme` or a `ThemeOverride`, merged via `resolveTheme` against the theme currently in effect — a `byEntityType` set earlier survives a plain theme swap. Safe for toggling between themes that share the same `typography`/`fonts` (e.g. a light/dark pair); changing those two groups needs a fresh `createDataGraph`. |
-| `setView(view): Promise<void>` | Switches between `"structure"` and `"graph"`. The first switch to `"graph"` dynamically imports the graph-view engine and computes aggregates, hence the promise — see [performance budgets](#performance-budgets) and the [renderer's graph view docs](./packages/renderer/README.md#graph-view). The current selection is carried over onto the nearest entity ancestor, since the graph view only knows entities. |
+| `setView(view): Promise<void>` | Switches between `"structure"` and `"graph"`. The first switch to `"graph"` dynamically imports the graph-view engine and computes aggregates, hence the promise — see [performance budgets](#performance-budgets) and the [renderer's graph view docs](./packages/renderer/README.md#graph-view). A card selection is carried over onto the nearest entity ancestor, since the graph view only knows entities; an *aggregate* selection is dropped on the way out, having no meaning outside the graph view. |
 | `currentView(): DataGraphView` | Returns `"structure"` or `"graph"`, whichever is active. |
 | `destroy()` | Tears down the Pixi application and releases all resources. |
 
@@ -181,7 +181,8 @@ Returned by `createDataGraph(container, options)`.
 `createDataGraph` time; `setView`/`currentView` switch and query it afterwards. The graph view folds
 nothing: every entity is always visible there, and a header click just selects the card. `expand`/
 `collapse` remain structure-view-only. Cards can be dragged in both views; in the graph view,
-dragging an aggregate's envelope moves the whole aggregate rigidly. Neither is persisted — the next
+dragging an aggregate's envelope moves the whole aggregate rigidly, and clicking it (below the same
+4 px threshold) selects the whole aggregate. Neither drag is persisted — the next
 relayout recomputes positions (see the
 [renderer's Navigation section](./packages/renderer/README.md#navigation)).
 
