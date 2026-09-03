@@ -14,12 +14,13 @@ Deux exceptions rétablissent la délégation quel que soit le modèle : un skil
 - Tests : `pnpm test` (racine, tous les packages) ou `pnpm --filter @defsquare/data-graph test` (le package renderer s'appelle `@defsquare/data-graph`, core `@defsquare/data-graph-core`)
 - Typecheck : `pnpm typecheck`
 - Build : `pnpm build`
+- Desktop : `pnpm --filter demo tauri dev` / `tauri build` (Tauri v2, toolchain Rust requise) — le build produit un binaire brut `apps/demo/src-tauri/target/release/data-graph` (`bundle.active: false`, pas de `.app`/`.dmg` : l'app se lance depuis le shell)
 
 ## Structure
 
 - `packages/core` — graphe, layout (ELK + moteur deux niveaux pour la vue graphe), agrégats, recherche
 - `packages/renderer` — rendu Pixi v8 (`create.ts` orchestration, `draw.ts` dessin pur, `camera.ts`, `drag.ts`, `hover.ts`)
-- `apps/demo` — démo Vite
+- `apps/demo` — démo Vite + coquille desktop Tauri v2 (`src-tauri/`, boilerplate sans commande Rust custom : tout est frontend)
 
 ## Conventions
 

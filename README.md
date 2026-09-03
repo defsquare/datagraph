@@ -540,6 +540,7 @@ data-graph/
 │   └── renderer/  @defsquare/data-graph — Pixi.js renderer, themes
 ├── apps/
 │   └── demo/      Vite app demonstrating the renderer + Playwright e2e
+│       └── src-tauri/  Tauri v2 desktop shell around the demo (ships as a raw binary)
 ├── LICENSE
 └── README.md
 ```
@@ -556,7 +557,15 @@ pnpm bench          # non-blocking perf bench (packages/core/bench/bench.ts)
 
 pnpm --filter demo dev   # run the demo app locally
 pnpm --filter demo e2e   # Playwright e2e — build the renderer FIRST
+
+pnpm --filter demo tauri dev    # demo as a desktop app (Tauri v2) — needs a Rust toolchain
+pnpm --filter demo tauri build  # standalone binary: apps/demo/src-tauri/target/release/data-graph
 ```
+
+**Desktop shell.** The demo doubles as a Tauri v2 desktop app: the Vite `dist/`
+is embedded into a single binary (`bundle.active: false` — no `.app`/`.dmg`,
+it is meant to be launched from a shell). The web demo is unaffected;
+`vite.config.ts` needs no Tauri-specific `base`.
 
 **Build before test.** Two suites read build output, and `dist/` is gitignored,
 so on a fresh clone both fail until something has been built:
