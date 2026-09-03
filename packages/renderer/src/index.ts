@@ -37,6 +37,9 @@ export {
   drawEdges,
   drawEdgeHitAreas,
   drawEdgeLabels,
+  edgeLabelPlacements,
+  edgeLabelPosition,
+  labelParamInView,
   drawClusters,
   drawClusterHitAreas,
   drawSelectionOverlay,
@@ -47,7 +50,7 @@ export {
   charWidthFor,
   truncateToWidth,
 } from "./draw.js";
-export type { Lod, EdgeHit, EdgeMode, TextRole } from "./draw.js";
+export type { Lod, EdgeHit, EdgeLabelPlacement, EdgeMode, TextRole } from "./draw.js";
 
 export { measureFontMetrics, fontsReady } from "./font-metrics.js";
 

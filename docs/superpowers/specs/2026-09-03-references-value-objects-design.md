@@ -188,3 +188,39 @@ caché était donc **tracée mais sans zone de clic ni surlignage possible**.
 - Le **surlignage de sélection** suit la même règle d'appartenance que les
   étiquettes (`from` OU `fromEntity`) : sélectionner l'entité étiquetait une
   arête hissée sans la surligner — deux réponses contradictoires au même geste.
+
+### Étiquettes glissantes le long du lien
+
+**Le problème.** L'étiquette posée au premier tiers du lien est parfaite tant
+qu'on voit l'arête entière. Elle devient inutile dès qu'on suit le lien : on
+zoome près de la **cible**, on voit un trait arriver, et il ne dit pas de quelle
+référence il s'agit — la pilule est restée derrière, hors cadre, du côté de la
+source. Il faut dézoomer, remonter jusqu'à la source, lire, et revenir. Le geste
+naturel de lecture d'un graphe est exactement celui que l'étiquette punit.
+
+**La décision.** L'étiquette **glisse le long de son propre trait pour rester
+dans le viewport**, comme le nom d'une route sur une carte. Elle ne quitte jamais
+son lien : elle se déplace dessus, donc elle continue de désigner sans ambiguïté
+l'arête qu'elle annote.
+
+**L'invariant de repos.** Tant que l'arête tient **entièrement** à l'écran, rien
+ne bouge : l'étiquette reste à sa fraction de base (0.38 + 0.14 par étiquette).
+Le glissement n'est déclenché que par ce qui le justifie — une partie du lien
+sortie du cadre. C'est ce qui empêche la fonctionnalité de se faire remarquer
+quand elle n'a rien à apporter.
+
+**La mécanique.** `draw.ts` se scinde en donnée et dessin :
+`edgeLabelPlacements` (pur) rend `{ text, start, end, fraction }` — les mêmes
+règles de sélection et de texte qu'avant, extraites du dessin ;
+`drawEdgeLabels(placements, …)` rend un **sous-conteneur par étiquette**, pilule
+et texte dessinés autour de son origine locale. Reposer une étiquette n'est
+alors qu'un `position.set` : recréer un `Text` à chaque image d'un pan serait le
+vrai coût de tout ceci. `labelParamInView(start, end, baseT, view, marginWorld)`
+coupe le segment contre le rect visible (Liang-Barsky) et rend la fraction :
+`baseT` si l'arête est entièrement visible ou n'intersecte pas le cadre, sinon
+`baseT` borné à `[t0 + marge, t1 − marge]`, ou le milieu du tronçon quand il est
+plus court que deux marges. `Camera.worldViewport(viewport)` donne le cadre en
+coordonnées monde. Côté `create.ts`, le rappel de ticker **existant** (celui qui
+surveille le LOD) constate le changement de transformation caméra et repose les
+sous-conteneurs — et ne fait **rien** quand il n'y a pas d'étiquette, ce qui est
+l'état le plus fréquent.

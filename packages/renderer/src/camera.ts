@@ -143,6 +143,27 @@ export class Camera {
     return this.currentScale;
   }
 
+  /**
+   * Le rectangle du MONDE actuellement visible dans `viewport`, c'est-à-dire
+   * l'inverse exact de la transformation que la caméra pose sur le stage
+   * (`applyScaleAndCenter`, pan et zoom molette compris : tous n'écrivent que
+   * `stage.scale` et `stage.position`).
+   *
+   * Existe pour ce qui doit se placer en coordonnées MONDE tout en tenant
+   * compte de ce qu'on regarde — les étiquettes d'arêtes, qui glissent le long
+   * de leur trait pour rester dans le cadre. Le calcul serait sinon refait
+   * chez l'appelant à partir d'internes de la caméra qu'il n'a pas à connaître.
+   */
+  worldViewport(viewport: Size): Rect {
+    const s = this.currentScale;
+    return {
+      x: -this.stage.position.x / s,
+      y: -this.stage.position.y / s,
+      width: viewport.width / s,
+      height: viewport.height / s,
+    };
+  }
+
   dispose(): void {
     this.canvas.removeEventListener("pointerdown", this.handlePointerDown);
     window.removeEventListener("pointermove", this.handlePointerMove);

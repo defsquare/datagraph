@@ -811,8 +811,27 @@ const LABEL_RADIUS = 7.5;
 const LABEL_PADDING_X = 6;
 
 /**
- * L'étiquette de chaque référence SORTANTE du nœud sélectionné, posée près de
- * son départ.
+ * Ce qu'il faut savoir d'une étiquette pour la dessiner ET pour la reposer
+ * ailleurs sur son trait : son texte, le segment qu'elle annote, et sa fraction
+ * de REPOS le long de ce segment.
+ *
+ * Le segment est porté ici, et pas seulement le point final, parce que la
+ * position n'est plus figée à la construction : `create.ts` la recalcule au fil
+ * de la caméra (voir `labelParamInView`), ce qui demande de connaître le trait
+ * entier, pas un point posé dessus.
+ */
+export interface EdgeLabelPlacement {
+  text: string;
+  start: { x: number; y: number };
+  end: { x: number; y: number };
+  /** Position de repos, en fraction de la longueur du segment. */
+  fraction: number;
+}
+
+/**
+ * Où poser l'étiquette de chaque référence SORTANTE du nœud sélectionné, et
+ * quoi y écrire. Donnée pure, sans objet Pixi : c'est `drawEdgeLabels` qui rend,
+ * et `create.ts` qui repose au fil de la caméra.
  *
  * C'est la moitié « divulgation progressive » du tracé des références : le
  * départ d'une arête est toujours une CARTE (voir `nearestCardRectFor`), ce qui
@@ -843,18 +862,14 @@ const LABEL_PADDING_X = 6;
  * sélection — c'est l'appelant qui sait qui est sélectionné et ce que la vue
  * courante en fait.
  */
-export function drawEdgeLabels(
+export function edgeLabelPlacements(
   graph: Graph,
   positions: Map<NodeId, Rect>,
-  theme: Theme,
   selectedId: NodeId | null,
-  useBitmapText: boolean,
-  metrics: NodeMetrics = DEFAULT_METRICS,
-): Container {
-  const container = new Container();
-  if (selectedId === null) return container;
+): EdgeLabelPlacement[] {
+  const placements: EdgeLabelPlacement[] = [];
+  if (selectedId === null) return placements;
 
-  let labelIndex = 0;
   for (const edge of graph.refEdges) {
     if (edge.dangling || edge.to === null) continue;
     if (edge.from !== selectedId && edge.fromEntity !== selectedId) continue;
@@ -870,40 +885,174 @@ export function drawEdgeLabels(
         ? edge.field
         : `${graph.nodes.get(edge.from)?.label ?? edge.from}.${edge.field}`;
 
-    // Le repère du segment : `u` vers l'arrivée, sa perpendiculaire pour
-    // écarter du trait. Un segment de longueur nulle (deux cartes confondues)
-    // n'a pas de direction — l'horizontale est le repli, l'étiquette restant
-    // posée au point de départ.
-    const dx = end.x - start.x;
-    const dy = end.y - start.y;
-    const len = Math.hypot(dx, dy);
-    const ux = len > 0 ? dx / len : 1;
-    const uy = len > 0 ? dy / len : 0;
-    const fraction = LABEL_ALONG_FRACTION + (labelIndex % 3) * LABEL_STAGGER_FRACTION;
-    labelIndex++;
-    const along = len * fraction;
-    const cx = start.x + ux * along - uy * LABEL_ASIDE;
-    const cy = start.y + uy * along + ux * LABEL_ASIDE;
+    // L'étagement compte les étiquettes RETENUES, pas les arêtes examinées :
+    // une arête écartée plus haut (cible hors écran) ne doit pas laisser un
+    // cran vide dans la série, sinon deux voisines conservées se retrouvent au
+    // même cran une fois sur trois.
+    placements.push({
+      text,
+      start,
+      end,
+      fraction: LABEL_ALONG_FRACTION + (placements.length % 3) * LABEL_STAGGER_FRACTION,
+    });
+  }
+
+  return placements;
+}
+
+/**
+ * Le point où se pose l'étiquette d'un placement, à la fraction `t` du segment.
+ *
+ * Le repère du segment : `u` vers l'arrivée, sa perpendiculaire pour écarter du
+ * trait. Un segment de longueur nulle (deux cartes confondues) n'a pas de
+ * direction — l'horizontale est le repli, l'étiquette restant posée au point de
+ * départ.
+ *
+ * Exporté parce que `create.ts` repose les étiquettes au fil de la caméra et
+ * doit trouver EXACTEMENT le même point que le rendu initial : deux copies du
+ * décalage perpendiculaire feraient sauter l'étiquette d'un cheveu à la
+ * première image de caméra.
+ */
+export function edgeLabelPosition(
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  t: number,
+): { x: number; y: number } {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const len = Math.hypot(dx, dy);
+  const ux = len > 0 ? dx / len : 1;
+  const uy = len > 0 ? dy / len : 0;
+  const along = len * t;
+  return {
+    x: start.x + ux * along - uy * LABEL_ASIDE,
+    y: start.y + uy * along + ux * LABEL_ASIDE,
+  };
+}
+
+/**
+ * La fraction à laquelle poser l'étiquette pour qu'elle reste DANS le viewport,
+ * `baseT` étant sa position de repos.
+ *
+ * Le pourquoi : une étiquette figée au tiers du lien devient inutile dès qu'on
+ * zoome sur la CIBLE — on voit un trait arriver sans savoir de quelle référence
+ * il s'agit, et il faudrait dézoomer puis remonter jusqu'à la source pour le
+ * lire. L'étiquette glisse donc le long de son propre trait, comme le nom d'une
+ * route sur une carte, et reste sur le tronçon qu'on regarde.
+ *
+ * `baseT` reste la position de REPOS : tant que l'arête tient entièrement à
+ * l'écran, rien ne bouge (`t0 <= 0 && t1 >= 1`). Le glissement n'est déclenché
+ * que par ce qui le justifie — une partie du lien sortie du cadre.
+ *
+ * `marginWorld` écarte l'étiquette du bord du cadre : posée pile sur la coupe,
+ * la pilule serait à moitié dehors. Quand le tronçon visible est plus court que
+ * deux marges, aucune position ne les honore toutes les deux : son MILIEU est
+ * alors le moins mauvais compromis.
+ */
+export function labelParamInView(
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  baseT: number,
+  view: Rect,
+  marginWorld: number,
+): number {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const len = Math.hypot(dx, dy);
+  // Un segment de longueur nulle n'a pas de paramétrage à couper.
+  if (len === 0) return baseT;
+
+  // Liang-Barsky : le segment est réduit à l'intervalle de `t` où il est dans
+  // le rect. Chaque bord donne une contrainte ; `p < 0` la borne par le bas
+  // (entrée), `p > 0` par le haut (sortie).
+  let t0 = 0;
+  let t1 = 1;
+  const p = [-dx, dx, -dy, dy];
+  const q = [
+    start.x - view.x,
+    view.x + view.width - start.x,
+    start.y - view.y,
+    view.y + view.height - start.y,
+  ];
+  for (let i = 0; i < 4; i++) {
+    const pi = p[i]!;
+    const qi = q[i]!;
+    if (pi === 0) {
+      // Parallèle à ce bord : hors bande, donc jamais visible.
+      if (qi < 0) return baseT;
+      continue;
+    }
+    const r = qi / pi;
+    if (pi < 0) {
+      if (r > t1) return baseT;
+      if (r > t0) t0 = r;
+    } else {
+      if (r < t0) return baseT;
+      if (r < t1) t1 = r;
+    }
+  }
+  if (t1 <= t0) return baseT;
+  // Arête entièrement visible : la position de repos est déjà la bonne, et la
+  // marge n'a pas à la déplacer — l'utilisateur ne doit voir bouger l'étiquette
+  // que lorsque son lien sort du cadre.
+  if (t0 <= 0 && t1 >= 1) return baseT;
+
+  const pad = marginWorld / len;
+  const lo = t0 + pad;
+  const hi = t1 - pad;
+  if (lo > hi) return (t0 + t1) / 2;
+  return Math.min(hi, Math.max(lo, baseT));
+}
+
+/**
+ * Rend les placements en pilules étiquetées, un SOUS-CONTENEUR par étiquette.
+ *
+ * La pilule (fond de carte, contour de bordure) est ce qui rend l'étiquette
+ * lisible par-dessus une enveloppe d'agrégat ou une autre arête ; sans elle le
+ * texte se confond avec le fond teinté de la vue graphe.
+ *
+ * L'ordre des enfants suit celui des `placements`, et c'est un CONTRAT :
+ * `create.ts` repose les étiquettes en appariant `children[i]` à
+ * `placements[i]`. Ne pas trier ni filtrer ici.
+ */
+export function drawEdgeLabels(
+  placements: readonly EdgeLabelPlacement[],
+  theme: Theme,
+  useBitmapText: boolean,
+  metrics: NodeMetrics = DEFAULT_METRICS,
+): Container {
+  const container = new Container();
+
+  for (const placement of placements) {
+    // Un SOUS-CONTENEUR par étiquette, pilule et texte dessinés autour de (0,0)
+    // local : reposer une étiquette n'est alors qu'un `position.set` sur ce
+    // conteneur. Sans ça, suivre la caméra demanderait de recréer un `Text` par
+    // image de pan — le vrai coût, et de loin.
+    const item = new Container();
 
     // Largeur BUDGÉTÉE à l'avance en avances moyennes, comme `measureNode` et
     // `arrayTokenWidth` : la mesure réelle d'un `Text` dépend du canvas, donc du
     // runtime, et la pilule doit garder la même géométrie partout.
-    const width = text.length * charWidthFor("badge", metrics) + 2 * LABEL_PADDING_X;
+    const width = placement.text.length * charWidthFor("badge", metrics) + 2 * LABEL_PADDING_X;
 
     const pill = new Graphics();
     pill
-      .roundRect(cx - width / 2, cy - LABEL_HEIGHT / 2, width, LABEL_HEIGHT, LABEL_RADIUS)
+      .roundRect(-width / 2, -LABEL_HEIGHT / 2, width, LABEL_HEIGHT, LABEL_RADIUS)
       .fill(theme.surface.card)
       .stroke({ width: 1, color: theme.edge.border });
-    container.addChild(pill);
+    item.addChild(pill);
 
     // Texte CENTRÉ dans la pilule et non calé sur son bord : la largeur est un
     // budget en avances moyennes, donc presque toujours un peu large pour le
     // texte réel — un calage à gauche laisserait alors du vide à droite, que
     // l'œil lit comme un défaut d'alignement.
-    const label = createLabel(text, theme, "badge", theme.edge.ref, useBitmapText);
-    label.position.set(Math.round(cx - label.width / 2), Math.round(cy - label.height / 2));
-    container.addChild(label);
+    const label = createLabel(placement.text, theme, "badge", theme.edge.ref, useBitmapText);
+    label.position.set(Math.round(-label.width / 2), Math.round(-label.height / 2));
+    item.addChild(label);
+
+    const at = edgeLabelPosition(placement.start, placement.end, placement.fraction);
+    item.position.set(at.x, at.y);
+    container.addChild(item);
   }
 
   return container;

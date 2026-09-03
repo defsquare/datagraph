@@ -64,37 +64,37 @@ describe("classifyWheel", () => {
   });
 });
 
+/** Le pan est cable sur des ecouteurs DOM natifs (canvas + window) : on les
+ * capture au lieu de faire tourner un vrai navigateur, comme
+ * `classifyWheel` est teste sur un `WheelEvent` fabrique. */
+function mountCamera(isBlocked: () => boolean = () => false) {
+  const handlers = new Map<string, (event: unknown) => void>();
+  const record =
+    (scope: string) =>
+    (type: string, handler: (event: unknown) => void): void => {
+      handlers.set(`${scope}:${type}`, handler);
+    };
+  const canvas = {
+    addEventListener: record("canvas"),
+    removeEventListener: () => {},
+  } as unknown as HTMLCanvasElement;
+  vi.stubGlobal("window", { addEventListener: record("window"), removeEventListener: () => {} });
+
+  const stage = new Container();
+  const camera = new Camera(stage, canvas, { isBlocked });
+  return {
+    stage,
+    camera,
+    down: (clientX: number, clientY: number) =>
+      handlers.get("canvas:pointerdown")!({ button: 0, clientX, clientY }),
+    move: (clientX: number, clientY: number) => handlers.get("window:pointermove")!({ clientX, clientY }),
+  };
+}
+
 describe("Camera — inhibition du pan", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
-
-  /** Le pan est cable sur des ecouteurs DOM natifs (canvas + window) : on les
-   * capture au lieu de faire tourner un vrai navigateur, comme
-   * `classifyWheel` est teste sur un `WheelEvent` fabrique. */
-  function mountCamera(isBlocked: () => boolean) {
-    const handlers = new Map<string, (event: unknown) => void>();
-    const record =
-      (scope: string) =>
-      (type: string, handler: (event: unknown) => void): void => {
-        handlers.set(`${scope}:${type}`, handler);
-      };
-    const canvas = {
-      addEventListener: record("canvas"),
-      removeEventListener: () => {},
-    } as unknown as HTMLCanvasElement;
-    vi.stubGlobal("window", { addEventListener: record("window"), removeEventListener: () => {} });
-
-    const stage = new Container();
-    const camera = new Camera(stage, canvas, { isBlocked });
-    return {
-      stage,
-      camera,
-      down: (clientX: number, clientY: number) =>
-        handlers.get("canvas:pointerdown")!({ button: 0, clientX, clientY }),
-      move: (clientX: number, clientY: number) => handlers.get("window:pointermove")!({ clientX, clientY }),
-    };
-  }
 
   it("deplace la toile quand rien ne bloque", () => {
     const { stage, down, move } = mountCamera(() => false);
@@ -129,5 +129,48 @@ describe("Camera — inhibition du pan", () => {
     blocked = false;
     move(310, 100);
     expect(stage.position.x).toBe(10);
+  });
+});
+
+/**
+ * Ce que la camera montre du MONDE, pour ce qui doit se placer en coordonnees
+ * monde tout en tenant compte de ce qu'on regarde — les etiquettes d'aretes,
+ * qui glissent le long de leur trait pour rester dans le cadre.
+ */
+describe("Camera — worldViewport", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const VIEWPORT = { width: 800, height: 600 };
+
+  it("est l'inverse exact de centerOn : le rect vise y est centre", () => {
+    const { camera } = mountCamera();
+    const rect = { x: 1000, y: 500, width: 200, height: 100 };
+    camera.centerOn(rect, VIEWPORT, 2);
+    const world = camera.worldViewport(VIEWPORT);
+
+    // Le rect tient entierement dedans...
+    expect(world.x).toBeLessThan(rect.x);
+    expect(world.y).toBeLessThan(rect.y);
+    expect(world.x + world.width).toBeGreaterThan(rect.x + rect.width);
+    expect(world.y + world.height).toBeGreaterThan(rect.y + rect.height);
+    // ...et centre : les deux centres coincident.
+    expect(world.x + world.width / 2).toBeCloseTo(rect.x + rect.width / 2, 6);
+    expect(world.y + world.height / 2).toBeCloseTo(rect.y + rect.height / 2, 6);
+    // La taille du monde vu est celle de l'ecran divisee par l'echelle.
+    expect(world.width).toBeCloseTo(VIEWPORT.width / 2, 6);
+    expect(world.height).toBeCloseTo(VIEWPORT.height / 2, 6);
+  });
+
+  it("suit le pan : deplacer la toile deplace le monde vu en sens inverse", () => {
+    const { camera, down, move } = mountCamera();
+    camera.centerOn({ x: 0, y: 0, width: 0, height: 0 }, VIEWPORT, 1);
+    const before = camera.worldViewport(VIEWPORT);
+    down(100, 100);
+    move(150, 100); // la toile va vers la droite, donc le regard vers la gauche
+    const after = camera.worldViewport(VIEWPORT);
+    expect(after.x).toBeCloseTo(before.x - 50, 6);
+    expect(after.y).toBeCloseTo(before.y, 6);
   });
 });

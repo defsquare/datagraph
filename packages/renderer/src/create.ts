@@ -67,7 +67,11 @@ import {
   drawNode,
   drawSearchHighlights,
   drawSelectionOverlay,
+  edgeLabelPlacements,
+  edgeLabelPosition,
+  labelParamInView,
   lodForScale,
+  type EdgeLabelPlacement,
   type Lod,
   TOKEN_HOVER_SHIFT,
 } from "./draw.js";
@@ -466,6 +470,11 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   // `null` tant qu'aucun rebuild n'a eu lieu, et au LOD 2 où il n'y a rien à
   // écrire.
   let edgeLabelsView: Container | null = null;
+  // Les placements qui ont produit `edgeLabelsView`, appariés à ses enfants par
+  // INDEX (contrat de `drawEdgeLabels`). Mémorisés parce que reposer une
+  // étiquette au fil de la caméra demande son segment, que le sous-conteneur
+  // rendu ne porte plus.
+  let edgeLabels: EdgeLabelPlacement[] = [];
   const edgeHitLayer = new Container();
   const nodesLayer = new Container();
   // Les arêtes restent SOUS les cartes, au repos : une référence remonte
@@ -974,21 +983,51 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     // et transitoire : elle part avec la sélection.
     edgeLabelsView?.destroy({ children: true });
     edgeLabelsView = null;
+    edgeLabels = [];
     // Rien au LOD 2, comme les arêtes : le texte n'y est ni lisible ni
     // rentable, et il n'y a plus de trait à annoter.
     if (currentLod !== 2) {
       // `selectedNodeId()` : une sélection d'AGRÉGAT rend `null` par cette
       // lucarne, et n'étiquette donc rien — c'est voulu, l'agrégat ne désigne
       // aucun champ d'où une référence partirait.
-      edgeLabelsView = drawEdgeLabels(
-        graph,
-        positions,
-        theme,
-        selectedNodeId(),
-        useBitmapText,
-        metrics,
-      );
+      edgeLabels = edgeLabelPlacements(graph, positions, selectedNodeId());
+      edgeLabelsView = drawEdgeLabels(edgeLabels, theme, useBitmapText, metrics);
       world.addChild(edgeLabelsView);
+      // Reposées TOUT DE SUITE, et pas seulement au prochain passage du ticker :
+      // sinon la première image montre les étiquettes à leur fraction de repos,
+      // même quand la caméra est déjà zoomée sur la cible — un saut visible à
+      // chaque sélection.
+      repositionEdgeLabels();
+    }
+  }
+
+  /**
+   * La marge, en pixels ÉCRAN, entre une étiquette qui a glissé et le bord du
+   * cadre. Assez large pour que la pilule entière tienne dedans avec de l'air,
+   * et convertie en monde à l'usage : c'est une distance perçue, elle ne doit
+   * pas se dilater avec le zoom.
+   */
+  const EDGE_LABEL_VIEW_MARGIN = 48;
+
+  /**
+   * Fait glisser chaque étiquette le long de SON trait pour qu'elle reste dans
+   * le cadre — comme le nom d'une route sur une carte. Sans ça, zoomer sur la
+   * cible d'une référence montre un trait qui arrive sans dire lequel.
+   *
+   * Ne recrée aucun objet : seuls les sous-conteneurs se déplacent. Recréer un
+   * `Text` par image de pan serait le vrai coût de cette fonctionnalité.
+   */
+  function repositionEdgeLabels(): void {
+    if (!camera || !edgeLabelsView || edgeLabels.length === 0) return;
+    const worldView = camera.worldViewport(viewport());
+    const margin = EDGE_LABEL_VIEW_MARGIN / camera.scale();
+    for (let i = 0; i < edgeLabels.length; i++) {
+      const placement = edgeLabels[i]!;
+      const item = edgeLabelsView.children[i];
+      if (!item) continue;
+      const t = labelParamInView(placement.start, placement.end, placement.fraction, worldView, margin);
+      const at = edgeLabelPosition(placement.start, placement.end, t);
+      item.position.set(at.x, at.y);
     }
   }
 
@@ -1857,10 +1896,28 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     // deterministic instead of waiting on the ticker's next scheduled tick.
     app.render();
 
+    // La transformation caméra vue au dernier passage. La caméra n'émet aucun
+    // événement (ses gestes sont des écouteurs DOM natifs), donc c'est le
+    // ticker qui constate le mouvement — et il ne travaille que s'il y a
+    // quelque chose à reposer.
+    let lastCameraScale = Number.NaN;
+    let lastCameraX = Number.NaN;
+    let lastCameraY = Number.NaN;
+
     app.ticker.add(() => {
       if (destroyed || !camera) return;
       const lod = lodForScale(camera.scale());
       if (lod !== currentLod) rebuild();
+
+      // Aucune étiquette : aucun coût au repos, qui est l'état le plus fréquent
+      // (rien de sélectionné, ou sélection sans référence sortante).
+      if (!edgeLabelsView || edgeLabels.length === 0) return;
+      const scale = camera.scale();
+      if (scale === lastCameraScale && world.x === lastCameraX && world.y === lastCameraY) return;
+      lastCameraScale = scale;
+      lastCameraX = world.x;
+      lastCameraY = world.y;
+      repositionEdgeLabels();
     });
   })();
 
