@@ -763,16 +763,18 @@ function run(
   //
   // Le sens est celui de `buildAggregates` — on remonte de la cible vers la
   // source —, sans quoi la distance d'anneau ne coïnciderait pas avec la
-  // distance d'appartenance qui a formé le cluster.
+  // distance d'appartenance qui a formé le cluster. Et la source est
+  // `fromEntity` pour la même raison : la vue graphe ne place que des entités,
+  // un value object n'y a pas de carte à mettre dans un anneau.
   const childrenOf = new Map<NodeId, NodeId[]>()
   const entitySet = new Set(entityIds)
   for (const edge of graph.refEdges) {
     if (edge.to === null || edge.dangling) continue
-    if (!entitySet.has(edge.from) || !entitySet.has(edge.to)) continue
-    if (clusterOf.get(edge.from) !== clusterOf.get(edge.to)) continue
+    if (!entitySet.has(edge.fromEntity) || !entitySet.has(edge.to)) continue
+    if (clusterOf.get(edge.fromEntity) !== clusterOf.get(edge.to)) continue
     const list = childrenOf.get(edge.to)
-    if (list) list.push(edge.from)
-    else childrenOf.set(edge.to, [edge.from])
+    if (list) list.push(edge.fromEntity)
+    else childrenOf.set(edge.to, [edge.fromEntity])
   }
   // Tri des listes d'adjacence : l'ordre de `graph.refEdges` ne doit pas
   // transparaître dans la sortie. Dédoublonnage au passage — deux champs de la
@@ -840,8 +842,10 @@ function run(
   clusters.forEach((c, i) => index.set(c.id, i))
   for (const edge of graph.refEdges) {
     if (edge.to === null || edge.dangling) continue
-    if (!entitySet.has(edge.from) || !entitySet.has(edge.to)) continue
-    const ca = clusterOf.get(edge.from)!
+    // `fromEntity` : c'est l'entité qui est placée, donc elle seule appartient
+    // à un cluster et peut tirer sur un autre.
+    if (!entitySet.has(edge.fromEntity) || !entitySet.has(edge.to)) continue
+    const ca = clusterOf.get(edge.fromEntity)!
     const cb = clusterOf.get(edge.to)!
     if (ca === cb) continue
     const [lo, hi] = ca < cb ? [ca, cb] : [cb, ca]

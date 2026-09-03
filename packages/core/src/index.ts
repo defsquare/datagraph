@@ -1,7 +1,13 @@
 export const VERSION = "0.1.0"
 
-export { parseSelector, matchesPath, ConfigError, type PathSegment } from "./selector.js"
-export { validateConfig, type EntityConfig, type DataGraphConfig, type ValidatedConfig } from "./config.js"
+export { parseSelector, parseRelativePath, matchesPath, ConfigError, type PathSegment } from "./selector.js"
+export {
+  validateConfig,
+  type EntityConfig,
+  type DataGraphConfig,
+  type ValidatedConfig,
+  type ReferenceDecl,
+} from "./config.js"
 
 export { buildGraph } from "./build.js"
 export { CollapseState } from "./collapse.js"
@@ -24,6 +30,7 @@ export {
   createLayoutEngine,
   rowRectFor,
   anchorRectFor,
+  visibleAnchorRectFor,
   type Rect,
   type LayoutResult,
   type LayoutEngine,

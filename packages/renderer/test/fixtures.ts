@@ -27,3 +27,19 @@ export const shopConfig: DataGraphConfig = {
   },
   references: { Order: { customerId: "Customer" } },
 };
+
+// Une référence portée par un VALUE OBJECT : `CartLine` n'a pas d'identité,
+// donc pas d'entité ni de carte en vue graphe, mais elle porte `productRef`.
+// C'est le cas dont le tracé doit être HISSÉ jusqu'à un ancêtre visible.
+export const cartData = {
+  carts: [{ id: "k1", lines: [{ sku: "A-1", productRef: "p1" }] }],
+  products: [{ id: "p1", name: "Clavier" }],
+};
+
+export const cartConfig: DataGraphConfig = {
+  entities: {
+    Cart: { match: "$.carts[*]", id: "id" },
+    Product: { match: "$.products[*]", id: "id" },
+  },
+  references: { Cart: { "lines[*].productRef": "Product" } },
+};

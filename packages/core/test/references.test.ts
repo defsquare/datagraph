@@ -6,8 +6,10 @@ describe("reference resolution", () => {
   const g = buildGraph(shopData, shopConfig)
 
   it("resolves configured references to entity nodes", () => {
+    // `fromEntity === from` pour un chemin sans navigation : l'entité porte la
+    // ligne en propre, il n'y a rien à hisser.
     expect(g.refEdges).toContainEqual({
-      kind: "ref", from: "/orders/0", to: "/customers/0",
+      kind: "ref", from: "/orders/0", fromEntity: "/orders/0", to: "/customers/0",
       field: "customerId", targetType: "Customer", targetId: "c1", dangling: false,
     })
   })

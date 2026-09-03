@@ -1,4 +1,4 @@
-import { parseSelector, ConfigError, type PathSegment } from "./selector.js"
+import { parseSelector, parseRelativePath, ConfigError, type PathSegment } from "./selector.js"
 
 export interface EntityConfig {
   match: string
@@ -21,12 +21,57 @@ export interface DataGraphConfig {
   aggregates?: string[]
 }
 
+/**
+ * Une référence déclarée, découpée en ce dont la construction a besoin : la
+ * NAVIGATION depuis l'entité déclarante (vide pour la forme historique
+ * `customerId`, qui porte la ligne en propre) et la clé de la ligne TERMINALE
+ * qui porte l'identifiant.
+ *
+ * `path` garde la clé telle qu'écrite dans la config : la reconstruire depuis
+ * `navigate` perdrait l'écriture d'origine (`lines[*]` et `lines.*` se
+ * ramènent aux mêmes segments), et `unresolved-reference` doit citer la
+ * déclaration que l'auteur relira.
+ */
+export interface ReferenceDecl {
+  navigate: PathSegment[]
+  field: string
+  targetType: string
+  path: string
+}
+
 export interface ValidatedConfig {
   entities: Map<string, { segments: PathSegment[]; idField: string }>
-  references: Map<string, Map<string, string>>
+  references: Map<string, ReferenceDecl[]>
   maxNodes: number
   rootLabel: string
   aggregates: string[]
+}
+
+/**
+ * Découpe une clé de `references[Type]` en navigation + clé terminale.
+ *
+ * Une clé SANS `.` ni `[` n'est pas parsée : elle reste une clé de ligne
+ * verbatim. Le token du sélecteur n'accepte que `[A-Za-z_$][\w$-]*`, or une
+ * clé JSON peut contenir n'importe quoi — parser inconditionnellement casserait
+ * des configs qui marchent aujourd'hui.
+ *
+ * Le dernier segment doit être une CLÉ : le chemin désigne une ligne, et une
+ * ligne a un nom. `lines[*]` ou `lines[*].*` ne désignent qu'un nœud.
+ *
+ * Limitation assumée : une clé de champ contenant littéralement `.` ou `[` est
+ * lue comme un chemin.
+ */
+function parseReferenceKey(key: string): { navigate: PathSegment[]; field: string } {
+  if (!key.includes(".") && !key.includes("[")) return { navigate: [], field: key }
+  const segments = parseRelativePath(key)
+  const last = segments[segments.length - 1]!
+  if (last.kind !== "key") {
+    throw new ConfigError(
+      "selector-syntax",
+      `Reference path must end on a field name: ${key}`,
+    )
+  }
+  return { navigate: segments.slice(0, -1), field: last.key }
 }
 
 export function validateConfig(config: DataGraphConfig): ValidatedConfig {
@@ -43,22 +88,23 @@ export function validateConfig(config: DataGraphConfig): ValidatedConfig {
   }
 
   // Validate references
-  const references = new Map<string, Map<string, string>>()
+  const references = new Map<string, ReferenceDecl[]>()
   if (config.references) {
     for (const [sourceType, refs] of Object.entries(config.references)) {
       // Check if source type exists
       if (!entities.has(sourceType)) {
         throw new ConfigError("unknown-entity-type", `Unknown entity type: ${sourceType}`)
       }
-      const refsMap = new Map<string, string>()
-      for (const [refName, targetType] of Object.entries(refs)) {
+      const decls: ReferenceDecl[] = []
+      for (const [refPath, targetType] of Object.entries(refs)) {
         // Check if target type exists
         if (!entities.has(targetType)) {
           throw new ConfigError("unknown-entity-type", `Unknown entity type: ${targetType}`)
         }
-        refsMap.set(refName, targetType)
+        const { navigate, field } = parseReferenceKey(refPath)
+        decls.push({ navigate, field, targetType, path: refPath })
       }
-      references.set(sourceType, refsMap)
+      references.set(sourceType, decls)
     }
   }
 

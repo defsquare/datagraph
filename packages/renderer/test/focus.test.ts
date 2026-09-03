@@ -2,11 +2,29 @@ import { describe, it, expect } from "vitest";
 import type { NodeId, RefEdge } from "@defsquare/data-graph-core";
 import { clusterDimmed, clusterRelatedIds, DIM_ALPHA, relatedIds } from "../src/focus.js";
 
-/** Une arête de référence nue : `relatedIds` ne lit que `from`, `to` et
+/** Une arête de référence nue : `relatedIds` ne lit que `fromEntity`, `to` et
  * `dangling`, et fabriquer l'objet à la main garde ces tests indépendants du
- * pipeline de construction du graphe. */
-function ref(from: NodeId, to: NodeId | null, dangling = to === null): RefEdge {
-  return { kind: "ref", from, to, field: "someId", targetType: "T", targetId: "x", dangling };
+ * pipeline de construction du graphe.
+ *
+ * `fromEntity` vaut `from` par défaut, ce qui est l'invariant de toute
+ * référence déclarée sans navigation : ces cas décrivent donc le comportement
+ * inchangé, et le hissage se teste à part, en le dissociant explicitement. */
+function ref(
+  from: NodeId,
+  to: NodeId | null,
+  dangling = to === null,
+  fromEntity: NodeId = from,
+): RefEdge {
+  return {
+    kind: "ref",
+    from,
+    fromEntity,
+    to,
+    field: "someId",
+    targetType: "T",
+    targetId: "x",
+    dangling,
+  };
 }
 
 describe("relatedIds", () => {
@@ -57,6 +75,16 @@ describe("relatedIds", () => {
     // plus rien, ce qui est tout ce qu'on lui demande.
     expect(relatedIds([], "a", null, ["c"])).toEqual(new Set(["a", "c"]));
   });
+
+  it("lit le bout source d'une référence sur son ENTITÉ, pas sur le value object", () => {
+    // La référence est portée par `a/lines/0`, mais elle est déclarée par `a` :
+    // en vue graphe, `a/lines/0` n'a aucune carte, et sélectionner `a` doit
+    // garder pleine la carte que sa propre ligne référence.
+    const edges = [ref("a/lines/0", "b", false, "a")];
+    expect(relatedIds(edges, "a", null, [])).toEqual(new Set(["a", "b"]));
+    // Et symétriquement depuis la cible : c'est `a` qui est liée, pas la ligne.
+    expect(relatedIds(edges, "b", null, [])).toEqual(new Set(["b", "a"]));
+  });
 });
 
 describe("clusterRelatedIds", () => {
@@ -95,6 +123,13 @@ describe("clusterRelatedIds", () => {
     // l'ensemble finirait par couvrir la plus grande partie du graphe.
     const edges = [ref("m1", "out"), ref("out", "far")];
     expect(clusterRelatedIds(edges, new Set(["m1"]))).toEqual(new Set(["m1", "out"]));
+  });
+
+  it("compte une référence hissée pour son entité membre", () => {
+    // Le membre de l'agrégat est `m1` ; la ligne `m1/lines/0` n'en est pas un
+    // et ne pourrait jamais l'être — l'appartenance ne connaît que des entités.
+    const keep = clusterRelatedIds([ref("m1/lines/0", "out", false, "m1")], new Set(["m1"]));
+    expect(keep).toEqual(new Set(["m1", "out"]));
   });
 
   it("does not mutate the member set it is given", () => {

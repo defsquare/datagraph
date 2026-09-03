@@ -1,6 +1,6 @@
 import ELK from "elkjs/lib/elk.bundled.js"
 import type { ElkExtendedEdge, ElkNode } from "elkjs/lib/elk-api.js"
-import { nearestDrawn, type Graph, type NodeId } from "./model.js"
+import { nearestDrawn, type Graph, type GraphNode, type NodeId } from "./model.js"
 import { measureNode, DEFAULT_METRICS, type NodeMetrics } from "./measure.js"
 
 export interface Rect {
@@ -54,6 +54,39 @@ export function anchorRectFor(
   const rowIndex = parent.rows.findIndex((r) => r.valueType === "array" && r.arrayId === id)
   if (rowIndex < 0) return parentRect
   return rowRectFor(parentRect, rowIndex, metrics)
+}
+
+/**
+ * Le rect qui ancre `id` DANS CE QUI EST À L'ÉCRAN : son propre ancrage s'il en
+ * a un, sinon celui de son plus proche ancêtre qui en a un.
+ *
+ * `anchorRectFor` résout l'élision, pas l'INVISIBILITÉ : un nœud replié, ou
+ * simplement hors de la vue courante, n'est dans `positions` ni lui ni comme
+ * ligne, et son ancrage est alors `undefined`. Remonter la chaîne de parenté
+ * donne le point d'attache que la vue montre effectivement de lui — la carte du
+ * value object si elle est dépliée, la bande `lines [ n items ]` sinon, la carte
+ * de l'entité en vue graphe.
+ *
+ * C'est ce qui permet à une arête issue d'un value object d'être TRACÉE quelle
+ * que soit la vue, au lieu de disparaître avec la carte qui la portait.
+ * `undefined` ne subsiste que si rien de la lignée n'est à l'écran, et l'arête
+ * n'a alors effectivement aucun départ à montrer.
+ */
+export function visibleAnchorRectFor(
+  graph: Graph,
+  positions: Map<NodeId, Rect>,
+  id: NodeId,
+  metrics: NodeMetrics = DEFAULT_METRICS,
+): Rect | undefined {
+  let current: NodeId | null = id
+  while (current !== null) {
+    const rect = anchorRectFor(graph, positions, current, metrics)
+    if (rect) return rect
+    const node: GraphNode | undefined = graph.nodes.get(current)
+    if (!node) return undefined
+    current = node.parentId
+  }
+  return undefined
 }
 
 /**

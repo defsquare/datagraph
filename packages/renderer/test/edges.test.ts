@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { Color } from "pixi.js";
-import { buildGraph } from "@defsquare/data-graph-core";
+import { buildGraph, rowRectFor, DEFAULT_METRICS } from "@defsquare/data-graph-core";
 import { anchorOnRect, drawEdgeHitAreas, drawEdges, drawSelectionOverlay } from "../src/draw.js";
 import { DIM_ALPHA } from "../src/focus.js";
 import { resolveTheme } from "../src/theme.js";
-import { shopData, shopConfig } from "./fixtures.js";
+import { shopData, shopConfig, cartData, cartConfig } from "./fixtures.js";
 
 /**
  * `EdgeMode` a deux effets, et un seul était couvert : le mode `"ref"` cessait
@@ -520,5 +520,98 @@ describe("drawSelectionOverlay — le surlignage suit le style de l'arête", () 
       expect(style.color).toBe(new Color(theme.accent.selection).toNumber());
       expect(style.width).toBe(theme.strokes.selection);
     }
+  });
+});
+
+/**
+ * Une référence déclarée par chemin part du nœud qui PORTE la ligne — un value
+ * object, qui n'a le plus souvent aucune carte à l'écran : replié en vue
+ * structure, inexistant en vue graphe. Son départ est donc HISSÉ jusqu'au plus
+ * proche ancêtre visible, faute de quoi l'arête ne serait pas tracée du tout et
+ * la relation disparaîtrait de la vue qui est censée la montrer.
+ */
+describe("drawEdges — départ hissé d'une référence portée par un value object", () => {
+  const theme = resolveTheme(undefined);
+  const graph = buildGraph(cartData, cartConfig);
+
+  const CART = { x: 0, y: 0, width: 200, height: 120 };
+  const PRODUCT = { x: 600, y: 0, width: 160, height: 60 };
+  const LINE = { x: 300, y: 200, width: 180, height: 100 };
+
+  /** La bande de la ligne `lines` sur la carte du panier — l'ancre du jeton. */
+  const rows = graph.nodes.get("/carts/0")!.rows;
+  const band = rowRectFor(CART, rows.findIndex((r) => r.key === "lines"), DEFAULT_METRICS);
+
+  function firstPath(g: { context: { instructions: unknown[] } }, index: number): any[] {
+    return (g.context.instructions[index] as any).data.path.instructions;
+  }
+
+  it("le fixture porte bien une arête dont la source n'est pas une entité", () => {
+    expect(graph.refEdges).toHaveLength(1);
+    expect(graph.refEdges[0]!.from).toBe("/carts/0/lines/0");
+    expect(graph.refEdges[0]!.fromEntity).toBe("/carts/0");
+  });
+
+  it("part de la bande du jeton quand la carte source est absente de positions", () => {
+    // C'est exactement la vue graphe, et la vue structure repliée : `lines` est
+    // élidé et `/carts/0/lines/0` n'a pas de rect.
+    const positions = new Map([["/carts/0", CART], ["/products/0", PRODUCT]]);
+    const g = drawEdges(graph, positions, theme, 0, "ref");
+    const start = anchorOnRect(band, PRODUCT.x + PRODUCT.width / 2, PRODUCT.y + PRODUCT.height / 2);
+    const path = firstPath(g, 0);
+    expect(path[0].action).toBe("moveTo");
+    expect(path[0].data).toEqual([start.x, start.y]);
+    // Et non le milieu de la carte : la bande est plus bas que l'en-tête, ce
+    // qui est précisément ce qui fait lire l'arête comme sortant du jeton.
+    expect(start.y).not.toBeCloseTo(CART.y + CART.height / 2, 5);
+  });
+
+  it("part de la carte du value object dès qu'elle est dépliée", () => {
+    // Le hissage ne prend la main qu'à défaut : une carte présente reste
+    // l'ancre, sans quoi déplier le jeton n'y changerait rien.
+    const positions = new Map([
+      ["/carts/0", CART],
+      ["/carts/0/lines/0", LINE],
+      ["/products/0", PRODUCT],
+    ]);
+    const g = drawEdges(graph, positions, theme, 0, "ref");
+    const start = anchorOnRect(LINE, PRODUCT.x + PRODUCT.width / 2, PRODUCT.y + PRODUCT.height / 2);
+    const path = firstPath(g, 0);
+    expect(path[0].data).toEqual([start.x, start.y]);
+  });
+
+  it("ne trace rien quand la CIBLE est cachée", () => {
+    // L'arrivée n'est pas hissée : une cible hors de l'écran n'a pas de point
+    // d'attache à montrer, et l'arête tomberait dans le vide.
+    const g = drawEdges(graph, new Map([["/carts/0", CART]]), theme, 0, "ref");
+    expect(g.context.instructions).toHaveLength(0);
+  });
+
+  it("garde l'arête pleine quand c'est l'ENTITÉ déclarante qui est focalisée", () => {
+    // En vue graphe la sélection est le panier ; le value object n'y a pas de
+    // carte à sélectionner. Sans `fromEntity`, sélectionner le panier
+    // estomperait l'arête que sa propre ligne porte.
+    const positions = new Map([["/carts/0", CART], ["/products/0", PRODUCT]]);
+    const g = drawEdges(graph, positions, theme, 0, "ref", new Set(["/carts/0"]));
+    const strokes = (g.context.instructions as any[]).filter((x) => x.action === "stroke");
+    expect(strokes).toHaveLength(1);
+    expect(strokes[0].data.style.alpha).toBe(1);
+  });
+
+  it("garde l'arête pleine quand c'est le VALUE OBJECT qui est focalisé", () => {
+    // En vue structure, c'est la carte de la ligne de panier qui se sélectionne.
+    const positions = new Map([["/carts/0", CART], ["/products/0", PRODUCT]]);
+    const g = drawEdges(graph, positions, theme, 0, "ref", new Set(["/carts/0/lines/0"]));
+    const strokes = (g.context.instructions as any[]).filter((x) => x.action === "stroke");
+    expect(strokes).toHaveLength(1);
+    expect(strokes[0].data.style.alpha).toBe(1);
+  });
+
+  it("estompe l'arête quand le focus ne touche ni la ligne, ni le panier, ni la cible", () => {
+    const positions = new Map([["/carts/0", CART], ["/products/0", PRODUCT]]);
+    const g = drawEdges(graph, positions, theme, 0, "ref", new Set(["/ailleurs"]));
+    const strokes = (g.context.instructions as any[]).filter((x) => x.action === "stroke");
+    expect(strokes).toHaveLength(1);
+    expect(strokes[0].data.style.alpha).toBe(DIM_ALPHA);
   });
 });

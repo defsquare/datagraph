@@ -96,12 +96,18 @@ export function buildAggregates(graph: Graph, config: ValidatedConfig): Aggregat
 
   // 2. Adjacence inverse : cible -> sources qui la référencent. Les arêtes
   //    cassées ne propagent rien.
+  //
+  //    `fromEntity` et non `from` : l'appartenance se raisonne en ENTITÉS, et
+  //    une référence portée par un value object est celle de son entité. Sans
+  //    ce hissage, la source serait un nœud que le BFS ne visite pas — les
+  //    racines et la propagation ne connaissent que des entités —, et le panier
+  //    ne rejoindrait pas l'agrégat du produit que sa ligne référence.
   const incoming = new Map<NodeId, NodeId[]>()
   for (const edge of graph.refEdges) {
     if (edge.to === null || edge.dangling) continue
     const sources = incoming.get(edge.to)
-    if (sources) sources.push(edge.from)
-    else incoming.set(edge.to, [edge.from])
+    if (sources) sources.push(edge.fromEntity)
+    else incoming.set(edge.to, [edge.fromEntity])
   }
 
   // 3. BFS multi-source. `dist` fait aussi office de marquage de visite, ce qui

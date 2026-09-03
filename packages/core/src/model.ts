@@ -109,7 +109,22 @@ export interface ContainEdge {
 
 export interface RefEdge {
   kind: "ref"
+  /**
+   * Le nœud qui PORTE la ligne : l'entité pour `customerId`, le value object
+   * pour `lines[*].productRef`. L'invariant « `field` est une clé de ligne de
+   * `from` » tient donc dans les deux cas, et tout ce qui travaille à la ligne
+   * (teinte de la valeur, croix de référence cassée, `refEdges(from)`, panneau
+   * de détail) continue de lire `from` sans rien savoir des value objects.
+   */
   from: NodeId
+  /**
+   * L'ENTITÉ qui a déclaré la référence — `from` lui-même quand le chemin n'a
+   * aucune navigation. C'est le niveau auquel la relation existe : un value
+   * object n'a pas d'identité propre, sa référence est celle de son entité.
+   * D'où sa lecture par l'appartenance d'agrégat, la mise en page deux niveaux
+   * et l'estompage, qui raisonnent tous en entités.
+   */
+  fromEntity: NodeId
   to: NodeId | null
   field: string
   targetType: string
@@ -118,7 +133,12 @@ export interface RefEdge {
 }
 
 export interface Diagnostic {
-  code: "dangling-ref" | "duplicate-id" | "missing-id"
+  /**
+   * `unresolved-reference` porte sur une DÉCLARATION, pas sur un nœud : son
+   * `path` est la clé écrite dans la config (`Cart.lines[*].productRef`) et non
+   * un pointeur, puisque justement aucun nœud ne l'a satisfaite.
+   */
+  code: "dangling-ref" | "duplicate-id" | "missing-id" | "unresolved-reference"
   path: string
   message: string
 }

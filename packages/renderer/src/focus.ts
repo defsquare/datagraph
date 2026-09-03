@@ -44,6 +44,11 @@ export const DIM_ALPHA = 0.25;
  * plutôt que le `Graph` et un `NodeId` : la fonction n'a besoin de rien
  * d'autre, et s'en tenir là la rend testable sans construire de graphe.
  * `to === null` (référence cassée) est ignoré : il n'y a personne au bout.
+ *
+ * Le bout SOURCE d'une référence est son entité déclarante (`fromEntity`) et
+ * non le nœud qui porte la ligne : le voisinage se raisonne entre cartes de la
+ * vue graphe, où un value object n'existe pas comme carte et où c'est bien
+ * l'entité qui est « liée » à la cible.
  */
 export function relatedIds(
   refEdges: readonly RefEdge[],
@@ -57,8 +62,8 @@ export function relatedIds(
   for (const childId of childIds) keep.add(childId);
   for (const edge of refEdges) {
     if (edge.to === null) continue;
-    if (edge.from === focusId) keep.add(edge.to);
-    else if (edge.to === focusId) keep.add(edge.from);
+    if (edge.fromEntity === focusId) keep.add(edge.to);
+    else if (edge.to === focusId) keep.add(edge.fromEntity);
   }
   return keep;
 }
@@ -91,8 +96,11 @@ export function clusterRelatedIds(
   const keep = new Set<NodeId>(memberIds);
   for (const edge of refEdges) {
     if (edge.to === null) continue;
-    if (memberIds.has(edge.from)) keep.add(edge.to);
-    else if (memberIds.has(edge.to)) keep.add(edge.from);
+    // `fromEntity` pour la même raison que `relatedIds` : les membres d'un
+    // agrégat sont des entités, et une référence portée par un value object
+    // parle au nom de la sienne.
+    if (memberIds.has(edge.fromEntity)) keep.add(edge.to);
+    else if (memberIds.has(edge.to)) keep.add(edge.fromEntity);
   }
   return keep;
 }

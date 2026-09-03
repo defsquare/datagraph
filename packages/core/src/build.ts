@@ -1,5 +1,5 @@
-import { validateConfig, type DataGraphConfig } from "./config.js"
-import { matchesPath } from "./selector.js"
+import { validateConfig, type DataGraphConfig, type ReferenceDecl } from "./config.js"
+import { matchesPath, type PathSegment } from "./selector.js"
 import {
   GraphTooLargeError,
   VALUE_ONLY_KEY,
@@ -268,36 +268,101 @@ export function buildGraph(data: unknown, config: DataGraphConfig): Graph {
   // vaut false, donc un document qui est un tableau nu garde bien sa carte.
   visitValue(data, [], null, null, false)
 
+  /**
+   * Les nœuds atteints depuis `start` en descendant `navigate`, un segment à
+   * la fois, par le DERNIER élément du chemin de chaque enfant.
+   *
+   * Descendre par les enfants, et non filtrer tous les nœuds par `matchesPath`,
+   * est ce qui ancre le chemin sur l'INSTANCE : `lines[*]` doit désigner les
+   * lignes de ce panier-ci, pas celles de tous les paniers.
+   *
+   * Un chemin sans navigation rend l'entité elle-même — le cas historique
+   * `customerId`, qui reste ainsi exactement le même parcours.
+   */
+  function navigateFrom(start: GraphNode, navigate: PathSegment[]): GraphNode[] {
+    let current: GraphNode[] = [start]
+    for (const segment of navigate) {
+      const next: GraphNode[] = []
+      for (const node of current) {
+        for (const childId of node.childIds) {
+          const child = graph.nodes.get(childId)
+          if (!child) continue
+          // `matchesPath` sur le seul dernier élément : la comparaison
+          // clé/indice/joker doit rester celle des sélecteurs, pas une seconde
+          // implémentation qui lui ressemble.
+          if (matchesPath([segment], child.path.slice(-1))) next.push(child)
+        }
+      }
+      if (next.length === 0) return []
+      current = next
+    }
+    return current
+  }
+
+  /** Les déclarations dont AUCUNE instance n'a exposé la ligne terminale, et
+   * les types dont au moins une instance existe : de quoi n'accuser une
+   * déclaration que lorsqu'il y avait matière à la satisfaire. */
+  const unsatisfied = new Set<ReferenceDecl>()
+  const typesSeen = new Set<string>()
+  for (const decls of validated.references.values()) for (const d of decls) unsatisfied.add(d)
+
   for (const node of graph.nodes.values()) {
     if (node.kind !== "entity") continue
-    const refs = validated.references.get(node.entityType)
-    if (!refs) continue
-    for (const [field, targetType] of refs) {
-      const row = node.rows.find((r) => r.key === field)
-      // Une ligne de tableau est écartée explicitement : sa `value` est un
-      // NOMBRE D'ÉLÉMENTS, et la prendre pour un identifiant ferait pointer la
-      // référence sur « 3 ». Un champ déclaré comme référence mais porté par
-      // un tableau est une erreur de config, pas une référence à résoudre.
-      if (!row || row.valueType === "array" || row.value === null) continue
-      const targetId = String(row.value)
-      const to = graph.entityIndex.get(targetType)?.get(targetId) ?? null
-      const dangling = to === null
-      graph.refEdges.push({
-        kind: "ref",
-        from: node.id,
-        to,
-        field,
-        targetType,
-        targetId,
-        dangling,
-      })
-      if (dangling) {
-        graph.diagnostics.push({
-          code: "dangling-ref",
-          path: node.id,
-          message: `Reference "${field}" on ${node.entityType} at ${node.id} targets unknown ${targetType} "${targetId}"`,
+    typesSeen.add(node.entityType)
+    const decls = validated.references.get(node.entityType)
+    if (!decls) continue
+    for (const decl of decls) {
+      for (const holder of navigateFrom(node, decl.navigate)) {
+        const row = holder.rows.find((r) => r.key === decl.field)
+        if (!row) continue
+        // La ligne EXISTE : la déclaration n'est pas une faute de frappe, même
+        // si sa valeur ne produit aucune arête (nulle, ou tableau). C'est ce
+        // qui distingue `unresolved-reference` d'un champ simplement vide.
+        unsatisfied.delete(decl)
+        // Une ligne de tableau est écartée explicitement : sa `value` est un
+        // NOMBRE D'ÉLÉMENTS, et la prendre pour un identifiant ferait pointer la
+        // référence sur « 3 ». Un champ déclaré comme référence mais porté par
+        // un tableau est une erreur de config, pas une référence à résoudre.
+        if (row.valueType === "array" || row.value === null) continue
+        const targetId = String(row.value)
+        const to = graph.entityIndex.get(decl.targetType)?.get(targetId) ?? null
+        const dangling = to === null
+        graph.refEdges.push({
+          kind: "ref",
+          from: holder.id,
+          fromEntity: node.id,
+          to,
+          field: decl.field,
+          targetType: decl.targetType,
+          targetId,
+          dangling,
         })
+        if (dangling) {
+          // Le diagnostic pointe le nœud QUI PORTE la ligne, pas l'entité : la
+          // croix de `drawNode` se pose contre la valeur fautive, et elle est
+          // sur la carte du value object.
+          graph.diagnostics.push({
+            code: "dangling-ref",
+            path: holder.id,
+            message: `Reference "${decl.field}" on ${node.entityType} at ${holder.id} targets unknown ${decl.targetType} "${targetId}"`,
+          })
+        }
       }
+    }
+  }
+
+  // Une déclaration jamais satisfaite alors que le type a des instances est
+  // presque toujours une faute de frappe — un silence, jusqu'ici. Aucune
+  // instance du type, en revanche, ne prouve rien sur la déclaration.
+  for (const [sourceType, decls] of validated.references) {
+    if (!typesSeen.has(sourceType)) continue
+    for (const decl of decls) {
+      if (!unsatisfied.has(decl)) continue
+      graph.diagnostics.push({
+        code: "unresolved-reference",
+        path: `${sourceType}.${decl.path}`,
+        message: `Reference "${decl.path}" declared on ${sourceType} matches no row on any ${sourceType}`,
+      })
     }
   }
 

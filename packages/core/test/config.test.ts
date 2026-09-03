@@ -14,7 +14,10 @@ describe("validateConfig", () => {
   it("accepts a valid config and applies defaults", () => {
     const v = validateConfig(base)
     expect(v.entities.get("Order")!.idField).toBe("id")
-    expect(v.references.get("Order")!.get("customerId")).toBe("Customer")
+    // Une clé sans `.` ni `[` reste une clé de ligne verbatim : navigation vide.
+    expect(v.references.get("Order")).toEqual([
+      { navigate: [], field: "customerId", targetType: "Customer", path: "customerId" },
+    ])
     expect(v.maxNodes).toBe(50_000)
   })
   it("rejects a reference to an unknown entity type", () => {
@@ -25,6 +28,40 @@ describe("validateConfig", () => {
       ...base, references: { Facture: { customerId: "Customer" } },
     })).toThrow(ConfigError)
   })
+  it("parses a reference key that holds a relative path", () => {
+    const v = validateConfig({
+      ...base, references: { Order: { "lines[*].productRef": "Customer" } },
+    })
+    expect(v.references.get("Order")).toEqual([{
+      navigate: [{ kind: "key", key: "lines" }, { kind: "wildcard" }],
+      field: "productRef",
+      targetType: "Customer",
+      path: "lines[*].productRef",
+    }])
+  })
+
+  it("keeps an exotic key verbatim instead of parsing it", () => {
+    // Le token du sélecteur n'accepte pas `@`, mais une clé JSON, si : la
+    // parser rejetterait une config qui marche aujourd'hui.
+    const v = validateConfig({ ...base, references: { Order: { "@odata:id": "Customer" } } })
+    expect(v.references.get("Order")![0]).toMatchObject({ navigate: [], field: "@odata:id" })
+  })
+
+  it("rejects a reference path whose last segment is not a field name", () => {
+    // Le chemin désigne une LIGNE, et une ligne a un nom.
+    for (const bad of ["lines[*]", "lines[*].*", "lines[0]"]) {
+      expect(() => validateConfig({
+        ...base, references: { Order: { [bad]: "Customer" } },
+      })).toThrow(ConfigError)
+    }
+  })
+
+  it("rejects a malformed reference path", () => {
+    expect(() => validateConfig({
+      ...base, references: { Order: { "lines[.productRef": "Customer" } },
+    })).toThrow(ConfigError)
+  })
+
   it("rejects an empty entities map and bad selectors", () => {
     expect(() => validateConfig({ entities: {} })).toThrow(ConfigError) // "empty-config"
     expect(() => validateConfig({ entities: { X: { match: "nope", id: "id" } } })).toThrow(ConfigError)

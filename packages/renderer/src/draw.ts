@@ -5,9 +5,11 @@ import {
   arrayTokenTextFor,
   arrayTokenWidth,
   anchorRectFor,
+  visibleAnchorRectFor,
   isValueOnlyRow,
   DEFAULT_METRICS,
   type ArrayRow,
+  type ContainEdge,
   type Graph,
   type GraphNode,
   type NodeId,
@@ -646,9 +648,22 @@ export function drawEdges(
   if (lod === 2) return g;
 
   /** L'arête appartient-elle à la passe d'alpha `full` ? Sans focus, tout est
-   * de la passe pleine et la passe estompée n'émet aucune instruction. */
-  const inPass = (from: NodeId, to: NodeId | null, full: boolean): boolean =>
-    (focusIds === null || focusIds.has(from) || (to !== null && focusIds.has(to))) === full;
+   * de la passe pleine et la passe estompée n'émet aucune instruction.
+   *
+   * Une référence compte aussi par son ENTITÉ déclarante : la sélection est le
+   * value object en vue structure, mais l'entité en vue graphe, où le value
+   * object n'a pas de carte à sélectionner. Sans `fromEntity`, sélectionner un
+   * panier estomperait l'arête que sa propre ligne porte. L'arête entière en
+   * paramètre plutôt que deux ids : c'est elle qui sait s'il y a une entité
+   * derrière son départ. */
+  const inPass = (edge: ContainEdge | RefEdge, full: boolean): boolean => {
+    if (focusIds === null) return full;
+    const touched =
+      focusIds.has(edge.from) ||
+      (edge.to !== null && focusIds.has(edge.to)) ||
+      (edge.kind === "ref" && focusIds.has(edge.fromEntity));
+    return touched === full;
+  };
 
   // Estompée d'abord, pleine ensuite : les arêtes de la sélection sont ainsi
   // peintes par-dessus les autres, dans un Graphics unique où seul l'ordre
@@ -671,7 +686,7 @@ export function drawEdges(
     for (const pass of PASSES) {
       let hasContain = false;
       for (const edge of graph.containEdges) {
-        if (!inPass(edge.from, edge.to, pass.full)) continue;
+        if (!inPass(edge, pass.full)) continue;
         // Le DÉPART passe par `anchorRectFor` : pour un tableau élidé, c'est la
         // bande de sa ligne sur la carte parente, si bien que l'arête sort du
         // jeton `[ n items ]` et non du milieu de la carte. L'ARRIVÉE, elle, se
@@ -701,8 +716,15 @@ export function drawEdges(
     const resolved: { x1: number; y1: number; x2: number; y2: number }[] = [];
     for (const edge of graph.refEdges) {
       if (edge.dangling || edge.to === null) continue;
-      if (!inPass(edge.from, edge.to, pass.full)) continue;
-      const from = positions.get(edge.from);
+      if (!inPass(edge, pass.full)) continue;
+      // Le DÉPART est HISSÉ jusqu'au plus proche ancêtre visible : la carte du
+      // value object si elle est dépliée, la bande de la ligne `lines
+      // [ n items ]` si le tableau est replié, la carte de l'entité en vue
+      // graphe. Une référence portée par un value object reste ainsi tracée
+      // dans toutes les vues, au lieu de disparaître avec la carte qui la
+      // porte. L'ARRIVÉE, elle, se lit toujours dans `positions` : une cible
+      // hors de l'écran n'a pas d'arête à montrer.
+      const from = visibleAnchorRectFor(graph, positions, edge.from, metrics);
       const to = positions.get(edge.to);
       if (!from || !to) continue;
       // Chaque bout sort du côté qui fait face à l'autre carte, sinon la ligne
