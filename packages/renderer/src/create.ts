@@ -1149,6 +1149,21 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     redrawEdges();
     redrawEdgeHitAreas();
 
+    // Les champs porteurs d'une référence sortante, indexés UNE fois par
+    // rebuild : `drawNode` en a besoin carte par carte, et re-parcourir
+    // `refEdges` pour chacune rendrait le rebuild quadratique. Aucun filtre sur
+    // `dangling` — `handleNodeTap` n'en pose pas non plus, et une référence
+    // cassée reste une valeur sur laquelle le clic FAIT quelque chose.
+    const refFieldsByNode = new Map<NodeId, Set<string>>();
+    for (const edge of graph.refEdges) {
+      let fields = refFieldsByNode.get(edge.from);
+      if (!fields) {
+        fields = new Set();
+        refFieldsByNode.set(edge.from, fields);
+      }
+      fields.add(edge.field);
+    }
+
     const visible = activeVisible();
     for (const id of visible) {
       const node = graph.nodes.get(id);
@@ -1169,9 +1184,55 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
         metrics,
         expanded,
         hasChevron,
+        // `undefined` pour un nœud sans référence sortante : `drawNode` retombe
+        // alors sur son ensemble vide partagé plutôt que d'en allouer un par
+        // carte.
+        refFieldsByNode.get(id),
       );
       nodeView.position.set(rect.x, rect.y);
       attachTap(nodeView, (event) => handleNodeTap(node, nodeView, event));
+
+      // Le souligné d'une valeur référençante, révélé au survol de SA ligne :
+      // l'affordance de lien hypertexte, que la seule teinte ne donne pas — une
+      // couleur dit « ceci est particulier », un souligné qui suit le pointeur
+      // dit « ceci répond au clic ». `drawNode` a préparé un Graphics caché par
+      // ligne concernée ; tout ce qui reste ici est une visibilité à basculer.
+      const refFields = refFieldsByNode.get(id);
+      let underlined: number | null = null;
+      // L'index courant est MÉMORISÉ : `pointermove` arrive à chaque pixel, et
+      // une recherche par label à chaque événement parcourrait tous les enfants
+      // de la carte pour, presque toujours, retrouver la même ligne. On ne
+      // touche au graphe d'affichage que sur un vrai changement de ligne.
+      const underline = (index: number | null): void => {
+        if (index === underlined) return;
+        if (underlined !== null) {
+          const previous = nodeView.getChildByLabel(`ref-underline:${underlined}`);
+          if (previous) previous.visible = false;
+        }
+        if (index !== null) {
+          const next = nodeView.getChildByLabel(`ref-underline:${index}`);
+          if (next) next.visible = true;
+        }
+        underlined = index;
+      };
+      // Rien à câbler sur une carte sans référence sortante, ni hors du LOD 0 où
+      // aucune ligne n'est rendue : `underline` y reste un no-op, ce qui laisse
+      // le `onStart` du déplacement ci-dessous inconditionnel.
+      if (refFields && currentLod === 0) {
+        nodeView.on("pointermove", (event: FederatedPointerEvent) => {
+          // Pendant un déplacement, le pointeur ne DÉSIGNE plus une ligne, il
+          // tient la carte : souligner sous lui promettrait un clic que le
+          // geste en cours ne fera pas.
+          if (contentDragging) {
+            underline(null);
+            return;
+          }
+          const index = rowIndexAt(nodeView, node, event);
+          const row = index === null ? undefined : node.rows[index];
+          underline(row && refFields.has(row.key) ? index : null);
+        });
+        nodeView.on("pointerout", () => underline(null));
+      }
       // Le « lift » du survol : la carte grossit de `HOVER_LIFT` AUTOUR DE SON
       // CENTRE. Pixi met l'origine d'un container en haut à gauche, donc une
       // simple échelle la ferait pousser vers le bas-droite ; la position est
@@ -1212,6 +1273,10 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
           // `isBlocked` ne suffit pas — il empêche un survol de COMMENCER, pas
           // celui qui est déjà là de rester peint.
           hover.cancel();
+          // Même raison, et même moment, pour le souligné : un autre geste prend
+          // la main, et l'affordance d'un clic qui n'aura pas lieu doit
+          // disparaître AVEC lui, pas au prochain `pointermove`.
+          underline(null);
           beginDrag();
         },
         onMove: (dx, dy) => dragCard(id, nodeView, dx, dy),
@@ -1253,6 +1318,29 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     camera.fitTo(bounds, viewport());
   }
 
+  /**
+   * L'index de la ligne sous le pointeur, ou `null` si le pointeur n'est sur
+   * aucune : hors du LOD 0 (seul LOD qui rende des lignes), dans l'en-tête, ou
+   * dans le padding bas — où le clic tombe sous la dernière ligne.
+   *
+   * Partagé par le clic et par le survol, et c'est le partage lui-même qui est
+   * l'intérêt : deux copies de cette arithmétique dériveraient au premier
+   * changement de métrique, et la carte soulignerait alors une ligne pendant
+   * que le clic en suivrait une autre — le pire des deux défauts, puisque
+   * l'affordance mentirait sur ce que le geste va faire.
+   */
+  function rowIndexAt(
+    nodeView: Container,
+    node: GraphNode,
+    event: FederatedPointerEvent,
+  ): number | null {
+    if (currentLod !== 0) return null;
+    const local = nodeView.toLocal(event.global);
+    if (local.y < metrics.headerHeight) return null;
+    const index = Math.floor((local.y - metrics.headerHeight) / metrics.rowHeight);
+    return index < node.rows.length ? index : null;
+  }
+
   /** Header click on a node with children toggles expand/collapse; a header
    * click on a childless node, or a body click that isn't a ref-field row,
    * selects the node; a click on a row backed by an outgoing ref edge
@@ -1273,9 +1361,8 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
           return;
         }
       } else {
-        const rowIndex = Math.floor((local.y - metrics.headerHeight) / metrics.rowHeight);
-        // Un clic dans le padding bas ne tombe sur aucune ligne.
-        const row = rowIndex < node.rows.length ? node.rows[rowIndex] : undefined;
+        const rowIndex = rowIndexAt(nodeView, node, event);
+        const row = rowIndex === null ? undefined : node.rows[rowIndex];
         if (row) {
           const edge = graph.refEdges.find((e) => e.from === node.id && e.field === row.key);
           if (edge) {

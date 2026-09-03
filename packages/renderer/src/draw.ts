@@ -108,6 +108,10 @@ function drawChevron(g: Graphics, x: number, y: number, expanded: boolean, color
   g.fill(color);
 }
 
+/** Aucun champ référençant : une constante partagée plutôt qu'un `new Set()`
+ * par appel, `drawNode` étant appelé une fois par carte visible et par rebuild. */
+const NO_REF_FIELDS: ReadonlySet<string> = new Set();
+
 /**
  * Dessine le visuel d'un nœud, positionné en (0,0) dans son espace local
  * (l'appelant le place à `rect.x`/`rect.y`).
@@ -124,6 +128,18 @@ function drawChevron(g: Graphics, x: number, y: number, expanded: boolean, color
  * de containment — est celui de la vue structure ; la vue graphe le passe
  * explicitement, car là c'est l'agrégat qui se plie, pas l'arbre, et seule sa
  * racine porte un chevron.
+ *
+ * `refFields` nomme les lignes dont la valeur déclenche une référence sortante
+ * au clic. Sans ce signal, rien ne distinguait une valeur navigable d'une
+ * valeur inerte : la carte proposait un geste invisible. L'appelant passe des
+ * NOMS DE CHAMPS et non des arêtes — `drawNode` n'a pas à connaître le graphe.
+ *
+ * L'indicateur est en deux temps, et c'est ce qui préserve la pureté de ce
+ * fichier : au repos la valeur est simplement TEINTÉE, et un souligné est
+ * préparé sous elle, `visible = false`. Savoir quelle ligne est sous le
+ * pointeur est un état d'interface qui appartient à `create.ts` ; il n'a plus
+ * qu'à basculer une visibilité par label, sans redessiner ni consulter la
+ * géométrie que ce fichier vient de calculer.
  */
 export function drawNode(
   node: GraphNode,
@@ -135,6 +151,7 @@ export function drawNode(
   metrics: NodeMetrics = DEFAULT_METRICS,
   expanded = false,
   showChevron = node.childIds.length > 0,
+  refFields: ReadonlySet<string> = NO_REF_FIELDS,
 ): Container {
   // Les atlas sont installés par le bail que tient `create.ts`, avant tout
   // appel ici. `fontNameFor` en dérive le nom depuis le thème seul.
@@ -259,12 +276,42 @@ export function drawNode(
     const valueStr = truncateToWidth(String(row.value), valueBudget, valueCharWidth);
     if (valueStr.length === 0) return;
 
-    const valueText = createLabel(valueStr, theme, "value", theme.ink.primary, useBitmapText);
+    // La valeur porte la couleur de l'arête qu'elle déclenche : c'est le même
+    // objet vu de deux endroits, pas deux informations à accorder. La teinte
+    // ne prend AUCUNE place, contrairement à une icône : les budgets ci-dessus
+    // restent donc ceux d'une ligne ordinaire, et rendre une ligne navigable ne
+    // peut pas raccourcir la valeur qu'elle affiche.
+    const isRef = refFields.has(row.key);
+    const valueColor = isRef ? theme.edge.ref : theme.ink.primary;
+    const valueText = createLabel(valueStr, theme, "value", valueColor, useBitmapText);
     valueText.position.set(
       Math.round(contentRight - valueText.width),
       Math.round(y - valueText.height / 2),
     );
     container.addChild(valueText);
+
+    if (!isRef) return;
+    // Le souligné du survol : l'affordance de lien hypertexte. Il est posé APRÈS
+    // le repli sur valeur vide, car il souligne un TEXTE — sans texte, un trait
+    // isolé ne désignerait plus rien.
+    //
+    // Caché, et repéré par un label plutôt que rendu à l'appelant : l'état de
+    // survol (quelle ligne est sous le pointeur) appartient à `create.ts`, et
+    // c'est de le garder hors d'ici qui laisse `drawNode` pur et testable sans
+    // instance. Ce fichier ne fait que préparer un visuel piloté par visibilité.
+    //
+    // La géométrie est reprise du texte lui-même, jamais recalculée : le trait
+    // couvre exactement sa largeur et suit sa ligne de base, si bien qu'un
+    // changement de police ou de troncature n'a pas à être répercuté ici.
+    const underline = new Graphics();
+    underline.label = `ref-underline:${index}`;
+    underline.visible = false;
+    const underlineY = Math.round(valueText.y + valueText.height) + 1;
+    underline
+      .moveTo(valueText.x, underlineY)
+      .lineTo(contentRight, underlineY)
+      .stroke({ width: 1, color: theme.edge.ref });
+    container.addChild(underline);
   });
 
   return container;
