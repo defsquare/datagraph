@@ -74,9 +74,11 @@ test("un tableau elide ne compte pas comme une carte", async ({ page }) => {
     const g = (window as any).__graph
     return { logical: g.stats().logicalNodeCount }
   })
-  // `logicalNodeCount` ne bouge pas, lui : le nœud tableau existe toujours, et
-  // un element scalaire coute exactement ce que coutait la ligne qu'il remplace.
-  expect(counts.logical).toBe(76)
+  // `logicalNodeCount` ne bouge pas avec l'elision, lui : le nœud tableau
+  // existe toujours, et un element scalaire coute exactement ce que coutait la
+  // ligne qu'il remplace. 78 = les 76 d'origine + les deux lignes `customerId`
+  // ajoutees aux reviews pour l'exemple de reference portee par un value object.
+  expect(counts.logical).toBe(78)
 })
 
 /**

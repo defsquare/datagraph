@@ -6,7 +6,7 @@ import {
   type GraphNode,
   type RefEdge,
 } from "@defsquare/data-graph";
-import { shopData, shopConfig, bigShopData } from "./sample-data";
+import { shopData, shopConfig, bigShopData, bigShopConfig } from "./sample-data";
 
 const container = document.getElementById("app");
 if (!container) throw new Error("#app container not found");
@@ -213,9 +213,14 @@ statDiagEl?.addEventListener("click", () => {
 
 // --- Dataset swap: exercises setData() with the small `shopData` fixture vs.
 // a ~4000-logical-node `bigShopData` generated fixture (4061 exactly: 78
-// clients, 234 commandes, 30 produits, 8 catégories — 350 entités). Config is
-// the same for both, so this deliberately calls setData(data) without a
-// config, exercising the "reuse current config when omitted" path.
+// clients, 234 commandes, 30 produits, 8 catégories — 350 entités).
+//
+// La config est passée EXPLICITEMENT dans les deux sens : le petit jeu déclare
+// `reviews[*].customerId`, que le grand — sans reviews — ne peut pas
+// satisfaire, et réutiliser la même config afficherait un
+// `unresolved-reference` légitime mais déroutant dans la barre d'état. Le
+// chemin « setData(data) sans config réutilise la config courante » n'est donc
+// plus exercé ici ; il l'est par un test e2e dédié (smoke.spec.ts).
 const toggleDatasetBtn = document.getElementById("toggle-dataset") as HTMLButtonElement | null;
 let usingBigDataset = false;
 
@@ -225,7 +230,10 @@ if (toggleDatasetBtn) {
       toggleDatasetBtn.disabled = true;
       try {
         usingBigDataset = !usingBigDataset;
-        await graph.setData(usingBigDataset ? bigShopData : shopData);
+        await graph.setData(
+          usingBigDataset ? bigShopData : shopData,
+          usingBigDataset ? bigShopConfig : shopConfig,
+        );
         toggleDatasetBtn.textContent = usingBigDataset ? "Jeu de données réduit" : "Jeu de données étendu (4000)";
         // setData() resets the renderer's own search/selection state; mirror
         // that in the demo's local UI state too.

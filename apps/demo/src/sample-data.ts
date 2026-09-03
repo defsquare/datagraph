@@ -177,9 +177,11 @@ function addressOf(seed: number): Address {
 // pastille compte les enfants ». Les deux ne sont visibles qu'en vue
 // structure, la vue graphe ne montrant que des entités.
 //
-// `reviews[].author` reste du texte libre et n'est PAS déclaré dans
-// `shopConfig.references` : ajouter une référence de plus ici ferait passer le
-// compte de diagnostics à 2 et casserait le test e2e.
+// `reviews[*].customerId` est LA référence portée par un value object du jeu :
+// déclarée par chemin relatif sur `Product`, résolue sur les cartes
+// `reviews[0]`/`reviews[1]`, hissée sur `#p16` quand le tableau est replié ou
+// en vue graphe. Elle RÉSOUT (c1 et c2 existent), donc le compte de
+// diagnostics reste à 1 — `author` reste du texte libre, lui.
 export const shopData = {
   categories: [
     { id: "cat1", name: "Informatique" },
@@ -205,11 +207,13 @@ export const shopData = {
       reviews: [
         {
           author: "Camille Dubois",
+          customerId: "c1",
           rating: 5,
           comment: "Confortable sur une journée entière, autonomie tenue.",
         },
         {
           author: "Julien Martin",
+          customerId: "c2",
           rating: 4,
           comment: "Bonne réduction de bruit, l'étui aurait pu être plus rigide.",
         },
@@ -267,10 +271,24 @@ export const shopConfig: DataGraphConfig = {
   },
   references: {
     Order: { customerId: "Customer", productId: "Product" },
-    Product: { categoryId: "Category" },
+    Product: { categoryId: "Category", "reviews[*].customerId": "Customer" },
   },
   rootLabel: "Boutique",
   aggregates: ["Customer", "Product"],
+};
+
+// Le grand jeu n'a PAS de reviews : garder la déclaration
+// `reviews[*].customerId` sur lui déclencherait un `unresolved-reference`
+// parfaitement légitime — aucune instance de Product ne porte la ligne — mais
+// la barre d'état de la démo afficherait alors un diagnostic qui se lirait
+// comme un bug. D'où une config propre au grand jeu, identique à un
+// retranchement près.
+export const bigShopConfig: DataGraphConfig = {
+  ...shopConfig,
+  references: {
+    Order: { customerId: "Customer", productId: "Product" },
+    Product: { categoryId: "Category" },
+  },
 };
 
 // Coût en nœuds logiques d'une entité, tel que les compte `buildGraph` : le

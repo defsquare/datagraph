@@ -83,6 +83,37 @@ test("le panneau de detail montre le type et permet de suivre une reference", as
   await expect(page.locator("#selection-label")).toContainText("Customer #c1")
 })
 
+test("setData sans config reutilise la config courante", async ({ page }) => {
+  // Ce chemin etait exerce par le bouton de bascule de jeu, jusqu'a ce que les
+  // deux jeux cessent de partager leur config (le petit declare
+  // `reviews[*].customerId`, que le grand ne peut pas satisfaire). Il n'a plus
+  // que ce test : si `setData(data)` cessait de reutiliser la config, le graphe
+  // reconstruit ici perdrait ses entites et ses references.
+  const errors: string[] = []
+  page.on("pageerror", e => errors.push(String(e)))
+
+  await gotoReady(page)
+  const before = await page.evaluate(() => (window as any).__graph.stats())
+  // Un jeu minimal de la MEME forme que shopData : ce que ce test observe est
+  // que la config initiale (entites, references) s'applique encore a lui.
+  await page.evaluate(async () => {
+    const g = (window as any).__graph
+    await g.setData({
+      categories: [{ id: "cat1", name: "Informatique" }],
+      products: [{ id: "p1", name: "Clavier", categoryId: "cat1" }],
+      customers: [{ id: "c1", name: "Dupont" }],
+      orders: [{ id: "o1", customerId: "c1", productId: "p1" }],
+    })
+  })
+  const after = await page.evaluate(() => (window as any).__graph.stats())
+  // La config a ete REUTILISEE : les entites existent toujours (sinon zero
+  // arete, zero entite, et un logicalNodeCount de squelette nu).
+  const refs = await page.evaluate(() => (window as any).__graph.refEdges("/orders/0"))
+  expect(refs.length).toBe(2)
+  expect(before.logicalNodeCount).toBeGreaterThan(after.logicalNodeCount)
+  expect(errors).toEqual([])
+})
+
 test("une reference cassee est signalee dans la barre d'etat", async ({ page }) => {
   await gotoReady(page)
   await expect(page.locator("#stat-diagnostics")).toBeVisible()
