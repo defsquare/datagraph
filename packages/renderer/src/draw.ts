@@ -596,12 +596,25 @@ export function drawEdgeHitAreas(graph: Graph, positions: Map<NodeId, Rect>): Ed
  *
  * C'est le seul endroit, avec les références cassées, où le rouge apparaît :
  * comme plus rien d'autre n'est rouge, la sélection se lit immédiatement.
+ *
+ * Le surlignage d'une référence résolue REPREND la géométrie et le style de
+ * `drawEdges` — mêmes ancrages, même arrêt au pied de la flèche, même tête
+ * repeinte —, et son trait suit le mode : plein en `"ref"`, pointillé en
+ * `"contain"`. Autrement dit, il fait CHANGER DE STYLE l'arête existante au lieu
+ * d'en superposer une seconde. Un pointillé posé sur le trait plein de la vue
+ * graphe se lisait comme une arête de plus, et sa ligne traversait la tête de
+ * flèche de celle qu'elle était censée souligner.
+ *
+ * Le moignon d'une référence cassée reste pointillé dans les deux modes : son
+ * pointillé ne dit pas « secondaire » mais « ne mène nulle part » — même
+ * argument que dans `drawEdges`.
  */
 export function drawSelectionOverlay(
   graph: Graph,
   positions: Map<NodeId, Rect>,
   theme: Theme,
   selectedId: NodeId | null,
+  mode: EdgeMode = "contain",
 ): Graphics {
   const g = new Graphics();
   if (!selectedId) return g;
@@ -632,6 +645,7 @@ export function drawSelectionOverlay(
   if (hasChain) g.stroke({ width: theme.strokes.selection, color: theme.accent.selection });
 
   let hasRefs = false;
+  const resolved: { x1: number; y1: number; x2: number; y2: number }[] = [];
   for (const edge of graph.refEdges) {
     if (edge.from !== selectedId) continue;
     const from = positions.get(edge.from);
@@ -644,7 +658,18 @@ export function drawSelectionOverlay(
       const toCenter = centerOf(to);
       const start = anchorOnRect(from, toCenter.x, toCenter.y);
       const end = anchorOnRect(to, fromCenter.x, fromCenter.y);
-      dashedLine(g, start.x, start.y, end.x, end.y);
+      // La ligne s'arrête au pied de la flèche pour ne pas la traverser.
+      const len = Math.hypot(end.x - start.x, end.y - start.y);
+      const t = len > ARROW_LENGTH ? (len - ARROW_LENGTH) / len : 1;
+      const ex = start.x + (end.x - start.x) * t;
+      const ey = start.y + (end.y - start.y) * t;
+      if (mode === "ref") {
+        g.moveTo(start.x, start.y);
+        g.lineTo(ex, ey);
+      } else {
+        dashedLine(g, start.x, start.y, ex, ey);
+      }
+      resolved.push({ x1: start.x, y1: start.y, x2: end.x, y2: end.y });
     } else {
       const x1 = from.x + from.width;
       const y1 = from.y + from.height / 2;
@@ -653,6 +678,13 @@ export function drawSelectionOverlay(
     hasRefs = true;
   }
   if (hasRefs) g.stroke({ width: theme.strokes.selection, color: theme.accent.selection });
+  if (resolved.length > 0) {
+    // Les têtes de flèche sont des triangles pleins : leur `fill()` ne peut pas
+    // partager le `stroke()` des traits, d'où cet appel distinct — exactement le
+    // découpage de `drawEdges`.
+    for (const r of resolved) arrowHead(g, r.x1, r.y1, r.x2, r.y2);
+    g.fill(theme.accent.selection);
+  }
 
   return g;
 }

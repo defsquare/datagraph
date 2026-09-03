@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { Color } from "pixi.js";
 import { buildGraph } from "@defsquare/data-graph-core";
 import { anchorOnRect, drawEdgeHitAreas, drawEdges, drawSelectionOverlay } from "../src/draw.js";
 import { DIM_ALPHA } from "../src/focus.js";
@@ -409,15 +410,19 @@ describe("edge anchoring follows the direction to the target", () => {
 
   it("aligns the selection overlay with the drawn reference", () => {
     const g = drawSelectionOverlay(graph, positions, theme, SOURCE);
-    // Dernière instruction : le stroke des références sortantes.
-    const path = firstPath(g, g.context.instructions.length - 1);
+    // Le DERNIER stroke, et non la dernière instruction : depuis que le
+    // surlignage repeint aussi la tête de flèche, le contexte se termine par un
+    // `fill()`, pas par le tracé des références sortantes.
+    const actions = (g.context.instructions as any[]).map((x) => x.action);
+    const path = firstPath(g, actions.lastIndexOf("stroke"));
     expect(path[0].action).toBe("moveTo");
     expect(path[0].data).toEqual(START);
-    // Pointillé : le dernier point tracé tombe où le dernier tiret s'arrête,
-    // donc à moins d'un motif (tiret + espace) de l'ancrage de la cible.
+    // Pointillé s'arrêtant au pied de la flèche : le dernier point tracé tombe
+    // où le dernier tiret s'arrête, donc à moins d'un motif (tiret + espace)
+    // plus la longueur de la flèche de l'ancrage de la cible.
     const last = path[path.length - 1].data;
     expect(last[0]).toBeCloseTo(END[0], 10);
-    expect(Math.abs(last[1] - END[1])).toBeLessThanOrEqual(10);
+    expect(Math.abs(last[1] - END[1])).toBeLessThanOrEqual(20);
   });
 
   it("keeps the dangling stub horizontal, anchored mid-right", () => {
@@ -431,5 +436,95 @@ describe("edge anchoring follows the direction to the target", () => {
     const path = firstPath(hit!.graphics, 0);
     expect(path[0].data).toEqual([160, 630]);
     expect(path[1].data[1]).toBe(630);
+  });
+});
+
+/**
+ * Le surlignage de sélection ne doit PAS ajouter un tracé par-dessus l'arête
+ * existante : il doit lui faire changer de STYLE. Il reprend donc la géométrie
+ * de `drawEdges` (mêmes ancrages, arrêt au pied de la flèche, tête repeinte) et
+ * son trait suit le mode — plein en vue graphe, pointillé en vue structure.
+ * Le pointillé surajouté sur une arête pleine était le défaut signalé.
+ */
+describe("drawSelectionOverlay — le surlignage suit le style de l'arête", () => {
+  const theme = resolveTheme(undefined);
+  const graph = buildGraph(shopData, shopConfig);
+
+  const SOURCE = "/orders/0"; // référence résolue vers /customers/0
+  const TARGET = "/customers/0";
+  const DANGLING = "/orders/1"; // référence cassée, donc moignon
+  const positions = new Map<string, { x: number; y: number; width: number; height: number }>([
+    [SOURCE, { x: 0, y: 0, width: 160, height: 60 }],
+    [TARGET, { x: 0, y: 300, width: 160, height: 60 }],
+    [DANGLING, { x: 600, y: 0, width: 160, height: 60 }],
+  ]);
+
+  /** Action et commandes de chemin de chaque instruction, dans l'ordre. */
+  function shape(g: ReturnType<typeof drawSelectionOverlay>): { action: string; path: string[] }[] {
+    return (g.context.instructions as any[]).map((x) => ({
+      action: x.action,
+      path: x.data.path.instructions.map((p: any) => p.action),
+    }));
+  }
+
+  it('trace la référence PLEINE en mode "ref"', () => {
+    const g = drawSelectionOverlay(graph, positions, theme, SOURCE, "ref");
+    const s = shape(g);
+    // Anneau de la carte, trait de la référence, tête de flèche. Aucune chaîne
+    // de parenté : les parents ne sont pas positionnés ici.
+    expect(s.map((x) => x.action)).toEqual(["stroke", "stroke", "fill"]);
+    // Un seul segment, comme `drawEdges` en mode "ref" — pas les N tirets.
+    expect(s[1]!.path).toEqual(["moveTo", "lineTo"]);
+  });
+
+  it('garde la référence POINTILLÉE en mode "contain" (et par défaut)', () => {
+    const explicit = drawSelectionOverlay(graph, positions, theme, SOURCE, "contain");
+    const implicit = drawSelectionOverlay(graph, positions, theme, SOURCE);
+    expect(shape(implicit)).toEqual(shape(explicit));
+    const s = shape(explicit);
+    expect(s.map((x) => x.action)).toEqual(["stroke", "stroke", "fill"]);
+    expect(s[1]!.path.filter((a) => a === "lineTo").length).toBeGreaterThan(1);
+  });
+
+  it("repeint la tête de flèche dans la couleur de sélection, dans les deux modes", () => {
+    for (const mode of ["contain", "ref"] as const) {
+      const g = drawSelectionOverlay(graph, positions, theme, SOURCE, mode);
+      const fills = (g.context.instructions as any[]).filter((x) => x.action === "fill");
+      expect(fills).toHaveLength(1);
+      expect(fills[0].data.style.color).toBe(new Color(theme.accent.selection).toNumber());
+      // La pointe est posée sur l'ancrage de la cible, comme dans `drawEdges`.
+      expect(fills[0].data.path.instructions[0].data).toEqual([80, 300]);
+    }
+  });
+
+  it("arrête le trait au pied de la flèche au lieu de la traverser", () => {
+    const g = drawSelectionOverlay(graph, positions, theme, SOURCE, "ref");
+    const line = (g.context.instructions[1] as any).data.path.instructions;
+    const [ex, ey] = line[1].data;
+    expect(ex).toBeCloseTo(80, 10);
+    expect(ey).toBeGreaterThan(280);
+    expect(ey).toBeLessThan(300);
+  });
+
+  it("laisse le moignon cassé pointillé dans les deux modes", () => {
+    // Le pointillé d'un moignon ne dit pas « secondaire » mais « ne mène nulle
+    // part » : il ne suit donc pas la bascule de mode (même argument que
+    // `drawEdges`).
+    const contain = shape(drawSelectionOverlay(graph, positions, theme, DANGLING, "contain"));
+    const ref = shape(drawSelectionOverlay(graph, positions, theme, DANGLING, "ref"));
+    expect(ref).toEqual(contain);
+    // Anneau + moignon, et AUCUN fill : un moignon ne vise rien, donc pas de
+    // tête de flèche.
+    expect(ref.map((x) => x.action)).toEqual(["stroke", "stroke"]);
+    expect(ref[1]!.path.filter((a) => a === "lineTo").length).toBeGreaterThan(1);
+  });
+
+  it("peint le trait dans la couleur et l'épaisseur de la sélection", () => {
+    for (const mode of ["contain", "ref"] as const) {
+      const g = drawSelectionOverlay(graph, positions, theme, SOURCE, mode);
+      const style = (g.context.instructions[1] as any).data.style;
+      expect(style.color).toBe(new Color(theme.accent.selection).toNumber());
+      expect(style.width).toBe(theme.strokes.selection);
+    }
   });
 });

@@ -839,7 +839,17 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     if (graph && positions) {
       // La sélection NODALE seulement : un agrégat sélectionné se signale par
       // son enveloppe (voir `clustersFor`), pas par l'anneau d'une carte.
-      overlayGraphics.addChild(drawSelectionOverlay(graph, positions, theme, selectedNodeId()));
+      // Même expression de mode que `redrawEdges` : le surlignage restyle
+      // l'arête existante, il ne peut donc pas ignorer le style qu'elle a.
+      overlayGraphics.addChild(
+        drawSelectionOverlay(
+          graph,
+          positions,
+          theme,
+          selectedNodeId(),
+          view === "graph" ? "ref" : "contain",
+        ),
+      );
       const currentId = searchResults[searchCursor]?.nodeId ?? null;
       overlayGraphics.addChild(drawSearchHighlights(positions, theme, visibleMatchIds(), currentId));
     }
