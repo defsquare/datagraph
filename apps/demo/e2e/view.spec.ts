@@ -197,7 +197,8 @@ test("la vue graphe tient sur le jeu de donnees etendu de la demo", async ({ pag
   // passe de separation, le recouvrement des enveloppes et le temps de mise en
   // page travaillent pour de vrai. La config de la demo declare deja
   // `aggregates: ["Customer", "Product"]`, donc il suffit du bouton de bascule
-  // de jeu.
+  // de jeu — desormais range dans le menu ⋮ de la grappe flottante.
+  await page.click("#menu-toggle")
   await page.click("#toggle-dataset")
   // Le clic ne fait que lancer un gestionnaire async. On attend le compteur
   // plutot que le libelle du bouton : c'est la preuve que `setData` a fini de

@@ -1,6 +1,9 @@
 /* Shell defsquare pour la démo data-graph.
-   Les tokens sont recopiés de colors_and_type.css du DS defsquare ; le canvas
-   reste le héros, le chrome se tient en retrait. */
+   Les tokens sont recopiés de colors_and_type.css du DS defsquare. Le canvas
+   n'est plus « le héros au milieu du chrome » : il EST la page, et tout le
+   reste (grappe d'icônes, recherche, menu, détail, état, logo) flotte au-dessus
+   en `position: fixed`, sur des surfaces translucides qui laissent voir le
+   graphe passer dessous. */
 
 :root {
   --ds-canvas: #eef0f3;
@@ -15,8 +18,16 @@
   --ds-border: #dfe3e9;
   --ds-border-soft: #f1f1f3;
 
+  /* Surfaces flottantes : translucides pour que le graphe transparaisse, mais
+     assez opaques pour rester lisibles au-dessus d'une carte dense. */
+  --float-bg: rgb(255 255 255 / 0.82);
+  --float-border: rgb(23 39 65 / 0.1);
+  --float-hover: rgb(23 39 65 / 0.06);
+  --shadow-float: 0 1px 2px rgb(15 23 42 / 0.06), 0 10px 28px -10px rgb(15 23 42 / 0.22);
+
   --radius-sm: 4px;
   --radius-md: 6px;
+  --radius-lg: 10px;
   --radius-full: 9999px;
 
   --space-1: 4px;
@@ -25,10 +36,8 @@
   --space-4: 16px;
   --space-6: 24px;
 
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-
   --transition: 150ms ease-in-out;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.25, 1);
 
   --font-title: "EB Garamond", Garamond, Cambria, Georgia, serif;
   --font-body: "IBM Plex Sans Condensed", "IBM Plex Sans", system-ui, sans-serif;
@@ -46,8 +55,11 @@ html[data-theme="dark"] {
   --ds-primary: #3573c3;
   --ds-border: #2c3247;
   --ds-border-soft: #272d42;
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.4);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.45), 0 2px 4px -2px rgb(0 0 0 / 0.45);
+
+  --float-bg: rgb(30 35 53 / 0.82);
+  --float-border: rgb(240 245 252 / 0.1);
+  --float-hover: rgb(240 245 252 / 0.08);
+  --shadow-float: 0 1px 2px rgb(0 0 0 / 0.35), 0 12px 30px -10px rgb(0 0 0 / 0.6);
 }
 
 * { box-sizing: border-box; }
@@ -64,68 +76,119 @@ html, body {
   -webkit-font-smoothing: antialiased;
 }
 
-#page {
-  display: flex;
-  flex-direction: column;
-  width: 100vw;
-  height: 100vh;
+#app {
+  position: fixed;
+  inset: 0;
+  background: var(--ds-canvas);
 }
 
-/* ---------- Barre d'application ---------- */
+/* ---------- Socle commun des éléments flottants ---------- */
 
-#appbar {
-  flex: none;
+.float {
+  background: var(--float-bg);
+  border: 1px solid var(--float-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-float);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+}
+
+/* Les panneaux repliés restent dans le DOM, masqués par `hidden`. Une règle
+   d'auteur qui pose `display` l'emporte sur le `[hidden] { display: none }` de
+   la feuille UA, quelle que soit sa spécificité : il faut donc le redire ici,
+   sinon la recherche s'afficherait dépliée en permanence. */
+.findbar[hidden],
+.menu[hidden],
+#detail[hidden] {
+  display: none;
+}
+
+/* ---------- Grappe d'icônes (haut gauche) ---------- */
+
+#toolbar {
+  position: fixed;
+  top: var(--space-3);
+  left: var(--space-3);
+  z-index: 20;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.cluster {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-2) var(--space-4);
-  background: var(--ds-surface);
-  border-bottom: 1px solid var(--ds-border);
+  gap: 1px;
+  padding: 3px;
 }
 
-.brand {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  flex: none;
-}
-
-#logo { height: 22px; width: auto; display: block; }
-
-.brand-sep {
+.cluster-sep {
   width: 1px;
-  height: 20px;
-  background: var(--ds-border);
+  height: 18px;
+  margin: 0 3px;
+  background: var(--float-border);
 }
 
-#appbar h1 {
-  margin: 0;
-  font-family: var(--font-title);
-  font-size: 20px;
-  font-weight: 500;
-  letter-spacing: 0.01em;
-  color: var(--ds-ink);
-  white-space: nowrap;
+.ibtn {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--ds-muted);
+  background: none;
+  border: 0;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background-color var(--transition), color var(--transition);
 }
 
-/* ---------- Barre de recherche ---------- */
+.ibtn svg { width: 16px; height: 16px; display: block; }
+
+.ibtn:hover { background: var(--float-hover); color: var(--ds-ink); }
+.ibtn:active { transform: translateY(0.5px); }
+.ibtn:disabled { opacity: 0.45; cursor: default; }
+
+.ibtn:focus-visible {
+  outline: 2px solid var(--ds-primary);
+  outline-offset: 1px;
+}
+
+/* Un panneau ouvert reste signalé par son déclencheur. */
+.ibtn[aria-expanded="true"] {
+  color: var(--ds-primary);
+  background: color-mix(in srgb, var(--ds-primary) 14%, transparent);
+}
+
+.ibtn-sm { width: 24px; height: 24px; border-radius: 6px; }
+.ibtn-sm svg { width: 13px; height: 13px; }
+
+/* L'icône affichée est celle de la vue CIBLE, portée par `data-target`. */
+#toggle-view[data-target="graph"] .icon-structure,
+#toggle-view[data-target="structure"] .icon-graph { display: none; }
+
+/* ---------- Recherche dépliante ---------- */
 
 .findbar {
   display: flex;
   align-items: center;
-  gap: var(--space-1);
-  flex: 0 1 380px;
-  margin: 0 auto;
-  padding: 0 var(--space-1) 0 var(--space-2);
-  background: var(--ds-surface-muted);
-  border: 1px solid var(--ds-border);
-  border-radius: var(--radius-md);
-  transition: border-color var(--transition), box-shadow var(--transition);
+  gap: 1px;
+  width: 296px;
+  height: 36px;
+  padding: 0 4px 0 10px;
+  transform-origin: left center;
+  animation: unfold 200ms var(--ease-out);
+}
+
+@keyframes unfold {
+  from { opacity: 0; transform: scaleX(0.82) translateX(-10px); }
+  to { opacity: 1; transform: none; }
 }
 
 .findbar:focus-within {
-  border-color: var(--ds-primary);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ds-primary) 18%, transparent);
+  border-color: color-mix(in srgb, var(--ds-primary) 55%, transparent);
+  box-shadow: var(--shadow-float), 0 0 0 3px color-mix(in srgb, var(--ds-primary) 16%, transparent);
 }
 
 .findbar-icon { width: 15px; height: 15px; flex: none; color: var(--ds-subtle); }
@@ -133,7 +196,7 @@ html, body {
 #search {
   flex: 1;
   min-width: 0;
-  padding: 6px 4px;
+  padding: 6px 6px;
   font-family: inherit;
   font-size: 13px;
   color: var(--ds-fg);
@@ -155,76 +218,104 @@ html, body {
 
 .findbar-nav {
   flex: none;
-  width: 22px;
-  height: 22px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
   padding: 0;
-  font-size: 12px;
-  line-height: 1;
   color: var(--ds-muted);
   background: none;
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   cursor: pointer;
   transition: background-color var(--transition), color var(--transition);
 }
 
-.findbar-nav:hover { background: var(--ds-border-soft); color: var(--ds-ink); }
+.findbar-nav svg { width: 14px; height: 14px; display: block; }
+.findbar-nav:hover { background: var(--float-hover); color: var(--ds-ink); }
 
-/* ---------- Actions ---------- */
+.findbar-nav:focus-visible {
+  outline: 2px solid var(--ds-primary);
+  outline-offset: 1px;
+}
 
-.actions { display: flex; align-items: center; gap: var(--space-2); flex: none; }
+/* ---------- Menu ⋮ ---------- */
 
-.btn {
+.menu {
+  position: absolute;
+  top: 44px;
+  left: 0;
+  min-width: 216px;
+  padding: 5px;
+  transform-origin: top left;
+  animation: drop-in 160ms var(--ease-out);
+}
+
+@keyframes drop-in {
+  from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+.menu-item {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  text-align: left;
   font-family: inherit;
   font-size: 13px;
-  padding: 6px 12px;
   color: var(--ds-fg);
-  background: var(--ds-surface);
-  border: 1px solid var(--ds-border);
+  background: none;
+  border: 0;
   border-radius: var(--radius-md);
   cursor: pointer;
   white-space: nowrap;
-  transition: border-color var(--transition), color var(--transition), background-color var(--transition);
+  transition: background-color var(--transition), color var(--transition);
 }
 
-.btn:hover { border-color: var(--ds-primary); color: var(--ds-primary); }
-.btn:active { background: var(--ds-surface-muted); }
-.btn:disabled { opacity: 0.5; cursor: default; }
+.menu-item:hover { background: var(--float-hover); color: var(--ds-ink); }
+.menu-item:disabled { opacity: 0.5; cursor: default; }
 
-.btn:focus-visible {
+.menu-item:focus-visible {
   outline: 2px solid var(--ds-primary);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 
-.btn-accent { border-color: var(--ds-accent); color: var(--ds-accent); }
-.btn-accent:hover { background: var(--ds-accent); border-color: var(--ds-accent); color: #ffffff; }
-
-.btn-icon { width: 32px; padding: 6px 0; text-align: center; }
-
-/* ---------- Corps ---------- */
-
-#layout { display: flex; flex: 1; min-height: 0; }
-
-#app {
-  flex: 1;
-  min-width: 0;
-  height: 100%;
-  display: block;
-  background: var(--ds-canvas);
-}
+/* ---------- Panneau de détail flottant (droite) ---------- */
 
 #detail {
-  width: 300px;
-  flex: none;
+  position: fixed;
+  top: var(--space-3);
+  right: var(--space-3);
+  z-index: 15;
+  width: 304px;
+  max-height: calc(100vh - 2 * var(--space-3));
   overflow-y: auto;
-  padding: var(--space-4);
-  background: var(--ds-surface);
-  border-left: 1px solid var(--ds-border);
+  padding: var(--space-3) var(--space-4) var(--space-4);
   font-size: 13px;
+  background: var(--float-bg);
+  border: 1px solid var(--float-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-float);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  animation: slide-in 200ms var(--ease-out);
+}
+
+@keyframes slide-in {
+  from { opacity: 0; transform: translateX(12px); }
+  to { opacity: 1; transform: none; }
+}
+
+.detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
 }
 
 #detail h2 {
-  margin: 0 0 var(--space-4);
+  margin: 0;
   font-size: 11px;
   font-weight: 600;
   color: var(--ds-subtle);
@@ -242,7 +333,7 @@ html, body {
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--ds-surface);
+  color: #ffffff;
   background: var(--ds-primary);
   border-radius: var(--radius-sm);
 }
@@ -255,13 +346,15 @@ html, body {
 
 #selection-label {
   margin: 0 0 var(--space-1);
-  font-size: 15px;
-  font-weight: 600;
+  font-family: var(--font-title);
+  font-size: 19px;
+  font-weight: 500;
+  line-height: 1.2;
   color: var(--ds-ink);
 }
 
 #selection-path {
-  margin: 0 0 var(--space-4);
+  margin: 0 0 var(--space-3);
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--ds-subtle);
@@ -275,7 +368,7 @@ html, body {
   align-items: baseline;
   gap: var(--space-2);
   padding: 5px 0;
-  border-top: 1px solid var(--ds-border-soft);
+  border-top: 1px solid var(--float-border);
 }
 
 #selection-rows dt {
@@ -309,18 +402,23 @@ html, body {
 #selection-rows .ref-btn:hover { color: var(--ds-accent); }
 #selection-rows .ref-btn[disabled] { color: var(--ds-subtle); cursor: default; }
 
-/* ---------- Barre d'état ---------- */
+/* ---------- État (bas gauche) ---------- */
 
+/* Texte nu sur le canvas : le halo de la couleur de fond le décolle d'une
+   carte qui passerait dessous, sans réintroduire de bandeau. */
 #statusbar {
-  flex: none;
+  position: fixed;
+  left: 18px;
+  bottom: var(--space-3);
+  z-index: 10;
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: var(--space-4);
-  padding: var(--space-1) var(--space-4);
-  background: var(--ds-surface);
-  border-top: 1px solid var(--ds-border);
   font-size: 11px;
   color: var(--ds-muted);
+  text-shadow: 0 0 6px var(--ds-canvas), 0 0 3px var(--ds-canvas);
+  pointer-events: none;
+  user-select: none;
 }
 
 #statusbar strong {
@@ -330,7 +428,6 @@ html, body {
 }
 
 .status-link {
-  margin-left: auto;
   font-family: inherit;
   font-size: 11px;
   color: var(--ds-accent);
@@ -338,6 +435,27 @@ html, body {
   border: 0;
   padding: 0;
   cursor: pointer;
+  pointer-events: auto;
 }
 
 .status-link:hover { text-decoration: underline; }
+
+/* ---------- Logo (bas droite) ---------- */
+
+/* Décoratif : inerte au pointeur pour ne pas manger les gestes du canvas. */
+#logo {
+  position: fixed;
+  right: 18px;
+  bottom: var(--space-3);
+  z-index: 10;
+  height: 20px;
+  width: auto;
+  display: block;
+  opacity: 0.42;
+  pointer-events: none;
+  user-select: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .findbar, .menu, #detail { animation: none; }
+}

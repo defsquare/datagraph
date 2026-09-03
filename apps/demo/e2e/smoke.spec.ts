@@ -32,8 +32,24 @@ test("select event reaches the host detail panel", async ({ page }) => {
   await expect(page.locator("#selection-label")).toContainText("Customer #c1")
 })
 
+/**
+ * La recherche et les bascules ne sont plus dans un bandeau permanent : elles
+ * vivent derriere la loupe et le menu de la grappe d'icones flottante. Les
+ * tests doivent donc deplier avant d'interagir, comme un utilisateur.
+ */
+async function openSearch(page: Page): Promise<void> {
+  await page.click("#search-toggle")
+  await expect(page.locator("#search")).toBeVisible()
+}
+
+async function openMenu(page: Page): Promise<void> {
+  await page.click("#menu-toggle")
+  await expect(page.locator("#menu")).toBeVisible()
+}
+
 test("search navigates and auto-expands to a hidden match", async ({ page }) => {
   await gotoReady(page)
+  await openSearch(page)
   await page.fill("#search", "rue de la paix")
   await page.press("#search", "Enter") // nextMatch
   const focused = await page.evaluate(() => (window as any).__graph.nextMatch()?.nodeId ?? null)
@@ -59,11 +75,15 @@ test("la barre d'etat affiche des compteurs non nuls", async ({ page }) => {
 test("le bouton de theme bascule clair et sombre", async ({ page }) => {
   await gotoReady(page)
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light")
+  await openMenu(page)
   await page.click("#toggle-theme")
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark")
   await expect(page.locator("#logo")).toHaveAttribute("src", "/defsquare-short-white-red.svg")
+  // Choisir une entree referme le menu : il faut le rouvrir pour revenir.
+  await expect(page.locator("#menu")).toBeHidden()
   const errors: string[] = []
   page.on("pageerror", e => errors.push(String(e)))
+  await openMenu(page)
   await page.click("#toggle-theme")
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light")
   expect(errors).toEqual([])

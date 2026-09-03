@@ -147,10 +147,14 @@ test("cliquer le trait d'une reference hissee navigue vers sa cible", async ({ p
   // petite grille la ou la mise en page — deterministe — pose le trait
   // p16 → c2, et on s'arrete au premier clic qui le touche. Les clics rates
   // selectionnent au pire une carte ou une enveloppe, sans bouger la camera.
+  //
+  // La fenetre est recalibree depuis que le canvas prend tout le viewport
+  // (plus de bandeau ni d'aside qui le retrecissaient) : `focus` centre c2 sur
+  // un canvas 1280x800, donc le trait est repousse vers la droite et le bas.
   const box = (await page.locator("canvas").boundingBox())!
   let followed: any = null
   outer: for (let y = 220; y <= 350; y += 7) {
-    for (let x = 480; x <= 555; x += 5) {
+    for (let x = 630; x <= 710; x += 5) {
       await page.mouse.click(box.x + x, box.y + y)
       followed = await page.evaluate(() => (window as any).__followed)
       if (followed) break outer

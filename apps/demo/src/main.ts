@@ -30,6 +30,7 @@ window.__graph = graph;
 
 // Proof that the renderer's public "select" event is enough to build a
 // detail panel entirely outside the library: plain DOM, no lib internals.
+const detailEl = document.getElementById("detail");
 const typeEl = document.getElementById("selection-type");
 const emptyEl = document.getElementById("selection-empty");
 const labelEl = document.getElementById("selection-label");
@@ -46,12 +47,16 @@ function outgoingRefs(nodeId: string): Map<string, RefEdge> {
 }
 
 function clearSelection(): void {
+  // Le panneau est en surimpression du canvas : sans sélection il n'a rien à
+  // dire et disparaît entièrement plutôt que d'occuper le coin avec un vide.
+  detailEl?.setAttribute("hidden", "");
   emptyEl?.removeAttribute("hidden");
   for (const el of [typeEl, labelEl, pathEl]) el?.setAttribute("hidden", "");
   rowsEl?.replaceChildren();
 }
 
 function renderSelection(node: GraphNode): void {
+  detailEl?.removeAttribute("hidden");
   emptyEl?.setAttribute("hidden", "");
   for (const el of [labelEl, pathEl]) el?.removeAttribute("hidden");
 
@@ -187,6 +192,92 @@ if (searchInput) {
 nextMatchBtn?.addEventListener("click", goToNextMatch);
 prevMatchBtn?.addEventListener("click", goToPrevMatch);
 
+// --- Chrome flottant : dépliage de la recherche, menu ⋮, fermeture du détail.
+// Aucune de ces bascules ne touche à l'état du graphe — la recherche garde sa
+// requête et ses résultats quand on la replie, la sélection survit à la
+// fermeture du panneau. Ce n'est que de l'affichage.
+const searchToggleBtn = document.getElementById("search-toggle");
+const findbarEl = document.getElementById("findbar");
+const menuToggleBtn = document.getElementById("menu-toggle");
+const menuEl = document.getElementById("menu");
+
+function setExpanded(panel: HTMLElement | null, trigger: HTMLElement | null, open: boolean): void {
+  if (open) panel?.removeAttribute("hidden");
+  else panel?.setAttribute("hidden", "");
+  trigger?.setAttribute("aria-expanded", String(open));
+}
+
+function isOpen(panel: HTMLElement | null): boolean {
+  return panel !== null && !panel.hasAttribute("hidden");
+}
+
+function openSearch(): void {
+  setExpanded(findbarEl, searchToggleBtn, true);
+  // Déplier sans donner le focus obligerait à un second clic pour taper.
+  searchInput?.focus();
+  searchInput?.select();
+}
+
+function closeSearch(): void {
+  setExpanded(findbarEl, searchToggleBtn, false);
+}
+
+function closeMenu(): void {
+  setExpanded(menuEl, menuToggleBtn, false);
+}
+
+searchToggleBtn?.addEventListener("click", () => {
+  if (isOpen(findbarEl)) closeSearch();
+  else openSearch();
+});
+
+menuToggleBtn?.addEventListener("click", () => {
+  setExpanded(menuEl, menuToggleBtn, !isOpen(menuEl));
+});
+
+// Une entrée choisie referme le menu : c'est l'attente sur un menu déroulant,
+// et le libellé mis à jour par le gestionnaire de l'entrée reste correct pour
+// la prochaine ouverture.
+menuEl?.addEventListener("click", (event) => {
+  if ((event.target as HTMLElement | null)?.closest(".menu-item")) closeMenu();
+});
+
+// Capture : un clic sur le canvas est consommé par Pixi, il ne remonterait pas
+// jusqu'ici en phase de bouillonnement.
+document.addEventListener(
+  "pointerdown",
+  (event) => {
+    const target = event.target as Node | null;
+    if (!target) return;
+    if (isOpen(findbarEl) && !findbarEl?.contains(target) && !searchToggleBtn?.contains(target)) closeSearch();
+    if (isOpen(menuEl) && !menuEl?.contains(target) && !menuToggleBtn?.contains(target)) closeMenu();
+  },
+  true,
+);
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  // Un seul niveau se ferme par Échap, le plus récent d'abord.
+  if (isOpen(menuEl)) {
+    closeMenu();
+    menuToggleBtn?.focus();
+  } else if (isOpen(findbarEl)) {
+    // Échap dans un `input[type=search]` en vide nativement la valeur, SANS
+    // émettre d'`input` : la requête du graphe et le compteur resteraient sur
+    // l'ancien terme pendant que le champ, lui, paraîtrait vierge. Replier ne
+    // doit rien annuler, donc on retient ce vidage.
+    event.preventDefault();
+    closeSearch();
+    searchToggleBtn?.focus();
+  }
+});
+
+// La croix ne masque QUE le panneau : la sélection reste celle du graphe, et
+// resélectionner le même nœud le rouvre.
+document.getElementById("detail-close")?.addEventListener("click", () => {
+  detailEl?.setAttribute("hidden", "");
+});
+
 // --- Barre d'état : compteurs et diagnostics.
 const statNodesEl = document.getElementById("stat-nodes");
 const statVisibleEl = document.getElementById("stat-visible");
@@ -266,6 +357,8 @@ function applyTheme(): void {
   if (logoEl) {
     logoEl.src = dark ? "/defsquare-short-white-red.svg" : "/defsquare-short-dark-red.svg";
   }
+  // L'entrée de menu nomme le thème qu'elle ACTIVERAIT, pas celui en place.
+  if (themeBtn) themeBtn.textContent = dark ? "Thème clair" : "Thème sombre";
   graph.setTheme(dark ? defsquareDark : defsquareLight);
   window.__theme = dark ? "dark" : "light";
 }
@@ -278,20 +371,32 @@ themeBtn?.addEventListener("click", () => {
 // --- Bascule Structure / Graphe.
 const toggleViewBtn = document.getElementById("toggle-view") as HTMLButtonElement | null;
 
+/** Aligne icône et libellé accessible du bouton sur la vue que le prochain clic
+ * activerait. Prend la vue RÉELLEMENT active en argument, jamais celle qu'on a
+ * demandée (voir le commentaire du gestionnaire). */
+function syncViewButton(active: "graph" | "structure"): void {
+  if (!toggleViewBtn) return;
+  const target = active === "graph" ? "structure" : "graph";
+  const label = target === "graph" ? "Vue graphe" : "Vue structure";
+  toggleViewBtn.dataset.target = target;
+  toggleViewBtn.title = label;
+  toggleViewBtn.setAttribute("aria-label", label);
+}
+
 toggleViewBtn?.addEventListener("click", () => {
   void (async () => {
     toggleViewBtn.disabled = true;
     try {
       const next = graph.currentView() === "graph" ? "structure" : "graph";
       await graph.setView(next);
-      // Le libellé est dérivé de la vue RÉELLEMENT active, jamais de celle
+      // L'icône et le libellé sont dérivés de la vue RÉELLEMENT active, jamais de celle
       // qu'on a demandée : `setView` avale deux échecs sans rejeter — l'import
       // dynamique du moteur de la vue graphe qui échoue (réseau, chunk absent)
       // et le cas où un `setData` concurrent a déjà pris la main. Dans les deux
-      // cas la promesse se résout alors que la vue n'a pas bougé, et un libellé
-      // posé depuis `next` annoncerait une vue qui n'est pas à l'écran.
+      // cas la promesse se résout alors que la vue n'a pas bougé, et une icône
+      // posée depuis `next` annoncerait une vue qui n'est pas à l'écran.
       const active = graph.currentView();
-      toggleViewBtn.textContent = active === "graph" ? "Vue structure" : "Vue graphe";
+      syncViewButton(active);
       // La bascule change le nombre de nœuds affichés (l'arbre entier d'un
       // côté, les seules entités de l'autre) : sans ce rafraîchissement, le
       // compteur de la barre d'état reste sur la valeur de l'autre vue.
@@ -308,5 +413,6 @@ void (async () => {
   await graph.ready;
   graph.fit();
   applyTheme();
+  syncViewButton(graph.currentView());
   updateStatus();
 })();
