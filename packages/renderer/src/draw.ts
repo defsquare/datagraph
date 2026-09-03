@@ -880,10 +880,20 @@ export function edgeLabelPlacements(
     if (!from || !to) continue;
     const { start, end } = refEdgeEnds(from, to);
 
-    const text =
-      edge.from === selectedId
-        ? edge.field
-        : `${graph.nodes.get(edge.from)?.label ?? edge.from}.${edge.field}`;
+    // Le chemin COMPLET depuis l'entité, quel que soit le nœud sélectionné :
+    // `Product#p16.reviews[1].customerId`. L'étiquette glisse avec le viewport,
+    // donc elle se lit souvent près de la CIBLE, source hors cadre — un chemin
+    // relatif à la sélection (`customerId` seul) n'identifierait alors plus
+    // rien. Le préfixe est l'identité de l'entité, pas son `label` (« Product
+    // #p16 ») : l'espace du label couperait le chemin en deux à la lecture.
+    const fromEntity = graph.nodes.get(edge.fromEntity);
+    const prefix =
+      fromEntity?.kind === "entity"
+        ? `${fromEntity.entityType}#${fromEntity.entityId}`
+        : (fromEntity?.label ?? edge.fromEntity);
+    const viaValueObject =
+      edge.from === edge.fromEntity ? "" : `${graph.nodes.get(edge.from)?.label ?? edge.from}.`;
+    const text = `${prefix}.${viaValueObject}${edge.field}`;
 
     // L'étagement compte les étiquettes RETENUES, pas les arêtes examinées :
     // une arête écartée plus haut (cible hors écran) ne doit pas laisser un

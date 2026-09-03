@@ -82,9 +82,11 @@ describe("drawEdgeLabels", () => {
   const PRODUCT = { x: 600, y: 0, width: 160, height: 60 };
   const LINE = { x: 300, y: 200, width: 180, height: 100 };
 
-  it("nomme le CHAMP quand la sélection porte elle-même la référence", () => {
+  it("nomme le chemin complet depuis l'entité pour une référence directe", () => {
+    // L'étiquette glisse avec le viewport et se lit souvent près de la CIBLE,
+    // source hors cadre : `customerId` seul n'identifierait pas quelle commande.
     const view = labelsOf(shop, shopPositions, "/orders/0");
-    expect(textsOf(view)).toEqual(["customerId"]);
+    expect(textsOf(view)).toEqual(["Order#o1.customerId"]);
   });
 
   it("nomme le CHEMIN INSTANCIÉ quand c'est l'entité déclarante qui est sélectionnée", () => {
@@ -93,19 +95,20 @@ describe("drawEdgeLabels", () => {
     // config ne ferait pas.
     const positions = new Map([["/carts/0", CART], ["/products/0", PRODUCT]]);
     const view = labelsOf(cart, positions, "/carts/0");
-    expect(textsOf(view)).toEqual(["lines[0].productRef"]);
+    expect(textsOf(view)).toEqual(["Cart#k1.lines[0].productRef"]);
   });
 
-  it("nomme le CHAMP seul quand c'est la carte du value object qui est sélectionnée", () => {
-    // Vue structure dépliée : le chemin depuis la carte sélectionnée n'a plus
-    // qu'un segment, le préfixer de son propre nom serait bavard.
+  it("garde le chemin complet même quand c'est la carte du value object qui est sélectionnée", () => {
+    // Le texte est UNIFORME quel que soit le nœud sélectionné : l'étiquette se
+    // lit loin de la sélection (elle a pu glisser jusqu'à la cible), et le
+    // lecteur n'a pas à se rappeler ce qu'il a sélectionné pour la comprendre.
     const positions = new Map([
       ["/carts/0", CART],
       ["/carts/0/lines/0", LINE],
       ["/products/0", PRODUCT],
     ]);
     const view = labelsOf(cart, positions, "/carts/0/lines/0");
-    expect(textsOf(view)).toEqual(["productRef"]);
+    expect(textsOf(view)).toEqual(["Cart#k1.lines[0].productRef"]);
   });
 
   it("n'étiquette rien à la sélection de la CIBLE", () => {
