@@ -25,7 +25,11 @@ describe("LayoutEngine.layout", () => {
     cs.expand("/customers/0")
     const visible = cs.visibleNodeIds()
     const { positions } = await createLayoutEngine().layout(g, visible)
-    expect(positions.size).toBe(visible.size)
+    // `visible` compte aussi les tableaux ELIDES, qui sont representes par une
+    // ligne de leur carte parente et n'ont donc pas de rect : l'invariant « tout
+    // ce qui est visible est positionne » porte sur les nœuds DESSINES.
+    const drawn = [...visible].filter((id) => !g.nodes.get(id)!.elided)
+    expect(positions.size).toBe(drawn.length)
     const parent = positions.get("/customers/0")!
     const child = positions.get("/customers/0/address")!
     expect(child.x).toBeGreaterThan(parent.x + parent.width) // gauche → droite

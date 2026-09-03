@@ -50,16 +50,46 @@ describe("incremental layout", () => {
     for (const [id, r] of before) expect(back.positions.get(id)!.y).toBeCloseTo(r.y, 5)
   })
 
-  it("collapsing an ancestor undoes nested expansion shifts", async () => {
+  it("replier un tableau elide annule le decalage de son depliage", async () => {
+    // `/orders/0/lines` est un tableau, donc ELIDE : il n'a pas de carte, il est
+    // le jeton d'une ligne de `/orders/0`. C'est lui qui porte le pli de ses
+    // elements, et c'est donc lui — et non la commande qui le contient — qui
+    // doit rendre les positions a leur etat d'avant.
     const { g, cs, engine, initial } = await setup()
     const before = new Map([...initial.positions].map(([id, r]) => [id, { ...r }]))
-    cs.expand("/orders/0")
-    const afterOrder = await engine.layoutAfterExpand(initial, g, "/orders/0", cs.visibleNodeIds())
+
     cs.expand("/orders/0/lines")
-    const afterLines = await engine.layoutAfterExpand(afterOrder, g, "/orders/0/lines", cs.visibleNodeIds())
-    cs.collapse("/orders/0")
-    const back = engine.layoutAfterCollapse(afterLines, g, "/orders/0", cs.visibleNodeIds())
+    const expanded = await engine.layoutAfterExpand(
+      initial, g, "/orders/0/lines", cs.visibleNodeIds(),
+    )
+    expect(expanded.positions.has("/orders/0/lines/0")).toBe(true)
+    // Le tableau elide n'a AUCUN rect : sa ligne vit dans la carte de la commande.
+    expect(expanded.positions.has("/orders/0/lines")).toBe(false)
+
+    cs.collapse("/orders/0/lines")
+    const back = engine.layoutAfterCollapse(expanded, g, "/orders/0/lines", cs.visibleNodeIds())
     expect(back.positions.size).toBe(before.size)
     for (const [id, r] of before) expect(back.positions.get(id)!.y).toBeCloseTo(r.y, 5)
+  })
+
+  it("replier la carte hote ne retracte pas ce que le jeton a deplie", async () => {
+    // Le chevron d'en-tete et le jeton `[ n items ]` sont deux commandes
+    // INDEPENDANTES : le premier gouverne les cartes enfants, le second son
+    // tableau. Replier `/orders/0` laisse sa carte — et donc sa ligne `lines`,
+    // toujours marquee depliee — a l'ecran ; retirer les cartes d'elements ferait
+    // mentir le jeton sur ce qu'il montre.
+    const { g, cs, engine, initial } = await setup()
+    cs.expand("/orders/0/lines")
+    const expanded = await engine.layoutAfterExpand(
+      initial, g, "/orders/0/lines", cs.visibleNodeIds(),
+    )
+
+    cs.collapse("/orders/0")
+    const visible = cs.visibleNodeIds()
+    expect(visible.has("/orders/0/lines")).toBe(true)
+    expect(visible.has("/orders/0/lines/0")).toBe(true)
+
+    const back = engine.layoutAfterCollapse(expanded, g, "/orders/0", visible)
+    expect(back.positions.has("/orders/0/lines/0")).toBe(true)
   })
 })

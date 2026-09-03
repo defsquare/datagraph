@@ -59,7 +59,14 @@ export type {
   EntityConfig,
   NodeId,
   GraphNode,
+  Row,
+  ArrayRow,
   RefEdge,
   Diagnostic,
   SearchResult,
 } from "@defsquare/data-graph-core";
+
+// Un hôte qui rend lui-même les lignes d'un nœud (panneau de détail) a besoin
+// de formuler une ligne-tableau comme la carte le fait : « 3 items » et non
+// « 3 », qu'on lirait comme la valeur du champ.
+export { arrayTokenTextFor } from "@defsquare/data-graph-core";

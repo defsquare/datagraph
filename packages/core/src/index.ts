@@ -8,9 +8,22 @@ export { CollapseState } from "./collapse.js"
 export { buildAggregates, type Aggregate, type AggregateIndex } from "./aggregate.js"
 export { enclosingCircle, type Circle } from "./hull.js"
 export { buildSearchIndex, SearchIndex, type SearchResult } from "./search.js"
-export { measureNode, badgeTextFor, headerTextFor, DEFAULT_METRICS, type Size, type NodeMetrics } from "./measure.js"
+export {
+  measureNode,
+  badgeTextFor,
+  headerTextFor,
+  arrayTokenTextFor,
+  arrayTokenWidth,
+  rowValueWidth,
+  isValueOnlyRow,
+  DEFAULT_METRICS,
+  type Size,
+  type NodeMetrics,
+} from "./measure.js"
 export {
   createLayoutEngine,
+  rowRectFor,
+  anchorRectFor,
   type Rect,
   type LayoutResult,
   type LayoutEngine,
@@ -18,8 +31,12 @@ export {
 } from "./layout.js"
 export {
   GraphTooLargeError,
+  nearestDrawn,
+  VALUE_ONLY_KEY,
   type NodeId,
   type ScalarRow,
+  type ArrayRow,
+  type Row,
   type BaseNode,
   type EntityNode,
   type ObjectNode,

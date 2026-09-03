@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { DOMAdapter, Graphics, Text } from "pixi.js";
+import { Color, DOMAdapter, Graphics, Text } from "pixi.js";
 import { buildGraph, DEFAULT_METRICS, type DataGraphConfig } from "@defsquare/data-graph-core";
 import { drawNode } from "../src/draw.js";
 import { resolveTheme } from "../src/theme.js";
@@ -60,10 +60,26 @@ const rect = { x: 0, y: 0, width: 260, height: 140 };
 const REF_ROW = order.rows.findIndex((r) => r.key === "customerId");
 const PLAIN_ROW = order.rows.findIndex((r) => r.key === "total");
 
-function render(refFields?: ReadonlySet<string>, at = rect) {
-  return refFields === undefined
-    ? drawNode(order, at, theme, 0, false, "#123456", metrics, false, false)
-    : drawNode(order, at, theme, 0, false, "#123456", metrics, false, false, refFields);
+function render(refFields?: ReadonlySet<string>, at = rect, danglingFields?: ReadonlySet<string>) {
+  if (refFields === undefined) {
+    return drawNode(order, at, theme, 0, false, "#123456", metrics, false, false);
+  }
+  if (danglingFields === undefined) {
+    return drawNode(order, at, theme, 0, false, "#123456", metrics, false, false, refFields);
+  }
+  return drawNode(
+    order,
+    at,
+    theme,
+    0,
+    false,
+    "#123456",
+    metrics,
+    false,
+    false,
+    refFields,
+    danglingFields,
+  );
 }
 
 /** La signature observable d'une carte : le type de chaque enfant, son texte et
@@ -107,6 +123,23 @@ function underlines(container: ReturnType<typeof drawNode>): Graphics[] {
 
 /** Les deux extrémités du trait de soulignement, lues dans le contexte du
  * Graphics : un souligné est un `moveTo`/`lineTo` unique suivi d'un `stroke`. */
+/** Les croix de diagnostic d'une carte. Elles ne portent PAS de label, à la
+ * différence des soulignés : `create.ts` n'a rien à basculer dessus, donc rien
+ * n'a besoin de les retrouver à l'exécution. On les reconnaît ici à leur
+ * couleur, celle des références cassées, qui n'est utilisée par aucun autre
+ * tracé de la carte. */
+function crosses(container: ReturnType<typeof drawNode>): Graphics[] {
+  const color = new Color(theme.edge.dangling).toNumber();
+  return container.children.filter((c): c is Graphics => {
+    if (!(c instanceof Graphics)) return false;
+    const instructions = c.context.instructions as any[];
+    return (
+      instructions.length > 0 &&
+      instructions.every((i) => i.action === "stroke" && i.data.style.color === color)
+    );
+  });
+}
+
 function segmentOf(g: Graphics): { x1: number; y1: number; x2: number; y2: number } {
   const instructions = g.context.instructions as any[];
   expect(instructions).toHaveLength(1);
@@ -198,6 +231,16 @@ describe("drawNode — indicateur de valeur référençante", () => {
     expect(underlines(g)).toHaveLength(0);
   });
 
+  it("ne dessine aucune croix sans champ cassé", () => {
+    // Garde de non-régression : le paramètre est optionnel, et une carte dont
+    // toutes les références résolvent doit rendre exactement comme avant.
+    expect(crosses(render())).toHaveLength(0);
+    expect(crosses(render(new Set(["customerId"])))).toHaveLength(0);
+    expect(signature(render(new Set(["customerId"]), rect, new Set()))).toEqual(
+      signature(render(new Set(["customerId"]))),
+    );
+  });
+
   it("ne touche à rien hors du LOD 0", () => {
     // LOD 1 et 2 n'affichent aucune ligne : il n'y a pas de valeur à teinter,
     // donc pas de souligné non plus.
@@ -217,6 +260,118 @@ describe("drawNode — indicateur de valeur référençante", () => {
       );
       expect(signature(tinted)).toEqual(signature(plain));
       expect(underlines(tinted)).toHaveLength(0);
+    }
+  });
+});
+
+/**
+ * Une référence CASSÉE (`RefEdge.dangling`) était signalée par un moignon rouge
+ * barré d'une croix, accroché au bord droit de la carte. Ce moignon désignait la
+ * CARTE et non le CHAMP fautif : sur une carte à dix lignes, rien ne disait
+ * laquelle ne résolvait pas. Le diagnostic est donc passé sur la LIGNE, où la
+ * croix se pose exactement contre la valeur en cause.
+ *
+ * La valeur garde sa teinte de référence — c'en est une, simplement cassée —,
+ * mais perd le souligné du survol : le souligné promet « ce clic navigue », or
+ * `followRef` ne mène nulle part quand `to === null`.
+ */
+describe("drawNode — référence cassée", () => {
+  /** La géométrie de la croix, reprise des constantes de `draw.ts` : une boîte
+   * de 7 px posée contre `contentRight`, précédée d'un écart de 4 px. */
+  const ICON_WIDTH = 7;
+  const ICON_GAP = 4;
+  const ICON_SPACE = ICON_WIDTH + ICON_GAP;
+  const contentRight = rect.width - metrics.paddingX;
+  const rowY = metrics.headerHeight + REF_ROW * metrics.rowHeight + metrics.rowHeight / 2;
+
+  const BROKEN = new Set(["customerId"]);
+
+  it("garde la teinte de référence sur la valeur d'une ligne cassée", () => {
+    // Cassée ou non, c'est une référence : la retirer de la famille des
+    // références ferait passer le champ pour une valeur ordinaire, alors que
+    // c'est justement sa nature de référence qui rend son échec intéressant.
+    const g = render(new Set(), rect, BROKEN);
+    expect(refValueText(g).style.fill).toBe(theme.edge.ref);
+    expect(textsOf(g).find((t) => t.text === "99.5")?.style.fill).toBe(theme.ink.primary);
+  });
+
+  it("dessine une croix contre le bord droit de la ligne fautive", () => {
+    const g = render(new Set(), rect, BROKEN);
+    const found = crosses(g);
+    expect(found).toHaveLength(1);
+    const instructions = found[0]!.context.instructions as any[];
+    expect(instructions).toHaveLength(1);
+    const style = instructions[0].data.style;
+    expect(style.color).toBe(new Color(theme.edge.dangling).toNumber());
+    expect(style.cap).toBe("round");
+    // Deux diagonales : le « ✕ » n'est pas un glyphe (l'atlas ASCII ne le
+    // contient pas), c'est un tracé.
+    const path = instructions[0].data.path.instructions as any[];
+    expect(path.map((p) => p.action)).toEqual(["moveTo", "lineTo", "moveTo", "lineTo"]);
+    const xs = path.map((p) => p.data[0]);
+    const ys = path.map((p) => p.data[1]);
+    expect(Math.min(...xs)).toBeCloseTo(contentRight - ICON_WIDTH, 10);
+    expect(Math.max(...xs)).toBeCloseTo(contentRight, 10);
+    // Centrée verticalement sur la ligne, et haute comme elle est large.
+    expect(Math.min(...ys)).toBeCloseTo(rowY - ICON_WIDTH / 2, 10);
+    expect(Math.max(...ys)).toBeCloseTo(rowY + ICON_WIDTH / 2, 10);
+  });
+
+  it("ne prépare AUCUN souligné pour une ligne cassée", () => {
+    // Le souligné dit « ce clic navigue ». Sur une référence cassée il mentirait.
+    const g = render(new Set(), rect, BROKEN);
+    expect(underlineOf(g, REF_ROW)).toBeNull();
+    expect(underlines(g)).toHaveLength(0);
+  });
+
+  it("traite comme CASSÉE une ligne qui est aussi référençante", () => {
+    // Un champ portant plusieurs arêtes peut être dans les deux ensembles : le
+    // doute doit se voir, donc la croix prime et le souligné disparaît.
+    const g = render(BROKEN, rect, BROKEN);
+    expect(crosses(g)).toHaveLength(1);
+    expect(underlines(g)).toHaveLength(0);
+    expect(refValueText(g).style.fill).toBe(theme.edge.ref);
+  });
+
+  it("réserve la place de la croix des DEUX côtés du budget", () => {
+    // Le budget de troncature doit égaler la place réellement disponible : ne
+    // le retrancher que côté valeur laisserait une clé longue reprendre la
+    // place réservée à l'icône, et la croix se poserait sur du texte.
+    const resolved = refValueText(render(BROKEN));
+    const broken = refValueText(render(new Set(), rect, BROKEN));
+    expect(broken.text.length).toBeLessThan(resolved.text.length);
+    // La valeur se réaligne sur le bord gauche de l'écart, pas sur `contentRight`.
+    expect(broken.x).toBe(Math.round(contentRight - ICON_SPACE - broken.width));
+  });
+
+  it("dessine la croix même quand la valeur est tronquée à vide", () => {
+    // Carte trop étroite pour la moindre valeur : le diagnostic doit survivre à
+    // la disparition du texte, sans quoi la carte la plus illisible serait
+    // justement celle qui cache son erreur.
+    const narrow = { x: 0, y: 0, width: 40, height: 140 };
+    const g = render(new Set(), narrow, BROKEN);
+    expect(valueTexts(g)).toHaveLength(0);
+    expect(crosses(g)).toHaveLength(1);
+  });
+
+  it("ne dessine rien de plus hors du LOD 0", () => {
+    for (const lod of [1, 2] as const) {
+      const plain = drawNode(order, rect, theme, lod, false, "#123456", metrics, false, false);
+      const broken = drawNode(
+        order,
+        rect,
+        theme,
+        lod,
+        false,
+        "#123456",
+        metrics,
+        false,
+        false,
+        new Set(),
+        BROKEN,
+      );
+      expect(signature(broken)).toEqual(signature(plain));
+      expect(crosses(broken)).toHaveLength(0);
     }
   });
 });

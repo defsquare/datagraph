@@ -80,9 +80,9 @@ export function relatedIds(
  *
  * Même donnée NUE en entrée : des arêtes et un ensemble d'ids, pas l'index
  * d'agrégats ni le graphe. `to === null` (référence cassée) est ignoré — il n'y
- * a personne au bout, donc personne à garder plein. Le moignon lui-même reste
- * en revanche plein s'il part d'un membre, mais cela se règle côté arêtes, pas
- * ici.
+ * a personne au bout, donc personne à garder plein, et une référence cassée
+ * n'est de toute façon plus tracée dans l'espace des arêtes : elle se signale
+ * sur la carte de sa source.
  */
 export function clusterRelatedIds(
   refEdges: readonly RefEdge[],

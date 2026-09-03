@@ -1,6 +1,6 @@
 import ELK from "elkjs/lib/elk.bundled.js"
 import type { ElkExtendedEdge, ElkNode } from "elkjs/lib/elk-api.js"
-import type { Graph, NodeId } from "./model.js"
+import { nearestDrawn, type Graph, type NodeId } from "./model.js"
 import { measureNode, DEFAULT_METRICS, type NodeMetrics } from "./measure.js"
 
 export interface Rect {
@@ -8,6 +8,82 @@ export interface Rect {
   y: number
   width: number
   height: number
+}
+
+/** La bande occupée par la ligne d'indice `rowIndex` dans la carte `card`. */
+export function rowRectFor(card: Rect, rowIndex: number, metrics: NodeMetrics): Rect {
+  return {
+    x: card.x,
+    y: card.y + metrics.headerHeight + rowIndex * metrics.rowHeight,
+    width: card.width,
+    height: metrics.rowHeight,
+  }
+}
+
+/**
+ * Le rect qui ANCRE `id` : sa carte s'il en a une, la bande de la ligne qui le
+ * représente sur la carte de son parent s'il est élidé.
+ *
+ * C'est le seul point où l'élision entre dans la mise en page incrémentale.
+ * `layoutAfterExpand` place le sous-arbre à `anchor.x + anchor.width + 48` :
+ * pour un tableau élidé, `anchor` est la bande de sa ligne, dont la largeur
+ * est celle de la carte parente — les cartes d'éléments atterrissent donc 48 px
+ * à droite de cette carte, à la HAUTEUR de la ligne, ce qui fait lire le
+ * dépliage comme sortant du jeton.
+ *
+ * Le parent d'un nœud élidé est dessiné par construction (`buildGraph` n'élide
+ * que sous un parent qui a une carte), donc son rect se lit directement dans
+ * `positions`.
+ */
+export function anchorRectFor(
+  graph: Graph,
+  positions: Map<NodeId, Rect>,
+  id: NodeId,
+  metrics: NodeMetrics = DEFAULT_METRICS,
+): Rect | undefined {
+  const node = graph.nodes.get(id)
+  if (!node) return undefined
+  if (!node.elided) return positions.get(id)
+
+  const parentId = node.parentId
+  if (parentId === null) return undefined
+  const parent = graph.nodes.get(parentId)
+  const parentRect = positions.get(parentId)
+  if (!parent || !parentRect) return undefined
+
+  const rowIndex = parent.rows.findIndex((r) => r.valueType === "array" && r.arrayId === id)
+  if (rowIndex < 0) return parentRect
+  return rowRectFor(parentRect, rowIndex, metrics)
+}
+
+/**
+ * Les arêtes de containment vues par ELK : chaque extrémité élidée est
+ * résolue vers son plus proche ancêtre DESSINÉ. L'arête `#p1 → tags` devient
+ * une boucle sur `#p1` et disparaît ; l'arête `tags → tags[0]` devient
+ * `#p1 → tags[0]`, ce qui fait poser les cartes d'éléments à droite de `#p1`.
+ */
+function drawnContainEdges(graph: Graph, visible: Set<NodeId>): ElkExtendedEdge[] {
+  const edges: ElkExtendedEdge[] = []
+  for (const edge of graph.containEdges) {
+    if (!visible.has(edge.from) || !visible.has(edge.to)) continue
+    const from = nearestDrawn(graph, edge.from)
+    const to = nearestDrawn(graph, edge.to)
+    if (from === null || to === null || from === to) continue
+    edges.push({ id: `${from}->${to}`, sources: [from], targets: [to] })
+  }
+  return edges
+}
+
+/** Les boîtes ELK des nœuds visibles, un nœud élidé n'en ayant aucune. */
+function drawnBoxes(graph: Graph, ids: Iterable<NodeId>, metrics: NodeMetrics): ElkNode[] {
+  const children: ElkNode[] = []
+  for (const id of ids) {
+    const node = graph.nodes.get(id)
+    if (!node || node.elided) continue
+    const size = measureNode(node, metrics)
+    children.push({ id, width: size.width, height: size.height })
+  }
+  return children
 }
 
 export interface LayoutResult {
@@ -62,29 +138,11 @@ export function createLayoutEngine(opts?: { elkFactory?: ElkFactory }): LayoutEn
     ): Promise<LayoutResult> {
       const elk = elkFactory()
 
-      const children: ElkNode[] = []
-      for (const id of visible) {
-        const node = graph.nodes.get(id)
-        if (!node) continue
-        const size = measureNode(node, metrics)
-        children.push({ id, width: size.width, height: size.height })
-      }
-
-      const edges: ElkExtendedEdge[] = []
-      for (const edge of graph.containEdges) {
-        if (!visible.has(edge.from) || !visible.has(edge.to)) continue
-        edges.push({
-          id: `${edge.from}->${edge.to}`,
-          sources: [edge.from],
-          targets: [edge.to],
-        })
-      }
-
       const elkGraph: ElkNode = {
         id: "root",
         layoutOptions: LAYOUT_OPTIONS,
-        children,
-        edges,
+        children: drawnBoxes(graph, visible, metrics),
+        edges: drawnContainEdges(graph, visible),
       }
 
       const result = await elk.layout(elkGraph)
@@ -112,8 +170,15 @@ export function createLayoutEngine(opts?: { elkFactory?: ElkFactory }): LayoutEn
       const positions = new Map<NodeId, Rect>()
       for (const [id, rect] of prev.positions) positions.set(id, { ...rect })
 
-      const anchor = prev.positions.get(expandedId)
-      const newlyVisible = [...visible].filter((id) => !prev.positions.has(id))
+      const anchor = anchorRectFor(graph, prev.positions, expandedId, metrics)
+      // Les nœuds élidés n'ont jamais de rect, donc `!prev.positions.has(id)`
+      // les déclarerait « nouvellement visibles » à CHAQUE dépliage. Ils sont
+      // écartés ici, sans quoi la mise en page incrémentale croirait avoir un
+      // sous-arbre à placer alors qu'il n'y a rien à dessiner.
+      const newlyVisible = [...visible].filter((id) => {
+        const node = graph.nodes.get(id)
+        return node !== undefined && !node.elided && !prev.positions.has(id)
+      })
 
       if (!anchor || newlyVisible.length === 0) {
         // Repeated/no-op expand of an already-expanded node: do NOT clobber a
@@ -129,31 +194,24 @@ export function createLayoutEngine(opts?: { elkFactory?: ElkFactory }): LayoutEn
       // Step 1: layout the newly visible subgraph under expandedId in isolation,
       // using the same elk config as the main layout.
       const elk = elkFactory()
-      const newlyVisibleSet = new Set(newlyVisible)
-
-      const children: ElkNode[] = []
-      for (const id of newlyVisible) {
+      // Le sous-graphe est mis en page en isolation, donc son remappage
+      // d'arêtes doit se faire dans SON périmètre : un tableau élidé du
+      // sous-arbre y résout vers un ancêtre qui, lui, n'en fait pas partie.
+      // Les nœuds élidés sont ajoutés au périmètre pour que `nearestDrawn`
+      // puisse les traverser, mais `drawnBoxes` ne leur donne pas de boîte.
+      const scope = new Set(newlyVisible)
+      for (const id of visible) {
         const node = graph.nodes.get(id)
-        if (!node) continue
-        const size = measureNode(node, metrics)
-        children.push({ id, width: size.width, height: size.height })
-      }
-
-      const edges: ElkExtendedEdge[] = []
-      for (const edge of graph.containEdges) {
-        if (!newlyVisibleSet.has(edge.from) || !newlyVisibleSet.has(edge.to)) continue
-        edges.push({
-          id: `${edge.from}->${edge.to}`,
-          sources: [edge.from],
-          targets: [edge.to],
-        })
+        if (node?.elided) scope.add(id)
       }
 
       const elkGraph: ElkNode = {
         id: "root",
         layoutOptions: LAYOUT_OPTIONS,
-        children,
-        edges,
+        children: drawnBoxes(graph, newlyVisible, metrics),
+        edges: drawnContainEdges(graph, scope).filter(
+          (e) => scope.has(e.sources[0]!) && scope.has(e.targets[0]!),
+        ),
       }
 
       const result = await elk.layout(elkGraph)

@@ -1,4 +1,4 @@
-import type { GraphNode } from "./model.js"
+import { VALUE_ONLY_KEY, type GraphNode, type Row } from "./model.js"
 
 export interface Size {
   width: number
@@ -25,6 +25,11 @@ export interface NodeMetrics {
   keyCharWidth: number
   /** Avance d'une valeur (mono 12px — exacte pour Fira Code, 0.6em). */
   valueCharWidth: number
+  /** Marge intérieure horizontale de la pilule d'une ligne-tableau, de chaque
+   * côté du texte. */
+  tokenPaddingX: number
+  /** Place réservée au chevron de la pilule, écart compris. */
+  tokenChevronWidth: number
   minWidth: number
   maxWidth: number
 }
@@ -41,8 +46,50 @@ export const DEFAULT_METRICS: NodeMetrics = {
   badgeCharWidth: 6.2,
   keyCharWidth: 6.0,
   valueCharWidth: 7.2,
+  tokenPaddingX: 6,
+  tokenChevronWidth: 11,
   minWidth: 140,
   maxWidth: 340,
+}
+
+/**
+ * Texte d'une ligne-tableau : « 1 item », « 3 items ». Exporté pour la même
+ * raison que `badgeTextFor` — le renderer doit dessiner EXACTEMENT ce que
+ * `measureNode` a budgété, et deux formulations qui divergeraient rendraient
+ * une pilule plus large que la place réservée.
+ */
+export function arrayTokenTextFor(count: number): string {
+  return count === 1 ? "1 item" : `${count} items`
+}
+
+/**
+ * Largeur totale de la pilule d'une ligne-tableau, chrome compris.
+ * Le texte est en police de valeur, comme toute valeur de ligne.
+ */
+export function arrayTokenWidth(count: number, metrics: NodeMetrics): number {
+  return (
+    arrayTokenTextFor(count).length * metrics.valueCharWidth +
+    2 * metrics.tokenPaddingX +
+    metrics.tokenChevronWidth
+  )
+}
+
+/**
+ * Largeur du fragment « valeur » d'une ligne, quelle que soit sa nature : le
+ * texte pour une ligne scalaire, la pilule entière pour une ligne-tableau.
+ * Partagé par la mesure et le dessin, comme `rowIndexAt` l'est par le clic et
+ * le survol — deux arithmétiques séparées dériveraient, et la carte réserverait
+ * alors une place que la pilule ne respecte pas.
+ */
+export function rowValueWidth(row: Row, metrics: NodeMetrics): number {
+  if (row.valueType === "array") return arrayTokenWidth(row.value, metrics)
+  return String(row.value).length * metrics.valueCharWidth
+}
+
+/** Une ligne dont la valeur SEULE fait le contenu : sa clé n'est pas dessinée,
+ * donc elle ne consomme ni largeur de clé ni écart clé/valeur. */
+export function isValueOnlyRow(row: Row): boolean {
+  return row.key === VALUE_ONLY_KEY
 }
 
 /**
@@ -53,7 +100,9 @@ export const DEFAULT_METRICS: NodeMetrics = {
  */
 export function badgeTextFor(node: GraphNode): string {
   if (node.kind === "entity") return node.entityType.toUpperCase()
-  if (node.childIds.length > 0) return String(node.childIds.length)
+  // Les enfants ÉLIDÉS sont exclus : ils sont déjà là, en lignes, et les
+  // compter ferait annoncer par la pastille un dépliage qui ne rendrait rien.
+  if (node.cardChildCount > 0) return String(node.cardChildCount)
   return ""
 }
 
@@ -79,17 +128,16 @@ export function measureNode(node: GraphNode, metrics: NodeMetrics = DEFAULT_METR
   const badge = badgeTextFor(node)
   const headerW =
     chrome +
-    (node.childIds.length > 0 ? metrics.chevronWidth : 0) +
+    (node.cardChildCount > 0 ? metrics.chevronWidth : 0) +
     headerTextFor(node).length * metrics.headerCharWidth +
     (badge.length > 0 ? metrics.gapKeyValue + badge.length * metrics.badgeCharWidth : 0)
 
   let widest = headerW
   for (const row of node.rows) {
-    const rowW =
-      chrome +
-      row.key.length * metrics.keyCharWidth +
-      metrics.gapKeyValue +
-      String(row.value).length * metrics.valueCharWidth
+    const keyW = isValueOnlyRow(row)
+      ? 0
+      : row.key.length * metrics.keyCharWidth + metrics.gapKeyValue
+    const rowW = chrome + keyW + rowValueWidth(row, metrics)
     if (rowW > widest) widest = rowW
   }
 

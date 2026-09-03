@@ -2,7 +2,12 @@ import { BitmapText, Circle, Container, Graphics, Rectangle, Text } from "pixi.j
 import {
   badgeTextFor,
   headerTextFor,
+  arrayTokenTextFor,
+  arrayTokenWidth,
+  anchorRectFor,
+  isValueOnlyRow,
   DEFAULT_METRICS,
+  type ArrayRow,
   type Graph,
   type GraphNode,
   type NodeId,
@@ -109,8 +114,112 @@ function drawChevron(g: Graphics, x: number, y: number, expanded: boolean, color
 }
 
 /** Aucun champ référençant : une constante partagée plutôt qu'un `new Set()`
- * par appel, `drawNode` étant appelé une fois par carte visible et par rebuild. */
+ * par appel, `drawNode` étant appelé une fois par carte visible et par rebuild.
+ * Sert aussi de défaut aux champs CASSÉS — les deux ensembles sont vides de la
+ * même façon, et distinguer deux singletons vides n'apporterait rien. */
 const NO_REF_FIELDS: ReadonlySet<string> = new Set();
+
+
+
+/** La croix « ✕ » d'une référence cassée : une boîte carrée posée contre le
+ * bord droit du contenu, précédée d'un écart qui la sépare de la valeur. */
+const DANGLING_ICON_WIDTH = 7;
+const DANGLING_ICON_GAP = 4;
+const DANGLING_ICON_STROKE = 1.5;
+
+/** Hauteur de la pilule d'une ligne-tableau, et son rayon d'arrondi. Elle est
+ * plus basse que `rowHeight` pour laisser respirer les lignes voisines. */
+const TOKEN_HEIGHT = 15;
+const TOKEN_RADIUS = 7.5;
+
+/**
+ * De combien la pilule se décale vers la droite au survol. Le décalage va dans
+ * le SENS du dépliage — les cartes d'éléments sortent à droite — si bien que
+ * le geste est annoncé par la direction du mouvement et pas seulement par un
+ * changement de couleur.
+ */
+export const TOKEN_HOVER_SHIFT = 2;
+
+/**
+ * Dessine la pilule d'une ligne-tableau, alignée à droite du contenu.
+ *
+ * Elle est montée dans un conteneur étiqueté `array-token:<index>` — même
+ * convention que `ref-underline:<index>` — pour que `create.ts` puisse la
+ * déplacer au survol sans redessiner la carte ni recalculer sa géométrie. Le
+ * visuel de survol est un SECOND tracé préparé caché plutôt qu'une couleur
+ * recalculée : `draw.ts` ne peut pas connaître l'état du pointeur, et basculer
+ * une visibilité est tout ce qu'il reste à faire à l'appelant.
+ */
+function drawArrayToken(
+  row: ArrayRow,
+  index: number,
+  rightEdge: number,
+  centerY: number,
+  theme: Theme,
+  metrics: NodeMetrics,
+  expandedArrays: ReadonlySet<NodeId> | null,
+  useBitmapText: boolean,
+): Container {
+  const token = new Container();
+  token.label = `array-token:${index}`;
+
+  const width = arrayTokenWidth(row.value, metrics);
+  const x = rightEdge - width;
+  const y = centerY - TOKEN_HEIGHT / 2;
+
+  // Le fond reprend la couleur du canevas : sur une carte claire comme sur une
+  // carte estompée, la pilule se lit alors comme un creux, sans qu'aucune
+  // palette ait à déclarer une teinte de plus.
+  const rest = new Graphics();
+  rest.label = "rest";
+  rest
+    .roundRect(x, y, width, TOKEN_HEIGHT, TOKEN_RADIUS)
+    .fill(theme.surface.canvas)
+    .stroke({ width: 1, color: theme.edge.border });
+  token.addChild(rest);
+
+  const hover = new Graphics();
+  hover.label = "hover";
+  hover.visible = false;
+  hover
+    .roundRect(x, y, width, TOKEN_HEIGHT, TOKEN_RADIUS)
+    .fill(theme.surface.canvas)
+    .stroke({ width: 1, color: theme.accent.selection });
+  token.addChild(hover);
+
+  const label = createLabel(
+    arrayTokenTextFor(row.value),
+    theme,
+    "value",
+    theme.ink.muted,
+    useBitmapText,
+  );
+  label.position.set(
+    Math.round(x + metrics.tokenPaddingX),
+    Math.round(centerY - label.height / 2),
+  );
+  token.addChild(label);
+
+  // `null` : la vue courante ne plie rien (vue graphe), donc pas de chevron —
+  // il promettrait un geste sans effet. La LARGEUR reste la même dans les deux
+  // cas, `arrayTokenWidth` réservant toujours la place du chevron : `measureNode`
+  // ne connaît pas la vue, et une carte qui se mesurerait différemment selon la
+  // vue ferait diverger les deux mises en page.
+  if (expandedArrays !== null) {
+    const chevron = new Graphics();
+    chevron.label = "chevron";
+    drawChevron(
+      chevron,
+      x + width - metrics.tokenPaddingX - metrics.tokenChevronWidth / 2,
+      centerY,
+      expandedArrays.has(row.arrayId),
+      theme.ink.subtle,
+    );
+    token.addChild(chevron);
+  }
+
+  return token;
+}
 
 /**
  * Dessine le visuel d'un nœud, positionné en (0,0) dans son espace local
@@ -140,6 +249,18 @@ const NO_REF_FIELDS: ReadonlySet<string> = new Set();
  * pointeur est un état d'interface qui appartient à `create.ts` ; il n'a plus
  * qu'à basculer une visibilité par label, sans redessiner ni consulter la
  * géométrie que ce fichier vient de calculer.
+ *
+ * `danglingFields` nomme les lignes dont la référence NE RÉSOUT PAS. Leur valeur
+ * garde la teinte de référence — c'en est une, simplement cassée — et reçoit une
+ * croix contre le bord droit de la ligne. Le diagnostic vivait auparavant dans
+ * l'espace des arêtes, en moignon accroché au bord de la carte : il désignait
+ * ainsi la CARTE et non le CHAMP fautif. Posé sur la ligne, il désigne
+ * exactement la valeur qui ne résout pas.
+ *
+ * Ces lignes n'ont PAS de souligné : le souligné promet « ce clic navigue », or
+ * `followRef` ne mène nulle part quand la cible est nulle. Une ligne présente
+ * dans les deux ensembles (un champ portant plusieurs arêtes) est traitée comme
+ * cassée — le doute doit se voir.
  */
 export function drawNode(
   node: GraphNode,
@@ -150,8 +271,10 @@ export function drawNode(
   accent: string,
   metrics: NodeMetrics = DEFAULT_METRICS,
   expanded = false,
-  showChevron = node.childIds.length > 0,
+  showChevron = node.cardChildCount > 0,
   refFields: ReadonlySet<string> = NO_REF_FIELDS,
+  danglingFields: ReadonlySet<string> = NO_REF_FIELDS,
+  expandedArrays: ReadonlySet<NodeId> | null = null,
 ): Container {
   // Les atlas sont installés par le bail que tient `create.ts`, avant tout
   // appel ici. `fontNameFor` en dérive le nom depuis le thème seul.
@@ -262,35 +385,96 @@ export function drawNode(
     // qui disparaît alors silencieusement de la carte. On réserve donc à la
     // clé au plus `inner - gapKeyValue - <largeur d'un caractère de valeur>`,
     // ce qui garantit à la valeur un budget plancher d'au moins un caractère.
+    // La croix d'une référence cassée, elle, PREND de la place, contrairement
+    // à la teinte. Elle est retranchée des DEUX budgets et pas seulement de
+    // celui de la valeur : le budget de troncature doit égaler la place
+    // réellement disponible, sans quoi une clé longue reprendrait la place
+    // réservée à l'icône et la croix se poserait sur du texte.
+    const isDangling = danglingFields.has(row.key);
+    const iconSpace = isDangling ? DANGLING_ICON_WIDTH + DANGLING_ICON_GAP : 0;
+
     const valueCharWidth = charWidthFor("value", metrics);
     const keyCharWidth = charWidthFor("key", metrics);
-    const keyBudget = Math.max(0, inner - metrics.gapKeyValue - valueCharWidth);
-    const keyStr = truncateToWidth(row.key, keyBudget, keyCharWidth);
 
-    const keyText = createLabel(keyStr, theme, "key", theme.ink.muted, useBitmapText);
-    keyText.position.set(contentX, Math.round(y - keyText.height / 2));
-    container.addChild(keyText);
+    // Une ligne « valeur seule » — le document racine scalaire, un élément
+    // scalaire de tableau — ne dessine pas sa clé : `tags[0]` en en-tête puis
+    // `$value` en clé ne dirait rien de plus. Elle ne consomme donc ni largeur
+    // de clé ni écart, exactement comme `measureNode` l'a budgété.
+    const showKey = !isValueOnlyRow(row);
+    const keyBudget = showKey
+      ? Math.max(0, inner - iconSpace - metrics.gapKeyValue - valueCharWidth)
+      : 0;
+    const keyStr = showKey ? truncateToWidth(row.key, keyBudget, keyCharWidth) : "";
 
-    const keyWidth = keyStr.length * keyCharWidth;
-    const valueBudget = inner - keyWidth - metrics.gapKeyValue;
+    if (showKey) {
+      const keyText = createLabel(keyStr, theme, "key", theme.ink.muted, useBitmapText);
+      keyText.position.set(contentX, Math.round(y - keyText.height / 2));
+      container.addChild(keyText);
+    }
+
+    // L'écart clé/valeur est REPLIÉ dans `keyWidth` : sans clé il n'y a pas
+    // d'écart à réserver, et le garder à part imposerait de le retrancher
+    // conditionnellement à deux endroits.
+    const keyWidth = showKey ? keyStr.length * keyCharWidth + metrics.gapKeyValue : 0;
+    const valueBudget = inner - iconSpace - keyWidth;
+
+    // La ligne d'un tableau élidé porte une pilule, pas du texte : elle sort
+    // ici, avant toute la mécanique de troncature et de référence, qui ne
+    // s'applique qu'à une valeur scalaire.
+    if (row.valueType === "array") {
+      container.addChild(
+        drawArrayToken(
+          row,
+          index,
+          contentRight,
+          y,
+          theme,
+          metrics,
+          expandedArrays,
+          useBitmapText,
+        ),
+      );
+      return;
+    }
+
     const valueStr = truncateToWidth(String(row.value), valueBudget, valueCharWidth);
+
+    if (isDangling) {
+      // Dessinée AVANT le repli sur valeur vide : sur une carte trop étroite
+      // pour afficher quoi que ce soit, c'est justement le diagnostic qui doit
+      // survivre — sinon la carte la moins lisible serait celle qui cache son
+      // erreur. Un tracé et non un glyphe : l'atlas ASCII ne contient pas « ✕ ».
+      const cross = new Graphics();
+      const right = contentRight;
+      const left = right - DANGLING_ICON_WIDTH;
+      const top = y - DANGLING_ICON_WIDTH / 2;
+      const bottom = y + DANGLING_ICON_WIDTH / 2;
+      cross.moveTo(left, top).lineTo(right, bottom);
+      cross.moveTo(right, top).lineTo(left, bottom);
+      cross.stroke({ width: DANGLING_ICON_STROKE, color: theme.edge.dangling, cap: "round" });
+      container.addChild(cross);
+    }
+
     if (valueStr.length === 0) return;
 
     // La valeur porte la couleur de l'arête qu'elle déclenche : c'est le même
-    // objet vu de deux endroits, pas deux informations à accorder. La teinte
-    // ne prend AUCUNE place, contrairement à une icône : les budgets ci-dessus
-    // restent donc ceux d'une ligne ordinaire, et rendre une ligne navigable ne
-    // peut pas raccourcir la valeur qu'elle affiche.
-    const isRef = refFields.has(row.key);
+    // objet vu de deux endroits, pas deux informations à accorder. Une référence
+    // cassée garde cette teinte — c'en est une, et c'est précisément sa nature de
+    // référence qui rend son échec intéressant. La teinte ne prend AUCUNE place :
+    // hors ligne cassée, les budgets ci-dessus restent ceux d'une ligne
+    // ordinaire, et rendre une ligne navigable ne peut pas raccourcir sa valeur.
+    const isRef = refFields.has(row.key) || isDangling;
     const valueColor = isRef ? theme.edge.ref : theme.ink.primary;
     const valueText = createLabel(valueStr, theme, "value", valueColor, useBitmapText);
     valueText.position.set(
-      Math.round(contentRight - valueText.width),
+      Math.round(contentRight - iconSpace - valueText.width),
       Math.round(y - valueText.height / 2),
     );
     container.addChild(valueText);
 
-    if (!isRef) return;
+    // Pas de souligné sur une ligne cassée : il promettrait une navigation que
+    // `followRef` ne fera pas.
+    if (!isRef || isDangling) return;
     // Le souligné du survol : l'affordance de lien hypertexte. Il est posé APRÈS
     // le repli sur valeur vide, car il souligne un TEXTE — sans texte, un trait
     // isolé ne désignerait plus rien.
@@ -369,9 +553,6 @@ function arrowHead(g: Graphics, x1: number, y1: number, x2: number, y2: number):
     .closePath();
 }
 
-const DANGLING_STUB_LENGTH = 32;
-const DANGLING_CROSS_RADIUS = 4;
-
 /**
  * Point où le segment CENTRE de `rect` → `(tx, ty)` coupe le PÉRIMÈTRE de
  * `rect`.
@@ -415,15 +596,16 @@ export type EdgeMode = "contain" | "ref";
 /**
  * Dessine toutes les arêtes entre nœuds visibles dans un seul Graphics,
  * groupées par style : contenance en béziers horizontales pleines, références
- * résolues terminées par une tête de flèche, références cassées en moignon
- * pointillé barré d'une croix.
+ * résolues terminées par une tête de flèche.
+ *
+ * Une référence CASSÉE n'est plus tracée du tout. Le moignon qui la signalait
+ * flottait au bord de la carte source, donc il désignait la CARTE et non le
+ * CHAMP fautif ; le diagnostic est passé sur la ligne de la carte, où la croix
+ * de `drawNode` se pose contre la valeur qui ne résout pas.
  *
  * Le tracé des références résolues dépend du mode : POINTILLÉ en `"contain"`
  * (vue structure, où la référence est une décoration au-dessus de l'arbre),
- * PLEIN en `"ref"` (vue graphe, où elle est la relation principale). Le moignon
- * d'une référence cassée reste pointillé dans les deux modes : son pointillé ne
- * dit pas « secondaire » mais « ne mène nulle part », et il porte déjà sa propre
- * couleur et sa croix.
+ * PLEIN en `"ref"` (vue graphe, où elle est la relation principale).
  *
  * Les têtes de flèche sont des triangles pleins : elles ne peuvent pas
  * partager l'appel `stroke()` des pointillés, d'où un `fill()` distinct émis
@@ -458,6 +640,7 @@ export function drawEdges(
   lod: Lod,
   mode: EdgeMode = "contain",
   focusIds: ReadonlySet<NodeId> | null = null,
+  metrics: NodeMetrics = DEFAULT_METRICS,
 ): Graphics {
   const g = new Graphics();
   if (lod === 2) return g;
@@ -489,7 +672,13 @@ export function drawEdges(
       let hasContain = false;
       for (const edge of graph.containEdges) {
         if (!inPass(edge.from, edge.to, pass.full)) continue;
-        const from = positions.get(edge.from);
+        // Le DÉPART passe par `anchorRectFor` : pour un tableau élidé, c'est la
+        // bande de sa ligne sur la carte parente, si bien que l'arête sort du
+        // jeton `[ n items ]` et non du milieu de la carte. L'ARRIVÉE, elle, se
+        // lit directement dans `positions` — une arête ne peut pas pointer vers
+        // un nœud élidé, qui n'a pas de carte, et l'arête `#p1 → tags` tombe
+        // donc d'elle-même, remplacée par la ligne qu'elle décrivait.
+        const from = anchorRectFor(graph, positions, edge.from, metrics);
         const to = positions.get(edge.to);
         if (!from || !to) continue;
         const x1 = from.x + from.width;
@@ -554,32 +743,6 @@ export function drawEdges(
     }
   }
 
-  for (const pass of PASSES) {
-    let hasDangling = false;
-    for (const edge of graph.refEdges) {
-      if (!edge.dangling) continue;
-      // Un moignon ne touche le focus que par sa SOURCE : son autre bout ne
-      // mène nulle part, et `inPass` ne peut donc l'apparier à personne.
-      if (!inPass(edge.from, edge.to, pass.full)) continue;
-      const from = positions.get(edge.from);
-      if (!from) continue;
-      const x1 = from.x + from.width;
-      const y1 = from.y + from.height / 2;
-      const x2 = x1 + DANGLING_STUB_LENGTH;
-      const y2 = y1;
-      dashedLine(g, x1, y1, x2, y2);
-      const r = DANGLING_CROSS_RADIUS;
-      g.moveTo(x2 - r, y2 - r);
-      g.lineTo(x2 + r, y2 + r);
-      g.moveTo(x2 + r, y2 - r);
-      g.lineTo(x2 - r, y2 + r);
-      hasDangling = true;
-    }
-    if (hasDangling) {
-      g.stroke({ width: theme.strokes.edge, color: theme.edge.dangling, alpha: pass.alpha });
-    }
-  }
-
   return g;
 }
 
@@ -592,43 +755,31 @@ const REF_HIT_WIDTH = 14;
 
 /**
  * Une zone de clic invisible et épaissie (14px) par arête de référence
- * visible. Purement géométrique : l'appelant règle `eventMode`/`cursor` et
+ * RÉSOLUE. Purement géométrique : l'appelant règle `eventMode`/`cursor` et
  * branche le tap. L'alpha est 0, mais le hit-test des Graphics étant
  * géométrique, la forme reste cliquable.
+ *
+ * Une référence cassée n'en reçoit aucune : plus rien n'est tracé pour elle, et
+ * une cible posée dans le vide promettrait une navigation que `followRef` ne
+ * peut pas faire. Ce qui la signale est sur la carte, où le tap de la carte suffit.
  */
 export function drawEdgeHitAreas(graph: Graph, positions: Map<NodeId, Rect>): EdgeHit[] {
   const hits: EdgeHit[] = [];
   for (const edge of graph.refEdges) {
+    if (edge.to === null || edge.dangling) continue;
     const from = positions.get(edge.from);
     if (!from) continue;
-    let x1: number;
-    let y1: number;
-    let x2: number;
-    let y2: number;
-    if (edge.to !== null && !edge.dangling) {
-      const to = positions.get(edge.to);
-      if (!to) continue;
-      // Mêmes ancrages que `drawEdges` : la zone de clic doit rester posée sur
-      // le trait, pas sur l'ancien segment milieu-droit → milieu-gauche.
-      const fromCenter = centerOf(from);
-      const toCenter = centerOf(to);
-      const start = anchorOnRect(from, toCenter.x, toCenter.y);
-      const end = anchorOnRect(to, fromCenter.x, fromCenter.y);
-      x1 = start.x;
-      y1 = start.y;
-      x2 = end.x;
-      y2 = end.y;
-    } else {
-      // Un moignon ne vise rien : pas de direction à suivre, il reste
-      // horizontal depuis le milieu du bord droit.
-      x1 = from.x + from.width;
-      y1 = from.y + from.height / 2;
-      x2 = x1 + DANGLING_STUB_LENGTH;
-      y2 = y1;
-    }
+    const to = positions.get(edge.to);
+    if (!to) continue;
+    // Mêmes ancrages que `drawEdges` : la zone de clic doit rester posée sur
+    // le trait, pas sur l'ancien segment milieu-droit → milieu-gauche.
+    const fromCenter = centerOf(from);
+    const toCenter = centerOf(to);
+    const start = anchorOnRect(from, toCenter.x, toCenter.y);
+    const end = anchorOnRect(to, fromCenter.x, fromCenter.y);
     const g = new Graphics();
-    g.moveTo(x1, y1)
-      .lineTo(x2, y2)
+    g.moveTo(start.x, start.y)
+      .lineTo(end.x, end.y)
       .stroke({ width: REF_HIT_WIDTH, color: 0xffffff, alpha: 0, cap: "round" });
     hits.push({ edge, graphics: g });
   }
@@ -637,12 +788,15 @@ export function drawEdgeHitAreas(graph: Graph, positions: Map<NodeId, Rect>): Ed
 
 /**
  * Surlignage de sélection : contour sur le nœud, sur sa chaîne de parenté
- * jusqu'à la racine, et sur ses références sortantes (moignons cassés
- * inclus). Renvoie un Graphics vide si rien n'est sélectionné ou si le nœud
- * sélectionné n'est pas visible.
+ * jusqu'à la racine, et sur ses références sortantes RÉSOLUES. Renvoie un
+ * Graphics vide si rien n'est sélectionné ou si le nœud sélectionné n'est pas
+ * visible.
  *
- * C'est le seul endroit, avec les références cassées, où le rouge apparaît :
- * comme plus rien d'autre n'est rouge, la sélection se lit immédiatement.
+ * Une référence cassée n'a plus d'arête à restyler : elle ne se signale que sur
+ * la carte, par la croix de `drawNode`.
+ *
+ * C'est le seul endroit, avec ces croix, où le rouge apparaît : comme plus rien
+ * d'autre n'est rouge, la sélection se lit immédiatement.
  *
  * Le surlignage d'une référence résolue REPREND la géométrie et le style de
  * `drawEdges` — mêmes ancrages, même arrêt au pied de la flèche, même tête
@@ -651,10 +805,6 @@ export function drawEdgeHitAreas(graph: Graph, positions: Map<NodeId, Rect>): Ed
  * d'en superposer une seconde. Un pointillé posé sur le trait plein de la vue
  * graphe se lisait comme une arête de plus, et sa ligne traversait la tête de
  * flèche de celle qu'elle était censée souligner.
- *
- * Le moignon d'une référence cassée reste pointillé dans les deux modes : son
- * pointillé ne dit pas « secondaire » mais « ne mène nulle part » — même
- * argument que dans `drawEdges`.
  */
 export function drawSelectionOverlay(
   graph: Graph,
@@ -695,33 +845,28 @@ export function drawSelectionOverlay(
   const resolved: { x1: number; y1: number; x2: number; y2: number }[] = [];
   for (const edge of graph.refEdges) {
     if (edge.from !== selectedId) continue;
+    if (edge.to === null || edge.dangling) continue;
     const from = positions.get(edge.from);
     if (!from) continue;
-    if (edge.to !== null && !edge.dangling) {
-      const to = positions.get(edge.to);
-      if (!to) continue;
-      // Mêmes ancrages que `drawEdges` : le surlignage doit recouvrir le trait.
-      const fromCenter = centerOf(from);
-      const toCenter = centerOf(to);
-      const start = anchorOnRect(from, toCenter.x, toCenter.y);
-      const end = anchorOnRect(to, fromCenter.x, fromCenter.y);
-      // La ligne s'arrête au pied de la flèche pour ne pas la traverser.
-      const len = Math.hypot(end.x - start.x, end.y - start.y);
-      const t = len > ARROW_LENGTH ? (len - ARROW_LENGTH) / len : 1;
-      const ex = start.x + (end.x - start.x) * t;
-      const ey = start.y + (end.y - start.y) * t;
-      if (mode === "ref") {
-        g.moveTo(start.x, start.y);
-        g.lineTo(ex, ey);
-      } else {
-        dashedLine(g, start.x, start.y, ex, ey);
-      }
-      resolved.push({ x1: start.x, y1: start.y, x2: end.x, y2: end.y });
+    const to = positions.get(edge.to);
+    if (!to) continue;
+    // Mêmes ancrages que `drawEdges` : le surlignage doit recouvrir le trait.
+    const fromCenter = centerOf(from);
+    const toCenter = centerOf(to);
+    const start = anchorOnRect(from, toCenter.x, toCenter.y);
+    const end = anchorOnRect(to, fromCenter.x, fromCenter.y);
+    // La ligne s'arrête au pied de la flèche pour ne pas la traverser.
+    const len = Math.hypot(end.x - start.x, end.y - start.y);
+    const t = len > ARROW_LENGTH ? (len - ARROW_LENGTH) / len : 1;
+    const ex = start.x + (end.x - start.x) * t;
+    const ey = start.y + (end.y - start.y) * t;
+    if (mode === "ref") {
+      g.moveTo(start.x, start.y);
+      g.lineTo(ex, ey);
     } else {
-      const x1 = from.x + from.width;
-      const y1 = from.y + from.height / 2;
-      dashedLine(g, x1, y1, x1 + DANGLING_STUB_LENGTH, y1);
+      dashedLine(g, start.x, start.y, ex, ey);
     }
+    resolved.push({ x1: start.x, y1: start.y, x2: end.x, y2: end.y });
     hasRefs = true;
   }
   if (hasRefs) g.stroke({ width: theme.strokes.selection, color: theme.accent.selection });

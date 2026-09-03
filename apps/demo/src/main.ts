@@ -2,6 +2,7 @@ import {
   createDataGraph,
   defsquareLight,
   defsquareDark,
+  arrayTokenTextFor,
   type GraphNode,
   type RefEdge,
 } from "@defsquare/data-graph";
@@ -75,7 +76,11 @@ function renderSelection(node: GraphNode): void {
       const dt = document.createElement("dt");
       dt.textContent = row.key;
       const dd = document.createElement("dd");
-      dd.textContent = String(row.value);
+      // Une ligne-tableau porte un NOMBRE D'ÉLÉMENTS, pas une valeur du
+      // document : l'afficher tel quel donnerait « tags 3 », qu'on lirait comme
+      // la valeur du champ. Le panneau reprend donc la formulation de la carte.
+      dd.textContent =
+        row.valueType === "array" ? `[ ${arrayTokenTextFor(row.value)} ]` : String(row.value);
       wrapper.append(dt, dd);
 
       const ref = refs.get(row.key);

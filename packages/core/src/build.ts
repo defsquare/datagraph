@@ -2,6 +2,7 @@ import { validateConfig, type DataGraphConfig } from "./config.js"
 import { matchesPath } from "./selector.js"
 import {
   GraphTooLargeError,
+  VALUE_ONLY_KEY,
   type ArrayNode,
   type EntityNode,
   type Graph,
@@ -36,6 +37,12 @@ function scalarValueType(value: Scalar): ScalarRow["valueType"] {
   return typeof value as "string" | "number" | "boolean"
 }
 
+/** Libellé d'un nœud non racine : `tags[0]` sous un tableau, la clé sinon. */
+function labelFor(path: (string | number)[], parentNode: GraphNode | null): string {
+  const key = path[path.length - 1]!
+  return parentNode && parentNode.kind === "array" ? `${parentNode.label}[${key}]` : String(key)
+}
+
 export function buildGraph(data: unknown, config: DataGraphConfig): Graph {
   const validated = validateConfig(config)
 
@@ -67,41 +74,54 @@ export function buildGraph(data: unknown, config: DataGraphConfig): Graph {
     return null
   }
 
+  /**
+   * `parentDrawn` dit si le parent porte une carte, donc s'il peut HÉBERGER la
+   * ligne d'un tableau enfant. C'est la seule information non locale dont
+   * l'élision a besoin, et la faire descendre coûte moins qu'une seconde passe
+   * sur le graphe fini.
+   */
   function visitValue(
     value: unknown,
     path: (string | number)[],
     parentId: NodeId | null,
     parentNode: GraphNode | null,
+    parentDrawn: boolean,
   ): NodeId {
     const id = pointerOf(path)
 
-    // A scalar (including null) can only reach visitValue as the root document:
-    // every recursive call site already filters scalars out via isScalar() before recursing.
+    // Une valeur scalaire atteint `visitValue` dans deux cas : le document
+    // racine, et chaque ÉLÉMENT d'un tableau — les éléments scalaires sont
+    // devenus des nœuds pour que déplier un tableau rende toujours des cartes,
+    // quel que soit son contenu. Les valeurs scalaires d'un OBJET, elles,
+    // restent des lignes et n'arrivent jamais ici (voir la boucle du bas).
     if (isScalar(value)) {
-      const rootNode: ObjectNode = {
+      const scalarNode: ObjectNode = {
         kind: "object",
         id,
         path: [...path],
-        label: validated.rootLabel,
-        rows: [{ key: "$value", value, valueType: scalarValueType(value) }],
+        label: path.length === 0 ? validated.rootLabel : labelFor(path, parentNode),
+        rows: [{ key: VALUE_ONLY_KEY, value, valueType: scalarValueType(value) }],
         parentId,
         childIds: [],
+        elided: false,
+        cardChildCount: 0,
       }
-      graph.nodes.set(id, rootNode)
+      graph.nodes.set(id, scalarNode)
       countLogical(1)
+      linkChild(parentNode, scalarNode)
       return id
     }
 
     const isArray = Array.isArray(value)
     const entityMatch = !isArray ? findEntityMatch(path) : null
 
-    let label: string
-    if (path.length === 0) {
-      label = validated.rootLabel
-    } else {
-      const key = path[path.length - 1]!
-      label = parentNode && parentNode.kind === "array" ? `${parentNode.label}[${key}]` : String(key)
-    }
+    // Un tableau n'est élidé que si quelqu'un peut porter sa ligne. La racine
+    // n'a pas de parent, et un tableau sous un tableau déjà élidé n'a pas de
+    // carte parente : dans les deux cas il garde la sienne.
+    const elided = isArray && parentDrawn
+    const drawn = !elided
+
+    let label: string = path.length === 0 ? validated.rootLabel : labelFor(path, parentNode)
 
     let entityType: string | undefined
     let entityId: string | undefined
@@ -132,6 +152,8 @@ export function buildGraph(data: unknown, config: DataGraphConfig): Graph {
         childIds: [],
         entityType,
         entityId,
+        elided,
+        cardChildCount: 0,
       }
       node = entityNode
     } else if (isArray) {
@@ -144,6 +166,8 @@ export function buildGraph(data: unknown, config: DataGraphConfig): Graph {
         parentId,
         childIds: [],
         length: (value as unknown[]).length,
+        elided,
+        cardChildCount: 0,
       }
       node = arrayNode
     } else {
@@ -155,17 +179,15 @@ export function buildGraph(data: unknown, config: DataGraphConfig): Graph {
         rows: [],
         parentId,
         childIds: [],
+        elided,
+        cardChildCount: 0,
       }
       node = objectNode
     }
 
     graph.nodes.set(id, node)
     countLogical(1)
-
-    if (parentNode) {
-      graph.containEdges.push({ kind: "contain", from: parentNode.id, to: id })
-      parentNode.childIds.push(id)
-    }
+    linkChild(parentNode, node)
 
     if (node.kind === "entity") {
       let byType = graph.entityIndex.get(node.entityType)
@@ -185,23 +207,22 @@ export function buildGraph(data: unknown, config: DataGraphConfig): Graph {
     }
 
     if (isArray) {
+      // TOUT élément devient un nœud, scalaire compris : c'est ce qui rend le
+      // dépliage uniforme — une carte par élément, quel que soit son contenu.
+      // Auparavant un élément scalaire était une ligne du tableau, et déplier
+      // un tableau de scalaires ne rendait donc qu'une seule carte.
       ;(value as unknown[]).forEach((item, index) => {
-        const childPath = [...path, index]
-        if (isScalar(item)) {
-          node.rows.push({ key: String(index), value: item, valueType: scalarValueType(item) })
-          countLogical(1)
-        } else {
-          visitValue(item, childPath, id, node)
-        }
+        const childId = visitValue(item, [...path, index], id, node, drawn)
+        addArrayRowIfElided(node, String(index), item, childId, drawn)
       })
     } else {
       for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
-        const childPath = [...path, key]
         if (isScalar(val)) {
           node.rows.push({ key, value: val, valueType: scalarValueType(val) })
           countLogical(1)
         } else if (val !== undefined) {
-          visitValue(val, childPath, id, node)
+          const childId = visitValue(val, [...path, key], id, node, drawn)
+          addArrayRowIfElided(node, key, val, childId, drawn)
         }
       }
     }
@@ -209,7 +230,43 @@ export function buildGraph(data: unknown, config: DataGraphConfig): Graph {
     return id
   }
 
-  visitValue(data, [], null, null)
+  /** Rattache `child` à `parent` : arête de containment, `childIds`, et le
+   * compte de cartes que le chevron d'en-tête du parent révélera. */
+  function linkChild(parent: GraphNode | null, child: GraphNode): void {
+    if (!parent) return
+    graph.containEdges.push({ kind: "contain", from: parent.id, to: child.id })
+    parent.childIds.push(child.id)
+    if (!child.elided) parent.cardChildCount++
+  }
+
+  /**
+   * Pose sur `node` la ligne qui représente un tableau enfant élidé. Appelée
+   * APRÈS la visite de l'enfant : la ligne prend ainsi sa place dans l'ordre
+   * de déclaration des clés, `tags` après `categoryId` et non en fin de carte.
+   *
+   * Elle ne compte PAS comme un nœud logique — le nœud tableau qu'elle
+   * représente en a déjà compté un. C'est ce qui laisse `logicalNodeCount`
+   * inchangé par toute cette refonte.
+   */
+  function addArrayRowIfElided(
+    node: GraphNode,
+    key: string,
+    value: unknown,
+    childId: NodeId,
+    parentDrawn: boolean,
+  ): void {
+    if (!parentDrawn || !Array.isArray(value)) return
+    node.rows.push({
+      key,
+      value: (value as unknown[]).length,
+      valueType: "array",
+      arrayId: childId,
+    })
+  }
+
+  // La racine n'a pas de parent capable de porter une ligne : `parentDrawn`
+  // vaut false, donc un document qui est un tableau nu garde bien sa carte.
+  visitValue(data, [], null, null, false)
 
   for (const node of graph.nodes.values()) {
     if (node.kind !== "entity") continue
@@ -217,7 +274,11 @@ export function buildGraph(data: unknown, config: DataGraphConfig): Graph {
     if (!refs) continue
     for (const [field, targetType] of refs) {
       const row = node.rows.find((r) => r.key === field)
-      if (!row || row.value === null) continue
+      // Une ligne de tableau est écartée explicitement : sa `value` est un
+      // NOMBRE D'ÉLÉMENTS, et la prendre pour un identifiant ferait pointer la
+      // référence sur « 3 ». Un champ déclaré comme référence mais porté par
+      // un tableau est une erreur de config, pas une référence à résoudre.
+      if (!row || row.valueType === "array" || row.value === null) continue
       const targetId = String(row.value)
       const to = graph.entityIndex.get(targetType)?.get(targetId) ?? null
       const dangling = to === null

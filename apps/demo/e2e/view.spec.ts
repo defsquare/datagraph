@@ -172,9 +172,12 @@ test("un setData concurrent d'un setView laisse des compteurs coherents", async 
   )
 
   expect(out.stats.logicalNodeCount).toBe(28)
-  // 13 noeuds d'arbre en vue structure (racine + 2 tableaux + 10 entites),
+  // 11 CARTES en vue structure : la racine plus 10 entites. Les deux tableaux
+  // `customers` et `orders` sont elides — ils sont deux LIGNES de la carte
+  // racine, pas deux cartes — et `stats()` compte ce qui est dessine.
+  // `logicalNodeCount` ne bouge pas, lui : le nœud tableau existe toujours.
   // 10 entites en vue graphe. Avant correction : 5, herites du graphe precedent.
-  expect(out.stats.visibleNodeCount).toBe(out.view === "graph" ? 10 : 13)
+  expect(out.stats.visibleNodeCount).toBe(out.view === "graph" ? 10 : 11)
   expect(errors).toEqual([])
 })
 

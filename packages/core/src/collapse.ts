@@ -50,6 +50,13 @@ export class CollapseState {
    * DFS from root; a node is included as soon as it is reached (its
    * parent chain is all expanded), and we only descend through it if
    * it is itself expanded. Root is always expanded and always visible.
+   *
+   * Un enfant ÉLIDÉ échappe à cette règle : il n'est pas une carte à révéler
+   * mais une LIGNE de la carte de son parent, donc il est là dès que cette
+   * carte l'est, sans attendre que le parent soit déplié. C'est ce qui rend le
+   * jeton `[ n items ]` visible sur une entité repliée — sinon le jeton serait
+   * dessiné (les lignes le sont toujours) alors que le nœud qu'il pilote
+   * n'existerait pas pour le pli, et le clic ne déplierait rien.
    */
   visibleNodeIds(): Set<NodeId> {
     const visible = new Set<NodeId>()
@@ -59,10 +66,11 @@ export class CollapseState {
       const node = this.graph.nodes.get(id)
       if (!node) continue
       visible.add(id)
-      if (this.isExpanded(id)) {
-        for (const childId of node.childIds) {
-          stack.push(childId)
-        }
+      const expanded = this.isExpanded(id)
+      for (const childId of node.childIds) {
+        const child = this.graph.nodes.get(childId)
+        if (!child) continue
+        if (child.elided || expanded) stack.push(childId)
       }
     }
     return visible

@@ -169,6 +169,17 @@ function addressOf(seed: number): Address {
 // d'entités, une référence de chaque sorte, et UNE référence cassée
 // (`o2.customerId` pointe sur un client qui n'existe pas) : c'est le seul
 // diagnostic du jeu, et un test e2e compte dessus.
+//
+// Il exerce aussi les DEUX formes de tableau, qu'aucune donnée du petit jeu ne
+// produisait jusqu'ici : `p1.tags` (scalaires) pour la forme « items rendus en
+// lignes indexées de la carte du tableau, donc pas de pastille », et
+// `p16.reviews` (objets) pour la forme « un item = une carte enfant, et la
+// pastille compte les enfants ». Les deux ne sont visibles qu'en vue
+// structure, la vue graphe ne montrant que des entités.
+//
+// `reviews[].author` reste du texte libre et n'est PAS déclaré dans
+// `shopConfig.references` : ajouter une référence de plus ici ferait passer le
+// compte de diagnostics à 2 et casserait le test e2e.
 export const shopData = {
   categories: [
     { id: "cat1", name: "Informatique" },
@@ -182,6 +193,7 @@ export const shopData = {
       price: 89.9,
       stock: 42,
       categoryId: "cat1",
+      tags: ["mécanique", "rétroéclairé", "USB-C"],
     },
     {
       id: "p16",
@@ -190,6 +202,18 @@ export const shopData = {
       price: 129,
       stock: 17,
       categoryId: "cat4",
+      reviews: [
+        {
+          author: "Camille Dubois",
+          rating: 5,
+          comment: "Confortable sur une journée entière, autonomie tenue.",
+        },
+        {
+          author: "Julien Martin",
+          rating: 4,
+          comment: "Bonne réduction de bruit, l'étui aurait pu être plus rigide.",
+        },
+      ],
     },
   ],
   customers: [

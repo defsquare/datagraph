@@ -32,6 +32,8 @@ describe("measureNode", () => {
       label: "x",
       parentId: null,
       childIds: [],
+      elided: false,
+      cardChildCount: 0,
       rows: [{ key: "a", value: "wwwwwwwwwwwwwwwwwwww", valueType: "string" as const }],
     }
     const swapped = {
@@ -45,6 +47,7 @@ describe("measureNode", () => {
     const tiny = {
       kind: "object" as const,
       id: "/t", path: ["t"], label: "t", parentId: null, childIds: [], rows: [],
+      elided: false, cardChildCount: 0,
     }
     const huge = {
       ...tiny,
@@ -58,6 +61,7 @@ describe("measureNode", () => {
     const noRows = {
       kind: "object" as const,
       id: "/n", path: ["n"], label: "n", parentId: null, childIds: [], rows: [],
+      elided: false, cardChildCount: 0,
     }
     const oneRow = {
       ...noRows,
@@ -73,8 +77,9 @@ describe("measureNode", () => {
     const leaf = {
       kind: "object" as const,
       id: "/l", path: ["l"], label: "l".repeat(30), parentId: null, childIds: [], rows: [],
+      elided: false, cardChildCount: 0,
     }
-    const parent = { ...leaf, childIds: ["/l/a"] }
+    const parent = { ...leaf, childIds: ["/l/a"], cardChildCount: 1 }
     expect(measureNode(parent).width).toBeGreaterThan(measureNode(leaf).width)
   })
 

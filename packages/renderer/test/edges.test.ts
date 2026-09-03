@@ -54,9 +54,9 @@ describe("drawEdges — mode structure vs mode graphe", () => {
 
   it('draws references dashed in "contain" mode', () => {
     const g = drawEdges(graph, positions, theme, 0, "contain");
-    // stroke(containment) + stroke(références) + fill(têtes de flèche) +
-    // stroke(moignons cassés).
-    expect(g.context.instructions.length).toBe(4);
+    // stroke(containment) + stroke(références) + fill(têtes de flèche). Rien
+    // pour la référence cassée : elle ne vit plus dans l'espace des arêtes.
+    expect(g.context.instructions.length).toBe(3);
     expect((g.context.instructions[0] as any).action).toBe("stroke");
     // Le containment est bien tracé : une bézier par arête.
     expect(pathActions(g, 0)).toContain("bezierCurveTo");
@@ -70,22 +70,33 @@ describe("drawEdges — mode structure vs mode graphe", () => {
   it('draws the same references solid in "ref" mode', () => {
     const g = drawEdges(graph, positions, theme, 0, "ref");
     // Une instruction de moins : plus aucun stroke de containment.
-    expect(g.context.instructions.length).toBe(3);
+    expect(g.context.instructions.length).toBe(2);
     // Une seule arête résolue, tracée d'un seul segment : exactement
     // moveTo + lineTo, là où le mode "contain" en produit une dizaine.
     expect(pathActions(g, 0)).toEqual(["moveTo", "lineTo"]);
   });
 
-  it("keeps the dangling stub dashed in both modes", () => {
-    // Le pointillé d'un moignon ne dit pas « secondaire » mais « ne mène nulle
-    // part » : il ne suit donc pas la bascule de mode.
-    const contain = drawEdges(graph, positions, theme, 0, "contain");
-    const ref = drawEdges(graph, positions, theme, 0, "ref");
-    // Dernière instruction de chaque contexte : le stroke des moignons.
-    const a = pathActions(contain, contain.context.instructions.length - 1);
-    const b = pathActions(ref, ref.context.instructions.length - 1);
-    expect(a).toEqual(b);
-    expect(a.filter((x) => x === "lineTo").length).toBeGreaterThan(1);
+  it("n'émet plus rien pour une référence cassée, dans aucun mode", () => {
+    // Le moignon flottant accroché au bord de la carte désignait la CARTE, pas
+    // le CHAMP fautif. Le diagnostic est passé sur la ligne de la carte (une
+    // croix contre la valeur), et l'espace des arêtes n'en porte plus trace :
+    // le tracé est exactement celui d'un graphe sans référence cassée.
+    for (const mode of ["contain", "ref"] as const) {
+      const withDangling = drawEdges(graph, positions, theme, 0, mode);
+      const resolvedOnly = drawEdges(
+        { ...graph, refEdges: resolvedRefs },
+        positions,
+        theme,
+        0,
+        mode,
+      );
+      expect(withDangling.context.instructions.length).toBe(
+        resolvedOnly.context.instructions.length,
+      );
+      for (let k = 0; k < resolvedOnly.context.instructions.length; k++) {
+        expect(pathActions(withDangling, k)).toEqual(pathActions(resolvedOnly, k));
+      }
+    }
   });
 
   it("keeps drawing the arrow heads in both modes", () => {
@@ -151,34 +162,30 @@ describe("drawEdges — estompage autour du focus", () => {
       ["stroke", 1],
       ["stroke", 1],
       ["fill", 1],
-      ["stroke", 1],
     ]);
   });
 
   it("splits containment into a dimmed and a full pass around the focus", () => {
     const g = drawEdges(graph, positions, theme, 0, "contain", new Set([SOURCE]));
-    // Containment estompé puis plein, la référence sortante du focus (trait +
-    // tête de flèche) à pleine opacité, et le moignon d'`/orders/1`, qui ne
-    // touche pas le focus, estompé.
+    // Containment estompé puis plein, et la référence sortante du focus (trait
+    // + tête de flèche) à pleine opacité.
     expect(passes(g)).toEqual([
       ["stroke", DIM_ALPHA],
       ["stroke", 1],
       ["stroke", 1],
       ["fill", 1],
-      ["stroke", DIM_ALPHA],
     ]);
   });
 
   it("dims a reference that touches neither end of the focus", () => {
     const g = drawEdges(graph, positions, theme, 0, "contain", new Set([ELSEWHERE]));
     // `/customers/1` n'est ni la source ni la cible de la référence résolue :
-    // trait ET tête de flèche reculent, y compris le moignon.
+    // trait ET tête de flèche reculent.
     expect(passes(g)).toEqual([
       ["stroke", DIM_ALPHA],
       ["stroke", 1],
       ["stroke", DIM_ALPHA],
       ["fill", DIM_ALPHA],
-      ["stroke", DIM_ALPHA],
     ]);
   });
 
@@ -189,15 +196,14 @@ describe("drawEdges — estompage autour du focus", () => {
     expect(passes(g)).toEqual([
       ["stroke", 1],
       ["fill", 1],
-      ["stroke", DIM_ALPHA],
     ]);
   });
 
   it("still draws no containment in ref mode, focused or not", () => {
     const g = drawEdges(graph, positions, theme, 0, "ref", new Set([SOURCE]));
-    // Trois instructions : la référence du focus (trait + flèche) et le
-    // moignon estompé. Aucune passe de containment, ni pleine ni estompée.
-    expect(passes(g)).toHaveLength(3);
+    // Deux instructions : la référence du focus, trait puis flèche. Aucune
+    // passe de containment, ni pleine ni estompée.
+    expect(passes(g)).toHaveLength(2);
   });
 
   it("draws nothing at LOD 2, focus or not", () => {
@@ -229,32 +235,28 @@ describe("drawEdges — estompage autour d'un ensemble de membres", () => {
   }
 
   it("garde pleine chaque arête dont UN bout est dans l'ensemble", () => {
-    // Un bloc qui tiendrait les deux commandes : la référence résolue part de
-    // l'un, le moignon de l'autre, donc plus rien n'est estompé — là où le
-    // singleton `/orders/0` laissait le moignon d'`/orders/1` en arrière (voir
-    // le bloc précédent).
+    // Un bloc qui tient la source de la seule référence résolue : elle reste
+    // pleine, et le second membre n'y change rien.
     const both = new Set(["/orders/0", "/orders/1"]);
     expect(passes(drawEdges(graph, positions, theme, 0, "ref", both))).toEqual([
       ["stroke", 1],
       ["fill", 1],
-      ["stroke", 1],
     ]);
-    // La preuve que c'est bien l'appartenance du SECOND id qui l'a rendu plein.
-    expect(passes(drawEdges(graph, positions, theme, 0, "ref", new Set(["/orders/0"])))).toEqual([
-      ["stroke", 1],
-      ["fill", 1],
+    // La preuve que c'est bien l'APPARTENANCE d'un bout qui l'a rendue pleine :
+    // le même bloc privé de la source l'estompe.
+    expect(passes(drawEdges(graph, positions, theme, 0, "ref", new Set(["/orders/1"])))).toEqual([
       ["stroke", DIM_ALPHA],
+      ["fill", DIM_ALPHA],
     ]);
   });
 
   it("garde pleine une arête TRAVERSANTE, prise par sa cible", () => {
     // Un bloc côté clients : la référence entre dans le bloc sans en partir, et
-    // reste pleine. Le moignon, lui, ne le touche par aucun bout.
+    // reste pleine.
     const customers = new Set(["/customers/0", "/customers/1"]);
     expect(passes(drawEdges(graph, positions, theme, 0, "ref", customers))).toEqual([
       ["stroke", 1],
       ["fill", 1],
-      ["stroke", DIM_ALPHA],
     ]);
   });
 
@@ -265,7 +267,6 @@ describe("drawEdges — estompage autour d'un ensemble de membres", () => {
     expect(passes(drawEdges(graph, positions, theme, 0, "ref", unrelated))).toEqual([
       ["stroke", DIM_ALPHA],
       ["fill", DIM_ALPHA],
-      ["stroke", DIM_ALPHA],
     ]);
   });
 
@@ -278,7 +279,6 @@ describe("drawEdges — estompage autour d'un ensemble de membres", () => {
       ["stroke", 1],
       ["stroke", 1],
       ["fill", 1],
-      ["stroke", 1],
     ]);
   });
 
@@ -289,7 +289,6 @@ describe("drawEdges — estompage autour d'un ensemble de membres", () => {
     expect(passes(drawEdges(graph, positions, theme, 0, "ref", new Set()))).toEqual([
       ["stroke", DIM_ALPHA],
       ["fill", DIM_ALPHA],
-      ["stroke", DIM_ALPHA],
     ]);
   });
 });
@@ -425,17 +424,16 @@ describe("edge anchoring follows the direction to the target", () => {
     expect(Math.abs(last[1] - END[1])).toBeLessThanOrEqual(20);
   });
 
-  it("keeps the dangling stub horizontal, anchored mid-right", () => {
-    // Un moignon ne vise rien : il n'a pas de direction à suivre et reste
-    // construit à l'horizontale depuis le milieu du bord droit.
-    const stubPositions = new Map(positions);
-    stubPositions.set("/orders/1", { x: 0, y: 600, width: 160, height: 60 });
-    const hits = drawEdgeHitAreas(graph, stubPositions);
-    const hit = hits.find((h) => h.edge.dangling);
-    expect(hit).toBeDefined();
-    const path = firstPath(hit!.graphics, 0);
-    expect(path[0].data).toEqual([160, 630]);
-    expect(path[1].data[1]).toBe(630);
+  it("ne crée aucune zone de clic pour une référence cassée", () => {
+    // Il n'y a plus de trait à viser : le diagnostic vit sur la ligne de la
+    // carte, et c'est le tap sur la carte qui le porte. Une zone de clic posée
+    // dans le vide promettrait une navigation que `followRef` ne fera pas.
+    const withBroken = new Map(positions);
+    withBroken.set("/orders/1", { x: 0, y: 600, width: 160, height: 60 });
+    const hits = drawEdgeHitAreas(graph, withBroken);
+    expect(hits.find((h) => h.edge.dangling)).toBeUndefined();
+    // Les références résolues, elles, gardent la leur.
+    expect(hits.find((h) => h.edge.from === SOURCE)).toBeDefined();
   });
 });
 
@@ -452,7 +450,7 @@ describe("drawSelectionOverlay — le surlignage suit le style de l'arête", () 
 
   const SOURCE = "/orders/0"; // référence résolue vers /customers/0
   const TARGET = "/customers/0";
-  const DANGLING = "/orders/1"; // référence cassée, donc moignon
+  const DANGLING = "/orders/1"; // référence cassée : plus aucune arête tracée
   const positions = new Map<string, { x: number; y: number; width: number; height: number }>([
     [SOURCE, { x: 0, y: 0, width: 160, height: 60 }],
     [TARGET, { x: 0, y: 300, width: 160, height: 60 }],
@@ -506,17 +504,13 @@ describe("drawSelectionOverlay — le surlignage suit le style de l'arête", () 
     expect(ey).toBeLessThan(300);
   });
 
-  it("laisse le moignon cassé pointillé dans les deux modes", () => {
-    // Le pointillé d'un moignon ne dit pas « secondaire » mais « ne mène nulle
-    // part » : il ne suit donc pas la bascule de mode (même argument que
-    // `drawEdges`).
+  it("ne surligne rien de plus que l'anneau pour une référence cassée", () => {
+    // Une référence cassée n'a plus d'arête à restyler : sélectionner sa source
+    // ne peut donc peindre que l'anneau de la carte.
     const contain = shape(drawSelectionOverlay(graph, positions, theme, DANGLING, "contain"));
     const ref = shape(drawSelectionOverlay(graph, positions, theme, DANGLING, "ref"));
     expect(ref).toEqual(contain);
-    // Anneau + moignon, et AUCUN fill : un moignon ne vise rien, donc pas de
-    // tête de flèche.
-    expect(ref.map((x) => x.action)).toEqual(["stroke", "stroke"]);
-    expect(ref[1]!.path.filter((a) => a === "lineTo").length).toBeGreaterThan(1);
+    expect(ref.map((x) => x.action)).toEqual(["stroke"]);
   });
 
   it("peint le trait dans la couleur et l'épaisseur de la sélection", () => {

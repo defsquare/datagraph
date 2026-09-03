@@ -12,6 +12,7 @@ import {
   buildGraph,
   buildSearchIndex,
   CollapseState,
+  anchorRectFor,
   createLayoutEngine,
   DEFAULT_METRICS,
   enclosingCircle,
@@ -67,10 +68,11 @@ import {
   drawSelectionOverlay,
   lodForScale,
   type Lod,
+  TOKEN_HOVER_SHIFT,
 } from "./draw.js";
 import { attachDrag, TAP_THRESHOLD } from "./drag.js";
 import { clusterDimmed, clusterRelatedIds, DIM_ALPHA, relatedIds } from "./focus.js";
-import { attachHover } from "./hover.js";
+import { attachHover, type HoverHandle } from "./hover.js";
 import { Emitter } from "./events.js";
 
 /** `"structure"` met en page l'arbre de containment ; `"graph"` met en page les
@@ -655,6 +657,22 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     return collapseState?.visibleNodeIds() ?? new Set();
   }
 
+  /**
+   * Combien de CARTES la vue courante dessine. Les nœuds élidés en sont exclus :
+   * ils sont visibles — leur ligne l'est — mais ils ne sont pas des cartes, et
+   * `stats()` a toujours rapporté ce que l'utilisateur peut compter à l'écran.
+   * Les inclure ferait grimper le compteur d'un cran par tableau sans qu'aucune
+   * carte de plus n'apparaisse.
+   */
+  function drawnVisibleCount(): number {
+    if (!graph) return 0;
+    let count = 0;
+    for (const id of activeVisible()) {
+      if (!graph.nodes.get(id)?.elided) count++;
+    }
+    return count;
+  }
+
   /** L'id du NŒUD sélectionné, ou `null` — y compris quand c'est un agrégat qui
    * est sélectionné. C'est par cette lucarne que passe tout ce qui ne connaît
    * que la sélection nodale : l'API publique, l'événement `"select"` et
@@ -935,6 +953,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       currentLod,
       view === "graph" ? "ref" : "contain",
       edgeFocusIds(),
+      metrics,
     );
     world.addChildAt(edgesGraphics, 2);
   }
@@ -1151,28 +1170,47 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
 
     // Les champs porteurs d'une référence sortante, indexés UNE fois par
     // rebuild : `drawNode` en a besoin carte par carte, et re-parcourir
-    // `refEdges` pour chacune rendrait le rebuild quadratique. Aucun filtre sur
-    // `dangling` — `handleNodeTap` n'en pose pas non plus, et une référence
-    // cassée reste une valeur sur laquelle le clic FAIT quelque chose.
+    // `refEdges` pour chacune rendrait le rebuild quadratique. Les deux index
+    // sont remplis dans la MÊME boucle, chaque champ allant dans l'un ou dans
+    // l'autre selon que son arête résout : c'est la même information lue une
+    // fois, pas deux parcours à tenir d'accord.
     const refFieldsByNode = new Map<NodeId, Set<string>>();
+    const danglingFieldsByNode = new Map<NodeId, Set<string>>();
     for (const edge of graph.refEdges) {
-      let fields = refFieldsByNode.get(edge.from);
+      const index = edge.dangling ? danglingFieldsByNode : refFieldsByNode;
+      let fields = index.get(edge.from);
       if (!fields) {
         fields = new Set();
-        refFieldsByNode.set(edge.from, fields);
+        index.set(edge.from, fields);
       }
       fields.add(edge.field);
     }
 
     const visible = activeVisible();
+
+    // Les tableaux dépliés, pour orienter le chevron de chaque jeton. Construit
+    // une fois par reconstruction : interroger `collapseState` ligne par ligne
+    // referait le même travail une fois par jeton dessiné.
+    const expandedArrays = new Set<NodeId>();
+    for (const id of visible) {
+      const arrayNode = graph.nodes.get(id);
+      if (arrayNode?.elided && (collapseState?.isExpanded(id) ?? false)) expandedArrays.add(id);
+    }
+
     for (const id of visible) {
       const node = graph.nodes.get(id);
       const rect = positions.get(id);
-      if (!node || !rect) continue;
+      // Un nœud ÉLIDÉ n'a pas de carte : il est déjà dessiné, en ligne, par la
+      // carte de son parent. Le test est explicite plutôt que laissé au
+      // `!rect` qui suit — l'absence de rect y signifierait « pas encore mis en
+      // page », un tout autre cas.
+      if (!node || node.elided) continue;
+      if (!rect) continue;
       // Le chevron n'a de sens que là où un clic d'en-tête plie quelque chose :
       // l'arbre de containment en vue structure, et RIEN en vue graphe, qui
-      // montre tout et ne plie plus aucun agrégat.
-      const hasChevron = view === "graph" ? false : node.childIds.length > 0;
+      // montre tout et ne plie plus aucun agrégat. Les enfants élidés en sont
+      // exclus (`cardChildCount`) : ils ne sont pas ce que ce chevron révèle.
+      const hasChevron = view === "graph" ? false : node.cardChildCount > 0;
       const expanded = view === "graph" ? true : (collapseState?.isExpanded(id) ?? false);
       const nodeView = drawNode(
         node,
@@ -1188,9 +1226,49 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
         // alors sur son ensemble vide partagé plutôt que d'en allouer un par
         // carte.
         refFieldsByNode.get(id),
+        danglingFieldsByNode.get(id),
+        // `null` en vue graphe : les jetons y restent lisibles mais inertes,
+        // comme le chevron d'en-tête, puisque cette vue ne plie rien.
+        view === "graph" ? null : expandedArrays,
       );
       nodeView.position.set(rect.x, rect.y);
       attachTap(nodeView, (event) => handleNodeTap(node, nodeView, event));
+
+      // Le jeton d'une ligne-tableau répond au pointeur POUR LUI-MÊME : c'est un
+      // objet de la scène, pas une bande calculée, donc `attachHover` s'y applique
+      // directement — même mécanique et même courbe que le lift des cartes, sans
+      // repasser par l'arithmétique de lignes de `rowIndexAt`.
+      //
+      // C'est le survol, et non le clic, qui porte l'affordance de pli, et c'est
+      // une contrainte réelle et non un choix esthétique : un clic déclenche un
+      // `rebuild()` qui reconstruit les vues de cartes, donc toute animation
+      // démarrée au clic serait détruite avant d'être vue. Le survol, lui, se joue
+      // entièrement sur la carte existante.
+      const tokenHovers: HoverHandle[] = [];
+      if (currentLod === 0 && view !== "graph") {
+        node.rows.forEach((row, index) => {
+          if (row.valueType !== "array") return;
+          const token = nodeView.getChildByLabel(`array-token:${index}`);
+          if (!token) return;
+          const accent = token.getChildByLabel("hover");
+          tokenHovers.push(
+            attachHover(token, {
+              ticker: app.ticker,
+              isBlocked: () => contentDragging,
+              onFrame: (t) => {
+                token.x = TOKEN_HOVER_SHIFT * t;
+                if (accent) {
+                  // La visibilité suit l'alpha : un Graphics à alpha nul reste
+                  // dans la passe de rendu, et le garder caché tant qu'il ne
+                  // peint rien évite ce coût sur toutes les cartes au repos.
+                  accent.visible = t > 0;
+                  accent.alpha = t;
+                }
+              },
+            }),
+          );
+        });
+      }
 
       // Le souligné d'une valeur référençante, révélé au survol de SA ligne :
       // l'affordance de lien hypertexte, que la seule teinte ne donne pas — une
@@ -1198,6 +1276,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       // dit « ceci répond au clic ». `drawNode` a préparé un Graphics caché par
       // ligne concernée ; tout ce qui reste ici est une visibilité à basculer.
       const refFields = refFieldsByNode.get(id);
+      const danglingFields = danglingFieldsByNode.get(id);
       let underlined: number | null = null;
       // L'index courant est MÉMORISÉ : `pointermove` arrive à chaque pixel, et
       // une recherche par label à chaque événement parcourrait tous les enfants
@@ -1229,7 +1308,13 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
           }
           const index = rowIndexAt(nodeView, node, event);
           const row = index === null ? undefined : node.rows[index];
-          underline(row && refFields.has(row.key) ? index : null);
+          // Une référence CASSÉE est exclue explicitement, alors même que
+          // `drawNode` ne lui a préparé aucun Graphics : sans ce filtre, la
+          // ligne serait mémorisée comme « soulignée » et le prochain
+          // changement de ligne irait éteindre un souligné qui n'existe pas.
+          const underlinable =
+            row !== undefined && refFields.has(row.key) && !(danglingFields?.has(row.key) ?? false);
+          underline(underlinable ? index : null);
         });
         nodeView.on("pointerout", () => underline(null));
       }
@@ -1273,10 +1358,12 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
           // `isBlocked` ne suffit pas — il empêche un survol de COMMENCER, pas
           // celui qui est déjà là de rester peint.
           hover.cancel();
-          // Même raison, et même moment, pour le souligné : un autre geste prend
-          // la main, et l'affordance d'un clic qui n'aura pas lieu doit
-          // disparaître AVEC lui, pas au prochain `pointermove`.
+          // Même raison, et même moment, pour le souligné et pour les jetons :
+          // un autre geste prend la main, et l'affordance d'un clic qui n'aura
+          // pas lieu doit disparaître AVEC lui, pas au prochain `pointermove`.
+          // Un jeton laissé décalé de 2 px suivrait la carte tout le geste.
           underline(null);
+          for (const tokenHover of tokenHovers) tokenHover.cancel();
           beginDrag();
         },
         onMove: (dx, dy) => dragCard(id, nodeView, dx, dy),
@@ -1356,7 +1443,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     if (currentLod === 0) {
       const local = nodeView.toLocal(event.global);
       if (local.y < metrics.headerHeight) {
-        if (view !== "graph" && node.childIds.length > 0) {
+        if (view !== "graph" && node.cardChildCount > 0) {
           toggleExpand(node.id);
           return;
         }
@@ -1364,6 +1451,16 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
         const rowIndex = rowIndexAt(nodeView, node, event);
         const row = rowIndex === null ? undefined : node.rows[rowIndex];
         if (row) {
+          // Le jeton d'une ligne-tableau plie le nœud qu'il représente, jamais
+          // celui qui le porte. Aucune collision possible avec le suivi de
+          // référence : une ligne référençante est scalaire par construction.
+          // En vue graphe, rien ne se plie : déplier révélerait des nœuds qui
+          // ne sont pas des entités, donc que cette vue ne positionne pas. Le
+          // clic y retombe sur la sélection, comme le fait déjà l'en-tête.
+          if (row.valueType === "array" && view !== "graph") {
+            toggleExpand(row.arrayId);
+            return;
+          }
           const edge = graph.refEdges.find((e) => e.from === node.id && e.field === row.key);
           if (edge) {
             followRef(edge);
@@ -1567,7 +1664,11 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       rebuild();
     }
 
-    const rect = layoutResult.positions.get(id);
+    // `anchorRectFor` et non `positions.get` : un hôte peut appeler
+    // `focus()` sur un tableau, qui n'a pas de carte. Centrer sur la bande de sa
+    // ligne amène bien son jeton à l'écran ; `positions.get` seul rendrait
+    // `undefined` et l'appel ne ferait rien du tout, sans le dire.
+    const rect = anchorRectFor(graph, layoutResult.positions, id, metrics);
     if (rect) camera.centerOn(rect, viewport(), 1);
   }
 
@@ -1877,7 +1978,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
         logicalNodeCount: graph?.logicalNodeCount ?? 0,
         // Le compte de la vue affichée : des entités en vue graphe, des nœuds
         // de l'arbre en vue structure.
-        visibleNodeCount: activeVisible().size,
+        visibleNodeCount: drawnVisibleCount(),
       };
     },
 
