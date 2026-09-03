@@ -324,6 +324,42 @@ function arrowHead(g: Graphics, x1: number, y1: number, x2: number, y2: number):
 const DANGLING_STUB_LENGTH = 32;
 const DANGLING_CROSS_RADIUS = 4;
 
+/**
+ * Point où le segment CENTRE de `rect` → `(tx, ty)` coupe le PÉRIMÈTRE de
+ * `rect`.
+ *
+ * Les arêtes sont dessinées SOUS le calque des cartes : un ancrage fixe (le
+ * milieu du bord droit de la source, le milieu du bord gauche de la cible)
+ * enterre le départ de l'arête sous sa propre carte dès que la cible est en
+ * dessous ou à gauche — la ligne « sort de nulle part ». En sortant du côté
+ * qui fait face à la cible, le départ reste toujours visible.
+ *
+ * `(tx, ty)` à l'INTÉRIEUR du rectangle (ou confondu avec son centre) n'a pas
+ * d'intersection utile : on renvoie alors le centre. L'arête finit cachée sous
+ * les cartes qui se chevauchent, ce qui est le repli acceptable — il n'existe
+ * pas de « bon » point de sortie dans ce cas.
+ */
+export function anchorOnRect(rect: Rect, tx: number, ty: number): { x: number; y: number } {
+  const cx = rect.x + rect.width / 2;
+  const cy = rect.y + rect.height / 2;
+  const hw = rect.width / 2;
+  const hh = rect.height / 2;
+  const dx = tx - cx;
+  const dy = ty - cy;
+  if (Math.abs(dx) <= hw && Math.abs(dy) <= hh) return { x: cx, y: cy };
+  // Le premier bord atteint est celui dont le facteur d'échelle est le plus
+  // petit ; `Infinity` neutralise l'axe le long duquel on n'avance pas.
+  const sx = dx === 0 ? Infinity : hw / Math.abs(dx);
+  const sy = dy === 0 ? Infinity : hh / Math.abs(dy);
+  const t = Math.min(sx, sy);
+  return { x: cx + dx * t, y: cy + dy * t };
+}
+
+/** Centre d'un rectangle — la cible que vise `anchorOnRect` de l'autre bout. */
+function centerOf(rect: Rect): { x: number; y: number } {
+  return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+}
+
 /** Relation dominante de la vue : l'arbre de containment (vue structure) ou les
  * seules références (vue graphe). */
 export type EdgeMode = "contain" | "ref";
@@ -387,10 +423,16 @@ export function drawEdges(
     const from = positions.get(edge.from);
     const to = positions.get(edge.to);
     if (!from || !to) continue;
-    const x1 = from.x + from.width;
-    const y1 = from.y + from.height / 2;
-    const x2 = to.x;
-    const y2 = to.y + to.height / 2;
+    // Chaque bout sort du côté qui fait face à l'autre carte, sinon la ligne
+    // passe sous la carte source (calque des arêtes au-dessous des cartes).
+    const fromCenter = centerOf(from);
+    const toCenter = centerOf(to);
+    const start = anchorOnRect(from, toCenter.x, toCenter.y);
+    const end = anchorOnRect(to, fromCenter.x, fromCenter.y);
+    const x1 = start.x;
+    const y1 = start.y;
+    const x2 = end.x;
+    const y2 = end.y;
     // La ligne s'arrête au pied de la flèche pour ne pas la traverser.
     const len = Math.hypot(x2 - x1, y2 - y1);
     const t = len > ARROW_LENGTH ? (len - ARROW_LENGTH) / len : 1;
@@ -456,16 +498,28 @@ export function drawEdgeHitAreas(graph: Graph, positions: Map<NodeId, Rect>): Ed
   for (const edge of graph.refEdges) {
     const from = positions.get(edge.from);
     if (!from) continue;
-    const x1 = from.x + from.width;
-    const y1 = from.y + from.height / 2;
+    let x1: number;
+    let y1: number;
     let x2: number;
     let y2: number;
     if (edge.to !== null && !edge.dangling) {
       const to = positions.get(edge.to);
       if (!to) continue;
-      x2 = to.x;
-      y2 = to.y + to.height / 2;
+      // Mêmes ancrages que `drawEdges` : la zone de clic doit rester posée sur
+      // le trait, pas sur l'ancien segment milieu-droit → milieu-gauche.
+      const fromCenter = centerOf(from);
+      const toCenter = centerOf(to);
+      const start = anchorOnRect(from, toCenter.x, toCenter.y);
+      const end = anchorOnRect(to, fromCenter.x, fromCenter.y);
+      x1 = start.x;
+      y1 = start.y;
+      x2 = end.x;
+      y2 = end.y;
     } else {
+      // Un moignon ne vise rien : pas de direction à suivre, il reste
+      // horizontal depuis le milieu du bord droit.
+      x1 = from.x + from.width;
+      y1 = from.y + from.height / 2;
       x2 = x1 + DANGLING_STUB_LENGTH;
       y2 = y1;
     }
@@ -526,13 +580,18 @@ export function drawSelectionOverlay(
     if (edge.from !== selectedId) continue;
     const from = positions.get(edge.from);
     if (!from) continue;
-    const x1 = from.x + from.width;
-    const y1 = from.y + from.height / 2;
     if (edge.to !== null && !edge.dangling) {
       const to = positions.get(edge.to);
       if (!to) continue;
-      dashedLine(g, x1, y1, to.x, to.y + to.height / 2);
+      // Mêmes ancrages que `drawEdges` : le surlignage doit recouvrir le trait.
+      const fromCenter = centerOf(from);
+      const toCenter = centerOf(to);
+      const start = anchorOnRect(from, toCenter.x, toCenter.y);
+      const end = anchorOnRect(to, fromCenter.x, fromCenter.y);
+      dashedLine(g, start.x, start.y, end.x, end.y);
     } else {
+      const x1 = from.x + from.width;
+      const y1 = from.y + from.height / 2;
       dashedLine(g, x1, y1, x1 + DANGLING_STUB_LENGTH, y1);
     }
     hasRefs = true;
