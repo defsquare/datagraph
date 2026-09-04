@@ -130,6 +130,15 @@
       <dl id="selection-rows"></dl>
     </aside>
 
+    <!-- Écran d'erreur de chargement (mode fichier) : la validation sémantique
+         de la config n'a lieu qu'ici, côté TS — Rust n'a vérifié que la syntaxe
+         JSON. Le message brut (anglais, ConfigError du cœur) est cité tel quel :
+         c'est la déclaration que l'auteur de la config doit relire. -->
+    <div id="load-error" class="float" hidden>
+      <h2>Impossible d'ouvrir le document</h2>
+      <pre id="load-error-message"></pre>
+    </div>
+
     <div id="statusbar">
       <span><strong id="stat-nodes">0</strong> nœuds</span>
       <span><strong id="stat-visible">0</strong> visibles</span>

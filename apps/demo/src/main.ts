@@ -3,22 +3,57 @@ import {
   defsquareLight,
   defsquareDark,
   arrayTokenTextFor,
+  type DataGraph,
   type GraphNode,
   type RefEdge,
 } from "@defsquare/data-graph";
 import { shopData, shopConfig, bigShopData, bigShopConfig } from "./sample-data";
+import { resolveLaunch } from "./launch";
 
 const container = document.getElementById("app");
 if (!container) throw new Error("#app container not found");
 
-const graph = createDataGraph(container, {
-  data: shopData,
-  config: shopConfig,
-  // Real Web Worker offload for elk layout is best-effort here: elkjs's
-  // bundled ELK falls back to an in-process "fake worker" under Vite/browser
-  // (see task-11-report.md). The option is still wired end-to-end.
-  elkWorkerUrl: new URL("elkjs/lib/elk-worker.min.js", import.meta.url),
-});
+// Top-level await (cible es2022, voir vite.config.ts) : tout le reste du
+// module dépend du mode de lancement, l'attendre ici évite d'envelopper le
+// fichier entier dans une fonction.
+const launch = await resolveLaunch();
+
+// Le chrome se taille AVANT que les gestionnaires plus bas ne relisent le
+// DOM : un bouton retiré donne `getElementById` → null, et tous les
+// gestionnaires savent déjà vivre sans leur élément.
+if (launch.mode === "file") {
+  // La bascule petit/grand jeu de données est un outil de démo.
+  document.getElementById("toggle-dataset")?.remove();
+  if (Object.keys(launch.config.entities).length === 0) {
+    // Sans entités la vue graphe n'a rien à montrer : structure seule.
+    document.getElementById("toggle-view")?.remove();
+  }
+}
+
+function showLoadError(error: unknown): void {
+  const messageEl = document.getElementById("load-error-message");
+  if (messageEl) messageEl.textContent = error instanceof Error ? error.message : String(error);
+  document.getElementById("load-error")?.removeAttribute("hidden");
+}
+
+let graph: DataGraph;
+try {
+  graph = createDataGraph(container, {
+    data: launch.mode === "file" ? launch.data : shopData,
+    config: launch.mode === "file" ? launch.config : shopConfig,
+    // Real Web Worker offload for elk layout is best-effort here: elkjs's
+    // bundled ELK falls back to an in-process "fake worker" under Vite/browser
+    // (see task-11-report.md). The option is still wired end-to-end.
+    elkWorkerUrl: new URL("elkjs/lib/elk-worker.min.js", import.meta.url),
+  });
+} catch (error) {
+  // `createDataGraph` valide la config en synchrone : une config
+  // sémantiquement invalide s'arrête ici, en écran d'erreur — pas en fenêtre
+  // blanche. Le `throw` stoppe l'évaluation du module : rien plus bas n'a de
+  // sens sans instance.
+  showLoadError(error);
+  throw error;
+}
 
 // Exposed for manual/E2E inspection (Task 14 relies on this).
 declare global {
@@ -410,7 +445,14 @@ toggleViewBtn?.addEventListener("click", () => {
 document.getElementById("fit")?.addEventListener("click", () => graph.fit());
 
 void (async () => {
-  await graph.ready;
+  try {
+    await graph.ready;
+  } catch (error) {
+    // Les échecs asynchrones (GraphTooLargeError, worker) arrivent par
+    // `ready` : même écran que les échecs synchrones.
+    showLoadError(error);
+    return;
+  }
   graph.fit();
   applyTheme();
   syncViewButton(graph.currentView());

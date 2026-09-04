@@ -459,3 +459,32 @@ html, body {
 @media (prefers-reduced-motion: reduce) {
   .findbar, .menu, #detail { animation: none; }
 }
+
+/* ---------- Écran d'erreur de chargement (mode fichier) ---------- */
+
+#load-error {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  max-width: min(560px, calc(100vw - 2 * var(--space-6)));
+  padding: var(--space-4) var(--space-6);
+  z-index: 10;
+}
+
+#load-error h2 {
+  margin: 0 0 var(--space-2);
+  font-family: var(--font-title);
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--ds-ink);
+}
+
+#load-error pre {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--ds-muted);
+}
