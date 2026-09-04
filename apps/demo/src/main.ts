@@ -24,11 +24,11 @@ const launch = await resolveLaunch();
 if (launch.mode === "file") {
   // La bascule petit/grand jeu de données est un outil de démo.
   document.getElementById("toggle-dataset")?.remove();
-  // `?? {}` : une config du disque peut n'avoir aucune clé `entities`, et ce
+  // `?? {}` : une config du disque peut n'avoir aucune clé `ids`, et ce
   // test est HORS du try/catch plus bas — exploser ici donnerait une fenêtre
   // blanche. On laisse passer, `createDataGraph` la rejette proprement et son
   // catch affiche l'écran d'erreur.
-  if (Object.keys(launch.config.entities ?? {}).length === 0) {
+  if (Object.keys(launch.config.ids ?? {}).length === 0) {
     // Sans entités la vue graphe n'a rien à montrer : structure seule.
     document.getElementById("toggle-view")?.remove();
   }

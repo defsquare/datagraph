@@ -108,13 +108,13 @@ const nestedData = {
 }
 
 const nestedConfig = {
-  entities: {
-    Customer: { match: "$.customers[*]", id: "id" },
-    Order: { match: "$.orders[*]", id: "id" },
-    Line: { match: "$.orders[*].lines[*]", id: "id" },
+  ids: {
+    Customer: "$.customers[*].id",
+    Order: "$.orders[*].id",
+    Line: "$.orders[*].lines[*].id",
   },
-  references: { Line: { customerId: "Customer" } },
-  aggregates: ["Customer"],
+  refs: [{ from: "$.orders[*].lines[*].customerId", to: "$.customers[*].id" }],
+  groups: ["Customer"],
 }
 
 test("une entite imbriquee dans un tableau elide garde sa reference en vue graphe", async ({

@@ -17,7 +17,7 @@ async function gotoReady(page: Page): Promise<void> {
   await page.evaluate(() => (window as any).__graph.ready)
 }
 
-// La config de la demo declare `aggregates: ["Customer", "Product"]` (voir
+// La config de la demo declare `groups: ["Customer", "Product"]` (voir
 // `src/sample-data.ts`), mais son jeu par defaut ne compte que 8 entites : les
 // tests ci-dessous injectent par `setData` des jeux calibres pour ce qu'ils
 // prouvent, avec leur PROPRE config a une seule racine — ils portent sur la
@@ -39,12 +39,12 @@ const data = {
 }
 
 const config = {
-  entities: {
-    Customer: { match: "$.customers[*]", id: "id" },
-    Order: { match: "$.orders[*]", id: "id" },
+  ids: {
+    Customer: "$.customers[*].id",
+    Order: "$.orders[*].id",
   },
-  references: { Order: { customerId: "Customer" } },
-  aggregates: ["Customer"],
+  refs: [{ from: "$.orders[*].customerId", to: "$.customers[*].id" }],
+  groups: ["Customer"],
 }
 
 async function loadAggregateData(page: Page): Promise<void> {
@@ -196,7 +196,7 @@ test("la vue graphe tient sur le jeu de donnees etendu de la demo", async ({ pag
   // vue structure qu'elle existe pour corriger — et c'est le seul endroit ou la
   // passe de separation, le recouvrement des enveloppes et le temps de mise en
   // page travaillent pour de vrai. La config de la demo declare deja
-  // `aggregates: ["Customer", "Product"]`, donc il suffit du bouton de bascule
+  // `groups: ["Customer", "Product"]`, donc il suffit du bouton de bascule
   // de jeu — desormais range dans le menu ⋮ de la grappe flottante.
   await page.click("#menu-toggle")
   await page.click("#toggle-dataset")

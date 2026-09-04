@@ -263,18 +263,20 @@ export const shopData = {
 };
 
 export const shopConfig: DataGraphConfig = {
-  entities: {
-    Customer: { match: "$.customers[*]", id: "id" },
-    Order: { match: "$.orders[*]", id: "id" },
-    Product: { match: "$.products[*]", id: "id" },
-    Category: { match: "$.categories[*]", id: "id" },
+  ids: {
+    Customer: "$.customers[*].id",
+    Order: "$.orders[*].id",
+    Product: "$.products[*].id",
+    Category: "$.categories[*].id",
   },
-  references: {
-    Order: { customerId: "Customer", productId: "Product" },
-    Product: { categoryId: "Category", "reviews[*].customerId": "Customer" },
-  },
+  refs: [
+    { from: "$.orders[*].customerId", to: "$.customers[*].id" },
+    { from: "$.orders[*].productId", to: "$.products[*].id" },
+    { from: "$.products[*].categoryId", to: "$.categories[*].id" },
+    { from: "$.products[*].reviews[*].customerId", to: "$.customers[*].id" },
+  ],
   rootLabel: "Boutique",
-  aggregates: ["Customer", "Product"],
+  groups: ["Customer", "Product"],
 };
 
 // Le grand jeu n'a PAS de reviews : garder la déclaration
@@ -285,10 +287,11 @@ export const shopConfig: DataGraphConfig = {
 // retranchement près.
 export const bigShopConfig: DataGraphConfig = {
   ...shopConfig,
-  references: {
-    Order: { customerId: "Customer", productId: "Product" },
-    Product: { categoryId: "Category" },
-  },
+  refs: [
+    { from: "$.orders[*].customerId", to: "$.customers[*].id" },
+    { from: "$.orders[*].productId", to: "$.products[*].id" },
+    { from: "$.products[*].categoryId", to: "$.categories[*].id" },
+  ],
 };
 
 // Coût en nœuds logiques d'une entité, tel que les compte `buildGraph` : le

@@ -22,9 +22,10 @@ export async function resolveLaunch(): Promise<Launch> {
   const payload = await invoke<RawPayload | null>("launch_payload");
   if (payload === null) return { mode: "demo" };
   const data: unknown = JSON.parse(payload.data);
-  // Sans `-c` : config vide = vue structure seule (le cœur l'accepte depuis
-  // que `empty-config` a disparu).
+  // Sans `-c` : config vide = vue structure seule. `ids` absent est
+  // impossible côté Rust (il n'envoie que du JSON validé), mais une config
+  // vide reste le contrat du mode structure.
   const config: DataGraphConfig =
-    payload.config === null ? { entities: {} } : (JSON.parse(payload.config) as DataGraphConfig);
+    payload.config === null ? { ids: {} } : (JSON.parse(payload.config) as DataGraphConfig);
   return { mode: "file", data, config };
 }

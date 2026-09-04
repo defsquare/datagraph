@@ -27,12 +27,12 @@ const cartData = {
 }
 
 const cartConfig = {
-  entities: {
-    Cart: { match: "$.carts[*]", id: "id" },
-    Product: { match: "$.products[*]", id: "id" },
+  ids: {
+    Cart: "$.carts[*].id",
+    Product: "$.products[*].id",
   },
-  references: { Cart: { "lines[*].productRef": "Product" } },
-  aggregates: ["Product"],
+  refs: [{ from: "$.carts[*].lines[*].productRef", to: "$.products[*].id" }],
+  groups: ["Product"],
 }
 
 async function loadCart(page: Page): Promise<void> {
