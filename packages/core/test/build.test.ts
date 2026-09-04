@@ -56,4 +56,12 @@ describe("buildGraph", () => {
     expect(root.kind).toBe("object")
     expect(root.rows).toEqual([{ key: "$value", value: 42, valueType: "number" }])
   })
+  it("builds a plain structure tree with an empty entities config", () => {
+    const g2 = buildGraph(shopData, { entities: {} })
+    // Aucune entité reconnue : que du containment, pas de références.
+    for (const node of g2.nodes.values()) expect(node.kind).not.toBe("entity")
+    expect(g2.entityIndex.size).toBe(0)
+    expect(g2.refEdges).toEqual([])
+    expect(g2.diagnostics).toEqual([])
+  })
 })

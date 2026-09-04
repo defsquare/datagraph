@@ -75,11 +75,6 @@ function parseReferenceKey(key: string): { navigate: PathSegment[]; field: strin
 }
 
 export function validateConfig(config: DataGraphConfig): ValidatedConfig {
-  // Check if entities is empty
-  if (Object.keys(config.entities).length === 0) {
-    throw new ConfigError("empty-config", "Entities map cannot be empty")
-  }
-
   // Parse selectors for each entity
   const entities = new Map<string, { segments: PathSegment[]; idField: string }>()
   for (const [name, entityConfig] of Object.entries(config.entities)) {

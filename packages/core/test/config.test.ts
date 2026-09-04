@@ -62,8 +62,16 @@ describe("validateConfig", () => {
     })).toThrow(ConfigError)
   })
 
-  it("rejects an empty entities map and bad selectors", () => {
-    expect(() => validateConfig({ entities: {} })).toThrow(ConfigError) // "empty-config"
+  it("accepts an empty entities map (structure-only mode)", () => {
+    // Un JSON sans entités est exactement « un arbre » : le CLI end-user ouvre
+    // un document sans config en vue structure seule.
+    const v = validateConfig({ entities: {} })
+    expect(v.entities.size).toBe(0)
+    expect(v.references.size).toBe(0)
+    expect(v.aggregates).toEqual([])
+  })
+
+  it("rejects bad selectors", () => {
     expect(() => validateConfig({ entities: { X: { match: "nope", id: "id" } } })).toThrow(ConfigError)
   })
 })
