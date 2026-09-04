@@ -78,8 +78,27 @@ describe("validateConfig", () => {
     expect(() => validateConfig({ entities: null } as never)).toThrow(ConfigError)
   })
 
+  it("rejects an entities array (indices ne sont pas des types d'entités)", () => {
+    expect(() => validateConfig({ entities: [] } as never)).toThrow(ConfigError)
+    expect(() => validateConfig({ entities: [] } as never)).toThrow(/entities object/)
+  })
+
   it("rejects bad selectors", () => {
     expect(() => validateConfig({ entities: { X: { match: "nope", id: "id" } } })).toThrow(ConfigError)
+  })
+
+  it("rejects a malformed entity entry with a message naming the entity", () => {
+    // Une entrée qui n'est pas un objet `{match, id}` (ex. valeur JSON brute
+    // pour une entité) ne doit pas laisser `parseSelector(undefined)` lever un
+    // TypeError brut : l'auteur de la config doit savoir quelle entité corriger.
+    expect(() => validateConfig({ entities: { X: "nope" } } as never)).toThrow(ConfigError)
+    expect(() => validateConfig({ entities: { X: "nope" } } as never)).toThrow(/Entity 'X'/)
+  })
+
+  it("rejects an entity entry missing the 'id' field", () => {
+    expect(() =>
+      validateConfig({ entities: { X: { match: "$.x[*]" } } } as never),
+    ).toThrow(ConfigError)
   })
 })
 

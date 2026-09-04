@@ -92,6 +92,22 @@ export function validateConfig(config: DataGraphConfig): ValidatedConfig {
   // Parse selectors for each entity
   const entities = new Map<string, { segments: PathSegment[]; idField: string }>()
   for (const [name, entityConfig] of Object.entries(config.entities)) {
+    // Une config chargée du disque (option `-c`) peut donner n'importe quoi
+    // par entrée aussi, pas seulement pour la map globale : sans cette garde,
+    // `parseSelector(entityConfig.match)` lève un TypeError brut qui remonte
+    // tel quel jusqu'à l'écran d'erreur de l'utilisateur final.
+    if (
+      typeof entityConfig !== "object" ||
+      entityConfig === null ||
+      Array.isArray(entityConfig) ||
+      typeof entityConfig.match !== "string" ||
+      typeof entityConfig.id !== "string"
+    ) {
+      throw new ConfigError(
+        "invalid-config",
+        `Entity '${name}' must declare string 'match' and 'id' fields`,
+      )
+    }
     const segments = parseSelector(entityConfig.match)
     entities.set(name, { segments, idField: entityConfig.id })
   }
