@@ -1,0 +1,10 @@
+{
+  "entities": {
+    "Customer": { "match": "$.customers[*]", "id": "id" },
+    "Order": { "match": "$.orders[*]", "id": "id" }
+  },
+  "references": {
+    "Order": { "customerId": "Customer" }
+  },
+  "aggregates": ["Customer"]
+}

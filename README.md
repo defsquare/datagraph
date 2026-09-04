@@ -540,7 +540,7 @@ data-graph/
 │   └── renderer/  @defsquare/data-graph — Pixi.js renderer, themes
 ├── apps/
 │   └── demo/      Vite app demonstrating the renderer + Playwright e2e
-│       └── src-tauri/  Tauri v2 desktop shell around the demo (ships as a raw binary)
+│       └── src-tauri/  Tauri v2 desktop shell around the demo (ships as a raw `datagraph` binary)
 ├── LICENSE
 └── README.md
 ```
@@ -559,13 +559,29 @@ pnpm --filter demo dev   # run the demo app locally
 pnpm --filter demo e2e   # Playwright e2e — build the renderer FIRST
 
 pnpm --filter demo tauri dev    # demo as a desktop app (Tauri v2) — needs a Rust toolchain
-pnpm --filter demo tauri build  # standalone binary: apps/demo/src-tauri/target/release/data-graph
+pnpm --filter demo tauri build  # standalone binary: apps/demo/src-tauri/target/release/datagraph
 ```
 
 **Desktop shell.** The demo doubles as a Tauri v2 desktop app: the Vite `dist/`
 is embedded into a single binary (`bundle.active: false` — no `.app`/`.dmg`,
 it is meant to be launched from a shell). The web demo is unaffected;
 `vite.config.ts` needs no Tauri-specific `base`.
+
+**CLI usage.** The desktop binary doubles as an end-user CLI:
+
+```bash
+datagraph data.json -c config.json  # open a JSON document with an entity config
+datagraph data.json                 # no config: structure view only
+datagraph                           # no argument: built-in demo dataset
+datagraph --help
+```
+
+File and JSON errors are reported on stderr with a non-zero exit code before
+any window opens. Only JSON *syntax* is checked upfront; a semantically
+invalid config (unknown entity type, bad selector) is reported in-app. Try it
+with the sample files in `apps/demo/fixtures/`. The binary is not on your
+`PATH` by default — copy or symlink
+`apps/demo/src-tauri/target/release/datagraph` somewhere on it.
 
 **Build before test.** Two suites read build output, and `dist/` is gitignored,
 so on a fresh clone both fail until something has been built:

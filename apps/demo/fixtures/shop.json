@@ -1,0 +1,10 @@
+{
+  "customers": [
+    { "id": "c1", "name": "Ada Lovelace", "email": "ada@example.com" },
+    { "id": "c2", "name": "Alan Turing", "email": "alan@example.com" }
+  ],
+  "orders": [
+    { "id": "o1", "customerId": "c1", "total": 120.5, "lines": [{ "sku": "SKU-1", "qty": 2 }] },
+    { "id": "o2", "customerId": "c2", "total": 42, "lines": [{ "sku": "SKU-9", "qty": 1 }] }
+  ]
+}
