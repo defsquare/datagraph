@@ -20,10 +20,10 @@ import {
 } from "./fixtures.js"
 import type { Graph } from "../src/model.js"
 
-/** La config de `fixtures.ts` ne déclare pas d'agrégats ; le bench de la sonde
- * lui ajoute `aggregates: ["Customer"]`, et c'est cette config-là qui a produit
+/** La config de `fixtures.ts` ne déclare pas de groupes ; le bench de la sonde
+ * lui ajoute `groups: ["Customer"]`, et c'est cette config-là qui a produit
  * les mesures du doc. On la reprend telle quelle. */
-const config = { ...shopConfig, aggregates: ["Customer"] }
+const config = { ...shopConfig, groups: ["Customer"] }
 
 /** Les trois défauts de `createTwoLevelLayoutEngine`, redits ici : un test qui
  * lirait les constantes du moteur ne vérifierait plus rien. */

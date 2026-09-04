@@ -3,123 +3,144 @@ import { validateConfig } from "../src/config.js"
 import { ConfigError } from "../src/selector.js"
 
 const base = {
-  entities: {
-    Customer: { match: "$.customers[*]", id: "id" },
-    Order: { match: "$.orders[*]", id: "id" },
+  ids: {
+    Customer: "$.customers[*].id",
+    Order: "$.orders[*].id",
   },
-  references: { Order: { customerId: "Customer" } },
+  refs: [{ from: "$.orders[*].customerId", to: "$.customers[*].id" }],
 }
 
 describe("validateConfig", () => {
-  it("accepts a valid config and applies defaults", () => {
+  it("compiles ids and refs into the internal shape and applies defaults", () => {
     const v = validateConfig(base)
-    expect(v.entities.get("Order")!.idField).toBe("id")
-    // Une clé sans `.` ni `[` reste une clé de ligne verbatim : navigation vide.
+    expect(v.entities.get("Customer")).toEqual({
+      segments: [{ kind: "key", key: "customers" }, { kind: "wildcard" }],
+      idField: "id",
+    })
     expect(v.references.get("Order")).toEqual([
-      { navigate: [], field: "customerId", targetType: "Customer", path: "customerId" },
+      {
+        navigate: [],
+        field: "customerId",
+        targetType: "Customer",
+        // `path` porte le `from` ABSOLU tel qu'écrit : c'est la déclaration
+        // que l'auteur relira dans un diagnostic.
+        path: "$.orders[*].customerId",
+      },
     ])
     expect(v.maxNodes).toBe(50_000)
+    expect(v.rootLabel).toBe("$")
   })
-  it("rejects a reference to an unknown entity type", () => {
-    expect(() => validateConfig({
-      ...base, references: { Order: { customerId: "Client" } },
-    })).toThrow(ConfigError) // code "unknown-entity-type" — pour la source ET la cible
-    expect(() => validateConfig({
-      ...base, references: { Facture: { customerId: "Customer" } },
-    })).toThrow(ConfigError)
-  })
-  it("parses a reference key that holds a relative path", () => {
+
+  it("splits a nested ref into navigation + terminal field", () => {
     const v = validateConfig({
-      ...base, references: { Order: { "lines[*].productRef": "Customer" } },
+      ids: { Order: "$.orders[*].id", Product: "$.products[*].id" },
+      refs: [{ from: "$.orders[*].lines[*].productRef", to: "$.products[*].id" }],
     })
     expect(v.references.get("Order")).toEqual([{
       navigate: [{ kind: "key", key: "lines" }, { kind: "wildcard" }],
       field: "productRef",
-      targetType: "Customer",
-      path: "lines[*].productRef",
+      targetType: "Product",
+      path: "$.orders[*].lines[*].productRef",
     }])
   })
 
-  it("keeps an exotic key verbatim instead of parsing it", () => {
-    // Le token du sélecteur n'accepte pas `@`, mais une clé JSON, si : la
-    // parser rejetterait une config qui marche aujourd'hui.
-    const v = validateConfig({ ...base, references: { Order: { "@odata:id": "Customer" } } })
-    expect(v.references.get("Order")![0]).toMatchObject({ navigate: [], field: "@odata:id" })
+  it("attributes a ref to the LONGEST matching instance prefix", () => {
+    // `$.orders[*].lines[*]` est un préfixe plus long que `$.orders[*]` : la
+    // ref appartient à Line, pas à Order.
+    const v = validateConfig({
+      ids: {
+        Order: "$.orders[*].id",
+        Line: "$.orders[*].lines[*].id",
+        Product: "$.products[*].id",
+      },
+      refs: [{ from: "$.orders[*].lines[*].productRef", to: "$.products[*].id" }],
+    })
+    expect(v.references.has("Order")).toBe(false)
+    expect(v.references.get("Line")).toEqual([{
+      navigate: [],
+      field: "productRef",
+      targetType: "Product",
+      path: "$.orders[*].lines[*].productRef",
+    }])
   })
 
-  it("rejects a reference path whose last segment is not a field name", () => {
-    // Le chemin désigne une LIGNE, et une ligne a un nom.
-    for (const bad of ["lines[*]", "lines[*].*", "lines[0]"]) {
-      expect(() => validateConfig({
-        ...base, references: { Order: { [bad]: "Customer" } },
-      })).toThrow(ConfigError)
-    }
-  })
-
-  it("rejects a malformed reference path", () => {
-    expect(() => validateConfig({
-      ...base, references: { Order: { "lines[.productRef": "Customer" } },
-    })).toThrow(ConfigError)
-  })
-
-  it("accepts an empty entities map (structure-only mode)", () => {
-    // Un JSON sans entités est exactement « un arbre » : le CLI end-user ouvre
-    // un document sans config en vue structure seule.
-    const v = validateConfig({ entities: {} })
+  it("accepts an empty ids map (structure-only mode)", () => {
+    const v = validateConfig({ ids: {} })
     expect(v.entities.size).toBe(0)
     expect(v.references.size).toBe(0)
     expect(v.aggregates).toEqual([])
   })
 
-  it("rejects a config whose entities map is missing or not an object", () => {
-    // Une config `-c` vient du disque : le type ne la garantit pas. Le rejet
-    // doit être une ConfigError lisible, pas un TypeError sur `Object.entries`.
-    expect(() => validateConfig({} as never)).toThrow(ConfigError)
-    expect(() => validateConfig({ entities: null } as never)).toThrow(ConfigError)
+  it("rejects a non-object ids value", () => {
+    for (const bad of [undefined, null, [], "x"]) {
+      expect(() => validateConfig({ ids: bad } as never)).toThrow(/ids object/)
+    }
   })
 
-  it("rejects an entities array (indices ne sont pas des types d'entités)", () => {
-    expect(() => validateConfig({ entities: [] } as never)).toThrow(ConfigError)
-    expect(() => validateConfig({ entities: [] } as never)).toThrow(/entities object/)
+  it("rejects an id path that is not a string or does not end on a field name", () => {
+    expect(() => validateConfig({ ids: { X: 42 } } as never)).toThrow(ConfigError)
+    for (const bad of ["$.customers[*]", "$.customers[0]", "$.customers.*"]) {
+      expect(() => validateConfig({ ids: { X: bad } })).toThrow(/end on a field name/)
+    }
+    expect(() => validateConfig({ ids: { X: "nope" } })).toThrow(ConfigError) // selector-syntax
   })
 
-  it("rejects bad selectors", () => {
-    expect(() => validateConfig({ entities: { X: { match: "nope", id: "id" } } })).toThrow(ConfigError)
+  it("rejects a ref whose target is not a declared id path", () => {
+    expect(() => validateConfig({
+      ids: { Order: "$.orders[*].id" },
+      refs: [{ from: "$.orders[*].customerId", to: "$.customers[*].id" }],
+    })).toThrow(/declared id path/)
+    // Même ensemble d'instances mais autre champ : refusé aussi — viser un
+    // champ non-clé est hors scope v1 (porte laissée ouverte).
+    expect(() => validateConfig({
+      ids: { Order: "$.orders[*].id", Customer: "$.customers[*].id" },
+      refs: [{ from: "$.orders[*].customerId", to: "$.customers[*].name" }],
+    })).toThrow(/declared id path/)
   })
 
-  it("rejects a malformed entity entry with a message naming the entity", () => {
-    // Une entrée qui n'est pas un objet `{match, id}` (ex. valeur JSON brute
-    // pour une entité) ne doit pas laisser `parseSelector(undefined)` lever un
-    // TypeError brut : l'auteur de la config doit savoir quelle entité corriger.
-    expect(() => validateConfig({ entities: { X: "nope" } } as never)).toThrow(ConfigError)
-    expect(() => validateConfig({ entities: { X: "nope" } } as never)).toThrow(/Entity 'X'/)
+  it("rejects a ref whose source extends no declared instance prefix", () => {
+    expect(() => validateConfig({
+      ids: { Customer: "$.customers[*].id" },
+      refs: [{ from: "$.orders[*].customerId", to: "$.customers[*].id" }],
+    })).toThrow(/extend a declared/)
   })
 
-  it("rejects an entity entry missing the 'id' field", () => {
-    expect(() =>
-      validateConfig({ entities: { X: { match: "$.x[*]" } } } as never),
-    ).toThrow(ConfigError)
+  it("rejects a ref source that does not end on a field name", () => {
+    expect(() => validateConfig({
+      ids: { Order: "$.orders[*].id", Customer: "$.customers[*].id" },
+      refs: [{ from: "$.orders[*].lines[*]", to: "$.customers[*].id" }],
+    })).toThrow(/end on a field name/)
+  })
+
+  it("rejects a malformed ref entry", () => {
+    for (const bad of [null, "x", { from: "$.orders[*].c" }, { to: "$.customers[*].id" }]) {
+      expect(() => validateConfig({ ...base, refs: [bad] } as never)).toThrow(/'from' and 'to'/)
+    }
+  })
+
+  it("keeps two refs from the same path (array, no collision)", () => {
+    const v = validateConfig({
+      ids: { Order: "$.orders[*].id", Customer: "$.customers[*].id", Vip: "$.vips[*].id" },
+      refs: [
+        { from: "$.orders[*].customerId", to: "$.customers[*].id" },
+        { from: "$.orders[*].customerId", to: "$.vips[*].id" },
+      ],
+    })
+    expect(v.references.get("Order")).toHaveLength(2)
   })
 })
 
-describe("aggregates", () => {
-  const base = {
-    entities: {
-      Customer: { match: "$.customers[*]", id: "id" },
-      Order: { match: "$.orders[*]", id: "id" },
-    },
-  }
-
-  it("defaults to an empty list", () => {
+describe("groups", () => {
+  it("defaults to an empty list and preserves declaration order", () => {
     expect(validateConfig(base).aggregates).toEqual([])
-  })
-
-  it("preserves declaration order", () => {
-    const v = validateConfig({ ...base, aggregates: ["Order", "Customer"] })
+    const v = validateConfig({
+      ...base,
+      groups: ["Order", "Customer"],
+    })
     expect(v.aggregates).toEqual(["Order", "Customer"])
   })
 
-  it("rejects an aggregate root that is not a declared entity type", () => {
-    expect(() => validateConfig({ ...base, aggregates: ["Ghost"] })).toThrow(ConfigError)
+  it("rejects a group that is not declared in ids", () => {
+    expect(() => validateConfig({ ...base, groups: ["Ghost"] })).toThrow(/not declared in ids/)
   })
 })

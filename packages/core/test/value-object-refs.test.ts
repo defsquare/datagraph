@@ -7,9 +7,10 @@ import { DEFAULT_METRICS } from "../src/measure.js"
 
 /**
  * Le cas qui était inexprimable : `CartLine` n'a pas d'identité — ce n'est pas
- * une entité —, mais elle porte la référence vers le `Product`. La déclarer sur
- * `Cart` avec un CHEMIN (`lines[*].productRef`) est ce qui la rend exprimable
- * sans inventer une entité sans `id`.
+ * une entité —, mais elle porte la référence vers le `Product`. La déclarer par
+ * un CHEMIN qui traverse la ligne (`$.carts[*].lines[*].productRef`) est ce qui
+ * la rend exprimable sans inventer une entité sans `id` : le préfixe déclaré
+ * le plus long, `$.carts[*]`, en fait le propriétaire.
  *
  * Le fixture vit ici et non dans `fixtures.ts` : il n'existe que pour ces cas,
  * et le poser à côté d'eux évite de faire porter à tous les autres tests une
@@ -35,17 +36,15 @@ const cartData = {
 }
 
 const cartConfig: DataGraphConfig = {
-  entities: {
-    Cart: { match: "$.carts[*]", id: "id" },
-    Product: { match: "$.products[*]", id: "id" },
-    Coupon: { match: "$.coupons[*]", id: "id" },
+  ids: {
+    Cart: "$.carts[*].id",
+    Product: "$.products[*].id",
+    Coupon: "$.coupons[*].id",
   },
-  references: {
-    Cart: {
-      "lines[*].productRef": "Product",
-      "lines[*].discount.couponRef": "Coupon",
-    },
-  },
+  refs: [
+    { from: "$.carts[*].lines[*].productRef", to: "$.products[*].id" },
+    { from: "$.carts[*].lines[*].discount.couponRef", to: "$.coupons[*].id" },
+  ],
 }
 
 describe("références portées par un value object", () => {
@@ -57,11 +56,11 @@ describe("références portées par un value object", () => {
     const flat = buildGraph(
       { customers: [{ id: "c1" }], orders: [{ id: "o1", customerId: "c1" }] },
       {
-        entities: {
-          Customer: { match: "$.customers[*]", id: "id" },
-          Order: { match: "$.orders[*]", id: "id" },
+        ids: {
+          Customer: "$.customers[*].id",
+          Order: "$.orders[*].id",
         },
-        references: { Order: { customerId: "Customer" } },
+        refs: [{ from: "$.orders[*].customerId", to: "$.customers[*].id" }],
       },
     )
     expect(flat.refEdges).toEqual([
@@ -134,13 +133,14 @@ describe("références portées par un value object", () => {
   it("signale par `unresolved-reference` une déclaration que rien ne satisfait", () => {
     const typo = buildGraph(cartData, {
       ...cartConfig,
-      references: { Cart: { "lines[*].produtcRef": "Product" } },
+      refs: [{ from: "$.carts[*].lines[*].produtcRef", to: "$.products[*].id" }],
     })
     expect(typo.refEdges).toEqual([])
     const diag = typo.diagnostics.filter((d) => d.code === "unresolved-reference")
     expect(diag).toHaveLength(1)
-    // Le message doit permettre de retrouver la déclaration dans la config.
-    expect(diag[0]!.path).toBe("Cart.lines[*].produtcRef")
+    // Le message doit permettre de retrouver la déclaration dans la config :
+    // le `from` ABSOLU, tel qu'écrit.
+    expect(diag[0]!.path).toBe("$.carts[*].lines[*].produtcRef")
     expect(diag[0]!.message).toContain("lines[*].produtcRef")
     expect(diag[0]!.message).toContain("Cart")
   })
@@ -150,7 +150,7 @@ describe("références portées par un value object", () => {
     // comportement d'avant, et il ne doit pas devenir bruyant.
     const empty = buildGraph(
       { carts: [], products: [{ id: "p1" }], coupons: [] },
-      { ...cartConfig, references: { Cart: { "lines[*].produtcRef": "Product" } } },
+      { ...cartConfig, refs: [{ from: "$.carts[*].lines[*].produtcRef", to: "$.products[*].id" }] },
     )
     expect(empty.diagnostics).toEqual([])
   })
@@ -160,7 +160,7 @@ describe("références portées par un value object", () => {
     // trouvé sa ligne, elle n'a simplement rien à résoudre.
     const nullRef = buildGraph(
       { carts: [{ id: "k1", lines: [{ productRef: null }] }], products: [], coupons: [] },
-      { ...cartConfig, references: { Cart: { "lines[*].productRef": "Product" } } },
+      { ...cartConfig, refs: [{ from: "$.carts[*].lines[*].productRef", to: "$.products[*].id" }] },
     )
     expect(nullRef.refEdges).toEqual([])
     expect(nullRef.diagnostics).toEqual([])
@@ -176,7 +176,7 @@ describe("références portées par un value object", () => {
 
 describe("appartenance d'agrégat via une arête hissée", () => {
   it("fait rejoindre au panier l'agrégat du produit que sa LIGNE référence", () => {
-    const config = { ...cartConfig, aggregates: ["Product"] }
+    const config = { ...cartConfig, groups: ["Product"] }
     const idx = buildAggregates(buildGraph(cartData, config), validateConfig(config))
     // La source du BFS est `fromEntity` : sans hissage, `/carts/0/lines/0` — un
     // nœud que le BFS des entités ne visite jamais — serait la source, et le

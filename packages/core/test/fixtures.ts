@@ -14,11 +14,11 @@ export const shopData = {
 }
 
 export const shopConfig: DataGraphConfig = {
-  entities: {
-    Customer: { match: "$.customers[*]", id: "id" },
-    Order: { match: "$.orders[*]", id: "id" },
+  ids: {
+    Customer: "$.customers[*].id",
+    Order: "$.orders[*].id",
   },
-  references: { Order: { customerId: "Customer" } },
+  refs: [{ from: "$.orders[*].customerId", to: "$.customers[*].id" }],
 }
 
 /**
@@ -35,13 +35,16 @@ export const twoRootsData = {
 }
 
 export const twoRootsConfig: DataGraphConfig = {
-  entities: {
-    Customer: { match: "$.customers[*]", id: "id" },
-    Product: { match: "$.products[*]", id: "id" },
-    Order: { match: "$.orders[*]", id: "id" },
+  ids: {
+    Customer: "$.customers[*].id",
+    Product: "$.products[*].id",
+    Order: "$.orders[*].id",
   },
-  references: { Order: { customerId: "Customer", productId: "Product" } },
-  aggregates: ["Customer", "Product"],
+  refs: [
+    { from: "$.orders[*].customerId", to: "$.customers[*].id" },
+    { from: "$.orders[*].productId", to: "$.products[*].id" },
+  ],
+  groups: ["Customer", "Product"],
 }
 
 /** Chaîne LineItem -> Order -> Customer : appartenance transitive à 2 sauts.
@@ -55,18 +58,18 @@ export const chainData = {
 }
 
 export const chainConfig: DataGraphConfig = {
-  entities: {
-    Country: { match: "$.countries[*]", id: "id" },
-    Customer: { match: "$.customers[*]", id: "id" },
-    Order: { match: "$.orders[*]", id: "id" },
-    LineItem: { match: "$.lines[*]", id: "id" },
+  ids: {
+    Country: "$.countries[*].id",
+    Customer: "$.customers[*].id",
+    Order: "$.orders[*].id",
+    LineItem: "$.lines[*].id",
   },
-  references: {
-    Customer: { countryId: "Country" },
-    Order: { customerId: "Customer" },
-    LineItem: { orderId: "Order" },
-  },
-  aggregates: ["Customer", "Country"],
+  refs: [
+    { from: "$.customers[*].countryId", to: "$.countries[*].id" },
+    { from: "$.orders[*].customerId", to: "$.customers[*].id" },
+    { from: "$.lines[*].orderId", to: "$.orders[*].id" },
+  ],
+  groups: ["Customer", "Country"],
 }
 
 /** Génère ~`n` nœuds logiques pour les tests de perf/échelle. */
@@ -102,16 +105,16 @@ export function bigShopWithReviews(n: number) {
 }
 
 export const bigShopReviewsConfig: DataGraphConfig = {
-  entities: {
-    Customer: { match: "$.customers[*]", id: "id" },
-    Order: { match: "$.orders[*]", id: "id" },
-    Review: { match: "$.reviews[*]", id: "id" },
+  ids: {
+    Customer: "$.customers[*].id",
+    Order: "$.orders[*].id",
+    Review: "$.reviews[*].id",
   },
-  references: {
-    Order: { customerId: "Customer" },
-    Review: { customerId: "Customer" },
-  },
-  aggregates: ["Customer"],
+  refs: [
+    { from: "$.orders[*].customerId", to: "$.customers[*].id" },
+    { from: "$.reviews[*].customerId", to: "$.customers[*].id" },
+  ],
+  groups: ["Customer"],
 }
 
 /**
@@ -248,37 +251,35 @@ export function denseRefs(customers = 40, products = 40, orders = 3, perOrder = 
 }
 
 export const denseRefsConfig: DataGraphConfig = {
-  entities: {
-    Customer: { match: "$.customers[*]", id: "id" },
-    Product: { match: "$.products[*]", id: "id" },
-    Order: { match: "$.orders[*]", id: "id" },
+  ids: {
+    Customer: "$.customers[*].id",
+    Product: "$.products[*].id",
+    Order: "$.orders[*].id",
   },
-  references: {
-    Order: {
-      customerId: "Customer",
-      productId0: "Product",
-      productId1: "Product",
-      productId2: "Product",
-      productId3: "Product",
-    },
-  },
+  refs: [
+    { from: "$.orders[*].customerId", to: "$.customers[*].id" },
+    { from: "$.orders[*].productId0", to: "$.products[*].id" },
+    { from: "$.orders[*].productId1", to: "$.products[*].id" },
+    { from: "$.orders[*].productId2", to: "$.products[*].id" },
+    { from: "$.orders[*].productId3", to: "$.products[*].id" },
+  ],
   // `Customer` en premier : l'arbitrage lui donne les commandes, et les
   // références produit deviennent toutes inter-cluster. Inverser l'ordre
   // donnerait les commandes aux produits et changerait complètement la forme.
-  aggregates: ["Customer", "Product"],
+  groups: ["Customer", "Product"],
 }
 
 export const deepAggregateConfig: DataGraphConfig = {
-  entities: {
-    Customer: { match: "$.customers[*]", id: "id" },
-    Order: { match: "$.orders[*]", id: "id" },
-    OrderLine: { match: "$.lines[*]", id: "id" },
-    Serial: { match: "$.serials[*]", id: "id" },
+  ids: {
+    Customer: "$.customers[*].id",
+    Order: "$.orders[*].id",
+    OrderLine: "$.lines[*].id",
+    Serial: "$.serials[*].id",
   },
-  references: {
-    Order: { customerId: "Customer" },
-    OrderLine: { orderId: "Order" },
-    Serial: { lineId: "OrderLine" },
-  },
-  aggregates: ["Customer"],
+  refs: [
+    { from: "$.orders[*].customerId", to: "$.customers[*].id" },
+    { from: "$.lines[*].orderId", to: "$.orders[*].id" },
+    { from: "$.serials[*].lineId", to: "$.lines[*].id" },
+  ],
+  groups: ["Customer"],
 }

@@ -31,8 +31,11 @@ describe("reference resolution", () => {
   it("supports circular references between entities", () => {
     const data = { as: [{ id: "a1", bId: "b1" }], bs: [{ id: "b1", aId: "a1" }] }
     const g2 = buildGraph(data, {
-      entities: { A: { match: "$.as[*]", id: "id" }, B: { match: "$.bs[*]", id: "id" } },
-      references: { A: { bId: "B" }, B: { aId: "A" } },
+      ids: { A: "$.as[*].id", B: "$.bs[*].id" },
+      refs: [
+        { from: "$.as[*].bId", to: "$.bs[*].id" },
+        { from: "$.bs[*].aId", to: "$.as[*].id" },
+      ],
     })
     expect(g2.refEdges).toHaveLength(2)
     expect(g2.diagnostics).toHaveLength(0)

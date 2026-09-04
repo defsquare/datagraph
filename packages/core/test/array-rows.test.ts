@@ -16,14 +16,14 @@ import type { DataGraphConfig } from "../src/config.js"
  */
 
 const config: DataGraphConfig = {
-  entities: { Product: { match: "$.products[*]", id: "id" } },
+  ids: { Product: "$.products[*].id" },
 }
 
-/** `validateConfig` refuse une carte d'entites vide : ce selecteur ne matche
- * rien dans les jeux ci-dessous, ce qui donne un graphe SANS aucune entite —
- * exactement ce que ces cas veulent observer. */
+/** Un chemin d'identite qui ne matche rien dans les jeux ci-dessous : le graphe
+ * n'a donc AUCUNE entite — exactement ce que ces cas veulent observer, sans
+ * dependre du fait qu'une carte `ids` vide soit acceptee. */
 const NO_ENTITIES: DataGraphConfig = {
-  entities: { Absente: { match: "$.absente[*]", id: "id" } },
+  ids: { Absente: "$.absente[*].id" },
 }
 
 const data = {

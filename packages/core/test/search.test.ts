@@ -36,7 +36,7 @@ describe("SearchIndex", () => {
   it("returns one result when row key and value both match query", () => {
     // Create a graph with { items: [{ id: "x", name: "name" }] }
     const data = { items: [{ id: "x", name: "name" }] }
-    const config = { entities: { Item: { match: "$.items[*]", id: "id" } }, references: {} }
+    const config = { ids: { Item: "$.items[*].id" }, refs: [] }
     const testIdx = buildSearchIndex(buildGraph(data, config))
     const results = testIdx.search("name")
     // Should return exactly ONE result for /items/0 field "name" (key and value deduplicate)

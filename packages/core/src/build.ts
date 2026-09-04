@@ -360,7 +360,9 @@ export function buildGraph(data: unknown, config: DataGraphConfig): Graph {
       if (!unsatisfied.has(decl)) continue
       graph.diagnostics.push({
         code: "unresolved-reference",
-        path: `${sourceType}.${decl.path}`,
+        // `decl.path` est désormais le `from` absolu : le préfixer du type
+        // produirait « Order.$.orders[*]… ».
+        path: decl.path,
         message: `Reference "${decl.path}" declared on ${sourceType} matches no row on any ${sourceType}`,
       })
     }

@@ -33,11 +33,11 @@ function bigShop(n: number): { customers: unknown[]; orders: unknown[] } {
 }
 
 const bigShopConfig: DataGraphConfig = {
-  entities: {
-    Customer: { match: "$.customers[*]", id: "id" },
-    Order: { match: "$.orders[*]", id: "id" },
+  ids: {
+    Customer: "$.customers[*].id",
+    Order: "$.orders[*].id",
   },
-  references: { Order: { customerId: "Customer" } },
+  refs: [{ from: "$.orders[*].customerId", to: "$.customers[*].id" }],
 }
 
 function report(label: string, ms: number, budgetMs: number | null): void {

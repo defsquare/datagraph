@@ -10,7 +10,7 @@ function index(data: unknown, config: Parameters<typeof validateConfig>[0]) {
 
 describe("buildAggregates", () => {
   it("groups a root with the entities that reference it", () => {
-    const idx = index(shopData, { ...shopConfig, aggregates: ["Customer"] })
+    const idx = index(shopData, { ...shopConfig, groups: ["Customer"] })
     expect([...idx.aggregates.keys()].sort()).toEqual(["Customer#c1", "Customer#c2"])
     expect([...idx.aggregates.get("Customer#c1")!.memberIds].sort()).toEqual(["/customers/0", "/orders/0"])
     // c2 n'est référencée par personne : son agrégat se réduit à elle-même.
@@ -18,7 +18,7 @@ describe("buildAggregates", () => {
   })
 
   it("leaves an entity with a dangling reference out of every aggregate", () => {
-    const idx = index(shopData, { ...shopConfig, aggregates: ["Customer"] })
+    const idx = index(shopData, { ...shopConfig, groups: ["Customer"] })
     // /orders/1 pointe vers "GHOST" : la référence est cassée, elle ne propage rien.
     expect(idx.byNode.get("/orders/1")).toBeUndefined()
   })
@@ -26,7 +26,7 @@ describe("buildAggregates", () => {
   it("arbitrates a distance tie by declaration order of the root type", () => {
     // /orders/0 est à un saut de Customer#c1 ET de Product#p9. La règle
     // n'admet plus le partage : `Customer` est déclaré en premier dans
-    // `aggregates`, donc il emporte l'arbitrage, et Product#p9 se réduit à
+    // `groups`, donc il emporte l'arbitrage, et Product#p9 se réduit à
     // lui-même.
     const idx = index(twoRootsData, twoRootsConfig)
     expect(idx.byNode.get("/orders/0")).toEqual(["Customer#c1"])
@@ -37,9 +37,9 @@ describe("buildAggregates", () => {
 
   it("follows the declaration order, not the type name: reversing it flips the winner", () => {
     // Même donnée, ordre de déclaration inversé : c'est Product qui gagne.
-    // C'est ce qui prouve que l'arbitrage lit bien `config.aggregates` et non
+    // C'est ce qui prouve que l'arbitrage lit bien `config.groups` et non
     // un ordre alphabétique ou l'ordre de découverte du BFS.
-    const reversed = { ...twoRootsConfig, aggregates: ["Product", "Customer"] }
+    const reversed = { ...twoRootsConfig, groups: ["Product", "Customer"] }
     const idx = index(twoRootsData, reversed)
     expect(idx.byNode.get("/orders/0")).toEqual(["Product#p9"])
     expect([...idx.aggregates.get("Customer#c1")!.memberIds]).toEqual(["/customers/0"])
@@ -54,12 +54,15 @@ describe("buildAggregates", () => {
       orders: [{ id: "o1", buyerId: "c2", payerId: "c1" }],
     }
     const config = {
-      entities: {
-        Customer: { match: "$.customers[*]", id: "id" },
-        Order: { match: "$.orders[*]", id: "id" },
+      ids: {
+        Customer: "$.customers[*].id",
+        Order: "$.orders[*].id",
       },
-      references: { Order: { buyerId: "Customer", payerId: "Customer" } },
-      aggregates: ["Customer"],
+      refs: [
+        { from: "$.orders[*].buyerId", to: "$.customers[*].id" },
+        { from: "$.orders[*].payerId", to: "$.customers[*].id" },
+      ],
+      groups: ["Customer"],
     }
     const idx = index(data, config)
     // "Customer#c1" < "Customer#c2", et ce malgré l'ordre du tableau JSON qui
@@ -107,9 +110,12 @@ describe("buildAggregates", () => {
   it("terminates on a reference cycle", () => {
     const data = { as: [{ id: "a1", bId: "b1" }], bs: [{ id: "b1", aId: "a1" }] }
     const config = {
-      entities: { A: { match: "$.as[*]", id: "id" }, B: { match: "$.bs[*]", id: "id" } },
-      references: { A: { bId: "B" }, B: { aId: "A" } },
-      aggregates: ["A"],
+      ids: { A: "$.as[*].id", B: "$.bs[*].id" },
+      refs: [
+        { from: "$.as[*].bId", to: "$.bs[*].id" },
+        { from: "$.bs[*].aId", to: "$.as[*].id" },
+      ],
+      groups: ["A"],
     }
     const idx = index(data, config)
     expect([...idx.aggregates.get("A#a1")!.memberIds].sort()).toEqual(["/as/0", "/bs/0"])
@@ -117,7 +123,7 @@ describe("buildAggregates", () => {
 
   it("produces no aggregate for a declared root type with no instance", () => {
     const data = { customers: [], orders: [{ id: "o1", customerId: "GHOST" }] }
-    const idx = index(data, { ...shopConfig, aggregates: ["Customer"] })
+    const idx = index(data, { ...shopConfig, groups: ["Customer"] })
     expect(idx.aggregates.size).toBe(0)
     expect(idx.byNode.size).toBe(0)
   })
