@@ -1,6 +1,8 @@
 // Aucune commande `#[tauri::command]` n'est exposée : la démo est intégralement
 // frontend (Pixi/WebGL dans la WebView) et ne demande rien à l'hôte. Toute
 // commande ajoutée ici devrait aussi être autorisée dans capabilities/default.json.
+pub mod cli;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
