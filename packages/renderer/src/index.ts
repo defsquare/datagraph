@@ -60,7 +60,6 @@ export { Emitter } from "./events.js";
 // on @defsquare/data-graph-core directly.
 export type {
   DataGraphConfig,
-  EntityConfig,
   NodeId,
   GraphNode,
   Row,

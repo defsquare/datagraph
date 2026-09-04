@@ -8,7 +8,7 @@ const data = {
     { id: "c2", name: "Nom-Tres-Long-Qui-Deborde", email: "adresse.electronique.tres.longue@exemple-de-domaine.fr" },
   ],
 };
-const config = { entities: { Customer: { match: "$.customers[*]", id: "id" } } };
+const config = { ids: { Customer: "$.customers[*].id" } };
 
 describe("accord mesure / troncature", () => {
   it("aucune ligne tronquee ne depasse la largeur calculee par measureNode", () => {

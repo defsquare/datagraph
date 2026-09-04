@@ -21,11 +21,11 @@ export const shopData = {
 };
 
 export const shopConfig: DataGraphConfig = {
-  entities: {
-    Customer: { match: "$.customers[*]", id: "id" },
-    Order: { match: "$.orders[*]", id: "id" },
+  ids: {
+    Customer: "$.customers[*].id",
+    Order: "$.orders[*].id",
   },
-  references: { Order: { customerId: "Customer" } },
+  refs: [{ from: "$.orders[*].customerId", to: "$.customers[*].id" }],
 };
 
 // Une référence portée par un VALUE OBJECT : `CartLine` n'a pas d'identité,
@@ -37,9 +37,9 @@ export const cartData = {
 };
 
 export const cartConfig: DataGraphConfig = {
-  entities: {
-    Cart: { match: "$.carts[*]", id: "id" },
-    Product: { match: "$.products[*]", id: "id" },
+  ids: {
+    Cart: "$.carts[*].id",
+    Product: "$.products[*].id",
   },
-  references: { Cart: { "lines[*].productRef": "Product" } },
+  refs: [{ from: "$.carts[*].lines[*].productRef", to: "$.products[*].id" }],
 };

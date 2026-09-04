@@ -567,10 +567,10 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   const emitter = new Emitter<DataGraphEvents>();
 
   /** Recalcule la table type d'entité → couleur de rail. L'ordre vient des
-   * clés de `config.entities` : déterministe et sous contrôle de l'auteur de
+   * clés de `config.ids` : déterministe et sous contrôle de l'auteur de
    * la config, contrairement à l'ordre d'apparition dans les données. */
   function refreshEntityAccents(config: DataGraphConfig): void {
-    entityAccents = entityAccentMap(Object.keys(config.entities), theme);
+    entityAccents = entityAccentMap(Object.keys(config.ids), theme);
   }
 
   function accentFor(node: GraphNode): string {

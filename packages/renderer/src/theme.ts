@@ -208,7 +208,7 @@ export function resolveTheme(partial?: ThemeOverride, base: Theme = defsquareLig
 /**
  * Associe chaque type d'entité à une couleur de rail. L'assignation suit
  * l'ordre de `entityTypes` — que l'appelant tire de l'ordre de déclaration
- * des clés de `config.entities`, pas de l'ordre d'apparition dans les
+ * des clés de `config.ids`, pas de l'ordre d'apparition dans les
  * données, pour rester déterministe et sous contrôle de l'auteur.
  */
 export function entityAccentMap(entityTypes: string[], theme: Theme): Map<string, string> {

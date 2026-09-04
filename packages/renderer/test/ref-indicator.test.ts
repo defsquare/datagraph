@@ -44,11 +44,11 @@ const data = {
   orders: [{ id: "o1", customerId: LONG_ID, total: 99.5 }],
 };
 const config: DataGraphConfig = {
-  entities: {
-    Customer: { match: "$.customers[*]", id: "id" },
-    Order: { match: "$.orders[*]", id: "id" },
+  ids: {
+    Customer: "$.customers[*].id",
+    Order: "$.orders[*].id",
   },
-  references: { Order: { customerId: "Customer" } },
+  refs: [{ from: "$.orders[*].customerId", to: "$.customers[*].id" }],
 };
 
 const graph = buildGraph(data, config);

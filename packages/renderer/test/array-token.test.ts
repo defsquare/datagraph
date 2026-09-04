@@ -39,7 +39,7 @@ const metrics = DEFAULT_METRICS;
 const rect = { x: 0, y: 0, width: 260, height: 140 };
 
 const config: DataGraphConfig = {
-  entities: { Product: { match: "$.products[*]", id: "id" } },
+  ids: { Product: "$.products[*].id" },
 };
 const graph = buildGraph(
   { products: [{ id: "p1", tags: ["mecanique", "USB-C", "RGB"] }] },
