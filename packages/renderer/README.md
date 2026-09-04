@@ -162,8 +162,8 @@ graph smaller than the viewport is centred rather than blown up.
 - **`"structure"`** (default) lays out the containment tree — parent/child
   structure, ELK layered. This is everything described above and elsewhere in
   this README.
-- **`"graph"`** lays out entities as vertices and references as edges,
-  grouped into the DDD aggregates declared in `config.groups` (see the
+- **`"graph"`** lays out records as vertices and joins as edges, grouped
+  as declared in `config.groups` (see the
   [core package README](https://github.com/defsquare/data-graph/tree/main/packages/core#aggregates)
   for the membership rule) and drawn as circular envelopes — the minimal
   enclosing circle of each aggregate's cards, plus a `hullPadding` margin.

@@ -8,7 +8,7 @@
 //! (entités connues, sélecteurs) reste au cœur TypeScript, la dupliquer en
 //! Rust créerait deux vérités.
 
-pub const USAGE: &str = "datagraph - explore a JSON document as an entity graph
+pub const USAGE: &str = "datagraph - explore a JSON document as a graph of records and references
 
 Usage:
   datagraph [<data.json>] [-c <config.json>]
