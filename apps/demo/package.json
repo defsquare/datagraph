@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@defsquare/data-graph": "workspace:*",
+    "@tauri-apps/api": "^2.11.1",
     "elkjs": "^0.12.0"
   },
   "devDependencies": {

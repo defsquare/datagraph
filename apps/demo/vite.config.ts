@@ -39,4 +39,8 @@ export default defineConfig(({ command }) => ({
           ],
         }
       : undefined,
+  // main.ts attend `resolveLaunch()` en top-level await : la cible par défaut
+  // de Vite (chrome87) le refuse à la minification. Les WebViews de Tauri
+  // (WKWebView, WebView2) et les navigateurs des e2e sont largement au-delà.
+  build: { target: "es2022" },
 }));
