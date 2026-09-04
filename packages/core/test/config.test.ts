@@ -71,6 +71,13 @@ describe("validateConfig", () => {
     expect(v.aggregates).toEqual([])
   })
 
+  it("rejects a config whose entities map is missing or not an object", () => {
+    // Une config `-c` vient du disque : le type ne la garantit pas. Le rejet
+    // doit être une ConfigError lisible, pas un TypeError sur `Object.entries`.
+    expect(() => validateConfig({} as never)).toThrow(ConfigError)
+    expect(() => validateConfig({ entities: null } as never)).toThrow(ConfigError)
+  })
+
   it("rejects bad selectors", () => {
     expect(() => validateConfig({ entities: { X: { match: "nope", id: "id" } } })).toThrow(ConfigError)
   })

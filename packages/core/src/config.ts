@@ -75,6 +75,20 @@ function parseReferenceKey(key: string): { navigate: PathSegment[]; field: strin
 }
 
 export function validateConfig(config: DataGraphConfig): ValidatedConfig {
+  // Une config chargée du disque (option `-c` de la CLI) peut être n'importe
+  // quel JSON : le type ne garantit rien. Sans cette garde, `Object.entries`
+  // ci-dessous lèverait un TypeError brut, dont le message ne dirait pas à
+  // l'auteur de la config ce qu'il doit corriger. Un tableau est écarté aussi :
+  // `Object.entries` l'accepte, mais des entités indexées par 0, 1, 2 ne sont
+  // pas ce que l'auteur voulait.
+  if (
+    typeof config.entities !== "object" ||
+    config.entities === null ||
+    Array.isArray(config.entities)
+  ) {
+    throw new ConfigError("invalid-config", "Config must declare an entities object")
+  }
+
   // Parse selectors for each entity
   const entities = new Map<string, { segments: PathSegment[]; idField: string }>()
   for (const [name, entityConfig] of Object.entries(config.entities)) {
