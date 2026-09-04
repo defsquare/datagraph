@@ -1,6 +1,6 @@
 # data-graph
 
-**jsoncrack-style visualization for complex objects — but for aggregates and entities, with real reference edges.**
+**jsoncrack-style visualization for complex objects — but for keyed records and real reference edges.**
 
 Most JSON visualizers draw a literal tree: every object and array becomes a
 box, every key becomes an edge. That's fine for small documents, but it falls
@@ -10,8 +10,8 @@ rows.
 
 `data-graph` renders the same kind of interactive box-and-line canvas as
 jsoncrack, but on top of a **domain model** instead of raw JSON structure:
-you tell it which paths in your data are *entities* (e.g. `Customer`,
-`Order`) and which fields are *references* between them (e.g.
+you declare, in `ids`, which paths in your data are *keyed records* (e.g.
+`Customer`, `Order`), and, in `refs`, which fields *join* them (e.g.
 `Order.customerId → Customer`). It then builds a graph with two edge kinds —
 containment (parent/child structure) and reference (real foreign keys) — and
 renders only what's expanded, so a 10,000-node dataset stays smooth: pan,
@@ -21,8 +21,8 @@ every field.
 
 Two views are built in. The default **structure view** lays out the
 containment tree (parent/child, ELK layered). An optional **graph view**
-switches the canvas to entities-as-vertices, references-as-edges, grouped
-into DDD aggregates drawn as circular envelopes — see [`config.aggregates`](#entityreference-configuration)
+switches the canvas to records-as-vertices, joins-as-edges, grouped
+into DDD aggregates drawn as circular envelopes — see [`config.groups`](#config-ids-refs-groups)
 and [the renderer's graph view docs](./packages/renderer/README.md#graph-view).
 
 <!-- demo GIF placeholder: replace this comment with an actual GIF/screen
@@ -80,18 +80,19 @@ const shopData = {
 };
 
 const shopConfig = {
-  entities: {
-    Customer: { match: "$.customers[*]", id: "id" },
-    Order: { match: "$.orders[*]", id: "id" },
-    Product: { match: "$.products[*]", id: "id" },
-    Category: { match: "$.categories[*]", id: "id" },
+  ids: {
+    Customer: "$.customers[*].id",
+    Order: "$.orders[*].id",
+    Product: "$.products[*].id",
+    Category: "$.categories[*].id",
   },
-  references: {
-    Order: { customerId: "Customer", productId: "Product" },
-    Product: { categoryId: "Category" },
-  },
+  refs: [
+    { from: "$.orders[*].customerId", to: "$.customers[*].id" },
+    { from: "$.orders[*].productId", to: "$.products[*].id" },
+    { from: "$.products[*].categoryId", to: "$.categories[*].id" },
+  ],
   rootLabel: "Boutique",
-  aggregates: ["Customer", "Product"],
+  groups: ["Customer", "Product"],
 };
 
 const container = document.getElementById("app")!;
@@ -111,46 +112,50 @@ graph.on("select", (node) => console.log("selected:", node.label));
 graph.on("followRef", (edge) => console.log("followed ref:", edge.field));
 ```
 
-## Entity/reference configuration
+## Config: ids, refs, groups
 
-`config.entities` maps an entity type name to a JSONPath-like `match`
-selector (`$`, `.key`, `[index]`, and `*` wildcards for either) plus the
-field that holds its id. Any object matched by a selector becomes an
-*entity* node instead of a plain object node — entities are the only nodes
-that start collapsed, and the only source/target of reference edges.
+`config.ids` maps a name to a JSONPath-like selector (`$`, `.key`, `[index]`,
+and `*` wildcards for either) that ends in the field holding its id — e.g.
+`"$.customers[*].id"`. Any object matched by a selector (dropping the
+trailing id-field segment) becomes an *entity* node instead of a plain object
+node — entities are the only nodes that start collapsed, and the only
+source/target of reference edges.
 
-`config.references` maps `EntityType.fieldName → TargetEntityType`: a field
-on an entity whose value is meant to be read as a foreign key. `data-graph`
-resolves it against the target entity's index at build time and draws a
-reference edge (dangling and highlighted differently if the target id
-doesn't exist).
+`config.refs` is an array of joins, `{ from, to }`: `from` is a selector for
+a field whose value is meant to be read as a foreign key, and `to` is one of
+the paths declared in `ids`. `data-graph` resolves `from`'s value against the
+target's index at build time and draws a reference edge (dangling and
+highlighted differently if the target id doesn't exist).
 
 ```json
 {
-  "entities": {
-    "Customer": { "match": "$.customers[*]", "id": "id" },
-    "Order": { "match": "$.orders[*]", "id": "id" }
+  "ids": {
+    "Customer": "$.customers[*].id",
+    "Order": "$.orders[*].id"
   },
-  "references": {
-    "Order": { "customerId": "Customer" }
-  },
+  "refs": [
+    { "from": "$.orders[*].customerId", "to": "$.customers[*].id" }
+  ],
   "maxNodes": 50000,
   "rootLabel": "$"
 }
 ```
 
-- `entities.<Type>.match` — selector for where instances of `<Type>` live in the document.
-- `entities.<Type>.id` — the field on each matched object that holds its unique id.
-- `references.<Type>.<field>` — declares `<Type>.<field>` as a foreign key pointing at another configured entity type.
-- `aggregates` — entity type names that are DDD aggregate roots, in declaration order. That order
-  is load-bearing: it decides which root claims an entity that reaches two of them at the same
+- `ids.<Name>` — selector for where instances of `<Name>` live in the document, ending in the id field.
+- `refs[].from` — selector for a field whose value is a foreign key.
+- `refs[].to` — the `ids` path it must resolve against.
+- `groups` — names from `ids` that are DDD aggregate roots, in declaration order. That order
+  is load-bearing: it decides which root claims a record that reaches two of them at the same
   distance. See [the core package README](./packages/core/README.md#aggregates) for the membership
   rule and the [graph view](./packages/renderer/README.md#graph-view) it powers.
 - `maxNodes` — optional safety cap (default `50000`); `buildGraph` throws `GraphTooLargeError` past it.
 - `rootLabel` — label shown on the root node (default `"$"`, the root symbol of
-  the same selector syntax `match` uses). Set it to something your users
+  the same selector syntax `ids` uses). Set it to something your users
   recognise — `"Shop"`, `"Invoice"` — when the graph is customer-facing. An
   empty string is honoured rather than falling back to the default.
+
+**Limitation:** field keys that don't match the selector token grammar (e.g.
+`@odata:id`) can no longer be declared as reference fields.
 
 ## Public API — `DataGraph`
 
@@ -448,7 +453,7 @@ were kept and rewritten to say exactly that, rather than left asserting the
 absence of a string that no longer occurs anywhere in the repo.
 
 **What the partition rule bought, measured.** The demo's config declares two
-roots (`aggregates: ["Customer", "Product"]`) over a dataset where every `Order`
+roots (`groups: ["Customer", "Product"]`) over a dataset where every `Order`
 references a `Customer` *and* a `Product`, so every order sits one hop from both.
 Under the retired overlap rule it was a full member of both, and the merge
 percolated. Measured on `bigShop(4000)` — 350 entities, 108 aggregates — with the
@@ -570,7 +575,7 @@ it is meant to be launched from a shell). The web demo is unaffected;
 **CLI usage.** The desktop binary doubles as an end-user CLI:
 
 ```bash
-datagraph data.json -c config.json  # open a JSON document with an entity config
+datagraph data.json -c config.json  # open a JSON document with a config declaring ids, refs and groups
 datagraph data.json                 # no config: structure view only
 datagraph                           # no argument: built-in demo dataset
 datagraph --help
@@ -578,7 +583,7 @@ datagraph --help
 
 File and JSON errors are reported on stderr with a non-zero exit code before
 any window opens. Only JSON *syntax* is checked upfront; a semantically
-invalid config (unknown entity type, bad selector) is reported in-app. Try it
+invalid config (unknown group, bad selector) is reported in-app. Try it
 with the sample files in `apps/demo/fixtures/`. The binary is not on your
 `PATH` by default — copy or symlink
 `apps/demo/src-tauri/target/release/datagraph` somewhere on it.

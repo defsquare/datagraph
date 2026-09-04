@@ -18,8 +18,8 @@ Arguments:
                     Without it, the app opens on the built-in demo dataset.
 
 Options:
-  -c <config.json>  Path to a JSON config declaring entities, references
-                    and aggregates. Without it, the document opens in
+  -c <config.json>  Path to a JSON config declaring ids, refs
+                    and groups. Without it, the document opens in
                     structure view only.
   -h, --help        Show this help and exit.";
 
@@ -167,11 +167,11 @@ mod tests {
   #[test]
   fn load_reads_data_and_optional_config() {
     let data = temp_file("data.json", r#"{"customers": []}"#);
-    let conf = temp_file("conf.json", r#"{"entities": {}}"#);
+    let conf = temp_file("conf.json", r#"{"ids": {}}"#);
     let cli = Cli { data_path: Some(data), config_path: Some(conf), help: false };
     let payload = load(&cli).unwrap().unwrap();
     assert_eq!(payload.data, r#"{"customers": []}"#);
-    assert_eq!(payload.config.as_deref(), Some(r#"{"entities": {}}"#));
+    assert_eq!(payload.config.as_deref(), Some(r#"{"ids": {}}"#));
   }
 
   #[test]

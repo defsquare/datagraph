@@ -1,9 +1,9 @@
 # @defsquare/data-graph
 
-jsoncrack-style visualization for complex objects — aggregates and entities,
-with real reference edges — rendered on a Pixi.js canvas. See the
+jsoncrack-style visualization for complex objects — keyed records, with real
+reference edges — rendered on a Pixi.js canvas. See the
 [root README](https://github.com/defsquare/data-graph#readme) for the full
-pitch, entity/reference config format, public API table, themes, and
+pitch, the ids/refs/groups config format, public API table, themes, and
 performance budgets.
 
 ## Install
@@ -31,11 +31,11 @@ const shopData = {
 };
 
 const shopConfig = {
-  entities: {
-    Customer: { match: "$.customers[*]", id: "id" },
-    Order: { match: "$.orders[*]", id: "id" },
+  ids: {
+    Customer: "$.customers[*].id",
+    Order: "$.orders[*].id",
   },
-  references: { Order: { customerId: "Customer" } },
+  refs: [{ from: "$.orders[*].customerId", to: "$.customers[*].id" }],
 };
 
 const container = document.getElementById("app")!;
@@ -163,7 +163,7 @@ graph smaller than the viewport is centred rather than blown up.
   structure, ELK layered. This is everything described above and elsewhere in
   this README.
 - **`"graph"`** lays out entities as vertices and references as edges,
-  grouped into the DDD aggregates declared in `config.aggregates` (see the
+  grouped into the DDD aggregates declared in `config.groups` (see the
   [core package README](https://github.com/defsquare/data-graph/tree/main/packages/core#aggregates)
   for the membership rule) and drawn as circular envelopes — the minimal
   enclosing circle of each aggregate's cards, plus a `hullPadding` margin.
@@ -171,7 +171,7 @@ graph smaller than the viewport is centred rather than blown up.
 ```ts
 const graph = createDataGraph(container, {
   data: shopData,
-  config: { ...shopConfig, aggregates: ["Customer"] },
+  config: { ...shopConfig, groups: ["Customer"] },
   // Omit `view` to start in "structure" (the default) and switch later.
   view: "graph",
 });

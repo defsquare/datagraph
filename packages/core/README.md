@@ -2,10 +2,10 @@
 
 Headless graph engine for [`data-graph`](https://github.com/defsquare/data-graph)
 (see the [root README](https://github.com/defsquare/data-graph#readme) for
-the full pitch, entity/reference config, and performance budgets).
+the full pitch, the ids/refs/groups config, and performance budgets).
 
 This package has no rendering dependency: it builds a graph from arbitrary
-JSON plus an entity/reference config, tracks expand/collapse state, indexes
+JSON plus an ids/refs/groups config, tracks expand/collapse state, indexes
 it for search, and lays it out via [elkjs](https://github.com/kieler/elkjs).
 If you want the interactive Pixi.js canvas, use
 [`@defsquare/data-graph`](https://www.npmjs.com/package/@defsquare/data-graph)
@@ -28,11 +28,11 @@ const data = {
 };
 
 const config = {
-  entities: {
-    Customer: { match: "$.customers[*]", id: "id" },
-    Order: { match: "$.orders[*]", id: "id" },
+  ids: {
+    Customer: "$.customers[*].id",
+    Order: "$.orders[*].id",
   },
-  references: { Order: { customerId: "Customer" } },
+  refs: [{ from: "$.orders[*].customerId", to: "$.customers[*].id" }],
 };
 
 const graph = buildGraph(data, config);
@@ -47,17 +47,17 @@ searchIndex.search("dupont"); // -> SearchResult[]
 
 ## Aggregates
 
-`config.aggregates` names the entity types that are DDD aggregate roots, in
+`config.groups` names the `ids` entries that are DDD aggregate roots, in
 declaration order:
 
 ```ts
 const config = {
-  entities: {
-    Customer: { match: "$.customers[*]", id: "id" },
-    Order: { match: "$.orders[*]", id: "id" },
+  ids: {
+    Customer: "$.customers[*].id",
+    Order: "$.orders[*].id",
   },
-  references: { Order: { customerId: "Customer" } },
-  aggregates: ["Customer"],
+  refs: [{ from: "$.orders[*].customerId", to: "$.customers[*].id" }],
+  groups: ["Customer"],
 };
 ```
 
@@ -84,7 +84,7 @@ iff `R` is the **winner** among the roots at distance `dmin(E)` from `E`, where
 `d` is the minimal number of outgoing references leading from `E` to `R`, and
 `dmin(E)` is the minimum of `d` over every root `E` can reach. A root is at
 distance `0` from itself, so it always wins its own aggregate. Ties are broken
-by **declaration order of the root's entity type in `config.aggregates`**, then
+by **declaration order of the root's name in `config.groups`**, then
 by aggregate id.
 
 **Membership is a partition:** every entity that reaches at least one root
@@ -104,13 +104,16 @@ This has three consequences worth knowing:
     orders: [{ id: "o3", customerId: "c1", productId: "p9" }],
   };
   const config = {
-    entities: {
-      Customer: { match: "$.customers[*]", id: "id" },
-      Product: { match: "$.products[*]", id: "id" },
-      Order: { match: "$.orders[*]", id: "id" },
+    ids: {
+      Customer: "$.customers[*].id",
+      Product: "$.products[*].id",
+      Order: "$.orders[*].id",
     },
-    references: { Order: { customerId: "Customer", productId: "Product" } },
-    aggregates: ["Customer", "Product"],
+    refs: [
+      { from: "$.orders[*].customerId", to: "$.customers[*].id" },
+      { from: "$.orders[*].productId", to: "$.products[*].id" },
+    ],
+    groups: ["Customer", "Product"],
   };
   // "Customer" is declared first, so it wins:
   // -> byNode.get("/orders/0")  === ["Customer#c1"]
@@ -141,18 +144,18 @@ This has three consequences worth knowing:
     lines: [{ id: "l1", orderId: "o1" }],
   };
   const config = {
-    entities: {
-      Country: { match: "$.countries[*]", id: "id" },
-      Customer: { match: "$.customers[*]", id: "id" },
-      Order: { match: "$.orders[*]", id: "id" },
-      LineItem: { match: "$.lines[*]", id: "id" },
+    ids: {
+      Country: "$.countries[*].id",
+      Customer: "$.customers[*].id",
+      Order: "$.orders[*].id",
+      LineItem: "$.lines[*].id",
     },
-    references: {
-      Customer: { countryId: "Country" },
-      Order: { customerId: "Customer" },
-      LineItem: { orderId: "Order" },
-    },
-    aggregates: ["Customer", "Country"],
+    refs: [
+      { from: "$.customers[*].countryId", to: "$.countries[*].id" },
+      { from: "$.orders[*].customerId", to: "$.customers[*].id" },
+      { from: "$.lines[*].orderId", to: "$.orders[*].id" },
+    ],
+    groups: ["Customer", "Country"],
   };
   // Order reaches Customer at 1 hop and Country at 2: it stays with Customer.
   // -> byNode.get("/orders/0") === ["Customer#c1"]
@@ -166,7 +169,7 @@ This has three consequences worth knowing:
 
 A dangling reference propagates nothing: an entity reachable only through a
 broken reference is left out of every aggregate. Declaration order in
-`config.aggregates` is therefore **load-bearing**: it decides who wins a
+`config.groups` is therefore **load-bearing**: it decides who wins a
 distance tie, and so which aggregate an entity ends up in. It also orders
 `byNode`'s entries and, in `@defsquare/data-graph`, the paint order of
 envelopes.
@@ -190,7 +193,7 @@ below predate the switch and were taken with the old engine; they are what
 motivated the rule, and the rule is unchanged.
 
 Measured on the demo dataset (`bigShop(4000)`, 350 entities, 108 aggregates,
-`aggregates: ["Customer", "Product"]`, where every `Order` references a
+`groups: ["Customer", "Product"]`, where every `Order` references a
 `Customer` *and* a `Product` one hop away), same layout and same geometry, only
 the membership rule differing:
 
