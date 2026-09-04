@@ -92,6 +92,13 @@ export function validateConfig(config: DataGraphConfig): ValidatedConfig {
   // longueur égale, l'ordre de déclaration de `ids` tranche — cas dégénéré
   // de deux noms sur le même préfixe).
   const references = new Map<string, ReferenceDecl[]>()
+  // Garde avant `for...of` : une config migrée depuis l'ancienne forme MAP
+  // (`references: {...}`) arrive ici en objet, et un objet n'est pas
+  // itérable (TypeError brut) — pareil pour `groups` plus bas, où une
+  // chaîne serait en plus silencieusement itérée caractère par caractère.
+  if (config.refs !== undefined && !Array.isArray(config.refs)) {
+    throw new ConfigError("invalid-config", "Config 'refs' must be an array of {from, to} entries")
+  }
   for (const ref of config.refs ?? []) {
     if (
       typeof ref !== "object" || ref === null ||
@@ -151,6 +158,9 @@ export function validateConfig(config: DataGraphConfig): ValidatedConfig {
 
   // `groups` → `aggregates` interne, ordre conservé.
   const aggregates: string[] = []
+  if (config.groups !== undefined && !Array.isArray(config.groups)) {
+    throw new ConfigError("invalid-config", "Config 'groups' must be an array of ids names")
+  }
   for (const name of config.groups ?? []) {
     if (!entities.has(name)) {
       throw new ConfigError("unknown-entity-type", `Unknown group: '${name}' is not declared in ids`)

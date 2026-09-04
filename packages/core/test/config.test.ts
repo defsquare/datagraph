@@ -118,6 +118,10 @@ describe("validateConfig", () => {
     }
   })
 
+  it("rejects a non-array refs value", () => {
+    expect(() => validateConfig({ ...base, refs: {} } as never)).toThrow(/'refs' must be an array/)
+  })
+
   it("keeps two refs from the same path (array, no collision)", () => {
     const v = validateConfig({
       ids: { Order: "$.orders[*].id", Customer: "$.customers[*].id", Vip: "$.vips[*].id" },
@@ -142,5 +146,10 @@ describe("groups", () => {
 
   it("rejects a group that is not declared in ids", () => {
     expect(() => validateConfig({ ...base, groups: ["Ghost"] })).toThrow(/not declared in ids/)
+  })
+
+  it("rejects a non-array groups value", () => {
+    expect(() => validateConfig({ ...base, groups: {} } as never)).toThrow(/'groups' must be an array/)
+    expect(() => validateConfig({ ...base, groups: "Customer" } as never)).toThrow(/'groups' must be an array/)
   })
 })
