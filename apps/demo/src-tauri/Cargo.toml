@@ -14,6 +14,12 @@ rust-version = "1.77.2"
 name = "data_graph_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+# Le binaire s'appelle comme la commande que l'utilisateur tape — `datagraph` —
+# et non comme le paquet. `mainBinaryName` (tauri.conf.json) doit rester aligné.
+[[bin]]
+name = "datagraph"
+path = "src/main.rs"
+
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
 
