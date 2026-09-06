@@ -9,12 +9,16 @@ const src = (rel: string): string => fileURLToPath(new URL(rel, import.meta.url)
 // démo tant qu'on n'a pas relancé `pnpm --filter <paquet> build`, ce qui s'est
 // déjà payé en séance de débogage d'un bundle périmé.
 //
-// Le build de production (et donc la preview qu'exerce l'e2e) N'EST PAS aliasé,
-// volontairement : la démo y consomme les paquets par leurs `exports`, comme le
-// ferait un consommateur externe. C'est ce qui garde honnêtes les mesures qui
-// s'appuient sur ce build — la taille du chunk de la vue graphe citée par les
-// tests de pureté de bundle est celle du code publié, pas celle d'un graphe de
-// modules recollé depuis les sources.
+// Le build de production N'EST PAS aliasé, volontairement : la démo y consomme
+// les paquets par leurs `exports`, comme le ferait un consommateur externe.
+// C'est ce qui garde honnêtes les mesures qui s'appuient sur ce build — la
+// taille du chunk de la vue graphe citée par les tests de pureté de bundle est
+// celle du code publié, pas celle d'un graphe de modules recollé depuis les
+// sources.
+//
+// À NE PAS confondre avec les e2e : `playwright.config.ts` lance `pnpm dev`,
+// donc les tests Playwright tournent en mode `serve` et exercent TOUJOURS les
+// sources aliasées ci-dessous, jamais le bundle de production ni `vite preview`.
 //
 // L'ordre des entrées compte : l'alias d'un nom de paquet matche aussi ses
 // sous-chemins (`find` nu s'applique à `find/...`), donc `graph-layout` doit

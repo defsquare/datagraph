@@ -948,8 +948,9 @@ function run(
         const d = Math.hypot(dx, dy)
         if (d >= min) continue
         // Deux centres confondus : la direction de poussée est indéterminée.
-        // On la tire des ids plutôt que de diviser par zéro, comme le fait
-        // `separateClusters` avec son axe fixe.
+        // On la tire des ids plutôt que de diviser par zéro — l'ancien
+        // `separateClusters`, retiré du dépôt, réglait le même cas avec un axe
+        // fixe.
         const ux = d > 1e-9 ? dx / d : Math.cos((hashOf(a.id + b.id) / 0xffffffff) * 2 * Math.PI)
         const uy = d > 1e-9 ? dy / d : Math.sin((hashOf(a.id + b.id) / 0xffffffff) * 2 * Math.PI)
         const push = (min - d) / 2
@@ -1073,13 +1074,14 @@ function run(
 }
 
 /**
- * Moteur de mise en page à deux niveaux, derrière la MÊME interface
- * `GraphLayoutEngine` que `createGraphLayoutEngine`. Les deux sont donc
- * interchangeables au point d'appel.
+ * Moteur de mise en page à deux niveaux, et le seul depuis le retrait de
+ * `createGraphLayoutEngine`. Il reprend l'interface `GraphLayoutEngine` que les
+ * deux partageaient tant que l'ancien existait, ce qui a rendu la bascule
+ * transparente au point d'appel.
  *
  * `layout()` est `async` par conformité d'interface seulement : ce calcul est
  * entièrement synchrone et ne cède jamais la main (~64–143 ms sur les jeux
- * mesurés, contre 1,6–4,2 s pour le moteur actuel qui, lui, attend un
+ * mesurés, contre 1,6–4,2 s pour l'ancien moteur qui, lui, attendait un
  * `layoutstop` de cytoscape).
  */
 export function createTwoLevelLayoutEngine(opts: TwoLevelLayoutOptions = {}): GraphLayoutEngine {

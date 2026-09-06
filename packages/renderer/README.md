@@ -3,8 +3,9 @@
 jsoncrack-style visualization for complex objects — keyed records, with real
 reference edges — rendered on a Pixi.js canvas. See the
 [root README](https://github.com/defsquare/data-graph#readme) for the full
-pitch, the ids/refs/groups config format, public API table, themes, and
-performance budgets.
+pitch and the ids/refs/groups config format, and
+[`docs/graph-view.md`](https://github.com/defsquare/data-graph/blob/main/docs/graph-view.md)
+for the graph view's layout guarantees and performance budgets.
 
 ## Install
 
@@ -14,19 +15,37 @@ pnpm add @defsquare/data-graph
 
 ## Quickstart
 
+This is the same fixture the root README and
+[`apps/demo`](../../apps/demo) use — a small e-commerce shop with four entity
+types, two aggregate roots, and one deliberate dangling reference:
+
 ```ts
 import { createDataGraph } from "@defsquare/data-graph";
 
 const shopData = {
+  categories: [
+    { id: "cat1", name: "Informatique" },
+    { id: "cat4", name: "Audio" },
+  ],
+  products: [
+    { id: "p1", name: "Clavier mécanique", reference: "INF-1000",
+      price: 89.9, stock: 42, categoryId: "cat1" },
+    { id: "p16", name: "Casque bluetooth", reference: "AUD-1555",
+      price: 129, stock: 17, categoryId: "cat4" },
+  ],
   customers: [
-    { id: "c1", name: "Dupont", email: "dupont@example.com",
-      address: { street: "1 rue de la Paix", city: "Paris" } },
-    { id: "c2", name: "Martin", email: "martin@example.com" },
+    { id: "c1", name: "Camille Dubois", email: "camille.dubois@example.fr",
+      address: { street: "1 rue de la Paix", postcode: "75002", city: "Paris" },
+      segment: "VIP", signupDate: "2023-04-12" },
+    { id: "c2", name: "Julien Martin", email: "julien.martin@example.fr",
+      segment: "nouveau", signupDate: "2024-01-08" },
   ],
   orders: [
-    { id: "o1", customerId: "c1", total: 99.5,
-      lines: [{ sku: "A-1", qty: 2 }, { sku: "B-7", qty: 1 }] },
-    { id: "o2", customerId: "GHOST", total: 12 },
+    { id: "o1", customerId: "c1", productId: "p1", quantity: 2, total: 179.8,
+      status: "livrée", payment: "carte bancaire", date: "2024-03-05" },
+    // `GHOST` doesn't exist: a deliberate dangling reference.
+    { id: "o2", customerId: "GHOST", productId: "p16", quantity: 1, total: 129,
+      status: "en attente", payment: "PayPal", date: "2024-03-11" },
   ],
 };
 
@@ -34,8 +53,16 @@ const shopConfig = {
   ids: {
     Customer: "$.customers[*].id",
     Order: "$.orders[*].id",
+    Product: "$.products[*].id",
+    Category: "$.categories[*].id",
   },
-  refs: [{ from: "$.orders[*].customerId", to: "$.customers[*].id" }],
+  refs: [
+    { from: "$.orders[*].customerId", to: "$.customers[*].id" },
+    { from: "$.orders[*].productId", to: "$.products[*].id" },
+    { from: "$.products[*].categoryId", to: "$.categories[*].id" },
+  ],
+  rootLabel: "Boutique",
+  groups: ["Customer", "Product"],
 };
 
 const container = document.getElementById("app")!;
@@ -52,11 +79,38 @@ graph.fit();
 graph.on("select", (node) => console.log("selected:", node.label));
 ```
 
-`createDataGraph` returns a `DataGraph` handle with `fit`, `expand`,
-`collapse`, `focus`, `select`, `search`, `nextMatch`, `prevMatch`, `on`,
-`setData`, `diagnostics`, `stats`, `refEdges`, `setTheme`, `setView`,
-`currentView`, and `destroy` — full descriptions in the
-[root README's API table](https://github.com/defsquare/data-graph#public-api--datagraph).
+## Public API — `DataGraph`
+
+Returned by `createDataGraph(container, options)`.
+
+| Member | Description |
+| --- | --- |
+| `ready: Promise<void>` | Resolves once Pixi has initialized, the graph has been built, and the initial layout has been rendered. Await before calling other methods. |
+| `fit()` | Frames the camera to fit every currently laid-out node in the viewport. |
+| `expand(id): Promise<void>` | **Structure-view operation.** Expands a node (reveals its children), re-lays-out, and animates the transition. In the graph view it updates the (invisible) containment state but has no visible effect — see [graph view](#graph-view). |
+| `collapse(id): Promise<void>` | **Structure-view operation.** Collapses a node (hides its children) and animates the transition. Same graph-view caveat as `expand`. |
+| `focus(id)` | Expands every collapsed ancestor of `id` as needed, then centers the camera on it. |
+| `select(id)` | Marks a node as selected (drawn with a selection overlay, everything unrelated dimmed — cards, edges, and the graph view's aggregate envelopes) and emits a `select` event. In the graph view a click on an aggregate's envelope selects that whole aggregate instead — same dimming, no event, and either selection replaces the other. Clicking the empty background or pressing <kbd>Esc</kbd> clears the selection — see [Navigation](#navigation). |
+| `search(query): SearchResult[]` | Full-text search across every node label, entity id, and row key/value; returns all matches and resets the next/prev cursor. |
+| `nextMatch(): SearchResult \| null` | Advances to the next search result (circular), auto-expanding and focusing it. |
+| `prevMatch(): SearchResult \| null` | Same as `nextMatch`, in reverse. |
+| `on(event, callback): () => void` | Subscribes to `"select"` (`GraphNode`) or `"followRef"` (`RefEdge`); returns an unsubscribe function. |
+| `setData(data, config?): Promise<void>` | Rebuilds the whole graph against new data (and optionally a new config), resetting search/selection state. |
+| `diagnostics(): Diagnostic[]` | Returns build-time diagnostics: dangling references, duplicate ids, missing id fields. |
+| `stats(): { logicalNodeCount, visibleNodeCount }` | Counters for a host status bar: `logicalNodeCount` is every node in the built graph, `visibleNodeCount` is how many are currently expanded/rendered. |
+| `refEdges(from): RefEdge[]` | The outgoing reference edges of node `from`, so a host can offer "follow reference" affordances without knowing graph internals. |
+| `setTheme(theme)` | Replaces the theme and redraws, without rerunning layout or re-measuring fonts. Accepts a full `Theme` or a `ThemeOverride`, merged via `resolveTheme` against the theme currently in effect — a `byEntityType` set earlier survives a plain theme swap. Safe for toggling between themes that share the same `typography`/`fonts` (e.g. a light/dark pair); changing those two groups needs a fresh `createDataGraph`. |
+| `setView(view): Promise<void>` | Switches between `"structure"` and `"graph"`. The first switch to `"graph"` dynamically imports the graph-view engine and computes aggregates, hence the promise — see [graph view](#graph-view). A card selection is carried over onto the nearest entity ancestor, since the graph view only knows entities; an *aggregate* selection is dropped on the way out, having no meaning outside the graph view. |
+| `currentView(): DataGraphView` | Returns `"structure"` or `"graph"`, whichever is active. |
+| `destroy()` | Tears down the Pixi application and releases all resources. |
+
+`DataGraphOptions.view?: "structure" \| "graph"` (default `"structure"`) picks the initial view at
+`createDataGraph` time; `setView`/`currentView` switch and query it afterwards. The graph view folds
+nothing: every entity is always visible there, and a header click just selects the card. `expand`/
+`collapse` remain structure-view-only. Cards can be dragged in both views; in the graph view,
+dragging an aggregate's envelope moves the whole aggregate rigidly, and clicking it (below the same
+4 px threshold) selects the whole aggregate. Neither drag is persisted — the next relayout
+recomputes positions (see [Navigation](#navigation)).
 
 ## Navigation
 
@@ -206,7 +260,7 @@ loads lazily by construction, so whatever weight this view acquires next is lazy
 by default rather than by review.
 
 **No folding.** `expand`/`collapse` are structure-view operations (see the
-[root README's API table](https://github.com/defsquare/data-graph#public-api--datagraph));
+[API table above](#public-api--datagraph));
 they act on the containment tree and have no visible effect in the graph
 view. The graph view itself folds nothing: every entity is always drawn,
 aggregate cards carry no chevron, and a header click selects the card just
@@ -245,9 +299,9 @@ and collision settle into hexagonal packing, so a dataset of uniform aggregates
 came out as a visible grid. Each cluster gets a deterministic `jitter` (default
 **32 px**, `0` disables) that inflates its radius *during the simulation only*:
 the guarantees and the painted circles are computed from the true radius and are
-bit-identical whatever the amplitude. The
-[root README](https://github.com/defsquare/data-graph#graph-view) carries the
-measured before/after on all of this.
+bit-identical whatever the amplitude.
+[`docs/graph-view.md`](https://github.com/defsquare/data-graph/blob/main/docs/graph-view.md)
+carries the measured before/after on all of this.
 
 Every aggregate gets its own block: membership is a partition, so no two
 aggregates share a card and none are welded together. On
@@ -265,14 +319,14 @@ space out. The membership rule now arbitrates ties instead of sharing, which is
 what brought the spacing back — see the
 [core README's Aggregates section](https://github.com/defsquare/data-graph/tree/main/packages/core#aggregates)
 for the rule and the measured before/after. And until recently the spacing itself
-was done by two relaxation passes over the output of a global `fcose` layout
-(`separateOverlaps`, then `separateClusters`); those passes and that engine have
-since been **removed from the core** along with `cytoscape`. On the demo's
-dataset the switch took `setView("graph")` from **4,310–4,484 ms to 220–252 ms**
-(measured in Chromium, three isolated runs each) and the canvas from
-18,714 × 19,984 to 8,083 × 8,437. The
-[root README's graph-view budgets](https://github.com/defsquare/data-graph#graph-view)
-carry the full before/after.
+was done by two relaxation passes over the output of a global `fcose` layout;
+those passes and that engine have since been **removed from the core** along
+with `cytoscape`. On the demo's dataset the switch took `setView("graph")` from
+**4,310–4,484 ms to 220–252 ms** (measured in Chromium, three isolated runs
+each, on a dev server serving unminified sources) and the canvas from
+18,714 × 19,984 to 8,083 × 8,437.
+[`docs/graph-view.md`](https://github.com/defsquare/data-graph/blob/main/docs/graph-view.md)
+carries the full before/after.
 
 How wide the corridors should be is a matter of eye, screen size and data
 density, so it is settable per instance rather than baked into core:
@@ -316,9 +370,9 @@ anywhere in the engine — nor, since the two-level switch, any randomized layou
 library underneath it to override. Removing folding also removed the
 pinned incremental relayout that used to bound drift on already-placed cards
 when an aggregate was unfolded, along with the 0px-median-drift budget it
-enforced — there is no longer any incremental relayout to stabilise. See the
-[root README's performance budgets](https://github.com/defsquare/data-graph#performance-budgets)
-for the full table.
+enforced — there is no longer any incremental relayout to stabilise. See
+[`docs/graph-view.md`](https://github.com/defsquare/data-graph/blob/main/docs/graph-view.md)
+for the full table of guarantees and what enforces each one.
 
 ## Themes
 

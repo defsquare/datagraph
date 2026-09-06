@@ -47,7 +47,8 @@ try {
     config: launch.mode === "file" ? launch.config : shopConfig,
     // Real Web Worker offload for elk layout is best-effort here: elkjs's
     // bundled ELK falls back to an in-process "fake worker" under Vite/browser
-    // (see task-11-report.md). The option is still wired end-to-end.
+    // rather than failing. The option is still passed end-to-end, so the demo
+    // exercises the wiring even where the browser gets no real worker.
     elkWorkerUrl: new URL("elkjs/lib/elk-worker.min.js", import.meta.url),
   });
 } catch (error) {
@@ -59,7 +60,8 @@ try {
   throw error;
 }
 
-// Exposed for manual/E2E inspection (Task 14 relies on this).
+// Exposed for e2e and manual inspection: the Playwright specs drive the public
+// API through this handle rather than through the demo's DOM chrome.
 declare global {
   interface Window {
     __graph?: typeof graph;

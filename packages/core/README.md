@@ -1,8 +1,10 @@
 # @defsquare/data-graph-core
 
 Headless graph engine for [`data-graph`](https://github.com/defsquare/data-graph)
-(see the [root README](https://github.com/defsquare/data-graph#readme) for
-the full pitch, the ids/refs/groups config, and performance budgets).
+(see the [root README](https://github.com/defsquare/data-graph#readme) for the
+full pitch and the ids/refs/groups config, and
+[`docs/graph-view.md`](https://github.com/defsquare/data-graph/blob/main/docs/graph-view.md)
+for the graph view's layout engine and its measurements).
 
 This package has no rendering dependency: it builds a graph from arbitrary
 JSON plus an ids/refs/groups config, tracks expand/collapse state, indexes
@@ -176,48 +178,51 @@ envelopes.
 
 **Why the rule arbitrates instead of sharing.** An earlier version let an
 entity belong to *every* root it reached at the minimal distance — overlap was
-presented as a feature. It cost the graph view its cluster spacing. The pass that
-did that spacing at the time (`separateClusters`,
-`packages/core/src/cluster-separate.ts`) pushes aggregate envelopes apart so they
-read as separate islands, and two aggregates sharing a member can't be pulled
-apart without tearing that entity out of one of them; so the pass merges — by
-union-find, transitively — every aggregate connected by a shared member into one
-rigid block. With overlap, that merge percolated.
+presented as a feature. It cost the graph view its cluster spacing: the
+envelope-spacing pass of the day could not pull two aggregates apart without
+tearing their shared member out of one of them, so it merged every aggregate
+connected by a shared member into one rigid block. With overlap, that merge
+percolated across the whole dataset. That pass — `separateClusters`, and the
+`fcose`-based engine around it — has since been **removed from the repo**; the
+code lives in git history.
 
-The graph view no longer runs that pass — it lays out on
-`createTwoLevelLayoutEngine` (`packages/core/src/layout-two-level.ts`), which
-packs each aggregate independently and then spaces the resulting discs. That
-makes the partition rule *more* load-bearing, not less: the two-level split is
-only sound because each entity belongs to exactly one block. The measurements
-below predate the switch and were taken with the old engine; they are what
-motivated the rule, and the rule is unchanged.
+The graph view now lays out on `createTwoLevelLayoutEngine`
+([`src/layout-two-level.ts`](./src/layout-two-level.ts)), which packs each
+aggregate independently and then spaces the resulting discs. That makes the
+partition rule *more* load-bearing, not less: the two-level split is only sound
+because each entity belongs to exactly one block.
 
-Measured on the demo dataset (`bigShop(4000)`, 350 entities, 108 aggregates,
-`groups: ["Customer", "Product"]`, where every `Order` references a
-`Customer` *and* a `Product` one hop away), same layout and same geometry, only
-the membership rule differing:
+Under the current rule, on the demo dataset (`bigShop(4000)`, 350 entities,
+`groups: ["Customer", "Product"]`, where every `Order` references a `Customer`
+*and* a `Product` one hop away), the partition yields **116 blocks**: 78
+`Customer` aggregates of 3 to 5 cards each (26 of each size), 30 single-card
+`Product` aggregates, and the 8 `Category` entities no aggregate claims. Every
+one of them is actually spaced apart — zero overlapping envelope pairs. That
+block structure is a property of the membership rule and holds whatever the
+layout engine is.
 
-| | overlap on ties (retired) | arbitration (current) |
-| --- | --- | --- |
-| super-clusters | 9 | **116** |
-| largest block | 342 of 350 cards (97.7%) | **5 cards (1.4%)** |
-| overlapping envelope pairs | 3520 of 5778 (61%) | **0** |
-| canvas bbox | 7199 × 4588 | 18714 × 19984 |
+> **Historical measurement**, taken on the retired `fcose`-based engine, kept
+> because it is what motivated the rule (which is itself unchanged). Same data,
+> same layout, same geometry, only the membership rule differing:
+>
+> | | overlap on ties (retired) | arbitration (current) |
+> | --- | --- | --- |
+> | blocks after merging | 9 | **116** |
+> | largest block | 342 of 350 cards (97.7%) | **5 cards (1.4%)** |
+> | overlapping envelope pairs | 3520 of 5778 (61%) | **0** |
+> | canvas bbox | 7199 × 4588 | 18714 × 19984 |
+>
+> The bbox figures belong to that engine and no longer describe the current one;
+> see [`docs/graph-view.md`](https://github.com/defsquare/data-graph/blob/main/docs/graph-view.md)
+> for what the two-level engine lays those same 116 blocks out in.
 
-Under the current rule the 78 `Customer` aggregates hold 3 to 5 cards each (26
-of each size), the 30 `Product` roots become single-card aggregates, and the 8
-`Category` entities stay unclaimed as singletons — 116 blocks in all, every one
-of them actually spaced apart. The price is a canvas roughly 11× larger by area,
-which `fit()` absorbs.
-
-The union-find that carried this — the merge of aggregates sharing a member into
-one rigid block — went with the pass when it was removed. It had already been
-inert for a while, a partition giving it nothing to merge; it was kept as long as
-the pass existed because the guarantee it encoded (one card, one translation)
-belonged to the pass rather than to a membership rule that could be relaxed
-again. Nothing replaces it, because nothing needs to: the current engine packs
-each aggregate independently and never moves a card relative to its co-members
-at all.
+The union-find that carried the merge went with the pass when it was removed. It
+had already been inert for a while, a partition giving it nothing to merge; it
+was kept as long as the pass existed because the guarantee it encoded (one card,
+one translation) belonged to the pass rather than to a membership rule that
+could be relaxed again. Nothing replaces it, because nothing needs to: the
+current engine packs each aggregate independently and never moves a card
+relative to its co-members at all.
 
 `aggregates` is what powers the renderer's **graph view** — see the
 [renderer package README](https://github.com/defsquare/data-graph/tree/main/packages/renderer#graph-view)

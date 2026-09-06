@@ -349,8 +349,9 @@ function buildLayoutEngine(elkWorkerUrl: string | URL | undefined): LayoutEngine
   // NOTE: elk.bundled.js's `workerUrl` path only spawns a real worker when
   // the optional `web-worker` package is present (it's a Node worker_threads
   // shim, not a browser API) — under Vite/browser it silently falls back to
-  // elkjs's in-process "fake worker" instead of throwing, so this is safe to
-  // always attempt; see task-11-report.md for details.
+  // elkjs's in-process "fake worker" instead of throwing. Passing the option is
+  // therefore always safe: the worst case is a layout that runs in-process,
+  // never a failed construction, so there is nothing to guard or feature-detect.
   return createLayoutEngine({ elkFactory: () => new ELK({ workerUrl: String(elkWorkerUrl) }) });
 }
 
@@ -550,8 +551,10 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   // cascade) before it awaits a layout; after each await the operation
   // compares its captured value against the current counter and bails if
   // some other operation ran (and thus already applied its own layout)
-  // in the meantime — prevents a stale async result from clobbering
-  // layoutResult/collapseState sync (see task-12 fix report).
+  // in the meantime. Without that guard, a layout resolved late overwrites
+  // `layoutResult` after a newer operation already mutated `collapseState`:
+  // the two then describe different graphs, and the canvas shows positions
+  // for nodes the collapse state no longer considers visible.
   let opGen = 0;
   // The single in-flight position-transition ticker callback, if any —
   // only one expand/collapse animation runs at a time (see cancelAnimation).

@@ -20,7 +20,7 @@ Deux exceptions rétablissent la délégation quel que soit le modèle : un skil
 
 - `packages/core` — graphe, layout (ELK + moteur deux niveaux pour la vue graphe), agrégats, recherche
 - `packages/renderer` — rendu Pixi v8 (`create.ts` orchestration, `draw.ts` dessin pur, `camera.ts`, `drag.ts`, `hover.ts`)
-- `apps/demo` — démo Vite + coquille desktop Tauri v2 (`src-tauri/`, boilerplate sans commande Rust custom : tout est frontend)
+- `apps/demo` — démo Vite + coquille desktop Tauri v2 (`src-tauri/`). Le Rust n'est pas du boilerplate : `cli.rs` porte le parseur argv de la CLI (testé par `cargo test` dans `src-tauri`, **pas** câblé dans `pnpm test`), et `lib.rs` expose la commande Tauri `launch_payload` consommée par `src/launch.ts`. Détails dans `apps/demo/README.md`.
 
 ## Conventions
 
