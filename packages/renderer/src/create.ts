@@ -8,7 +8,6 @@ import {
 } from "pixi.js";
 import ELK from "elkjs/lib/elk.bundled.js";
 import {
-  buildAggregates,
   buildGraph,
   buildSearchIndex,
   CollapseState,
@@ -18,7 +17,6 @@ import {
   enclosingCircle,
   validateConfig,
   type Aggregate,
-  type AggregateIndex,
   type DataGraphConfig,
   type Diagnostic,
   type Graph,
@@ -35,20 +33,18 @@ import {
 // `import type` UNIQUEMENT : ce point d'entrée porte la vue graphe et ne doit
 // entrer dans le bundle que de qui y bascule réellement. Un import de type ne
 // produit aucun code à l'exécution ; le seul chemin d'exécution vers le moteur
-// est l'`import()` dynamique de `ensureGraphEngine`.
-// `test/bundle-purity.test.ts` (côté renderer) garde ces deux lignes : le test
-// du cœur ne couvre que le `dist/` du cœur, pas ce fichier-ci.
+// est l'`import()` dynamique de `graph-view.ts`, qui possède aussi le seul
+// `import type` que ce point d'entrée exige à l'exécution de la vue. Ce
+// fichier-ci n'en garde qu'un usage d'API PUBLIQUE, le relais ci-dessous.
+// `test/bundle-purity.test.ts` (côté renderer) garde tout ce fil : le test du
+// cœur ne couvre que le `dist/` du cœur, pas les sources du renderer.
 //
-// Ce que ces deux lignes valent a changé d'échelle depuis le retrait de
-// l'ancien moteur : 2,64 ko gzip au lieu de 180,28. Elles restent parce
-// qu'elles tiennent la FORME — la vue graphe se charge à la demande par
-// construction — et non plus parce qu'elles tiennent un poids. Le raisonnement
-// complet est dans les deux tests de pureté.
-import type {
-  GraphLayoutEngine,
-  GraphLayoutResult,
-  TwoLevelLayoutOptions,
-} from "@defsquare/data-graph-core/graph-layout";
+// Ce que cette discipline vaut a changé d'échelle depuis le retrait de l'ancien
+// moteur : 2,64 ko gzip au lieu de 180,28. Elle reste parce qu'elle tient la
+// FORME — la vue graphe se charge à la demande par construction — et non plus
+// parce qu'elle tient un poids. Le raisonnement complet est dans les deux tests
+// de pureté.
+import type { TwoLevelLayoutOptions } from "@defsquare/data-graph-core/graph-layout";
 // Relais et non réexport : `export … from "<ce specifier>"` est interdit par
 // `test/bundle-purity.test.ts`, y compris sous forme type-only. Réexporter le
 // symbole déjà importé ci-dessus donne le même service aux consommateurs sans
@@ -80,18 +76,12 @@ import { clusterDimmed, clusterRelatedIds, DIM_ALPHA, relatedIds } from "./focus
 import { attachHover, type HoverHandle } from "./hover.js";
 import { createPositionAnimator } from "./animate.js";
 import { createSearchController } from "./search.js";
+import { createGraphViewController, type GraphViewState } from "./graph-view.js";
 import { Emitter } from "./events.js";
 
 /** `"structure"` met en page l'arbre de containment ; `"graph"` met en page les
  * entités et leurs références, groupées par agrégat. */
 export type DataGraphView = "structure" | "graph";
-
-/** L'état complet de la vue graphe, calculé d'un bloc puis publié d'un bloc :
- * l'index et la mise en page doivent toujours décrire le même graphe. */
-interface GraphViewState {
-  index: AggregateIndex;
-  layout: GraphLayoutResult;
-}
 
 /** Ce que la vue courante permet aux cartes et aux arêtes. Donnée pure,
  * dérivée de `view` seul : la calculer d'un bloc remplace les ternaires
@@ -314,7 +304,7 @@ export function nearestEntityAncestor(graph: Graph, id: NodeId): NodeId | null {
  * l'un ni l'autre.
  *
  * La mutation en place n'est pas une économie : le `ClusterShape` passé ici EST
- * celui de `graphLayout.clusters`, et c'est par là que le prochain
+ * celui de `graphView.clusters()`, et c'est par là que le prochain
  * `clustersFor()` verra la nouvelle forme. Les membres sans position (non
  * visibles) sont ignorés — l'enveloppe ne décrit que ce qui est peint.
  *
@@ -533,19 +523,11 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   let layoutResult: LayoutResult | undefined;
   let engine: StructureLayoutEngine | undefined;
   let searchIndex: SearchIndex | undefined;
-  // Vue courante et état propre à la vue graphe. Tout reste `undefined` tant
-  // qu'on n'y a pas basculé au moins une fois : un consommateur de la seule vue
-  // structure ne paie ni le calcul des agrégats ni le chargement du moteur.
+  // La vue courante. L'état PROPRE à la vue graphe — index d'agrégats, mise en
+  // page, moteur, marge d'enveloppe — vit entièrement dans `graphView` ; `view`
+  // reste ici parce qu'elle appartient à l'orchestration inter-vues, que ce
+  // fichier est seul à porter.
   let view: DataGraphView = options.view ?? "structure";
-  let aggregateIndex: AggregateIndex | undefined;
-  let graphLayout: GraphLayoutResult | undefined;
-  let graphEngine: GraphLayoutEngine | undefined;
-  // La marge d'enveloppe EFFECTIVE de la vue graphe — celle avec laquelle le
-  // moteur a calculé les disques, et donc la seule avec laquelle on ait le
-  // droit de les recalculer quand une carte bouge. Renseignée en même temps que
-  // le moteur, dont elle sort : le défaut vient du cœur (voir
-  // `ensureGraphEngine`), jamais d'une copie locale du nombre.
-  let graphHullPadding = 0;
   // Vrai entre le franchissement du seuil et le relâchement, pendant qu'une
   // carte OU une enveloppe d'agrégat est déplacée — les deux gestes sont le
   // même du point de vue de la caméra. Un seul lecteur : elle, dont il inhibe
@@ -605,6 +587,19 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     focus: (id) => void doFocus(id),
   });
 
+  // L'état de la vue graphe vit ENTIÈREMENT là-dedans (index d'agrégats, mise en
+  // page, moteur chargé à la demande, marge d'enveloppe) ; ce fichier ne lui
+  // fournit que ses deux points de contact avec l'instance. `opGen`, les gardes
+  // de génération et les politiques de repli restent ici : la course traverse
+  // les deux vues, et le contrôleur sépare `compute` de `publish` précisément
+  // pour qu'elles puissent s'intercaler entre les deux.
+  const graphView = createGraphViewController({
+    layoutOptions: options.graphLayoutOptions,
+    // Accesseur et non valeur : `metrics` n'est mesurée qu'après `fontsReady`,
+    // bien après la construction du contrôleur.
+    getMetrics: () => metrics,
+  });
+
   const emitter = new Emitter<DataGraphEvents>();
 
   /** Recalcule la table type d'entité → couleur de rail. L'ordre vient des
@@ -617,117 +612,6 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   function accentFor(node: GraphNode): string {
     if (node.kind !== "entity") return theme.edge.contain;
     return entityAccents.get(node.entityType) ?? theme.accent.entity;
-  }
-
-  /**
-   * Charge le moteur de la vue graphe à la demande.
-   *
-   * C'est `createTwoLevelLayoutEngine` — packing en étagères intra-agrégat,
-   * puis simulation sur les agrégats devenus disques rigides —, et c'est le
-   * seul depuis le retrait de `createGraphLayoutEngine` (fcose +
-   * `separateOverlaps` + `separateClusters`) et de `cytoscape` avec lui. La
-   * sonde qui a motivé la bascule le mesurait ×11 à ×65 plus rapide et ×2 à
-   * ×5,4 plus dense, à garanties égales :
-   * `docs/superpowers/spikes/2026-09-01-two-level-layout.md`. Mesuré ici, dans
-   * Chromium via l'e2e, sur le jeu étendu de la démo : `setView("graph")` est
-   * passé de 4 310–4 484 ms à 220–252 ms.
-   *
-   * L'`import()` reste dynamique. Le chunk qu'émet le build Vite de production
-   * d'`apps/demo` ne pèse plus que **2,64 ko gzip** (5,76 ko bruts, contre
-   * 180,28 / 577,17 avant le retrait), donc ce n'est plus le poids qui justifie
-   * la paresse : c'est qu'elle est la forme par défaut de cette vue, et que
-   * `setView` est asynchrone pour cette raison. Les deux tests de pureté de
-   * bundle portent le raisonnement complet.
-   */
-  async function ensureGraphEngine(): Promise<GraphLayoutEngine> {
-    if (!graphEngine) {
-      const mod = await import("@defsquare/data-graph-core/graph-layout");
-      graphEngine = mod.createTwoLevelLayoutEngine(options.graphLayoutOptions);
-      // C'est ici, et NULLE PART ailleurs, qu'on apprend la marge d'enveloppe
-      // par défaut : le namespace du module chargé la porte, donc le renderer
-      // la connaît sans en garder de copie et sans importer statiquement ce
-      // point d'entrée — ce que les deux tests de pureté interdisent. Le
-      // déplacement d'une carte en a besoin pour recalculer les disques comme
-      // le moteur les a calculés, et il n'y a de disques qu'en vue graphe,
-      // c'est-à-dire exactement quand ce module est déjà chargé.
-      graphHullPadding = options.graphLayoutOptions?.hullPadding ?? mod.TWO_LEVEL_LAYOUT_DEFAULTS.hullPadding;
-    }
-    return graphEngine;
-  }
-
-  /** Index d'agrégats pour `target`. */
-  function buildAggregateState(target: Graph, config: DataGraphConfig): { index: AggregateIndex } {
-    return { index: buildAggregates(target, validateConfig(config)) };
-  }
-
-  /** Toutes les entités de `target` : c'est exactement ce que montre la vue
-   * graphe, qui ne cache rien. L'index d'agrégats ne connaît que les entités
-   * rattachées à un agrégat, donc on balaie le graphe et pas l'index — sans
-   * quoi une entité isolée disparaîtrait de la vue. */
-  function entityIdsOf(target: Graph): Set<NodeId> {
-    const ids = new Set<NodeId>();
-    for (const node of target.nodes.values()) {
-      if (node.kind === "entity") ids.add(node.id);
-    }
-    return ids;
-  }
-
-  /**
-   * Calcule l'état de la vue graphe pour `target` **sans rien publier**. Tout
-   * l'état de closure dont il dépend est lu AVANT le premier `await`, et le
-   * résultat n'est assigné que par `publishGraphView`, que l'appelant n'appelle
-   * qu'après sa propre vérification de génération. Sans cette séparation, un
-   * calcul lancé avant un `setData` et terminé après lui écraserait la mise en
-   * page du nouveau graphe par des positions calculées sur l'ancien — voire
-   * appellerait `layout()` sur une paire (graphe, index) dépareillée.
-   *
-   * `reuse` conserve l'index en place, qui ne dépend que du couple (graphe,
-   * config) et n'a donc pas à être recalculé d'une bascule de vue à l'autre ;
-   * un changement de données passe `false`, l'index étant indexé par id de
-   * nœud.
-   */
-  async function computeGraphView(
-    target: Graph,
-    config: DataGraphConfig,
-    reuse: boolean,
-  ): Promise<GraphViewState> {
-    const base = reuse && aggregateIndex ? { index: aggregateIndex } : buildAggregateState(target, config);
-    // Pas `engine` : ce nom désigne déjà le moteur ELK de la vue structure dans
-    // la closure englobante, et le masquer ici induirait en erreur.
-    const twoLevelEngine = await ensureGraphEngine();
-    const layout = await twoLevelEngine.layout(target, base.index, entityIdsOf(target), metrics);
-    return { ...base, layout };
-  }
-
-  /**
-   * `computeGraphView` avec son repli : un échec rend `null` au lieu de
-   * propager. Les trois appelants (`ready`, `doSetData`, `setView`) partagent la
-   * même règle — le moteur organique est chargé dynamiquement, donc un import
-   * qui échoue ne doit jamais rejeter l'opération englobante — mais ce qu'ils
-   * FONT du `null` diffère (retomber en vue structure, ou renoncer à la
-   * bascule) et reste donc au point d'appel, comme les gardes de génération.
-   *
-   * `context` n'est là que pour le débogage : il garde à chaque site son message
-   * d'avertissement d'origine.
-   */
-  async function tryComputeGraphView(
-    target: Graph,
-    config: DataGraphConfig,
-    reuse: boolean,
-    context: string,
-  ): Promise<GraphViewState | null> {
-    try {
-      return await computeGraphView(target, config, reuse);
-    } catch (err) {
-      console.warn(`[data-graph] ${context}`, err);
-      return null;
-    }
-  }
-
-  /** Publie en un seul geste l'état calculé par `computeGraphView`. */
-  function publishGraphView(state: GraphViewState): void {
-    aggregateIndex = state.index;
-    graphLayout = state.layout;
   }
 
   /**
@@ -789,14 +673,14 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
 
   /** Les positions de la vue courante. */
   function activePositions(): Map<NodeId, Rect> | undefined {
-    return view === "graph" ? graphLayout?.positions : layoutResult?.positions;
+    return view === "graph" ? graphView.positions() : layoutResult?.positions;
   }
 
   /** Les nœuds visibles de la vue courante : TOUTES les entités en vue graphe,
    * qui ne plie rien, et les nœuds dépliés de l'arbre de containment en vue
    * structure. */
   function activeVisible(): Set<NodeId> {
-    if (view === "graph") return graph ? entityIdsOf(graph) : new Set();
+    if (view === "graph") return graph ? graphView.entityIds(graph) : new Set();
     return collapseState?.visibleNodeIds() ?? new Set();
   }
 
@@ -835,7 +719,9 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
    */
   function selectedAggregate(): Aggregate | undefined {
     if (selection?.kind !== "cluster") return undefined;
-    return aggregateIndex?.aggregates.get(selection.aggregateId);
+    // `index()` est l'accesseur BRUT du contrôleur, provisoire : M2b le remplace
+    // par un `aggregateOf(aggregateId)`, qui portera cette résolution.
+    return graphView.index()?.aggregates.get(selection.aggregateId);
   }
 
   /**
@@ -865,15 +751,20 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     hover: number;
     dim: boolean;
   }[] {
-    if (view !== "graph" || !graph || !graphLayout) return [];
+    // `clusters()` rend un tableau vide tant que rien n'est publié : la garde
+    // sur la mise en page tient donc par lui, sans avoir à l'interroger à part.
+    const clusters = graphView.clusters();
+    if (view !== "graph" || !graph || clusters.length === 0) return [];
     const current = graph;
     const selectedAggregateId = selection?.kind === "cluster" ? selection.aggregateId : null;
     // Calculé UNE fois pour toutes les enveloppes : `focusKeep()` balaie toutes
     // les références du graphe, et le rappeler par enveloppe rendrait le repeint
     // quadratique alors qu'il tourne à chaque image d'un déplacement.
     const keep = focusKeep();
-    const aggregates = aggregateIndex?.aggregates;
-    return graphLayout.clusters.map((cluster) => {
+    // Accesseur BRUT, provisoire : M2b déménage tout le corps de `clustersFor`
+    // dans le contrôleur, qui n'aura alors plus à publier son index.
+    const aggregates = graphView.index()?.aggregates;
+    return clusters.map((cluster) => {
       const root = current.nodes.get(cluster.rootId);
       const members = aggregates?.get(cluster.aggregateId)?.memberIds;
       return {
@@ -889,7 +780,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
         // `focusKeep()` — mieux vaut ne rien estomper que d'estomper sur une
         // information qu'on n'a pas.
         dim: members ? clusterDimmed(keep, members) : false,
-        // Relayée et non stockée dans la forme : `graphLayout.clusters` est la
+        // Relayée et non stockée dans la forme : `graphView.clusters()` est la
         // sortie du moteur, et y greffer un état d'interface le rendrait
         // dépendant de qui le survole.
         //
@@ -1137,9 +1028,12 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       redrawClusters();
     }
     for (const child of clusterHitLayer.removeChildren()) child.destroy();
-    if (view !== "graph" || !graphLayout || !aggregateIndex) return;
-    const index = aggregateIndex;
-    for (const { cluster, container } of drawClusterHitAreas(graphLayout.clusters)) {
+    // Accesseur BRUT, provisoire (affiné en M2b). Index et mise en page sont
+    // publiés — et invalidés — d'un bloc par le contrôleur : tester l'index
+    // suffit, et `clusters()` rend de toute façon un tableau vide sans lui.
+    const index = graphView.index();
+    if (view !== "graph" || !index) return;
+    for (const { cluster, container } of drawClusterHitAreas(graphView.clusters())) {
       const aggregate = index.aggregates.get(cluster.aggregateId);
       // Une enveloppe sans agrégat n'a pas de membres à emporter : la peindre
       // reste juste, la rendre saisissable ne le serait pas. Le cas ne se
@@ -1263,8 +1157,9 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
    * dans la mise en page courante suit le pointeur, et tout ce qui en dépend
    * est repeint.
    *
-   * Les positions sont mutées EN PLACE dans le `layoutResult`/`graphLayout`
-   * courant, sans aucune persistance : le prochain re-layout (déplier, replier,
+   * Les positions sont mutées EN PLACE dans la mise en page courante — celle de
+   * `layoutResult` ou celle du contrôleur de vue graphe —, sans aucune
+   * persistance : le prochain re-layout (déplier, replier,
    * `setData`, bascule de vue) reprend la main et écrase ces coordonnées. C'est
    * un choix, pas un oubli — un déplacement est ici un geste de lecture (« ôte
    * cette carte de mon chemin »), pas une édition de la mise en page.
@@ -1285,11 +1180,14 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     // enveloppe qui ne suivrait pas laisserait la carte flotter dehors, ce qui
     // dirait le contraire de ce que la vue affirme. Une carte hors agrégat n'a
     // pas d'enveloppe — la boucle n'en trouve simplement aucune.
-    if (view === "graph" && graphLayout && aggregateIndex) {
-      for (const cluster of graphLayout.clusters) {
-        const aggregate = aggregateIndex.aggregates.get(cluster.aggregateId);
+    // Accesseurs BRUTS, provisoires : M2b remplace toute cette recherche par un
+    // `memberIdsContaining(id)` du contrôleur.
+    const index = graphView.index();
+    if (view === "graph" && index) {
+      for (const cluster of graphView.clusters()) {
+        const aggregate = index.aggregates.get(cluster.aggregateId);
         if (!aggregate?.memberIds.has(id)) continue;
-        recomputeClusterCircle(cluster, aggregate.memberIds, positions, graphHullPadding);
+        recomputeClusterCircle(cluster, aggregate.memberIds, positions, graphView.hullPadding());
         redrawClusters();
         // Les agrégats sont une PARTITION : une carte n'appartient qu'à un seul
         // d'entre eux, il n'y a rien à chercher après celui-ci.
@@ -1550,10 +1448,13 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     const bounds = boundsOf(positions);
     // Les enveloppes débordent des cartes : les inclure, sans quoi le cadrage
     // les rognerait.
-    if (view === "graph" && graphLayout) {
+    // `clusters()` est vide tant que rien n'est publié : la boucle ne fait alors
+    // rien, ce que la garde sur la mise en page disait avant. (M2b : cette
+    // boucle devient `extendBoundsToClusters(bounds)`.)
+    if (view === "graph") {
       // Le disque déborde des cartes de sa marge ; sa boîte englobante est
       // `cx ± r`, `cy ± r`, et c'est elle qu'on unit aux bornes des cartes.
-      for (const cluster of graphLayout.clusters) {
+      for (const cluster of graphView.clusters()) {
         const right = bounds.x + bounds.width;
         const bottom = bounds.y + bounds.height;
         bounds.x = Math.min(bounds.x, cluster.cx - cluster.r);
@@ -1737,7 +1638,8 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
    * comme absente.
    */
   function doSelectCluster(aggregateId: string): void {
-    if (view !== "graph" || !aggregateIndex?.aggregates.has(aggregateId)) return;
+    // Accesseur BRUT, provisoire (affiné en M2b).
+    if (view !== "graph" || !graphView.index()?.aggregates.has(aggregateId)) return;
     selection = { kind: "cluster", aggregateId };
     redrawSelection();
   }
@@ -1780,7 +1682,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     // la cascade d'expansion ci-dessous, qui mettrait l'état de la vue
     // structure au travail sans rien montrer.
     if (view === "graph") {
-      const rect = graphLayout?.positions.get(id);
+      const rect = graphView.positions()?.get(id);
       if (rect) camera.centerOn(rect, viewport(), 1);
       return;
     }
@@ -1937,7 +1839,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     // l'attendent. On retombe sur la vue structure, comme le repli ELK
     // ci-dessus retombe sur un moteur en processus.
     if (view === "graph") {
-      const state = await tryComputeGraphView(
+      const state = await graphView.tryCompute(
         graph,
         currentConfig,
         true,
@@ -1945,7 +1847,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       );
       if (state) {
         if (destroyed) return;
-        publishGraphView(state);
+        graphView.publish(state);
       } else {
         view = "structure";
       }
@@ -2022,7 +1924,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     let newGraphView: GraphViewState | null = null;
     let graphViewFailed = false;
     if (view === "graph") {
-      newGraphView = await tryComputeGraphView(
+      newGraphView = await graphView.tryCompute(
         newGraph,
         config,
         false,
@@ -2053,11 +1955,13 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
 
     // L'état de la vue graphe est indexé par id de nœud : il ne survit pas à un
     // changement de données. On l'invalide, puis on publie celui calculé plus
-    // haut — sinon `rebuild()` peindrait les positions de l'ancien graphe.
-    aggregateIndex = undefined;
-    graphLayout = undefined;
+    // haut — sinon `rebuild()` peindrait les positions de l'ancien graphe. Les
+    // trois pas restent un bloc SYNCHRONE après la garde de génération, et dans
+    // cet ordre : rien ne doit pouvoir s'intercaler entre l'invalidation et la
+    // republication.
+    graphView.invalidate();
     if (graphViewFailed) view = "structure";
-    if (newGraphView) publishGraphView(newGraphView);
+    if (newGraphView) graphView.publish(newGraphView);
 
     rebuild();
     doFit();
@@ -2163,7 +2067,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
         // très bien atterrir. `view` n'est donc basculée, et l'état publié,
         // qu'une fois cette course tranchée.
         const gen = ++opGen;
-        const state = await tryComputeGraphView(
+        const state = await graphView.tryCompute(
           graph,
           currentConfig,
           true,
@@ -2174,7 +2078,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
         // qu'elle ne sait pas peindre, et `view` n'a pas encore bougé.
         if (state === null) return;
         if (destroyed || gen !== opGen) return;
-        publishGraphView(state);
+        graphView.publish(state);
       }
 
       // `graph` a pu être remplacé pendant l'attente ; la garde de génération

@@ -7,9 +7,9 @@ import { join } from "node:path";
  * Pendant renderer du test de pureté de `packages/core` — et la moitié
  * manquante de la chaîne. Celui du cœur vérifie que le `dist/index.js` du CŒUR
  * n'atteint pas le moteur de la vue graphe ; mais le chargement paresseux de
- * cette vue ne tient PAS là : il tient à deux lignes de `src/create.ts`,
+ * cette vue ne tient PAS là : il tient à deux lignes de `src/graph-view.ts`,
  * l'`import type` du point d'entrée `./graph-layout` et l'`import()` dynamique
- * de `ensureGraphEngine`. Transformer cet `import type` en import de valeur
+ * d'`ensureEngine`. Transformer cet `import type` en import de valeur
  * suffit à faire entrer tout ce que ce point d'entrée tire dans le bundle de
  * TOUT consommateur — et, avant ce test, la totalité de la suite (cœur,
  * renderer, e2e), le build et le typecheck restaient verts.
@@ -24,6 +24,16 @@ import { join } from "node:path";
  * ajoutera derrière cette vue héritera de la paresse au lieu d'avoir à la
  * redemander. Voir la même mise au point dans
  * `packages/core/test/bundle-purity.test.ts`.
+ *
+ * Ces deux lignes VIVAIENT dans `src/create.ts` ; elles ont suivi l'état de la
+ * vue graphe dans `src/graph-view.ts` (étape M2a de
+ * `docs/superpowers/specs/2026-09-06-view-machine-design.md`), et ce test avec
+ * elles. Rien de la règle n'a changé : la première assertion balaie TOUTES les
+ * sources du renderer et ne connaît aucun nom de fichier, donc l'interdiction
+ * d'un import de valeur reste posée partout — `create.ts` compris, qui garde un
+ * `import type` du même point d'entrée pour relayer `TwoLevelLayoutOptions` à
+ * l'API publique. Seule la contre-garde, qui doit bien nommer le fichier où
+ * l'`import()` dynamique se trouve, a changé de cible.
  *
  * Le test est volontairement un examen du SOURCE par expression régulière, et
  * pas une inspection du bundle : ce qu'il faut interdire est une propriété
@@ -59,6 +69,9 @@ describe("bundle purity (renderer sources)", () => {
     // les assertions ci-dessous passeraient sans rien vérifier.
     expect(sources.length).toBeGreaterThan(5);
     expect(sources.map((s) => s.name)).toContain("create.ts");
+    // Le porteur du chargement paresseux : un renommage ou une suppression doit
+    // faire échouer ce test-ci, pas rendre la contre-garde ci-dessous vacante.
+    expect(sources.map((s) => s.name)).toContain("graph-view.ts");
   });
 
   it("never statically imports the graph-layout entry point as a value", () => {
@@ -96,13 +109,22 @@ describe("bundle purity (renderer sources)", () => {
     // simplement les deux imports la ferait passer tout en cassant la vue
     // graphe. Le SEUL chemin d'exécution vers le moteur doit rester cet
     // `import()` dynamique, et les types doivent venir d'un `import type`.
-    const create = sources.find((s) => s.name === "create.ts")!.code;
-    expect(create).toMatch(new RegExp(`import\\(\\s*["']${SPEC_RE}["']`));
-    expect(create).toMatch(
+    const graphView = sources.find((s) => s.name === "graph-view.ts")!.code;
+    expect(graphView).toMatch(new RegExp(`import\\(\\s*["']${SPEC_RE}["']`));
+    expect(graphView).toMatch(
       new RegExp(
         `^[ \\t]*import\\s+type\\s+(?:(?!\\bfrom\\b)[\\s\\S])*?from\\s+["']${SPEC_RE}["']`,
         "m",
       ),
     );
+
+    // Et NULLE PART ailleurs : un second `import()` du même point d'entrée
+    // signifierait un second chemin de chargement, que rien ne tiendrait
+    // d'accord avec celui-ci — c'est justement ce que `graph-view.ts` possède en
+    // propre depuis M2a. `create.ts` en particulier n'en garde plus aucun.
+    const dynamicImporters = sources
+      .filter(({ code }) => new RegExp(`import\\(\\s*["']${SPEC_RE}["']`).test(code))
+      .map((s) => s.name);
+    expect(dynamicImporters).toEqual(["graph-view.ts"]);
   });
 });
