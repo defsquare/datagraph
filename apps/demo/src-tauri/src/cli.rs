@@ -185,6 +185,27 @@ mod tests {
     assert!(err.contains("cannot read '/nonexistent/nope.json'"), "{err}");
   }
 
+  /// Garde-fou de validité des fixtures COMMITTÉES : `fixtures/shop.json` et
+  /// `fixtures/shop.config.json` sont ce que la doc donne à taper derrière
+  /// `datagraph`, et rien d'autre ne les relisait côté Rust. Le chemin part de
+  /// `CARGO_MANIFEST_DIR` (= `src-tauri/`) pour ne pas dépendre du répertoire
+  /// courant du lanceur de tests. Le pendant sémantique — la config est-elle
+  /// valide pour le cœur — vit dans `e2e/file-mode.spec.ts` ; ici on ne prouve
+  /// que ce que `load` promet : les fichiers existent et sont du JSON.
+  #[test]
+  fn load_reads_the_committed_fixtures() {
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../fixtures");
+    let cli = Cli {
+      data_path: Some(format!("{dir}/shop.json")),
+      config_path: Some(format!("{dir}/shop.config.json")),
+      help: false,
+    };
+    let payload = load(&cli).unwrap().unwrap();
+    assert!(payload.data.contains("\"customers\""), "{}", payload.data);
+    let config = payload.config.expect("config fixture should be loaded");
+    assert!(config.contains("\"ids\""), "{config}");
+  }
+
   #[test]
   fn load_invalid_json_is_an_error() {
     let data = temp_file("bad.json", "{not json");

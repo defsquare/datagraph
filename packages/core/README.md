@@ -268,12 +268,21 @@ them as a sanity check against the budgets, not a strict benchmark.
 
 ## API surface
 
-`buildGraph`, `CollapseState`, `buildSearchIndex` / `SearchIndex`,
-`createStructureLayoutEngine`, `measureNode`, `validateConfig`,
-`buildAggregates`, plus the `Graph`, `GraphNode`, `RefEdge`, `Diagnostic`, `DataGraphConfig`,
-`Aggregate`, `AggregateIndex` types. See the
+`buildGraph`, `CollapseState`, `buildSearchIndex`, `createStructureLayoutEngine`,
+`measureNode`, `validateConfig`, `buildAggregates`, plus the `Graph`,
+`GraphNode`, `RefEdge`, `Diagnostic`, `DataGraphConfig`, `Aggregate`,
+`AggregateIndex`, `SearchIndex` types. See the
 [root README](https://github.com/defsquare/data-graph#readme) for the config
 shape and `packages/core/src/index.ts` for the full export list.
+
+`src/index.ts` is a **contract, not an index**: it re-exports only what a
+consumer outside the package actually uses, plus what is needed to name the
+types of that API. The selector grammar (`parseSelector`, `matchesPath`,
+`PathSegment`), `nearestDrawn` and `VALUE_ONLY_KEY` are internals and stay
+exported from their own modules only. `SearchIndex` is relayed as a **type**:
+an index is only ever obtained from `buildSearchIndex`, never constructed.
+`test/api-surface.test.ts` pins the exact runtime export list of both entry
+points, so any change to it has to be deliberate.
 
 ## License
 

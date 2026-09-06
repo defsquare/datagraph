@@ -80,8 +80,13 @@ export function arrayTokenWidth(count: number, metrics: NodeMetrics): number {
  * Partagé par la mesure et le dessin, comme `rowIndexAt` l'est par le clic et
  * le survol — deux arithmétiques séparées dériveraient, et la carte réserverait
  * alors une place que la pilule ne respecte pas.
+ *
+ * NON exporté : le partage en question est interne à ce module — `measureNode`
+ * budgète, et le renderer dessine à partir de `arrayTokenWidth` et de
+ * `valueCharWidth`, jamais de cette largeur composite. Aucun appelant hors de
+ * ce fichier, tests compris.
  */
-export function rowValueWidth(row: Row, metrics: NodeMetrics): number {
+function rowValueWidth(row: Row, metrics: NodeMetrics): number {
   if (row.valueType === "array") return arrayTokenWidth(row.value, metrics)
   return String(row.value).length * metrics.valueCharWidth
 }

@@ -11,7 +11,7 @@ Deux exceptions rétablissent la délégation quel que soit le modèle : un skil
 
 ## Commandes
 
-- Tests : `pnpm test` (racine, tous les packages) ou `pnpm --filter @defsquare/data-graph test` (le package renderer s'appelle `@defsquare/data-graph`, core `@defsquare/data-graph-core`)
+- Tests : `pnpm test` (racine, tous les packages — vitest **plus** `cargo test` via `apps/demo`, donc toolchain Rust requise) ou `pnpm --filter @defsquare/data-graph test` (le package renderer s'appelle `@defsquare/data-graph`, core `@defsquare/data-graph-core`)
 - Typecheck : `pnpm typecheck`
 - Build : `pnpm build`
 - Desktop : `pnpm --filter demo tauri dev` / `tauri build` (Tauri v2, toolchain Rust requise) — le build produit un binaire brut `apps/demo/src-tauri/target/release/datagraph` (`bundle.active: false`, pas de `.app`/`.dmg` : l'app se lance depuis le shell) — ce binaire est aussi le CLI end-user : `datagraph <data.json> [-c <config.json>]`, sans argument il ouvre la démo
@@ -20,7 +20,7 @@ Deux exceptions rétablissent la délégation quel que soit le modèle : un skil
 
 - `packages/core` — graphe, layout (ELK + moteur deux niveaux pour la vue graphe), agrégats, recherche
 - `packages/renderer` — rendu Pixi v8 (`create.ts` orchestration, `draw.ts` dessin pur, `camera.ts`, `drag.ts`, `hover.ts`)
-- `apps/demo` — démo Vite + coquille desktop Tauri v2 (`src-tauri/`). Le Rust n'est pas du boilerplate : `cli.rs` porte le parseur argv de la CLI (testé par `cargo test` dans `src-tauri`, **pas** câblé dans `pnpm test`), et `lib.rs` expose la commande Tauri `launch_payload` consommée par `src/launch.ts`. Détails dans `apps/demo/README.md`.
+- `apps/demo` — démo Vite + coquille desktop Tauri v2 (`src-tauri/`). Le Rust n'est pas du boilerplate : `cli.rs` porte le parseur argv de la CLI (testé par `cargo test`, câblé dans le script `test` du package, donc dans `pnpm test`), et `lib.rs` expose la commande Tauri `launch_payload` consommée par `src/launch.ts`. Le mode fichier est couvert côté TS par `e2e/file-mode.spec.ts`, qui simule `__TAURI_INTERNALS__` et rejoue les vraies `fixtures/`. Détails dans `apps/demo/README.md`.
 
 ## Conventions
 

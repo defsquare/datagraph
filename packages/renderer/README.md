@@ -112,6 +112,16 @@ dragging an aggregate's envelope moves the whole aggregate rigidly, and clicking
 4 px threshold) selects the whole aggregate. Neither drag is persisted — the next relayout
 recomputes positions (see [Navigation](#navigation)).
 
+`src/index.ts` is a **contract, not an index**: the package exports
+`createDataGraph` and its types, the [theme block](#themes),
+`arrayTokenTextFor`, and the core types you need to write your config and read
+results — nothing else. The low-level drawing primitives of `draw.ts`, the
+`Camera`, the `Emitter` and the font-metrics helpers are internals of
+`createDataGraph`; they remain exported from their own modules for this
+package's own tests, but they are not public API and may change without notice.
+`test/api-surface.test.ts` pins the exact runtime export list, so any change to
+it has to be deliberate.
+
 ## Navigation
 
 | Gesture | Action |

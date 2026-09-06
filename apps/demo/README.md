@@ -69,17 +69,27 @@ first, and no timing it reports describes the published, minified bundle. The
 specs drive the graph through `window.__graph`, the handle `src/main.ts` exposes
 for exactly this purpose.
 
-**Rust (`cargo test`, from `src-tauri/`).** The CLI parser has its own unit
-tests covering argv parsing, the `-h`/`--help` and `-c` handling, the error
-cases, and file loading with JSON validation. They are **not** wired into
-`pnpm test` at the repo root.
+`e2e/file-mode.spec.ts` covers the **file mode** the CLI opens
+(`datagraph <data.json> [-c <config.json>]`) without a desktop build: it installs
+a fake `window.__TAURI_INTERNALS__` through `addInitScript`, whose `invoke`
+answers `launch_payload` with the real contents of `fixtures/shop.json` and
+`fixtures/shop.config.json` read off disk. That is what makes those fixtures
+load-bearing on the TypeScript side — if they drift from the ids/refs/groups
+contract, the spec fails.
+
+**Rust (`pnpm --filter demo test`, or `cargo test` from `src-tauri/`).** The CLI
+parser has its own unit tests covering argv parsing, the `-h`/`--help` and `-c`
+handling, the error cases, and file loading with JSON validation — including one
+that loads the committed `fixtures/` files, so a syntactically broken fixture
+fails the build. The `test` script of this package runs `cargo test`, so the
+root `pnpm test` covers them; a Rust toolchain is required for it.
 
 ## Layout
 
 ```
 apps/demo/
-├── e2e/            Playwright specs (smoke, view switching, refs, array tokens)
-├── fixtures/       sample data + config for the CLI
+├── e2e/            Playwright specs (smoke, view switching, refs, array tokens, file mode)
+├── fixtures/       sample data + config for the CLI — also consumed by e2e/file-mode.spec.ts and cli.rs
 ├── public/         static assets (logos)
 ├── src/            the web app (see below)
 ├── src-tauri/      Rust desktop shell: cli.rs, lib.rs, main.rs

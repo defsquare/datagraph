@@ -229,7 +229,7 @@ pnpm install
 
 pnpm typecheck      # tsc --noEmit across every package
 pnpm build          # tsup build across every package
-pnpm test           # vitest across every package — run `pnpm build` FIRST
+pnpm test           # vitest across every package, plus `cargo test` — run `pnpm build` FIRST
 pnpm bench          # non-blocking perf bench (packages/core/bench/bench.ts)
 
 pnpm --filter demo dev   # run the demo app locally
@@ -253,9 +253,11 @@ the *sources*, through Vite's dev pipeline, and never the published bundle. Any
 timing it reports is a dev-mode, unminified figure (see
 [`docs/graph-view.md`](./docs/graph-view.md#what-the-tests-actually-hold)).
 
-**Rust tests.** The CLI parser in `apps/demo/src-tauri/src/cli.rs` has its own
-unit tests, run with `cargo test` from `apps/demo/src-tauri`. They are not wired
-into `pnpm test`.
+**Rust tests are part of `pnpm test`.** The CLI parser in
+`apps/demo/src-tauri/src/cli.rs` has its own unit tests; `apps/demo`'s `test`
+script runs `cargo test --manifest-path src-tauri/Cargo.toml`, so `pnpm -r test`
+at the root covers them alongside vitest. A Rust toolchain is therefore required
+for a full `pnpm test` — run `pnpm --filter '!demo' -r test` to skip it.
 
 **Desktop app and CLI.** The demo doubles as a Tauri v2 desktop app whose binary
 is also the end-user CLI (`datagraph <data.json> [-c <config.json>]`). See

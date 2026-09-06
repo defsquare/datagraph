@@ -1,3 +1,15 @@
+/**
+ * Point d'entrée public du renderer. Ce fichier est un CONTRAT, pas un index
+ * exhaustif : n'y figure que ce que le README documente et que la démo (ou un
+ * hôte) consomme. Le dessin bas niveau de `draw.ts`, la `Camera`, l'`Emitter`
+ * et la mesure de police sont les rouages internes de `createDataGraph` —
+ * chacun reste exporté de son module pour `test/*.test.ts`, qui importe
+ * `../src/*.js`, mais aucun n'est de la surface publique.
+ *
+ * `test/api-surface.test.ts` fige la liste des exports d'exécution : toute
+ * modification ici doit y être répercutée volontairement.
+ */
+
 export {
   resolveTheme,
   entityAccentMap,
@@ -28,33 +40,6 @@ export type {
   // une invitation à l'erreur.
   TwoLevelLayoutOptions,
 } from "./create.js";
-
-export { Camera } from "./camera.js";
-export type { Size } from "./camera.js";
-
-export {
-  drawNode,
-  drawEdges,
-  drawEdgeHitAreas,
-  drawEdgeLabels,
-  edgeLabelPlacements,
-  edgeLabelPosition,
-  labelParamInView,
-  drawClusters,
-  drawClusterHitAreas,
-  drawSelectionOverlay,
-  drawSearchHighlights,
-  lodForScale,
-  LOD0_MIN_SCALE,
-  LOD1_MIN_SCALE,
-  charWidthFor,
-  truncateToWidth,
-} from "./draw.js";
-export type { Lod, EdgeHit, EdgeLabelPlacement, EdgeMode, TextRole } from "./draw.js";
-
-export { measureFontMetrics, fontsReady } from "./font-metrics.js";
-
-export { Emitter } from "./events.js";
 
 // Re-exported so consumers can type their config/results without depending
 // on @defsquare/data-graph-core directly.
