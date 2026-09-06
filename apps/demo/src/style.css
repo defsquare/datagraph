@@ -1,3 +1,7 @@
+/* Les @font-face doivent précéder toute autre règle : `@import` n'est valide
+   qu'en tête de feuille. */
+@import "./fonts.css";
+
 /* Shell defsquare pour la démo data-graph.
    Les tokens sont recopiés de colors_and_type.css du DS defsquare. Le canvas
    n'est plus « le héros au milieu du chrome » : il EST la page, et tout le

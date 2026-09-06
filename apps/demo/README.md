@@ -59,6 +59,58 @@ also what makes the CLI arguments useful. The binary is not on your `PATH` by
 default — copy or symlink it somewhere on it. A Rust toolchain is required for
 both `tauri` commands.
 
+## Fonts
+
+The three families the shell uses — **EB Garamond**, **Fira Code** and **IBM
+Plex Sans Condensed** — are **vendored** as `woff2` in
+[`public/fonts/`](./public/fonts) and declared in
+[`src/fonts.css`](./src/fonts.css) (imported by `style.css`). Nothing is fetched
+from `fonts.googleapis.com` / `fonts.gstatic.com`: `datagraph` opens local
+files, so it makes no outgoing request at launch, and the typography is
+identical offline.
+
+Both the `latin` and `latin-ext` subsets are shipped, each with its
+`unicode-range`, so the browser only downloads a file whose glyphs are actually
+needed (`latin` alone already covers French — `é è œ` included). The family
+*names* are load-bearing: the renderer measures fonts by name (`theme.ts`,
+`font-metrics.ts`), so they must not change.
+
+All three are under the SIL Open Font License 1.1; the license texts ship next
+to the fonts (`public/fonts/OFL-*.txt`), as Google Fonts distributes them.
+
+## Content Security Policy
+
+`tauri.conf.json` sets a real `app.security.csp` (it used to be `null`). Every
+directive is `'self'`; there is no external host, and
+`dangerousDisableAssetCspModification` is left at its default so Tauri keeps
+appending its own nonces and hashes.
+
+Two directives are not just `'self'`, and both are forced by what the app
+actually runs:
+
+- `script-src 'self' 'unsafe-eval'` — Pixi v8 **generates its WebGL uniform
+  sync functions with `new Function(...)`** and refuses to start without it
+  (`AbstractRenderer._unsafeEvalCheck` throws *“Current environment does not
+  allow unsafe-eval”*). Verified: drop `'unsafe-eval'` and no canvas is created
+  at all. Removing the exception means importing `pixi.js/unsafe-eval` in the
+  renderer — a separate decision, it trades the exception for slower uniform
+  uploads.
+- `connect-src 'self' ipc: http://ipc.localhost` — Tauri v2's IPC is a `fetch`
+  to `ipc://localhost/<cmd>` (macOS/Linux) or `http://ipc.localhost` (Windows).
+  Without it `invoke("launch_payload")` falls back to the slower `postMessage`
+  interface.
+
+`style-src` needs **no** `'unsafe-inline'`: the built `index.html` carries no
+inline `<script>`, no `<style>` and no `style=` attribute, and the only runtime
+styling (Pixi sizing its canvas) goes through CSSOM, which CSP does not police.
+
+**CSP: exercised in build, still to be confirmed by launching the binary.** The
+CSP header is only emitted by the `tauri://` asset protocol, i.e. in a
+`tauri build` binary — `tauri dev` loads the frontend from the Vite dev server
+and never applies it. It was checked by serving the real `dist/` with the exact
+header and loading it in Chromium (no violation, canvas up, all three families
+loaded); WKWebView still deserves one manual run.
+
 ## Tests
 
 **End-to-end (`pnpm --filter demo e2e`).** `playwright.config.ts` starts the app
@@ -90,7 +142,7 @@ root `pnpm test` covers them; a Rust toolchain is required for it.
 apps/demo/
 ├── e2e/            Playwright specs (smoke, view switching, refs, array tokens, file mode)
 ├── fixtures/       sample data + config for the CLI — also consumed by e2e/file-mode.spec.ts and cli.rs
-├── public/         static assets (logos)
+├── public/         static assets (logos, fonts/ — vendored woff2 + OFL texts)
 ├── src/            the web app (see below)
 ├── src-tauri/      Rust desktop shell: cli.rs, lib.rs, main.rs
 ├── index.html
@@ -107,6 +159,7 @@ src/
 ├── chrome.ts        viewer chrome: search/menu disclosures, Escape, click-outside, status bar, theme, view toggle
 ├── demo-mode.ts     demo-only tooling: the starting dataset and the small/large dataset toggle
 ├── sample-data.ts   the e-commerce fixture and its `bigShop(n)` generator
+├── fonts.css        the @font-face block for the vendored fonts, imported by style.css
 └── style.css
 ```
 
