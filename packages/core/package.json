@@ -1,14 +1,14 @@
 {
   "name": "@defsquare/data-graph-core",
   "version": "0.1.0",
-  "description": "Headless graph engine for data-graph: builds an entity/reference graph from arbitrary JSON, plus search indexing and ELK-based layout — no rendering dependency.",
+  "description": "Headless graph engine for data-graph: builds a graph from arbitrary JSON plus an ids/refs/groups config, following foreign-key style references — with search indexing and ELK-based layout, no rendering dependency.",
   "keywords": [
     "graph",
     "json",
     "visualization",
-    "ddd",
-    "aggregate",
-    "entity",
+    "data-first",
+    "foreign-keys",
+    "reference-edges",
     "layout",
     "elk",
     "search-index",

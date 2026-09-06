@@ -3,7 +3,7 @@
 // Always exits 0: this is a reporting tool, not a gate — CI must never fail
 // because a bench number regressed. Read the printed lines against the
 // budgets documented in the root README's "Performance budgets" section.
-import { buildGraph, buildSearchIndex, createLayoutEngine, CollapseState, type DataGraphConfig } from "../src/index.js"
+import { buildGraph, buildSearchIndex, createStructureLayoutEngine, CollapseState, type DataGraphConfig } from "../src/index.js"
 
 // Duplicated from packages/core/test/fixtures.ts on purpose: bench/ is
 // compiled/run standalone via tsx and must not depend on test-only files
@@ -69,7 +69,7 @@ async function main(): Promise<void> {
 
   const collapseState = new CollapseState(graph)
   const visible = collapseState.visibleNodeIds()
-  const engine = createLayoutEngine()
+  const engine = createStructureLayoutEngine()
   const t3 = performance.now()
   await engine.layout(graph, visible)
   report("layout initial (default-visible set)", performance.now() - t3, null)

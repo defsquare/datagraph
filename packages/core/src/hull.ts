@@ -1,4 +1,4 @@
-import type { Rect } from "./layout.js"
+import type { Rect } from "./structure-layout.js"
 
 export interface Circle {
   cx: number
@@ -66,7 +66,7 @@ function fromThree(a: Point, b: Point, c: Point): Circle {
  * **L'entrée n'est PAS mélangée**, et c'est délibéré. La borne linéaire en
  * espérance de Welzl repose sur une permutation aléatoire des points ; sans
  * elle, le pire cas est cubique. Mais ce dépôt exige un déterminisme au BIT
- * (voir l'amorçage FNV-1a de `layout-two-level.ts` et les tests de déterminisme
+ * (voir l'amorçage FNV-1a de `graph-layout.ts` et les tests de déterminisme
  * de la mise en page), et un mélange — même à graine fixe — est une pièce mobile
  * de plus sur ce chemin. Les tailles en jeu rendent l'arbitrage facile : un
  * cluster est ici un agrégat, soit 4 points pour le cas courant (une seule
@@ -75,7 +75,7 @@ function fromThree(a: Point, b: Point, c: Point): Circle {
  * « Il cesserait de l'être sur des agrégats de plusieurs centaines de cartes »,
  * disait cette note sans l'avoir mesuré. C'est maintenant chiffré, et c'est
  * juste — avec une nuance qui compte depuis que le placement intra-agrégat est
- * RADIAL (`layout-two-level.ts`). Le radial pose les cartes SUR DES CERCLES,
+ * RADIAL (`graph-layout.ts`). Le radial pose les cartes SUR DES CERCLES,
  * donc une grande part des coins se retrouve près du bord du cercle englobant :
  * c'est le cas adverse de Welzl non mélangé, celui qui force le plus de
  * reconstructions du jeu de support. Mesuré, par appel, étagères → radial :

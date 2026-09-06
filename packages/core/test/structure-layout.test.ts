@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { buildGraph } from "../src/build.js"
 import { CollapseState } from "../src/collapse.js"
 import { measureNode, DEFAULT_METRICS } from "../src/measure.js"
-import { createLayoutEngine } from "../src/layout.js"
+import { createStructureLayoutEngine } from "../src/structure-layout.js"
 import { shopData, shopConfig } from "./fixtures.js"
 
 describe("measureNode", () => {
@@ -18,13 +18,13 @@ describe("measureNode", () => {
   })
 })
 
-describe("LayoutEngine.layout", () => {
+describe("StructureLayoutEngine.layout", () => {
   it("positions all visible nodes left-to-right without overlap", async () => {
     const g = buildGraph(shopData, shopConfig)
     const cs = new CollapseState(g)
     cs.expand("/customers/0")
     const visible = cs.visibleNodeIds()
-    const { positions } = await createLayoutEngine().layout(g, visible)
+    const { positions } = await createStructureLayoutEngine().layout(g, visible)
     // `visible` compte aussi les tableaux ELIDES, qui sont representes par une
     // ligne de leur carte parente et n'ont donc pas de rect : l'invariant « tout
     // ce qui est visible est positionne » porte sur les nœuds DESSINES.

@@ -6,8 +6,8 @@ import { dirname, join } from "node:path"
 /**
  * Le barrel principal ne doit pas atteindre le moteur de la vue graphe : il est
  * réservé au point d'entrée `./graph-layout`, chargé dynamiquement par le
- * renderer. Sans ce test, un simple `export … from "./layout-two-level.js"`
- * dans `index.ts` refusionnerait les deux points d'entrée sans que rien ne le
+ * renderer. Sans ce test, un simple `export … from "./graph-layout.js"` dans
+ * `index.ts` refusionnerait les deux points d'entrée sans que rien ne le
  * signale.
  *
  * CE QUE CE TEST GARDE A CHANGÉ D'ENJEU, et il faut le dire plutôt que de

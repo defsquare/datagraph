@@ -3,10 +3,10 @@ import { buildGraph } from "../src/build.js"
 import { buildAggregates, type AggregateIndex } from "../src/aggregate.js"
 import { validateConfig, type DataGraphConfig } from "../src/config.js"
 import { enclosingCircle } from "../src/hull.js"
-import type { Rect } from "../src/layout.js"
-import type { GraphLayoutResult } from "../src/layout-two-level.js"
+import type { Rect } from "../src/structure-layout.js"
+import type { GraphLayoutResult } from "../src/graph-layout.js"
 import type { NodeId } from "../src/model.js"
-import { createTwoLevelLayoutEngine } from "../src/layout-two-level.js"
+import { createTwoLevelLayoutEngine } from "../src/graph-layout.js"
 import {
   shopData,
   shopConfig,
@@ -304,7 +304,7 @@ describe("garanties de séparation, à l'échelle", () => {
       // critère de sortie de cette passe : avec celui de la sonde (`< 1e-3`),
       // 176 des 13 861 paires tombaient ici, résidu maximal 9,301e-4. Ce
       // n'était pas du bruit flottant mais le seuil lui-même. Voir la
-      // documentation de la passe dans `layout-two-level.ts`. Résidu maximal
+      // documentation de la passe dans `graph-layout.ts`. Résidu maximal
       // mesuré après resserrement sur ce fixture : 9,987e-7.
       expect(tooClose).toBe(0)
       expect(worst).toBeGreaterThanOrEqual(CLUSTER_GAP - 1e-6)

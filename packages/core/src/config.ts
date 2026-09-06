@@ -57,6 +57,16 @@ function segmentsEqual(a: PathSegment[], b: PathSegment[]): boolean {
   })
 }
 
+/**
+ * LA frontière de traduction du package, et la seule.
+ *
+ * En entrée, le vocabulaire PUBLIC data-first : `ids` / `refs` / `groups`. En
+ * sortie, le vocabulaire INTERNE du graphe : `entities` / `references` /
+ * `aggregates`. Rien d'autre dans le package ne connaît le vocabulaire public —
+ * ni `build.ts`, ni `aggregate.ts`, ni le renderer, qui ne voient jamais que le
+ * `ValidatedConfig`. Corollaire : renommer un mot du contrat public ne doit
+ * toucher que ce fichier (et `DataGraphConfig` ci-dessus).
+ */
 export function validateConfig(config: DataGraphConfig): ValidatedConfig {
   // Une config chargée du disque (option `-c` de la CLI) peut être n'importe
   // quel JSON : le type ne garantit rien, et un TypeError brut remonterait
@@ -163,7 +173,7 @@ export function validateConfig(config: DataGraphConfig): ValidatedConfig {
   }
   for (const name of config.groups ?? []) {
     if (!entities.has(name)) {
-      throw new ConfigError("unknown-entity-type", `Unknown group: '${name}' is not declared in ids`)
+      throw new ConfigError("unknown-group", `Unknown group: '${name}' is not declared in ids`)
     }
     aggregates.push(name)
   }

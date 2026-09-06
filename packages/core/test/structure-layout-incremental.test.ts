@@ -1,14 +1,14 @@
 import { describe, it, expect } from "vitest"
 import { buildGraph } from "../src/build.js"
 import { CollapseState } from "../src/collapse.js"
-import { createLayoutEngine } from "../src/layout.js"
+import { createStructureLayoutEngine } from "../src/structure-layout.js"
 import { shopData, shopConfig } from "./fixtures.js"
 
 describe("incremental layout", () => {
   async function setup() {
     const g = buildGraph(shopData, shopConfig)
     const cs = new CollapseState(g)
-    const engine = createLayoutEngine()
+    const engine = createStructureLayoutEngine()
     const initial = await engine.layout(g, cs.visibleNodeIds())
     return { g, cs, engine, initial }
   }

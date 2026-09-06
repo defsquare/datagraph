@@ -963,7 +963,7 @@ export function labelParamInView(
   start: { x: number; y: number },
   end: { x: number; y: number },
   baseT: number,
-  view: Rect,
+  viewport: Rect,
   marginWorld: number,
 ): number {
   const dx = end.x - start.x;
@@ -979,10 +979,10 @@ export function labelParamInView(
   let t1 = 1;
   const p = [-dx, dx, -dy, dy];
   const q = [
-    start.x - view.x,
-    view.x + view.width - start.x,
-    start.y - view.y,
-    view.y + view.height - start.y,
+    start.x - viewport.x,
+    viewport.x + viewport.width - start.x,
+    start.y - viewport.y,
+    viewport.y + viewport.height - start.y,
   ];
   for (let i = 0; i < 4; i++) {
     const pi = p[i]!;
@@ -1245,7 +1245,7 @@ export function drawSearchHighlights(
  *
  * L'enveloppe est le cercle englobant minimal des cartes de l'agrégat, calculé
  * côté cœur (`enclosingCircle`). Ce qu'on peint ici n'est pas seulement égal à
- * ce que la mise en page a espacé : c'est le MÊME disque. `layout-two-level.ts`
+ * ce que la mise en page a espacé : c'est le MÊME disque. `graph-layout.ts`
  * le calcule une fois sur le bloc packé, puis le translate avec ses cartes.
  * Un rayon nul ou négatif n'est pas une surface et est ignoré.
  *

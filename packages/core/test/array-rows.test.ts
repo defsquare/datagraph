@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { buildGraph } from "../src/build.js"
 import { CollapseState } from "../src/collapse.js"
-import { createLayoutEngine } from "../src/layout.js"
+import { createStructureLayoutEngine } from "../src/structure-layout.js"
 import { buildSearchIndex } from "../src/search.js"
 import { arrayTokenTextFor, badgeTextFor, measureNode, DEFAULT_METRICS } from "../src/measure.js"
 import { nearestDrawn, VALUE_ONLY_KEY, type ArrayRow } from "../src/model.js"
@@ -158,7 +158,7 @@ describe("remappage des aretes de containment", () => {
     const g = buildGraph(data, config)
     const cs = new CollapseState(g)
     cs.expand("/products/0/tags")
-    const { positions } = await createLayoutEngine().layout(g, cs.visibleNodeIds())
+    const { positions } = await createStructureLayoutEngine().layout(g, cs.visibleNodeIds())
     expect(positions.has("/products/0/tags")).toBe(false)
     expect(positions.has("/products/0/tags/0")).toBe(true)
     expect(positions.has("/products/0/tags/1")).toBe(true)

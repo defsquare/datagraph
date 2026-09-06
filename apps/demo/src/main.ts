@@ -164,7 +164,7 @@ graph.on("followRef", (edge) => {
 // and a "N/total" match counter. `graph.search`/`nextMatch`/`prevMatch`
 // don't expose the current index directly, so the counter mirrors the
 // renderer's own circular-cursor arithmetic locally (see create.ts's
-// stepMatch) — both start in sync (reset to -1 by every search()) and only
+// doStepMatch) — both start in sync (reset to -1 by every search()) and only
 // ever move via the same next/prev calls, so they can't drift apart.
 const searchInput = document.getElementById("search") as HTMLInputElement | null;
 const matchCounterEl = document.getElementById("match-counter");

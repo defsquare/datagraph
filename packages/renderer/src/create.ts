@@ -13,7 +13,7 @@ import {
   buildSearchIndex,
   CollapseState,
   anchorRectFor,
-  createLayoutEngine,
+  createStructureLayoutEngine,
   DEFAULT_METRICS,
   enclosingCircle,
   validateConfig,
@@ -23,7 +23,7 @@ import {
   type Diagnostic,
   type Graph,
   type GraphNode,
-  type LayoutEngine,
+  type StructureLayoutEngine,
   type LayoutResult,
   type NodeId,
   type NodeMetrics,
@@ -344,15 +344,15 @@ export function translateCluster(
   }
 }
 
-function buildLayoutEngine(elkWorkerUrl: string | URL | undefined): LayoutEngine {
-  if (!elkWorkerUrl) return createLayoutEngine();
+function buildLayoutEngine(elkWorkerUrl: string | URL | undefined): StructureLayoutEngine {
+  if (!elkWorkerUrl) return createStructureLayoutEngine();
   // NOTE: elk.bundled.js's `workerUrl` path only spawns a real worker when
   // the optional `web-worker` package is present (it's a Node worker_threads
   // shim, not a browser API) — under Vite/browser it silently falls back to
   // elkjs's in-process "fake worker" instead of throwing. Passing the option is
   // therefore always safe: the worst case is a layout that runs in-process,
   // never a failed construction, so there is nothing to guard or feature-detect.
-  return createLayoutEngine({ elkFactory: () => new ELK({ workerUrl: String(elkWorkerUrl) }) });
+  return createStructureLayoutEngine({ elkFactory: () => new ELK({ workerUrl: String(elkWorkerUrl) }) });
 }
 
 /**
@@ -504,7 +504,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   let graph: Graph | undefined;
   let collapseState: CollapseState | undefined;
   let layoutResult: LayoutResult | undefined;
-  let engine: LayoutEngine | undefined;
+  let engine: StructureLayoutEngine | undefined;
   let searchIndex: SearchIndex | undefined;
   // Vue courante et état propre à la vue graphe. Tout reste `undefined` tant
   // qu'on n'y a pas basculé au moins une fois : un consommateur de la seule vue
@@ -547,7 +547,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   let searchResults: SearchResult[] = [];
   let searchCursor = -1;
   let destroyed = false;
-  // Bumped by every mutating operation (doExpand/doCollapse/focusOn's expand
+  // Bumped by every mutating operation (doExpand/doCollapse/doFocus's expand
   // cascade) before it awaits a layout; after each await the operation
   // compares its captured value against the current counter and bails if
   // some other operation ran (and thus already applied its own layout)
@@ -654,8 +654,10 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     reuse: boolean,
   ): Promise<GraphViewState> {
     const base = reuse && aggregateIndex ? { index: aggregateIndex } : buildAggregateState(target, config);
-    const engine = await ensureGraphEngine();
-    const layout = await engine.layout(target, base.index, entityIdsOf(target), metrics);
+    // Pas `engine` : ce nom désigne déjà le moteur ELK de la vue structure dans
+    // la closure englobante, et le masquer ici induirait en erreur.
+    const twoLevelEngine = await ensureGraphEngine();
+    const layout = await twoLevelEngine.layout(target, base.index, entityIdsOf(target), metrics);
     return { ...base, layout };
   }
 
@@ -1460,7 +1462,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     applyFocusDim();
   }
 
-  function fitInternal(): void {
+  function doFit(): void {
     const positions = activePositions();
     if (!camera || !positions) return;
     const bounds = boundsOf(positions);
@@ -1562,12 +1564,12 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     const visible = collapseState.visibleNodeIds();
     const prevPositions = new Map(layoutResult.positions);
     const next = await engine.layoutAfterExpand(layoutResult, graph, id, visible, metrics);
-    // A concurrent doCollapse/doExpand/focusOn ran while we were awaiting
+    // A concurrent doCollapse/doExpand/doFocus ran while we were awaiting
     // (bumping opGen) and already applied its own layoutResult — applying
     // this stale one now would silently revert that operation. Bail.
     if (destroyed || gen !== opGen) {
       // ...mais en ANNULANT d'abord la mutation faite plus haut, comme le font
-      // déjà `toggleAggregate` et `focusOn`. Sans ce retour arrière,
+      // déjà `toggleAggregate` et `doFocus`. Sans ce retour arrière,
       // `collapseState` reste en avance sur `layoutResult` : il déclare
       // `id` déplié, donc ses enfants visibles, alors qu'aucun d'eux n'a de
       // position dans le `layoutResult` publié. Ils ne sont jamais dessinés,
@@ -1593,7 +1595,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     if (!graph || !collapseState || !layoutResult || !engine) return;
     if (!collapseState.isExpanded(id)) return;
     // Synchronous, but still bumps the generation counter so any in-flight
-    // async doExpand/focusOn awaiting a layout notices it's been superseded.
+    // async doExpand/doFocus awaiting a layout notices it's been superseded.
     //
     // Pas de retour arrière à prévoir ici, contrairement à `doExpand` :
     // `layoutAfterCollapse` est synchrone, donc il n'existe aucun `await`
@@ -1676,11 +1678,11 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     emitter.emit("followRef", edge);
     if (edge.to !== null) {
       doSelect(edge.to);
-      void focusOn(edge.to);
+      void doFocus(edge.to);
     }
   }
 
-  async function focusOn(id: NodeId): Promise<void> {
+  async function doFocus(id: NodeId): Promise<void> {
     if (!graph || !camera) return;
     if (!graph.nodes.has(id)) return;
 
@@ -1772,13 +1774,13 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
    * match" behavior. From -1, next goes to the first match (0) and prev
    * goes to the last (`count - 1`); from any real cursor position the plain
    * modular wrap applies. */
-  function stepMatch(direction: 1 | -1): SearchResult | null {
+  function doStepMatch(direction: 1 | -1): SearchResult | null {
     const count = searchResults.length;
     if (count === 0) return null;
     searchCursor =
       searchCursor === -1 ? (direction === 1 ? 0 : count - 1) : (searchCursor + direction + count) % count;
     const result = searchResults[searchCursor]!;
-    void focusOn(result.nodeId);
+    void doFocus(result.nodeId);
     redrawOverlay();
     return result;
   }
@@ -1870,7 +1872,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       layoutResult = await engine.layout(graph, visible, metrics);
     } catch (err) {
       console.warn("[data-graph] layout via elkWorkerUrl failed, falling back to in-process elk", err);
-      engine = createLayoutEngine();
+      engine = createStructureLayoutEngine();
       layoutResult = await engine.layout(graph, visible, metrics);
     }
     if (destroyed) return;
@@ -1894,7 +1896,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     }
 
     rebuild();
-    fitInternal();
+    doFit();
     // Force one immediate, synchronous frame so the first paint is
     // deterministic instead of waiting on the ticker's next scheduled tick.
     app.render();
@@ -1927,8 +1929,8 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   /** Re-runs the full pipeline (buildGraph → CollapseState → SearchIndex →
    * initial layout → rebuild → fit) against new `data`, reusing
    * `currentConfig` when `configOverride` is omitted. Search/selection state
-   * is reset. Uses a fresh LayoutEngine (rather than reusing `engine`) so the
-   * new graph never inherits the old one's `expansionDeltas` bookkeeping,
+   * is reset. Uses a fresh StructureLayoutEngine (rather than reusing
+   * `engine`) so the new graph never inherits the old one's `expansionDeltas`,
    * which is keyed by NodeId (a JSON pointer) and could otherwise collide
    * with an unrelated node at the same path in the new dataset.
    *
@@ -1961,7 +1963,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       newLayout = await newEngine.layout(newGraph, visible, metrics);
     } catch (err) {
       console.warn("[data-graph] layout via elkWorkerUrl failed, falling back to in-process elk", err);
-      newEngine = createLayoutEngine();
+      newEngine = createStructureLayoutEngine();
       newLayout = await newEngine.layout(newGraph, visible, metrics);
     }
 
@@ -1980,7 +1982,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       }
     }
 
-    // A concurrent setData/doExpand/doCollapse/focusOn ran while we were
+    // A concurrent setData/doExpand/doCollapse/doFocus ran while we were
     // awaiting the layout (bumping opGen) and already applied its own
     // state — applying this stale one now would silently revert it. Bail.
     if (destroyed || gen !== opGen) return;
@@ -2007,7 +2009,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     if (newGraphView) publishGraphView(newGraphView);
 
     rebuild();
-    fitInternal();
+    doFit();
   }
 
   // Après `destroy()`, chaque méthode publique doit être un no-op sûr plutôt
@@ -2018,7 +2020,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
 
     fit(): void {
       if (destroyed) return;
-      fitInternal();
+      doFit();
     },
 
     async expand(id: NodeId): Promise<void> {
@@ -2033,7 +2035,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
 
     focus(id: NodeId): void {
       if (destroyed) return;
-      void focusOn(id);
+      void doFocus(id);
     },
 
     select(id: NodeId): void {
@@ -2047,11 +2049,11 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     },
     nextMatch(): SearchResult | null {
       if (destroyed) return null;
-      return stepMatch(1);
+      return doStepMatch(1);
     },
     prevMatch(): SearchResult | null {
       if (destroyed) return null;
-      return stepMatch(-1);
+      return doStepMatch(-1);
     },
 
     on(event: DataGraphEvent, callback: (payload: any) => void): () => void {
@@ -2147,7 +2149,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
 
       rebuild();
       // Recadrer ICI est légitime : les deux vues n'ont aucun repère commun.
-      fitInternal();
+      doFit();
       app.render();
     },
 

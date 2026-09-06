@@ -43,7 +43,7 @@ splits cleanly in two and neither half has to repair the other:
    *depth*; in **centred rows** otherwise. `cardGap` is built into both, so
    non-overlap is a property of the geometry rather than the result of a
    relaxation — for the radial mode the proof is two inequalities, written out
-   above `packRadial` in `packages/core/src/layout-two-level.ts`.
+   above `packRadial` in `packages/core/src/graph-layout.ts`.
 2. **Between aggregates**, each packed block becomes a rigid disc: the minimal
    enclosing circle of its cards plus `hullPadding`, which is exactly the shape
    the renderer paints. An entity in no aggregate is a singleton disc.
@@ -62,11 +62,11 @@ O(k² · iterations) on k discs plus a linear packing.
 
 | Property | Guarantee | Enforced by |
 | --- | --- | --- |
-| Card overlap after layout | Zero overlapping pairs, **and** no pair closer than `cardGap` (16 px), at 334 cards. Both hold **by construction** rather than by relaxation: cards of one aggregate are packed with the margin already included, and two cards of different aggregates cannot come close because their discs are held apart. There is no iteration cap to run out of, so the margin does not degrade with scale. Asserted with a **1e-9 px** tolerance: the margin is exact in the packing's local frame, and the only thing applied afterwards is one translation per cluster | `packages/core/test/layout-two-level.test.ts` |
-| Determinism | **Bit-identical** positions *and* envelopes across two runs on the same input, including when the `visible` set is iterated in a different order. Seeded from node ids (FNV-1a); no `Math.random`, no `Date.now` | `packages/core/test/layout-two-level.test.ts` |
-| Aggregate envelope spacing after layout | Zero overlapping pairs at 167 aggregates, and every pair of discs at least `clusterGap` − 1e-6 apart edge to edge. This covers **painted envelopes and the singleton discs of entities in no aggregate alike** — the test builds the full disc set from the result, not just the emitted `clusters`. It is an output invariant of a final hard pass, not a convergence hope | `packages/core/test/layout-two-level.test.ts` |
-| Envelope fidelity | The disc that gets spaced is the disc that gets painted: each emitted `ClusterShape` matches the minimal enclosing circle recomputed from the final card positions to 1e-6, every member's corners lie inside it, and only real aggregates emit one | `packages/core/test/layout-two-level.test.ts` |
-| Jitter never weakens a guarantee | The virtual inflation applies to the simulation only: the final hard pass uses the true radius, and the emitted `ClusterShape` radii are **bit-identical** between `jitter: 0` and `jitter: 64` while the positions differ. Nearest-neighbour minimum stays at exactly `clusterGap` at every amplitude measured (0, 16, 32, 48, 64) | `packages/core/test/layout-two-level.test.ts` |
+| Card overlap after layout | Zero overlapping pairs, **and** no pair closer than `cardGap` (16 px), at 334 cards. Both hold **by construction** rather than by relaxation: cards of one aggregate are packed with the margin already included, and two cards of different aggregates cannot come close because their discs are held apart. There is no iteration cap to run out of, so the margin does not degrade with scale. Asserted with a **1e-9 px** tolerance: the margin is exact in the packing's local frame, and the only thing applied afterwards is one translation per cluster | `packages/core/test/graph-layout.test.ts` |
+| Determinism | **Bit-identical** positions *and* envelopes across two runs on the same input, including when the `visible` set is iterated in a different order. Seeded from node ids (FNV-1a); no `Math.random`, no `Date.now` | `packages/core/test/graph-layout.test.ts` |
+| Aggregate envelope spacing after layout | Zero overlapping pairs at 167 aggregates, and every pair of discs at least `clusterGap` − 1e-6 apart edge to edge. This covers **painted envelopes and the singleton discs of entities in no aggregate alike** — the test builds the full disc set from the result, not just the emitted `clusters`. It is an output invariant of a final hard pass, not a convergence hope | `packages/core/test/graph-layout.test.ts` |
+| Envelope fidelity | The disc that gets spaced is the disc that gets painted: each emitted `ClusterShape` matches the minimal enclosing circle recomputed from the final card positions to 1e-6, every member's corners lie inside it, and only real aggregates emit one | `packages/core/test/graph-layout.test.ts` |
+| Jitter never weakens a guarantee | The virtual inflation applies to the simulation only: the final hard pass uses the true radius, and the emitted `ClusterShape` radii are **bit-identical** between `jitter: 0` and `jitter: 64` while the positions differ. Nearest-neighbour minimum stays at exactly `clusterGap` at every amplitude measured (0, 16, 32, 48, 64) | `packages/core/test/graph-layout.test.ts` |
 | `setView("graph")` on the demo's 350-entity dataset | **Measured, not enforced.** 220–252 ms in Chromium over three isolated Playwright runs — in the **dev server**, unminified, against the workspace *sources* (see below), so it is not a figure for published, bundled code. The committed assertion is only a 30 s ceiling; the number is logged, not asserted, because a CI machine is not a developer's | `apps/demo/e2e/view.spec.ts` |
 | `@defsquare/data-graph` bundle purity | The graph view never enters a consumer's bundle unless it calls `setView("graph")` — the structure view alone doesn't pull it in. **What this is worth in kilobytes has collapsed, and the tests say so**: the chunk it keeps out is **2.64 kB gzip** (5.76 kB raw), so a regression would now cost 2.64 kB on a 552 kB bundle. Both tests are kept for the *shape* they hold — the view loads lazily by construction, so whatever weight lands behind it next inherits that — not for the kilobytes | `packages/core/test/bundle-purity.test.ts` (core half) + `packages/renderer/test/bundle-purity.test.ts` (renderer half) |
 
@@ -157,7 +157,7 @@ nearest-neighbour standard deviation on the dense fixture falls from 11.8 px to
 4.1, which is most of what `jitter: 32` bought. The retained values are therefore
 also the ones that *let the jitter work*, which was not a criterion when it was
 set. The full tables live in `DEFAULTS` in
-`packages/core/src/layout-two-level.ts`, and the one genuine trade-off that was
+`packages/core/src/graph-layout.ts`, and the one genuine trade-off that was
 declined — a config 11% better on the demo, at the cost of the tiling on the
 other two fixtures — is stated there rather than buried.
 

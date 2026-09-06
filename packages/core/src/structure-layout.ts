@@ -132,7 +132,7 @@ export interface LayoutResult {
 
 export type ElkFactory = () => InstanceType<typeof import("elkjs/lib/elk.bundled.js").default>
 
-export interface LayoutEngine {
+export interface StructureLayoutEngine {
   layout(graph: Graph, visible: Set<NodeId>, metrics?: NodeMetrics): Promise<LayoutResult>
   layoutAfterExpand(
     prev: LayoutResult,
@@ -162,7 +162,7 @@ const LAYOUT_OPTIONS = {
  * By default it runs the bundled elk in-process (Node/tests); a renderer
  * can inject a worker-backed factory instead.
  */
-export function createLayoutEngine(opts?: { elkFactory?: ElkFactory }): LayoutEngine {
+export function createStructureLayoutEngine(opts?: { elkFactory?: ElkFactory }): StructureLayoutEngine {
   const elkFactory: ElkFactory = opts?.elkFactory ?? (() => new ELK())
 
   // Private engine state: for each node expanded via layoutAfterExpand, the

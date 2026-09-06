@@ -15,7 +15,7 @@ export interface AggregateIndex {
   /**
    * L'appartenance est une PARTITION : chaque entité atteignant au moins une
    * racine a exactement un agrégat, donc chaque tableau tient un seul id. Le
-   * seul consommateur du cœur, `layout-two-level.ts`, lit d'ailleurs `[0]` et
+   * seul consommateur du cœur, `graph-layout.ts`, lit d'ailleurs `[0]` et
    * rien d'autre.
    *
    * Le type reste `string[]` et non `string`, et la raison a changé. Elle

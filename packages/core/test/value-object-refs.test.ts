@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { buildGraph } from "../src/build.js"
 import { buildAggregates } from "../src/aggregate.js"
 import { validateConfig, type DataGraphConfig } from "../src/config.js"
-import { anchorRectFor, nearestCardRectFor, rowRectFor, type Rect } from "../src/layout.js"
+import { anchorRectFor, nearestCardRectFor, rowRectFor, type Rect } from "../src/structure-layout.js"
 import { DEFAULT_METRICS } from "../src/measure.js"
 
 /**

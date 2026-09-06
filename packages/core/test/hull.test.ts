@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { enclosingCircle } from "../src/hull.js"
-import type { Rect } from "../src/layout.js"
+import type { Rect } from "../src/structure-layout.js"
 
 /** Vrai si `p` est dans le cercle (ou sur son bord), à epsilon près. Sert
  * d'invariant à toutes les assertions de ce fichier. */

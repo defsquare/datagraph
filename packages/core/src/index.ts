@@ -26,15 +26,15 @@ export {
   type NodeMetrics,
 } from "./measure.js"
 export {
-  createLayoutEngine,
+  createStructureLayoutEngine,
   rowRectFor,
   anchorRectFor,
   nearestCardRectFor,
   type Rect,
   type LayoutResult,
-  type LayoutEngine,
+  type StructureLayoutEngine,
   type ElkFactory,
-} from "./layout.js"
+} from "./structure-layout.js"
 export {
   GraphTooLargeError,
   nearestDrawn,

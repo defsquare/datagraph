@@ -22,7 +22,7 @@ pnpm add @defsquare/data-graph-core
 ## Quickstart
 
 ```ts
-import { buildGraph, buildSearchIndex, CollapseState, createLayoutEngine } from "@defsquare/data-graph-core";
+import { buildGraph, buildSearchIndex, CollapseState, createStructureLayoutEngine } from "@defsquare/data-graph-core";
 
 const data = {
   customers: [{ id: "c1", name: "Dupont" }],
@@ -41,15 +41,36 @@ const graph = buildGraph(data, config);
 const collapseState = new CollapseState(graph);
 const searchIndex = buildSearchIndex(graph);
 
-const engine = createLayoutEngine();
+const engine = createStructureLayoutEngine();
 const layout = await engine.layout(graph, collapseState.visibleNodeIds());
 
 searchIndex.search("dupont"); // -> SearchResult[]
 ```
 
+## Glossary
+
+Four words look interchangeable and are not. They name four different things,
+in four different layers.
+
+| Term | Layer | Meaning |
+| --- | --- | --- |
+| **group** | config vocabulary | A name declared in `config.groups` — i.e. one of the `ids` names the author elected as a grouping anchor. Purely declarative: a group is an *intent*, not a computed thing. Declaration order is significant (it breaks distance ties and fixes envelope paint order). |
+| **aggregate** | model | A grouping *computed* by `buildAggregates`: a root node plus its members. Aggregates form a strict **partition** of the entities — every entity belongs to at most one, never two. |
+| **cluster** | graph-view layout | A disc in the level-2 layout of the graph view. A cluster is either an aggregate, or a single entity that belongs to no aggregate and is promoted to a **singleton** disc so it takes part in the same spacing pass. |
+| **envelope** | rendering | The circle painted around an aggregate — a `ClusterShape`. Emitted **only** for the clusters that are aggregates: singleton clusters get spaced like everyone else but are never painted. |
+
+So: groups are declared, aggregates are computed, clusters are laid out,
+envelopes are painted. A singleton cluster is a cluster with no aggregate and
+no envelope; an aggregate of one member is still an aggregate, and still gets
+an envelope.
+
+`hullPadding` is a **historical name**, kept for compatibility: the shape it
+pads is the minimal enclosing *circle* of the cluster's cards, not a polygonal
+hull. The option name outlived the geometry.
+
 ## Aggregates
 
-`config.groups` names the `ids` entries that are DDD aggregate roots, in
+`config.groups` names the `ids` entries that are aggregate roots, in
 declaration order:
 
 ```ts
@@ -187,7 +208,7 @@ percolated across the whole dataset. That pass — `separateClusters`, and the
 code lives in git history.
 
 The graph view now lays out on `createTwoLevelLayoutEngine`
-([`src/layout-two-level.ts`](./src/layout-two-level.ts)), which packs each
+([`src/graph-layout.ts`](./src/graph-layout.ts)), which packs each
 aggregate independently and then spaces the resulting discs. That makes the
 partition rule *more* load-bearing, not less: the two-level split is only sound
 because each entity belongs to exactly one block.
@@ -248,8 +269,8 @@ them as a sanity check against the budgets, not a strict benchmark.
 ## API surface
 
 `buildGraph`, `CollapseState`, `buildSearchIndex` / `SearchIndex`,
-`createLayoutEngine`, `measureNode`, `validateConfig`, `buildAggregates`,
-plus the `Graph`, `GraphNode`, `RefEdge`, `Diagnostic`, `DataGraphConfig`,
+`createStructureLayoutEngine`, `measureNode`, `validateConfig`,
+`buildAggregates`, plus the `Graph`, `GraphNode`, `RefEdge`, `Diagnostic`, `DataGraphConfig`,
 `Aggregate`, `AggregateIndex` types. See the
 [root README](https://github.com/defsquare/data-graph#readme) for the config
 shape and `packages/core/src/index.ts` for the full export list.
