@@ -1,13 +1,14 @@
 import type { Container } from "pixi.js";
+import { easeOutQuad } from "./animate.js";
 
 /**
  * Durée de la montée comme de la descente du survol.
  *
  * 120 ms, soit un peu plus de la moitié de la transition de dépliage
- * (`TRANSITION_MS`, 200 ms) : le survol doit se lire comme une RÉPONSE au
- * pointeur, pas comme une animation qu'on regarde. En dessous de ~80 ms l'effet
- * redevient un saut, au-delà de ~200 ms la main a déjà quitté la carte que
- * l'effet monte encore.
+ * (`TRANSITION_MS`, 200 ms, dans `animate.ts`) : le survol doit se lire comme
+ * une RÉPONSE au pointeur, pas comme une animation qu'on regarde. En dessous de
+ * ~80 ms l'effet redevient un saut, au-delà de ~200 ms la main a déjà quitté la
+ * carte que l'effet monte encore.
  */
 export const HOVER_MS = 120;
 
@@ -50,9 +51,9 @@ export interface HoverHandle {
 
 /**
  * Câble un container pour qu'il publie une intensité de survol animée : 0 → 1 à
- * l'entrée du pointeur, 1 → 0 à sa sortie, en `HOVER_MS` et en ease-out quad —
- * la même courbe que la transition de dépliage, pour que les deux mouvements de
- * la vue aient le même grain.
+ * l'entrée du pointeur, 1 → 0 à sa sortie, en `HOVER_MS` et en `easeOutQuad` —
+ * littéralement la courbe de la transition de dépliage, empruntée à
+ * `animate.ts`, pour que les deux mouvements de la vue aient le même grain.
  *
  * Ce module ne connaît NI le modèle ni la scène, exactement comme `drag.ts` : il
  * traduit deux événements en une valeur et la remet à l'appelant, qui décide
@@ -89,7 +90,7 @@ export function attachHover(target: Container, hooks: HoverHooks): HoverHandle {
   };
 
   function tick(): void {
-    // Garde de vivacité, comme dans `animatePositions` : un `rebuild()` détruit
+    // Garde de vivacité, comme dans `animate.ts` : un `rebuild()` détruit
     // les containers sans qu'aucun `pointerout` ne soit passé, et l'appelant
     // écrirait alors sur une `.position` nulle. L'exception tomberait AVANT le
     // retrait du ticker, donc elle se répéterait à chaque image pour toujours —
@@ -99,7 +100,10 @@ export function attachHover(target: Container, hooks: HoverHooks): HoverHandle {
       return;
     }
     const t = Math.min(1, (performance.now() - start) / HOVER_MS);
-    const eased = 1 - (1 - t) * (1 - t); // ease-out quad
+    // La MÊME courbe que la transition de dépliage, importée et non recopiée :
+    // deux copies de la formule dériveraient au premier réglage de l'une, et les
+    // deux mouvements de la vue cesseraient d'avoir le même grain.
+    const eased = easeOutQuad(t);
     current = from + (to - from) * eased;
     hooks.onFrame(current);
     // `t >= 1` donne `current === to` exactement : la borne est atteinte, pas

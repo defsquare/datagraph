@@ -78,6 +78,8 @@ import {
 import { attachDrag, TAP_THRESHOLD } from "./drag.js";
 import { clusterDimmed, clusterRelatedIds, DIM_ALPHA, relatedIds } from "./focus.js";
 import { attachHover, type HoverHandle } from "./hover.js";
+import { createPositionAnimator } from "./animate.js";
+import { createSearchController } from "./search.js";
 import { Emitter } from "./events.js";
 
 /** `"structure"` met en page l'arbre de containment ; `"graph"` met en page les
@@ -179,9 +181,6 @@ export interface DataGraph {
   currentView(): DataGraphView;
   destroy(): void;
 }
-
-// Duration of the expand/collapse node-position transition.
-const TRANSITION_MS = 200;
 
 /**
  * Le grossissement d'une carte au survol, en fraction de sa taille : 2,5 % à
@@ -541,11 +540,6 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   let currentConfig: DataGraphConfig = options.config;
   let currentLod: Lod = 0;
   let selection: Selection | null = null;
-  // Current search() results, and the nextMatch/prevMatch cursor into them
-  // (-1 = no current match, i.e. right after a fresh search() or before any
-  // search has run). Reset to [] / -1 by search("") and by setData().
-  let searchResults: SearchResult[] = [];
-  let searchCursor = -1;
   let destroyed = false;
   // Bumped by every mutating operation (doExpand/doCollapse/doFocus's expand
   // cascade) before it awaits a layout; after each await the operation
@@ -556,9 +550,6 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   // the two then describe different graphs, and the canvas shows positions
   // for nodes the collapse state no longer considers visible.
   let opGen = 0;
-  // The single in-flight position-transition ticker callback, if any —
-  // only one expand/collapse animation runs at a time (see cancelAnimation).
-  let activeAnimTick: (() => void) | null = null;
   // BitmapText's canvas-fallback rendering path is unreliable (see draw.ts);
   // use plain Text there instead. Resolved once renderer type is known.
   let useBitmapText = true;
@@ -566,6 +557,25 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   // Node id -> its currently rendered container, so an expand/collapse can
   // interpolate each surviving node from its old to its new position.
   const nodeViews = new Map<NodeId, Container>();
+
+  // La transition de dépliage/repliage. La table est passée TELLE QUELLE et non
+  // recopiée : `rebuild()` la vide et la re-remplit en place, et l'animateur doit
+  // voir les containers du dernier rebuild.
+  // Le ticker est passé en ACCESSEUR : `app.ticker` n'existe qu'après
+  // `app.init()`, et cet animateur-ci est construit avec l'instance, avant.
+  const positionAnimator = createPositionAnimator({ ticker: () => app.ticker, nodeViews });
+
+  // L'état de recherche vit ENTIÈREMENT là-dedans (résultats + curseur) ; ce
+  // fichier ne lui fournit que ses points de contact avec le reste de l'instance.
+  // L'index, lui, reste ici : c'est le pipeline de données qui le produit.
+  const searchController = createSearchController({
+    getIndex: () => searchIndex,
+    getActiveVisible: () => activeVisible(),
+    redrawOverlay: () => redrawOverlay(),
+    // `void` : `nextMatch()`/`prevMatch()` rendent leur résultat sans attendre
+    // le cadrage, qui peut demander une cascade de dépliages.
+    focus: (id) => void doFocus(id),
+  });
 
   const emitter = new Emitter<DataGraphEvents>();
 
@@ -848,80 +858,30 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     return { width: screen?.width ?? 0, height: screen?.height ?? 0 };
   }
 
-  /** Unregisters the currently in-flight animation tick (if any). Must be
-   * called before any rebuild that may destroy the containers a running
-   * animation is holding onto — otherwise the next tick would try to set
-   * `.position` on a destroyed Container (whose `.position` is null,
-   * per Container.destroy()) and throw every frame forever, since the throw
-   * happens before the tick's own `app.ticker.remove(tick)` call. */
-  function cancelAnimation(): void {
-    if (activeAnimTick) {
-      app.ticker.remove(activeAnimTick);
-      activeAnimTick = null;
-    }
-  }
-
-  /** Animates every node present in both `prevPositions` and `nextPositions`
-   * (i.e. every node that survived the expand/collapse) from its old rect to
-   * its new one over `TRANSITION_MS`, via the Pixi ticker. Nodes that are
-   * newly visible or about to disappear are left at whatever `rebuild()`
-   * already set (their final position, or removed entirely). Only one
-   * animation is ever in flight: starting a new one cancels any previous.
+  /**
+   * La transition de dépliage/repliage, avec la seule décision que
+   * `positionAnimator` ne peut pas prendre : elle est INERTE en vue graphe.
    *
-   * Inerte en vue graphe, et c'est essentiel : les deux jeux de rects passés
-   * ici viennent TOUJOURS de la vue structure (`doExpand`/`doCollapse`), alors
-   * que `nodeViews` est alors indexée par des entités posées aux coordonnées de
-   * la vue graphe. Ces ids existent aussi dans les positions de la vue
-   * structure dès qu'elle a été dépliée jusqu'à eux : sans cette garde,
-   * `expand()`/`collapse()` téléporteraient les cartes vers le repère de
-   * l'autre vue, en laissant enveloppes, arêtes et zones de clic là où elles
-   * sont — un état de rendu incohérent jusqu'au prochain `rebuild()`. */
+   * Et c'est essentiel : les deux jeux de rects passés ici viennent TOUJOURS de
+   * la vue structure (`doExpand`/`doCollapse`), alors que `nodeViews` est alors
+   * indexée par des entités posées aux coordonnées de la vue graphe. Ces ids
+   * existent aussi dans les positions de la vue structure dès qu'elle a été
+   * dépliée jusqu'à eux : sans cette garde, `expand()`/`collapse()`
+   * téléporteraient les cartes vers le repère de l'autre vue, en laissant
+   * enveloppes, arêtes et zones de clic là où elles sont — un état de rendu
+   * incohérent jusqu'au prochain `rebuild()`.
+   *
+   * La garde reste ICI, et pas dans `animate.ts` : elle parle des VUES, que ce
+   * fichier est seul à connaître. L'annulation, elle, a lieu dans les deux
+   * branches — un dépliage demandé en vue graphe doit quand même couper une
+   * transition encore en vol, exactement comme avant l'extraction.
+   */
   function animatePositions(prevPositions: Map<NodeId, Rect>, nextPositions: Map<NodeId, Rect>): void {
-    cancelAnimation();
-    if (view === "graph") return;
-
-    // `nodeView`, et non `view` : ce nom désigne désormais la vue courante dans
-    // tout le closure, et le masquer ici rendrait la garde ci-dessus illisible.
-    const anims: { nodeView: Container; fromX: number; fromY: number; toX: number; toY: number }[] = [];
-    for (const [id, nodeView] of nodeViews) {
-      const from = prevPositions.get(id);
-      const to = nextPositions.get(id);
-      if (!from || !to) continue;
-      if (from.x === to.x && from.y === to.y) continue;
-      nodeView.position.set(from.x, from.y);
-      anims.push({ nodeView, fromX: from.x, fromY: from.y, toX: to.x, toY: to.y });
+    if (view === "graph") {
+      positionAnimator.cancel();
+      return;
     }
-    if (anims.length === 0) return;
-
-    const start = performance.now();
-    const tick = (): void => {
-      const t = Math.min(1, (performance.now() - start) / TRANSITION_MS);
-      const eased = 1 - (1 - t) * (1 - t); // ease-out quad
-      for (const a of anims) {
-        // Liveness guard: a straggler tick (one that survives despite
-        // cancelAnimation()'s best effort, e.g. a re-entrant rebuild from
-        // within a ticker callback) must self-skip destroyed containers
-        // instead of throwing on a null `.position`.
-        if (a.nodeView.destroyed) continue;
-        a.nodeView.position.set(a.fromX + (a.toX - a.fromX) * eased, a.fromY + (a.toY - a.fromY) * eased);
-      }
-      if (t >= 1) {
-        app.ticker.remove(tick);
-        if (activeAnimTick === tick) activeAnimTick = null;
-      }
-    };
-    activeAnimTick = tick;
-    app.ticker.add(tick);
-  }
-
-  /** Node ids from `searchResults` that are currently visible — the set
-   * `search()`/`nextMatch()`/`prevMatch()` highlight is drawn over. Recomputed
-   * on every redraw (rather than cached) since visibility can change
-   * independently of the search state, e.g. an expand/collapse elsewhere. */
-  function visibleMatchIds(): NodeId[] {
-    if (searchResults.length === 0) return [];
-    const visible = activeVisible();
-    return searchResults.map((r) => r.nodeId).filter((id) => visible.has(id));
+    positionAnimator.animate(prevPositions, nextPositions);
   }
 
   function redrawOverlay(): void {
@@ -942,8 +902,17 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
           view === "graph" ? "ref" : "contain",
         ),
       );
-      const currentId = searchResults[searchCursor]?.nodeId ?? null;
-      overlayGraphics.addChild(drawSearchHighlights(positions, theme, visibleMatchIds(), currentId));
+      // Les deux lectures de l'état de recherche passent par le contrôleur, qui
+      // en est le seul propriétaire : les ids visibles à surligner, et celui du
+      // résultat courant, peint plus fort que les autres.
+      overlayGraphics.addChild(
+        drawSearchHighlights(
+          positions,
+          theme,
+          searchController.visibleMatchIds(),
+          searchController.currentMatchId(),
+        ),
+      );
     }
     world.addChild(overlayGraphics);
   }
@@ -1186,7 +1155,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     // Une transition de dépliage encore en vol repositionnerait les cartes à
     // chaque image, en concurrence avec le pointeur : le geste de
     // l'utilisateur a le dernier mot.
-    cancelAnimation();
+    positionAnimator.cancel();
   }
 
   /** `refreshClusterHits` : à passer quand le geste a pu DÉFORMER une
@@ -1277,7 +1246,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     // Any in-flight position animation is about to have its containers
     // destroyed below — cancel it first so its next tick can't run against
     // stale/destroyed Containers.
-    cancelAnimation();
+    positionAnimator.cancel();
     // Même raisonnement pour un déplacement en cours, de carte ou d'agrégat :
     // les containers qui portent ses écouteurs vont être détruits, donc son
     // `onEnd` ne viendra jamais. Sans cette remise à zéro, un zoom molette
@@ -1807,41 +1776,6 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     if (rect) camera.centerOn(rect, viewport(), 1);
   }
 
-  /** Queries `searchIndex`, resets the nextMatch/prevMatch cursor to -1, and
-   * redraws the (visible-only) search highlight. `query === ""` yields an
-   * empty result set (SearchIndex.search's own behavior), which clears the
-   * highlight/state as a side effect of the same codepath. */
-  function doSearch(query: string): SearchResult[] {
-    searchResults = searchIndex ? searchIndex.search(query) : [];
-    searchCursor = -1;
-    redrawOverlay();
-    return searchResults;
-  }
-
-  /** Shared by nextMatch (`direction: 1`) / prevMatch (`direction: -1`):
-   * advances the circular cursor, focuses (auto-expand included) the
-   * resulting match and reinforces its highlight; returns null without
-   * moving the cursor when there are no results.
-   *
-   * The `-1` sentinel (no current match yet) is handled as a special case
-   * rather than folded into the generic `(cursor + direction + count) %
-   * count` wrap: that formula treats -1 as "already one step before 0", so
-   * stepping -1 again would land on `count - 2`, not the last result — not
-   * the intended "first prevMatch from a fresh search jumps to the last
-   * match" behavior. From -1, next goes to the first match (0) and prev
-   * goes to the last (`count - 1`); from any real cursor position the plain
-   * modular wrap applies. */
-  function doStepMatch(direction: 1 | -1): SearchResult | null {
-    const count = searchResults.length;
-    if (count === 0) return null;
-    searchCursor =
-      searchCursor === -1 ? (direction === 1 ? 0 : count - 1) : (searchCursor + direction + count) % count;
-    const result = searchResults[searchCursor]!;
-    void doFocus(result.nodeId);
-    redrawOverlay();
-    return result;
-  }
-
   /** Le fond cliquable, glissé sous le monde. La `hitArea` est
    * `app.renderer.screen`, que Pixi mute EN PLACE à chaque redimensionnement :
    * la zone suit donc le canvas sans qu'on ait à la rafraîchir. Le container
@@ -2050,8 +1984,10 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     // Nodale comme d'agrégat : les deux sont indexées par une clé du graphe
     // remplacé.
     selection = null;
-    searchResults = [];
-    searchCursor = -1;
+    // Même raison : les résultats en place pointent des nœuds du graphe
+    // remplacé. Sans repeint — le `rebuild()` qui clôt cette fonction s'en
+    // charge (voir `SearchController.reset`).
+    searchController.reset();
 
     // L'état de la vue graphe est indexé par id de nœud : il ne survit pas à un
     // changement de données. On l'invalide, puis on publie celui calculé plus
@@ -2098,15 +2034,15 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
 
     search(query: string): SearchResult[] {
       if (destroyed) return [];
-      return doSearch(query);
+      return searchController.search(query);
     },
     nextMatch(): SearchResult | null {
       if (destroyed) return null;
-      return doStepMatch(1);
+      return searchController.step(1);
     },
     prevMatch(): SearchResult | null {
       if (destroyed) return null;
-      return doStepMatch(-1);
+      return searchController.step(-1);
     },
 
     on(event: DataGraphEvent, callback: (payload: any) => void): () => void {
