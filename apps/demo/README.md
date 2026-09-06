@@ -81,14 +81,32 @@ apps/demo/
 ├── e2e/            Playwright specs (smoke, view switching, refs, array tokens)
 ├── fixtures/       sample data + config for the CLI
 ├── public/         static assets (logos)
-├── src/            the web app: main.ts, sample-data.ts, launch.ts
+├── src/            the web app (see below)
 ├── src-tauri/      Rust desktop shell: cli.rs, lib.rs, main.rs
 ├── index.html
 ├── playwright.config.ts
 └── vite.config.ts
 ```
 
+```
+src/
+├── main.ts          orchestration only: resolve the launch mode, create the graph, wire the modules below
+├── launch.ts        the Tauri seam: what the CLI asked for (a file, or the demo)
+├── detail-panel.ts  the `#detail` panel, built from the public `select` event and `refEdges`
+├── search-ui.ts     the findbar's input: debounce, `N/total` counter, next/prev navigation
+├── chrome.ts        viewer chrome: search/menu disclosures, Escape, click-outside, status bar, theme, view toggle
+├── demo-mode.ts     demo-only tooling: the starting dataset and the small/large dataset toggle
+├── sample-data.ts   the e-commerce fixture and its `bigShop(n)` generator
+└── style.css
+```
+
 `src/launch.ts` is the seam between the two halves: it calls the Tauri command
 `launch_payload` (declared in [`src-tauri/src/lib.rs`](./src-tauri/src/lib.rs))
 to pick up whatever the CLI parsed, and falls back to the built-in demo dataset
 in the browser or when no file was passed.
+
+`src/demo-mode.ts` is the seam between the **generic viewer shell** and the
+**demo**: `main.ts` reaches it through a dynamic `import()` taken only when no
+file was given. In file mode (`datagraph data.json`) its chunk — which carries
+`sample-data.ts` and the ~4000-node generator — is never fetched nor evaluated,
+so opening a document never builds a demo fixture on the side.

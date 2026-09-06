@@ -429,4 +429,8 @@ export function bigShop(n: number) {
   return { categories, products, customers, orders };
 }
 
-export const bigShopData = bigShop(4000);
+// PAS de `export const bigShopData = bigShop(4000)` ici : un appel au
+// top-level s'exécute au chargement du module, donc à chaque démarrage de la
+// démo — et, tant que ce fichier était importé statiquement par `main.ts`,
+// jusque dans le mode fichier de la CLI qui n'a que faire d'un jeu d'exemple.
+// La génération est déclenchée à la demande par `demo-mode.ts`.
