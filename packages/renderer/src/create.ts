@@ -661,10 +661,61 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     return { ...base, layout };
   }
 
+  /**
+   * `computeGraphView` avec son repli : un échec rend `null` au lieu de
+   * propager. Les trois appelants (`ready`, `doSetData`, `setView`) partagent la
+   * même règle — le moteur organique est chargé dynamiquement, donc un import
+   * qui échoue ne doit jamais rejeter l'opération englobante — mais ce qu'ils
+   * FONT du `null` diffère (retomber en vue structure, ou renoncer à la
+   * bascule) et reste donc au point d'appel, comme les gardes de génération.
+   *
+   * `context` n'est là que pour le débogage : il garde à chaque site son message
+   * d'avertissement d'origine.
+   */
+  async function tryComputeGraphView(
+    target: Graph,
+    config: DataGraphConfig,
+    reuse: boolean,
+    context: string,
+  ): Promise<GraphViewState | null> {
+    try {
+      return await computeGraphView(target, config, reuse);
+    } catch (err) {
+      console.warn(`[data-graph] ${context}`, err);
+      return null;
+    }
+  }
+
   /** Publie en un seul geste l'état calculé par `computeGraphView`. */
   function publishGraphView(state: GraphViewState): void {
     aggregateIndex = state.index;
     graphLayout = state.layout;
+  }
+
+  /**
+   * Met en page `target` pour la vue structure, avec le repli du moteur ELK :
+   * `elkWorkerUrl` désigne un worker qui peut être injouable (chunk absent,
+   * origine différente), et son échec ne doit pas condamner l'instance — on
+   * rejoue alors la même mise en page sur un moteur en processus.
+   *
+   * Rend le couple (moteur, mise en page) sans rien publier : `ready` et
+   * `doSetData` l'assignent eux-mêmes, chacun derrière ses propres gardes. Le
+   * moteur fait partie du résultat parce que le repli le REMPLACE : publier la
+   * mise en page sans lui laisserait les `expansionDeltas` des opérations
+   * suivantes sur un moteur qui n'a pas produit ces positions.
+   */
+  async function layoutStructure(
+    target: Graph,
+    visible: Set<NodeId>,
+  ): Promise<{ engine: StructureLayoutEngine; layout: LayoutResult }> {
+    const primary = buildLayoutEngine(options.elkWorkerUrl);
+    try {
+      return { engine: primary, layout: await primary.layout(target, visible, metrics) };
+    } catch (err) {
+      console.warn("[data-graph] layout via elkWorkerUrl failed, falling back to in-process elk", err);
+      const fallback = createStructureLayoutEngine();
+      return { engine: fallback, layout: await fallback.layout(target, visible, metrics) };
+    }
   }
 
   /** Les positions de la vue courante. */
@@ -1613,7 +1664,13 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
 
   /** Tout ce qu'un changement de sélection repeint. Les enveloppes n'en font
    * partie qu'en vue graphe, la seule qui en ait : ailleurs `clustersFor()`
-   * rend un tableau vide et le repeint serait un détour sans effet. */
+   * rend un tableau vide et le repeint serait un détour sans effet.
+   *
+   * `rebuild()` ne passe PAS par ici et ne finit que sur `redrawOverlay()` +
+   * `applyFocusDim()` : il vient déjà de repeindre enveloppes et arêtes (avec
+   * leurs zones de saisie, que cette fonction-ci ne touche pas) au milieu de sa
+   * propre passe. Les fusionner rejouerait ces deux repeints à chaque
+   * reconstruction. */
   function redrawSelection(): void {
     if (view === "graph") redrawClusters();
     redrawOverlay();
@@ -1863,18 +1920,18 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     if (destroyed) return;
     metrics = measureFontMetrics(theme, DEFAULT_METRICS);
     refreshEntityAccents(currentConfig);
+    // Publiés AVANT l'attente de la mise en page, et non au retour comme dans
+    // `doSetData` : `search()` et les gardes de `doExpand`/`doCollapse` lisent
+    // ces deux-là sans passer par `ready`, et les retarder d'une mise en page
+    // ELK entière changerait ce qu'elles répondent. C'est cette différence de
+    // discipline de publication — au fil de l'eau ici, en un seul geste après
+    // la garde de génération là-bas — qui garde les deux sites distincts.
     collapseState = new CollapseState(graph);
     searchIndex = buildSearchIndex(graph);
 
-    engine = buildLayoutEngine(options.elkWorkerUrl);
-    const visible = collapseState.visibleNodeIds();
-    try {
-      layoutResult = await engine.layout(graph, visible, metrics);
-    } catch (err) {
-      console.warn("[data-graph] layout via elkWorkerUrl failed, falling back to in-process elk", err);
-      engine = createStructureLayoutEngine();
-      layoutResult = await engine.layout(graph, visible, metrics);
-    }
+    const structure = await layoutStructure(graph, collapseState.visibleNodeIds());
+    engine = structure.engine;
+    layoutResult = structure.layout;
     if (destroyed) return;
 
     // La vue structure est toujours mise en page, même si l'hôte démarre en vue
@@ -1884,12 +1941,16 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     // l'attendent. On retombe sur la vue structure, comme le repli ELK
     // ci-dessus retombe sur un moteur en processus.
     if (view === "graph") {
-      try {
-        const state = await computeGraphView(graph, currentConfig, true);
+      const state = await tryComputeGraphView(
+        graph,
+        currentConfig,
+        true,
+        "the graph view failed to build, falling back to the structure view",
+      );
+      if (state) {
         if (destroyed) return;
         publishGraphView(state);
-      } catch (err) {
-        console.warn("[data-graph] the graph view failed to build, falling back to the structure view", err);
+      } else {
         view = "structure";
       }
       if (destroyed) return;
@@ -1955,31 +2016,23 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     const newGraph = buildGraph(data, config);
     const newCollapseState = new CollapseState(newGraph);
     const newSearchIndex = buildSearchIndex(newGraph);
-    const visible = newCollapseState.visibleNodeIds();
 
-    let newEngine = buildLayoutEngine(options.elkWorkerUrl);
-    let newLayout: LayoutResult;
-    try {
-      newLayout = await newEngine.layout(newGraph, visible, metrics);
-    } catch (err) {
-      console.warn("[data-graph] layout via elkWorkerUrl failed, falling back to in-process elk", err);
-      newEngine = createStructureLayoutEngine();
-      newLayout = await newEngine.layout(newGraph, visible, metrics);
-    }
+    const structure = await layoutStructure(newGraph, newCollapseState.visibleNodeIds());
 
     // La vue graphe se recalcule sur le NOUVEAU graphe, avant publication et
     // sans réutiliser l'index en place, qui décrit l'ancien. Un échec ici ne
     // doit pas rejeter `setData` en laissant l'instance à moitié remplacée : on
     // retombe sur la vue structure, dont la mise en page est déjà prête.
-    let newGraphView: GraphViewState | undefined;
+    let newGraphView: GraphViewState | null = null;
     let graphViewFailed = false;
     if (view === "graph") {
-      try {
-        newGraphView = await computeGraphView(newGraph, config, false);
-      } catch (err) {
-        console.warn("[data-graph] the graph view failed to rebuild, falling back to the structure view", err);
-        graphViewFailed = true;
-      }
+      newGraphView = await tryComputeGraphView(
+        newGraph,
+        config,
+        false,
+        "the graph view failed to rebuild, falling back to the structure view",
+      );
+      graphViewFailed = newGraphView === null;
     }
 
     // A concurrent setData/doExpand/doCollapse/doFocus ran while we were
@@ -1990,8 +2043,8 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     graph = newGraph;
     collapseState = newCollapseState;
     searchIndex = newSearchIndex;
-    engine = newEngine;
-    layoutResult = newLayout;
+    engine = structure.engine;
+    layoutResult = structure.layout;
     currentConfig = config;
     refreshEntityAccents(config);
     // Nodale comme d'agrégat : les deux sont indexées par une clé du graphe
@@ -2112,16 +2165,16 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
         // très bien atterrir. `view` n'est donc basculée, et l'état publié,
         // qu'une fois cette course tranchée.
         const gen = ++opGen;
-        let state: GraphViewState;
-        try {
-          state = await computeGraphView(graph, currentConfig, true);
-        } catch (err) {
-          // Le moteur organique est chargé dynamiquement : un import qui échoue
-          // (réseau, chunk absent) ne doit pas laisser l'instance dans une vue
-          // qu'elle ne sait pas peindre. `view` n'a pas encore bougé.
-          console.warn("[data-graph] switching to the graph view failed", err);
-          return;
-        }
+        const state = await tryComputeGraphView(
+          graph,
+          currentConfig,
+          true,
+          "switching to the graph view failed",
+        );
+        // Seul site à RENONCER sur échec au lieu de retomber en vue structure :
+        // un import qui échoue ne doit pas laisser l'instance dans une vue
+        // qu'elle ne sait pas peindre, et `view` n'a pas encore bougé.
+        if (state === null) return;
         if (destroyed || gen !== opGen) return;
         publishGraphView(state);
       }
