@@ -72,11 +72,15 @@ import {
   TOKEN_HOVER_SHIFT,
 } from "./draw.js";
 import { attachDrag, TAP_THRESHOLD } from "./drag.js";
-import { clusterDimmed, clusterRelatedIds, DIM_ALPHA, relatedIds } from "./focus.js";
+import { clusterRelatedIds, DIM_ALPHA, relatedIds } from "./focus.js";
 import { attachHover, type HoverHandle } from "./hover.js";
 import { createPositionAnimator } from "./animate.js";
 import { createSearchController } from "./search.js";
-import { createGraphViewController, type GraphViewState } from "./graph-view.js";
+import {
+  createGraphViewController,
+  type ClusterPaint,
+  type GraphViewState,
+} from "./graph-view.js";
 import { Emitter } from "./events.js";
 
 /** `"structure"` met en page l'arbre de containment ; `"graph"` met en page les
@@ -709,19 +713,13 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   }
 
   /**
-   * L'agrégat sélectionné, résolu contre l'index COURANT.
-   *
-   * La résolution est refaite à chaque lecture plutôt que gardée dans l'état :
-   * un `setData` ou un échec de la vue graphe peuvent remplacer l'index sous une
-   * sélection qui le désignait, et un agrégat qui n'existe plus doit se lire
-   * comme « pas de sélection » — ce que fait `undefined` chez tous les appelants
-   * — plutôt que de laisser l'estompage tourner sur un fantôme.
+   * L'agrégat sélectionné. La résolution contre l'index courant — et le fait
+   * qu'elle soit refaite à chaque lecture — appartient au contrôleur ; ce qui
+   * reste ici est la seule chose qu'il ne connaît pas, la sélection.
    */
   function selectedAggregate(): Aggregate | undefined {
     if (selection?.kind !== "cluster") return undefined;
-    // `index()` est l'accesseur BRUT du contrôleur, provisoire : M2b le remplace
-    // par un `aggregateOf(aggregateId)`, qui portera cette résolution.
-    return graphView.index()?.aggregates.get(selection.aggregateId);
+    return graphView.aggregateOf(selection.aggregateId);
   }
 
   /**
@@ -740,61 +738,27 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     return selectedAggregate()?.memberIds ?? null;
   }
 
-  /** Les enveloppes à peindre : vide en vue structure. La couleur vient de
-   * l'accent du type de la racine, comme pour les cartes ; l'estompage, de la
-   * sélection courante confrontée aux membres de l'agrégat. Ces résolutions
-   * restent ici, et pas dans `drawClusters` : la fonction de dessin ne prend que
-   * de la donnée nue, donc elle se teste sans graphe ni index d'agrégats. */
-  function clustersFor(): {
-    circle: { cx: number; cy: number; r: number };
-    color: string;
-    hover: number;
-    dim: boolean;
-  }[] {
-    // `clusters()` rend un tableau vide tant que rien n'est publié : la garde
-    // sur la mise en page tient donc par lui, sans avoir à l'interroger à part.
-    const clusters = graphView.clusters();
-    if (view !== "graph" || !graph || clusters.length === 0) return [];
-    const current = graph;
-    const selectedAggregateId = selection?.kind === "cluster" ? selection.aggregateId : null;
-    // Calculé UNE fois pour toutes les enveloppes : `focusKeep()` balaie toutes
-    // les références du graphe, et le rappeler par enveloppe rendrait le repeint
-    // quadratique alors qu'il tourne à chaque image d'un déplacement.
-    const keep = focusKeep();
-    // Accesseur BRUT, provisoire : M2b déménage tout le corps de `clustersFor`
-    // dans le contrôleur, qui n'aura alors plus à publier son index.
-    const aggregates = graphView.index()?.aggregates;
-    return clusters.map((cluster) => {
-      const root = current.nodes.get(cluster.rootId);
-      const members = aggregates?.get(cluster.aggregateId)?.memberIds;
-      return {
-        circle: { cx: cluster.cx, cy: cluster.cy, r: cluster.r },
-        color: root ? accentFor(root) : theme.edge.border,
-        // Une enveloppe recule quand AUCUN de ses membres n'est lié à la
-        // sélection ; celle qui est sélectionnée reste donc pleine sans cas
-        // particulier (voir `clusterDimmed`).
-        //
-        // Une enveloppe dont l'agrégat manque à l'index reste PLEINE plutôt que
-        // de s'estomper par défaut : on ne sait alors rien de ses membres, et le
-        // même raisonnement vaut ici que pour la sélection fantôme de
-        // `focusKeep()` — mieux vaut ne rien estomper que d'estomper sur une
-        // information qu'on n'a pas.
-        dim: members ? clusterDimmed(keep, members) : false,
-        // Relayée et non stockée dans la forme : `graphView.clusters()` est la
-        // sortie du moteur, et y greffer un état d'interface le rendrait
-        // dépendant de qui le survole.
-        //
-        // La sélection d'un agrégat le peint à son intensité de survol PLEINE,
-        // et pas par un anneau de plus : l'enveloppe a déjà un état « allumé »
-        // que le survol fait connaître, et le réutiliser dit « celui-ci » sans
-        // ajouter de vocabulaire visuel. Le `max` est ce qui empêche le survol
-        // de FAIRE BAISSER l'enveloppe sélectionnée quand le pointeur la quitte
-        // (`attachHover` y écrit alors des valeurs décroissantes jusqu'à 0).
-        hover: Math.max(
-          clusterHover.get(cluster.aggregateId) ?? 0,
-          cluster.aggregateId === selectedAggregateId ? 1 : 0,
-        ),
-      };
+  /**
+   * Les enveloppes à peindre : vide en vue structure.
+   *
+   * Tout ce qui se résout contre la mise en page et l'index appartient au
+   * contrôleur ; ce qui reste ici est ce qu'il ne possède pas — la vue courante,
+   * la sélection, le survol, et la palette du thème.
+   */
+  function clustersFor(): ClusterPaint[] {
+    // La garde sur la mise en page tient chez le contrôleur, qui rend un tableau
+    // vide tant que rien n'est publié : seule la vue courante se teste ici.
+    if (view !== "graph" || !graph) return [];
+    return graphView.clustersFor({
+      graph,
+      accentFor,
+      fallbackColor: theme.edge.border,
+      selectedAggregateId: selection?.kind === "cluster" ? selection.aggregateId : null,
+      // Calculé UNE fois pour toutes les enveloppes : `focusKeep()` balaie toutes
+      // les références du graphe, et le rappeler par enveloppe rendrait le repeint
+      // quadratique alors qu'il tourne à chaque image d'un déplacement.
+      keep: focusKeep(),
+      hoverOf: (aggregateId) => clusterHover.get(aggregateId) ?? 0,
     });
   }
 
@@ -1028,13 +992,11 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       redrawClusters();
     }
     for (const child of clusterHitLayer.removeChildren()) child.destroy();
-    // Accesseur BRUT, provisoire (affiné en M2b). Index et mise en page sont
-    // publiés — et invalidés — d'un bloc par le contrôleur : tester l'index
-    // suffit, et `clusters()` rend de toute façon un tableau vide sans lui.
-    const index = graphView.index();
-    if (view !== "graph" || !index) return;
+    // `clusters()` rend un tableau vide tant que rien n'est publié : la boucle
+    // ne tourne alors pas, et seule la vue courante reste à tester ici.
+    if (view !== "graph") return;
     for (const { cluster, container } of drawClusterHitAreas(graphView.clusters())) {
-      const aggregate = index.aggregates.get(cluster.aggregateId);
+      const aggregate = graphView.aggregateOf(cluster.aggregateId);
       // Une enveloppe sans agrégat n'a pas de membres à emporter : la peindre
       // reste juste, la rendre saisissable ne le serait pas. Le cas ne se
       // produit pas aujourd'hui (le moteur ne publie d'enveloppe que pour un
@@ -1179,19 +1141,12 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     // En vue graphe, la carte déplacée emporte l'enveloppe de son agrégat : une
     // enveloppe qui ne suivrait pas laisserait la carte flotter dehors, ce qui
     // dirait le contraire de ce que la vue affirme. Une carte hors agrégat n'a
-    // pas d'enveloppe — la boucle n'en trouve simplement aucune.
-    // Accesseurs BRUTS, provisoires : M2b remplace toute cette recherche par un
-    // `memberIdsContaining(id)` du contrôleur.
-    const index = graphView.index();
-    if (view === "graph" && index) {
-      for (const cluster of graphView.clusters()) {
-        const aggregate = index.aggregates.get(cluster.aggregateId);
-        if (!aggregate?.memberIds.has(id)) continue;
-        recomputeClusterCircle(cluster, aggregate.memberIds, positions, graphView.hullPadding());
+    // pas d'enveloppe — le contrôleur n'en trouve simplement aucune.
+    if (view === "graph") {
+      const owner = graphView.memberIdsContaining(id);
+      if (owner) {
+        recomputeClusterCircle(owner.cluster, owner.memberIds, positions, graphView.hullPadding());
         redrawClusters();
-        // Les agrégats sont une PARTITION : une carte n'appartient qu'à un seul
-        // d'entre eux, il n'y a rien à chercher après celui-ci.
-        break;
       }
     }
     redrawOverlay();
@@ -1447,22 +1402,9 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     if (!camera || !positions) return;
     const bounds = boundsOf(positions);
     // Les enveloppes débordent des cartes : les inclure, sans quoi le cadrage
-    // les rognerait.
-    // `clusters()` est vide tant que rien n'est publié : la boucle ne fait alors
-    // rien, ce que la garde sur la mise en page disait avant. (M2b : cette
-    // boucle devient `extendBoundsToClusters(bounds)`.)
-    if (view === "graph") {
-      // Le disque déborde des cartes de sa marge ; sa boîte englobante est
-      // `cx ± r`, `cy ± r`, et c'est elle qu'on unit aux bornes des cartes.
-      for (const cluster of graphView.clusters()) {
-        const right = bounds.x + bounds.width;
-        const bottom = bounds.y + bounds.height;
-        bounds.x = Math.min(bounds.x, cluster.cx - cluster.r);
-        bounds.y = Math.min(bounds.y, cluster.cy - cluster.r);
-        bounds.width = Math.max(right, cluster.cx + cluster.r) - bounds.x;
-        bounds.height = Math.max(bottom, cluster.cy + cluster.r) - bounds.y;
-      }
-    }
+    // les rognerait. Le contrôleur ne fait rien tant que rien n'est publié, ce
+    // que la garde sur la mise en page disait avant.
+    if (view === "graph") graphView.extendBoundsToClusters(bounds);
     camera.fitTo(bounds, viewport());
   }
 
@@ -1638,8 +1580,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
    * comme absente.
    */
   function doSelectCluster(aggregateId: string): void {
-    // Accesseur BRUT, provisoire (affiné en M2b).
-    if (view !== "graph" || !graphView.index()?.aggregates.has(aggregateId)) return;
+    if (view !== "graph" || !graphView.aggregateOf(aggregateId)) return;
     selection = { kind: "cluster", aggregateId };
     redrawSelection();
   }

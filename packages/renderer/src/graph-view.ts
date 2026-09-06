@@ -1,9 +1,11 @@
 import {
   buildAggregates,
   validateConfig,
+  type Aggregate,
   type AggregateIndex,
   type DataGraphConfig,
   type Graph,
+  type GraphNode,
   type NodeId,
   type NodeMetrics,
   type Rect,
@@ -26,12 +28,44 @@ import type {
   GraphLayoutResult,
   TwoLevelLayoutOptions,
 } from "@defsquare/data-graph-core/graph-layout";
+import { clusterDimmed } from "./focus.js";
 
 /** L'état complet de la vue graphe, calculé d'un bloc puis publié d'un bloc :
  * l'index et la mise en page doivent toujours décrire le même graphe. */
 export interface GraphViewState {
   index: AggregateIndex;
   layout: GraphLayoutResult;
+}
+
+/**
+ * Une enveloppe prête à peindre : la donnée NUE que `drawClusters` consomme.
+ *
+ * Ni agrégat, ni index, ni graphe — couleur, estompage et survol sont déjà
+ * résolus ici. C'est ce qui garde `draw.ts` testable sans instance : la fonction
+ * de dessin ne sait plus rien de ce qui a produit ces valeurs.
+ */
+export interface ClusterPaint {
+  circle: { cx: number; cy: number; r: number };
+  color: string;
+  hover: number;
+  dim: boolean;
+}
+
+/** Ce que l'appelant apporte à `clustersFor` : le graphe courant, la palette, et
+ * les deux morceaux d'ÉTAT D'INTERFACE que le contrôleur ne possède pas — la
+ * sélection et le survol. */
+export interface ClustersForArgs {
+  graph: Graph;
+  /** La couleur d'accent du type d'une carte, comme pour les cartes elles-mêmes.
+   * Fournie par l'appelant : elle dépend du thème, pas de la vue. */
+  accentFor(node: GraphNode): string;
+  /** La couleur d'une enveloppe dont la racine manque au graphe. */
+  fallbackColor: string;
+  selectedAggregateId: string | null;
+  /** Les ids à garder pleins, ou `null` s'il n'y a rien à estomper. */
+  keep: Set<NodeId> | null;
+  /** L'intensité de survol courante d'une enveloppe, de 0 à 1. */
+  hoverOf(aggregateId: string): number;
 }
 
 export interface GraphViewHooks {
@@ -104,12 +138,41 @@ export interface GraphViewController {
    * moteur, RENDU TEL QUEL et non recopié : c'est en mutant ces formes en place
    * qu'un déplacement de carte ou d'agrégat met les disques à jour. */
   clusters(): ClusterShape[];
-  /** L'index publié, ou `undefined`.
+  /**
+   * L'agrégat d'`aggregateId`, résolu contre l'index COURANT, ou `undefined`.
    *
-   * Accesseur BRUT, provisoire : affiné en M2b, où `aggregateOf` /
-   * `memberIdsContaining` / `clustersFor` prendront la place des lectures
-   * directes qui passent aujourd'hui par ici. */
-  index(): AggregateIndex | undefined;
+   * La résolution est refaite à chaque lecture plutôt que gardée chez
+   * l'appelant : un `setData` ou un échec de la vue graphe peuvent remplacer
+   * l'index sous une sélection qui le désignait, et un agrégat qui n'existe plus
+   * doit se lire comme « pas de sélection » — ce que fait `undefined` chez tous
+   * les appelants — plutôt que de laisser l'estompage tourner sur un fantôme.
+   */
+  aggregateOf(aggregateId: string): Aggregate | undefined;
+  /**
+   * L'enveloppe publiée dont l'agrégat contient `id`, avec les membres de cet
+   * agrégat — de quoi recalculer le disque quand une de ses cartes bouge.
+   *
+   * `undefined` pour une carte hors agrégat, ou tant que rien n'est publié.
+   */
+  memberIdsContaining(id: NodeId): { cluster: ClusterShape; memberIds: Set<NodeId> } | undefined;
+  /**
+   * Étend `bounds` EN PLACE à toutes les enveloppes publiées : la contribution
+   * de la vue graphe au cadrage, qui rognerait les disques sans elle.
+   *
+   * Mutation en place et non un nouveau rect : l'appelant compose les bornes des
+   * cartes puis celles-ci, et rendre une copie l'obligerait à réassigner un
+   * `Rect` que la caméra consomme juste après.
+   */
+  extendBoundsToClusters(bounds: Rect): void;
+  /**
+   * Les enveloppes prêtes à peindre, ou un tableau vide tant que rien n'est
+   * publié.
+   *
+   * Les résolutions vivent ici, et pas dans `drawClusters` : la fonction de
+   * dessin ne prend que de la donnée nue, donc elle se teste sans graphe ni
+   * index d'agrégats.
+   */
+  clustersFor(args: ClustersForArgs): ClusterPaint[];
   /**
    * La marge d'enveloppe EFFECTIVE — celle avec laquelle le moteur a calculé les
    * disques, et donc la seule avec laquelle on ait le droit de les recalculer
@@ -264,8 +327,70 @@ export function createGraphViewController(hooks: GraphViewHooks): GraphViewContr
       return graphLayout?.clusters ?? NO_CLUSTERS;
     },
 
-    index(): AggregateIndex | undefined {
-      return aggregateIndex;
+    aggregateOf(aggregateId: string): Aggregate | undefined {
+      return aggregateIndex?.aggregates.get(aggregateId);
+    },
+
+    memberIdsContaining(id: NodeId): { cluster: ClusterShape; memberIds: Set<NodeId> } | undefined {
+      const aggregates = aggregateIndex?.aggregates;
+      if (!aggregates || !graphLayout) return undefined;
+      for (const cluster of graphLayout.clusters) {
+        const aggregate = aggregates.get(cluster.aggregateId);
+        if (!aggregate?.memberIds.has(id)) continue;
+        // Les agrégats sont une PARTITION : une carte n'appartient qu'à un seul
+        // d'entre eux, il n'y a rien à chercher après celui-ci.
+        return { cluster, memberIds: aggregate.memberIds };
+      }
+      return undefined;
+    },
+
+    extendBoundsToClusters(bounds: Rect): void {
+      // Le disque déborde des cartes de sa marge ; sa boîte englobante est
+      // `cx ± r`, `cy ± r`, et c'est elle qu'on unit aux bornes des cartes.
+      for (const cluster of graphLayout?.clusters ?? NO_CLUSTERS) {
+        const right = bounds.x + bounds.width;
+        const bottom = bounds.y + bounds.height;
+        bounds.x = Math.min(bounds.x, cluster.cx - cluster.r);
+        bounds.y = Math.min(bounds.y, cluster.cy - cluster.r);
+        bounds.width = Math.max(right, cluster.cx + cluster.r) - bounds.x;
+        bounds.height = Math.max(bottom, cluster.cy + cluster.r) - bounds.y;
+      }
+    },
+
+    clustersFor(args: ClustersForArgs): ClusterPaint[] {
+      const aggregates = aggregateIndex?.aggregates;
+      return (graphLayout?.clusters ?? NO_CLUSTERS).map((cluster) => {
+        const root = args.graph.nodes.get(cluster.rootId);
+        const members = aggregates?.get(cluster.aggregateId)?.memberIds;
+        return {
+          circle: { cx: cluster.cx, cy: cluster.cy, r: cluster.r },
+          color: root ? args.accentFor(root) : args.fallbackColor,
+          // Une enveloppe recule quand AUCUN de ses membres n'est lié à la
+          // sélection ; celle qui est sélectionnée reste donc pleine sans cas
+          // particulier (voir `clusterDimmed`).
+          //
+          // Une enveloppe dont l'agrégat manque à l'index reste PLEINE plutôt que
+          // de s'estomper par défaut : on ne sait alors rien de ses membres, et le
+          // même raisonnement vaut ici que pour la sélection fantôme de
+          // `focusKeep()` — mieux vaut ne rien estomper que d'estomper sur une
+          // information qu'on n'a pas.
+          dim: members ? clusterDimmed(args.keep, members) : false,
+          // Relayé et non stocké dans la forme : `clusters()` est la sortie du
+          // moteur, et y greffer un état d'interface la rendrait dépendante de
+          // qui la survole.
+          //
+          // La sélection d'un agrégat le peint à son intensité de survol PLEINE,
+          // et pas par un anneau de plus : l'enveloppe a déjà un état « allumé »
+          // que le survol fait connaître, et le réutiliser dit « celui-ci » sans
+          // ajouter de vocabulaire visuel. Le `max` est ce qui empêche le survol
+          // de FAIRE BAISSER l'enveloppe sélectionnée quand le pointeur la quitte
+          // (`attachHover` y écrit alors des valeurs décroissantes jusqu'à 0).
+          hover: Math.max(
+            args.hoverOf(cluster.aggregateId),
+            cluster.aggregateId === args.selectedAggregateId ? 1 : 0,
+          ),
+        };
+      });
     },
 
     hullPadding(): number {
