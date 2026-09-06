@@ -93,6 +93,34 @@ interface GraphViewState {
   layout: GraphLayoutResult;
 }
 
+/** Ce que la vue courante permet aux cartes et aux arêtes. Donnée pure,
+ * dérivée de `view` seul : la calculer d'un bloc remplace les ternaires
+ * éparpillés, et un futur troisième mode de vue s'écrirait ici.
+ *
+ * Ne contient QUE de la politique. Ce qui lit de l'état — les positions et les
+ * nœuds visibles de la vue courante (`activePositions`/`activeVisible`), ou
+ * l'inertie d'`animatePositions`, qui est une décision d'orchestration — reste
+ * dehors. */
+interface ViewPolicy {
+  /** `drawEdges`/`drawSelectionOverlay` : la vue graphe trace les références,
+   * la vue structure le containment. */
+  edgeMode: "ref" | "contain";
+  /** `rebuild` : un chevron d'en-tête n'a de sens que là où un clic plie
+   * quelque chose — l'arbre de containment, et RIEN en vue graphe, qui montre
+   * tout et ne plie plus aucun agrégat. */
+  chevrons: boolean;
+  /** `rebuild` : l'état de pli est lu sur `collapseState` quand la vue plie,
+   * sinon tout est déplié d'office. `handleNodeTap` : en-tête et jetons de
+   * tableau plient. Déplier en vue graphe révélerait des nœuds qui ne sont pas
+   * des entités, donc que cette vue ne positionne pas. */
+  foldable: boolean;
+  /** `rebuild` : survol des jetons de tableau, l'affordance de pli. */
+  tokenHover: boolean;
+  /** `rebuild` : chevrons de jetons orientés par l'ensemble des tableaux
+   * dépliés. Sans lui les jetons restent lisibles mais inertes. */
+  expandedArrays: boolean;
+}
+
 export interface DataGraphOptions {
   data: unknown;
   config: DataGraphConfig;
@@ -728,6 +756,37 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     }
   }
 
+  /**
+   * La politique de la vue COURANTE, recalculée à chaque lecture.
+   *
+   * Aucun cache : `view` change sous `setView` et sous les replis de `ready` /
+   * `doSetData`, et une politique gardée dans l'état serait un sixième membre
+   * du quintuple à resynchroniser. L'objet est minuscule et lu une fois par
+   * repeint, pas par carte.
+   *
+   * Les deux vues sont symétriques ici, mais l'asymétrie est dans les valeurs :
+   * la vue graphe montre tout et ne plie rien, donc tout ce qui parle de pli y
+   * est faux.
+   */
+  function viewPolicy(): ViewPolicy {
+    if (view === "graph") {
+      return {
+        edgeMode: "ref",
+        chevrons: false,
+        foldable: false,
+        tokenHover: false,
+        expandedArrays: false,
+      };
+    }
+    return {
+      edgeMode: "contain",
+      chevrons: true,
+      foldable: true,
+      tokenHover: true,
+      expandedArrays: true,
+    };
+  }
+
   /** Les positions de la vue courante. */
   function activePositions(): Map<NodeId, Rect> | undefined {
     return view === "graph" ? graphLayout?.positions : layoutResult?.positions;
@@ -899,7 +958,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
           positions,
           theme,
           selectedNodeId(),
-          view === "graph" ? "ref" : "contain",
+          viewPolicy().edgeMode,
         ),
       );
       // Les deux lectures de l'état de recherche passent par le contrôleur, qui
@@ -994,7 +1053,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       positions,
       theme,
       currentLod,
-      view === "graph" ? "ref" : "contain",
+      viewPolicy().edgeMode,
       edgeFocusIds(),
       metrics,
     );
@@ -1285,6 +1344,10 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     }
 
     const visible = activeVisible();
+    // Lue UNE fois pour toute la reconstruction : `view` ne peut pas changer
+    // pendant la boucle (aucun `await` dedans), et toutes les cartes doivent de
+    // toute façon être dessinées sous la même politique.
+    const policy = viewPolicy();
 
     // Les tableaux dépliés, pour orienter le chevron de chaque jeton. Construit
     // une fois par reconstruction : interroger `collapseState` ligne par ligne
@@ -1304,12 +1367,11 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       // page », un tout autre cas.
       if (!node || node.elided) continue;
       if (!rect) continue;
-      // Le chevron n'a de sens que là où un clic d'en-tête plie quelque chose :
-      // l'arbre de containment en vue structure, et RIEN en vue graphe, qui
-      // montre tout et ne plie plus aucun agrégat. Les enfants élidés en sont
-      // exclus (`cardChildCount`) : ils ne sont pas ce que ce chevron révèle.
-      const hasChevron = view === "graph" ? false : node.cardChildCount > 0;
-      const expanded = view === "graph" ? true : (collapseState?.isExpanded(id) ?? false);
+      // Les enfants élidés sont exclus du chevron (`cardChildCount`) : ils ne
+      // sont pas ce qu'il révèle. Sans pli, tout est déplié d'office — on ne
+      // lit même pas `collapseState`, qui décrit alors une autre vue.
+      const hasChevron = policy.chevrons && node.cardChildCount > 0;
+      const expanded = policy.foldable ? (collapseState?.isExpanded(id) ?? false) : true;
       const nodeView = drawNode(
         node,
         rect,
@@ -1325,9 +1387,9 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
         // carte.
         refFieldsByNode.get(id),
         danglingFieldsByNode.get(id),
-        // `null` en vue graphe : les jetons y restent lisibles mais inertes,
-        // comme le chevron d'en-tête, puisque cette vue ne plie rien.
-        view === "graph" ? null : expandedArrays,
+        // `null` là où la vue ne plie rien : les jetons y restent lisibles mais
+        // inertes, comme le chevron d'en-tête.
+        policy.expandedArrays ? expandedArrays : null,
       );
       nodeView.position.set(rect.x, rect.y);
       attachTap(nodeView, (event) => handleNodeTap(node, nodeView, event));
@@ -1343,7 +1405,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       // démarrée au clic serait détruite avant d'être vue. Le survol, lui, se joue
       // entièrement sur la carte existante.
       const tokenHovers: HoverHandle[] = [];
-      if (currentLod === 0 && view !== "graph") {
+      if (currentLod === 0 && policy.tokenHover) {
         node.rows.forEach((row, index) => {
           if (row.valueType !== "array") return;
           const token = nodeView.getChildByLabel(`array-token:${index}`);
@@ -1539,9 +1601,10 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   function handleNodeTap(node: GraphNode, nodeView: Container, event: FederatedPointerEvent): void {
     if (!graph) return;
     if (currentLod === 0) {
+      const policy = viewPolicy();
       const local = nodeView.toLocal(event.global);
       if (local.y < metrics.headerHeight) {
-        if (view !== "graph" && node.cardChildCount > 0) {
+        if (policy.foldable && node.cardChildCount > 0) {
           toggleExpand(node.id);
           return;
         }
@@ -1552,10 +1615,9 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
           // Le jeton d'une ligne-tableau plie le nœud qu'il représente, jamais
           // celui qui le porte. Aucune collision possible avec le suivi de
           // référence : une ligne référençante est scalaire par construction.
-          // En vue graphe, rien ne se plie : déplier révélerait des nœuds qui
-          // ne sont pas des entités, donc que cette vue ne positionne pas. Le
-          // clic y retombe sur la sélection, comme le fait déjà l'en-tête.
-          if (row.valueType === "array" && view !== "graph") {
+          // Là où la vue ne plie rien, le clic retombe sur la sélection, comme
+          // le fait déjà l'en-tête.
+          if (row.valueType === "array" && policy.foldable) {
             toggleExpand(row.arrayId);
             return;
           }
