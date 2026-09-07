@@ -285,6 +285,17 @@ function drawArrayToken(
 export const REMAINDER_TOKEN_HEIGHT = 16;
 
 /**
+ * L'écart qui sépare un jeton de reliquat de la carte qui l'ancre.
+ *
+ * Vit ici, à côté de `REMAINDER_TOKEN_HEIGHT`, parce que les deux constantes
+ * portent le MÊME invariant (voir ci-dessus) : `REMAINDER_TOKEN_GAP +
+ * REMAINDER_TOKEN_HEIGHT < NODE_GAP`. Les séparer les rendrait faciles à faire
+ * dériver l'une de l'autre sans que rien ne le remarque. `create.ts` l'importe
+ * pour poser le jeton au-dessus ou en dessous de son ancre.
+ */
+export const REMAINDER_TOKEN_GAP = 4;
+
+/**
  * Le jeton qui tient la place d'un bloc d'enfants-cartes non révélés : « + 47300 ».
  *
  * Il est dessiné en (0,0) dans son espace local — c'est l'appelant qui le pose,

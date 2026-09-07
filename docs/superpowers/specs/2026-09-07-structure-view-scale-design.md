@@ -152,6 +152,10 @@ restants ». Le jeton de queue coexiste avec la ligne-jeton `[ n items ]`
 existante : celle-ci ouvre le tableau (première page), celui-là étend les pages
 d'un tableau déjà ouvert.
 
+Implémentation retenue : un libellé unique « + n » (`draw.ts`) — les variantes
+« avant »/« restants » ci-dessus sont remplacées par la POSITION du jeton dans
+la colonne, seule source de la direction du trou.
+
 ### 4. `tidy()` : réparation explicite
 
 Nouvelle méthode publique de l'instance (`create.ts`) :

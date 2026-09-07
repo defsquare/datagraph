@@ -72,6 +72,7 @@ import {
   edgeLabelPosition,
   labelParamInView,
   lodForScale,
+  REMAINDER_TOKEN_GAP,
   REMAINDER_TOKEN_HEIGHT,
   type EdgeLabelPlacement,
   type Lod,
@@ -324,20 +325,6 @@ export interface DataGraph {
  * survol est un repère, pas un événement.
  */
 const HOVER_LIFT = 0.025;
-
-/**
- * L'écart qui sépare un jeton de reliquat de la carte qui l'ancre.
- *
- * INVARIANT, avec `REMAINDER_TOKEN_HEIGHT` (voir sa note dans `draw.ts`) :
- * `REMAINDER_TOKEN_GAP + REMAINDER_TOKEN_HEIGHT < NODE_GAP`, où `NODE_GAP` vaut
- * 24 px (`packages/core/src/structure-layout.ts`, aligné sur
- * `elk.spacing.nodeNode`). Un jeton n'est pas une boîte de la mise en page :
- * celle-ci ne lui réserve rien, il doit donc tenir dans la bande qui sépare déjà
- * deux cartes empilées, sans quoi il recouvre sa voisine et lui vole ses clics.
- * 4 + 16 laisse 4 px de dégagement ; un changement d'espacement du moteur oblige
- * à revoir ce couple.
- */
-const REMAINDER_TOKEN_GAP = 4;
 
 // L'autre réglage d'œil de l'interaction, `DIM_ALPHA`, ne peut pas vivre ici :
 // il est partagé avec `drawEdges`, et `draw.ts` important ce fichier fermerait
@@ -2811,6 +2798,11 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       // Une opération concurrente a publié sa propre pose pendant l'attente :
       // appliquer celle-ci l'écraserait. Aucun retour arrière à faire, à la
       // différence de `doExpand` — rien n'a été muté avant l'`await`.
+      //
+      // APPROXIMATION ASSUMÉE : la purge des deltas a déjà eu lieu dans
+      // `layout()`, synchrone à l'appel — un repli d'ici au prochain rangement
+      // défera trop peu. Même famille d'approximation que le retour arrière de
+      // `doReveal` ci-dessus : Ranger répare.
       if (destroyed || gen !== opGen) return;
       layoutResult = next;
       rebuild();

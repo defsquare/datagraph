@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { Container, DOMAdapter, Graphics, Text } from "pixi.js";
 import { DEFAULT_METRICS } from "@defsquare/data-graph-core";
-import { drawRemainderToken, REMAINDER_TOKEN_HEIGHT } from "../src/draw.js";
+import { drawRemainderToken, REMAINDER_TOKEN_GAP, REMAINDER_TOKEN_HEIGHT } from "../src/draw.js";
 import { resolveTheme } from "../src/theme.js";
 
 /**
@@ -79,8 +79,11 @@ describe("jeton de reliquat", () => {
     // La mise en page ne réserve aucune place au jeton : au-delà de `NODE_GAP`
     // (24 px, `packages/core/src/structure-layout.ts`) il recouvre la carte
     // voisine ET lui vole ses clics, son calque étant au-dessus. L'écart que
-    // `create.ts` ajoute doit encore tenir dans ce qui reste.
-    expect(REMAINDER_TOKEN_HEIGHT).toBeLessThan(24);
+    // `create.ts` ajoute (`REMAINDER_TOKEN_GAP`) doit encore tenir dans ce qui
+    // reste : c'est l'invariant complet, pas seulement la hauteur du jeton,
+    // qui doit être vérifié, sans quoi une hauteur bien sous 24 px masquerait
+    // un écart qui, additionné, déborde.
+    expect(REMAINDER_TOKEN_GAP + REMAINDER_TOKEN_HEIGHT).toBeLessThan(24);
   });
 
   it("se dessine en (0,0) dans son espace local, comme une carte", () => {

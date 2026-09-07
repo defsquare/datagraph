@@ -181,7 +181,8 @@ export function validateConfig(config: DataGraphConfig): ValidatedConfig {
   // Garde MÉMOIRE, plus garde de coût : la vue graphe borne elle-même ce qu'elle
   // dispose, donc le plafond ne protège plus que buildGraph + buildSearchIndex,
   // tous deux linéaires. Défaut calibré au bench (`pnpm bench`, section
-  // « échelle mémoire ») : 1 M nœuds logiques = ~430 Mo de heap, ~0,8 s de
+  // « échelle mémoire ») : 1 M nœuds logiques = ~430 Mo de heap (net ; ~479 Mo
+  // absolus, baseline du bench comprise — cf. `bench/bench.ts`), ~0,8 s de
   // build+index sous les options node PAR DÉFAUT — la webview n'aura pas de
   // `--max-old-space-size` non plus.
   const maxNodes = config.maxNodes ?? 1_000_000

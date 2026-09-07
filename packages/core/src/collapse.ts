@@ -59,6 +59,10 @@ export class CollapseState {
    * garde le coût de l'état proportionnel aux pages ouvertes, pas au graphe.
    * La PRÉSENCE d'une entrée fait foi, même vide : `unrevealPage(id, 0)` est un
    * état légitime (« rien de révélé ») et non un retour au défaut.
+   *
+   * `collapse()` ne touche pas cette map : les pages révélées d'un nœud replié
+   * sont CONSERVÉES, même politique que l'ensemble `expanded` — re-déplier
+   * remontre ce qu'on avait révélé.
    */
   private readonly revealed: Map<NodeId, Set<number>> = new Map()
   private static readonly DEFAULT_PAGES: ReadonlySet<number> = new Set([0])
