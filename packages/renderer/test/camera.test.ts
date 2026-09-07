@@ -1,10 +1,16 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { Container } from "pixi.js";
-import { Camera, classifyWheel, normalizeWheelDelta, type WheelSignal } from "../src/camera.js";
+import {
+  Camera,
+  classifyWheel,
+  normalizeWheelDelta,
+  zoomFactorFor,
+  type WheelSignal,
+} from "../src/camera.js";
 
-/** Un `WheelEvent` minimal : `classifyWheel` ne lit que ces quatre champs. */
+/** Un `WheelEvent` minimal : `classifyWheel` ne lit que ces champs. */
 function wheel(partial: Partial<WheelSignal> = {}): WheelSignal {
-  return { deltaX: 0, deltaY: 0, deltaMode: 0, ctrlKey: false, ...partial };
+  return { deltaX: 0, deltaY: 0, deltaMode: 0, ctrlKey: false, metaKey: false, ...partial };
 }
 
 describe("normalizeWheelDelta", () => {
@@ -33,34 +39,63 @@ describe("classifyWheel", () => {
     // Ctrl+molette est la convention navigateur universelle.
     expect(classifyWheel(wheel({ ctrlKey: true, deltaY: 2 }))).toBe("zoom");
     expect(classifyWheel(wheel({ ctrlKey: true, deltaY: 2, deltaX: 5 }))).toBe("zoom");
+    expect(classifyWheel(wheel({ ctrlKey: true, deltaY: 100 }))).toBe("zoom");
   });
 
-  it("un deltaMode non pixel est une vraie molette, donc un zoom", () => {
-    expect(classifyWheel(wheel({ deltaY: 3, deltaMode: 1 }))).toBe("zoom");
-    expect(classifyWheel(wheel({ deltaY: 1, deltaMode: 2 }))).toBe("zoom");
+  it("metaKey est un zoom : Cmd+molette sur macOS", () => {
+    expect(classifyWheel(wheel({ metaKey: true, deltaY: 100 }))).toBe("zoom");
+    expect(classifyWheel(wheel({ metaKey: true, deltaY: 4, deltaX: 2 }))).toBe("zoom");
   });
 
-  it("un pas franc, entier et purement vertical est une molette, donc un zoom", () => {
-    // Chrome synthetise ~100px par cran de molette.
-    expect(classifyWheel(wheel({ deltaY: 100 }))).toBe("zoom");
-    expect(classifyWheel(wheel({ deltaY: -120 }))).toBe("zoom");
-  });
-
-  it("un balayage trackpad se deplace : deltas petits", () => {
+  it("sans modificateur, un balayage trackpad se deplace TOUJOURS", () => {
+    // Le coeur de la regression : un swipe deux doigts vertical et rapide
+    // arrive avec deltaX quantifie a 0 et un deltaY entier de l'ordre du cran
+    // de molette. Toute heuristique qui lit ces trois champs le prend pour une
+    // molette et zoome au milieu d'une navigation.
+    expect(classifyWheel(wheel({ deltaY: 100 }))).toBe("pan");
+    expect(classifyWheel(wheel({ deltaY: -120 }))).toBe("pan");
     expect(classifyWheel(wheel({ deltaY: 8 }))).toBe("pan");
     expect(classifyWheel(wheel({ deltaY: -3, deltaX: 1 }))).toBe("pan");
-  });
-
-  it("un balayage trackpad se deplace : deltas fractionnaires meme s'ils sont gros", () => {
     expect(classifyWheel(wheel({ deltaY: 96.5 }))).toBe("pan");
+    expect(classifyWheel(wheel({ deltaY: 100, deltaX: 4 }))).toBe("pan");
   });
 
-  it("un balayage trackpad se deplace : composante horizontale meme si deltaY est gros", () => {
-    expect(classifyWheel(wheel({ deltaY: 100, deltaX: 4 }))).toBe("pan");
+  it("sans modificateur, une vraie molette se deplace aussi, deltaMode compris", () => {
+    // Firefox rapporte les crans en lignes. C'est bien une molette, mais la
+    // molette nue deplace : le zoom demande un modificateur explicite.
+    expect(classifyWheel(wheel({ deltaY: 3, deltaMode: 1 }))).toBe("pan");
+    expect(classifyWheel(wheel({ deltaY: 1, deltaMode: 2 }))).toBe("pan");
   });
 
   it("un evenement nul ne zoome pas", () => {
     expect(classifyWheel(wheel())).toBe("pan");
+  });
+});
+
+describe("zoomFactorFor", () => {
+  it("est fin sur les petits deltas du pincement", () => {
+    // ~6% par image : franc a la cadence d'un pincement, sans etre nerveux.
+    expect(zoomFactorFor(-5)).toBeCloseTo(Math.exp(0.06), 6);
+  });
+
+  it("plafonne un cran de molette a 1.22x, comme l'ancien gain dedie", () => {
+    // Le plafond existe pour qu'aucun code n'ait a reconnaitre la molette : un
+    // cran de 100px bute dessus et retrouve exactement son toucher d'avant.
+    expect(zoomFactorFor(-100)).toBeCloseTo(1.2214, 4);
+    expect(zoomFactorFor(-100)).toBeCloseTo(Math.exp(100 * 0.002), 6);
+  });
+
+  it("plafonne symetriquement dans les deux sens", () => {
+    expect(zoomFactorFor(100) * zoomFactorFor(-100)).toBeCloseTo(1, 6);
+  });
+
+  it("plafonne aussi un cran Firefox converti en pixels", () => {
+    // deltaMode ligne : 3 lignes -> 48px, deja bien au-dela du plafond.
+    expect(zoomFactorFor(-normalizeWheelDelta(3, 1))).toBeCloseTo(1.2214, 4);
+  });
+
+  it("ne change rien pour un delta nul", () => {
+    expect(zoomFactorFor(0)).toBe(1);
   });
 });
 

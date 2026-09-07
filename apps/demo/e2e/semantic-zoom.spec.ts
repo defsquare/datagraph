@@ -92,15 +92,19 @@ test("sous le seuil, les agrégats remplacent les cartes ; au-dessus, les cartes
   await page.evaluate(id => (window as any).__graph.focus(id), PROBE)
   await page.waitForTimeout(200)
 
-  // Le zoom molette est ancré sur le POINTEUR : en dézoomant depuis le centre,
-  // la sonde y reste, et le disque de son agrégat — qui la contient par
-  // construction — couvre donc toujours ce point. 14 crans font passer l'échelle
-  // de 1 à ~0,07, franchement sous le seuil du LOD 2 (0,15).
+  // Le zoom est ancré sur le POINTEUR : en dézoomant depuis le centre, la sonde
+  // y reste, et le disque de son agrégat — qui la contient par construction —
+  // couvre donc toujours ce point. 14 crans font passer l'échelle de 1 à ~0,07,
+  // franchement sous le seuil du LOD 2 (0,15). Ctrl est indispensable : la
+  // molette nue déplace la toile, le zoom exige un modificateur explicite
+  // (`classifyWheel`), seul signal qu'un balayage trackpad ne produit jamais.
   await page.mouse.move(cx, cy)
+  await page.keyboard.down("Control")
   for (let i = 0; i < 14; i++) {
     await page.mouse.wheel(0, 100)
     await page.waitForTimeout(40)
   }
+  await page.keyboard.up("Control")
   // Un cran de souris pour réveiller le survol. Pixi ne teste sa scène qu'aux
   // événements de pointeur : le disque est arrivé SOUS un curseur immobile, donc
   // aucun `pointerover` n'a encore été émis. Sans ce réveil, l'image de

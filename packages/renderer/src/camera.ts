@@ -21,16 +21,18 @@ const FIT_PADDING = 40;
 const LINE_HEIGHT_PX = 16;
 const PAGE_HEIGHT_PX = 400;
 
-// Au-delà de ce pas, un événement purement vertical et entier est une molette
-// et non un balayage trackpad. Le seuil est volontairement haut : se tromper
-// vers le déplacement est bien moins désagréable que se tromper vers le zoom.
-const MOUSE_WHEEL_MIN_STEP = 40;
-
-// Gains distincts parce que pincement et molette n'envoient pas la même
-// échelle de deltas. 0.002 donne ~1.22x par cran de 100px (trois crans pour
-// doubler) ; 0.012 rend le pincement franc sans être nerveux.
-const ZOOM_GAIN_WHEEL = 0.002;
-const ZOOM_GAIN_PINCH = 0.012;
+// Pincement et molette n'envoient pas la même échelle de deltas : quelques
+// pixels par image pour le premier, un cran franc de ~100px pour la seconde.
+// Plutôt que de deviner lequel des deux on tient — c'est précisément le pari
+// qui faisait zoomer les balayages trackpad — on prend le gain qui va au
+// pincement et on plafonne ce qu'un seul événement peut faire. Un gros delta
+// vient donc buter sur le plafond au lieu d'être interprété.
+//
+// exp(0.2) = 1.22x : c'est exactement ce que valait un cran de molette de
+// 100px avec l'ancien gain dédié, donc la molette garde son toucher (trois
+// crans pour doubler) sans qu'aucun code ait à la reconnaître.
+const ZOOM_GAIN = 0.012;
+const MAX_ZOOM_STEP = 0.2;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -42,6 +44,7 @@ export interface WheelSignal {
   deltaY: number;
   deltaMode: number;
   ctrlKey: boolean;
+  metaKey: boolean;
 }
 
 /** Ramène un delta de molette en pixels, quel que soit le `deltaMode`. */
@@ -52,30 +55,33 @@ export function normalizeWheelDelta(delta: number, deltaMode: number): number {
 }
 
 /**
+ * Le facteur d'échelle qu'un seul événement de zoom applique, pour un delta
+ * vertical déjà ramené en pixels. Plafonné : voir `MAX_ZOOM_STEP`.
+ */
+export function zoomFactorFor(dyPx: number): number {
+  return Math.exp(clamp(-dyPx * ZOOM_GAIN, -MAX_ZOOM_STEP, MAX_ZOOM_STEP));
+}
+
+/**
  * Décide si un événement `wheel` doit zoomer ou déplacer.
  *
- * `ctrlKey` est fiable à 100% : macOS le synthétise pour le pincement
- * trackpad, et Ctrl+molette est la convention navigateur universelle. Un
- * `deltaMode` non pixel l'est tout autant — seule une vraie molette en
- * produit. Le troisième cas est une heuristique : en mode pixel, une molette
- * arrive par pas francs, entiers et purement verticaux, là où un balayage
- * trackpad arrive en flux de petits deltas souvent fractionnaires et presque
- * toujours accompagnés d'une composante horizontale.
+ * Seul un modificateur zoome. `ctrlKey` couvre les deux gestes de zoom qui
+ * comptent : macOS le synthétise pour le pincement trackpad, et Ctrl+molette
+ * est la convention navigateur universelle. `metaKey` ajoute Cmd+molette, le
+ * réflexe macOS. Tout le reste — molette nue comprise — déplace.
  *
- * L'heuristique n'est pas infaillible : un balayage très rapide, entier et
- * parfaitement vertical zoomera. C'est le compromis assumé du seuil.
+ * Il n'y a délibérément AUCUNE heuristique sur les deltas. La version
+ * précédente traitait un événement entier, purement vertical et d'au moins
+ * 40px comme une molette, donc un zoom ; or c'est aussi la signature d'un
+ * balayage trackpad rapide (Chrome quantifie la composante horizontale d'un
+ * geste presque vertical à exactement 0, et l'inertie envoie des deltas bien
+ * au-delà du seuil). Résultat : la vue zoomait au milieu d'une navigation.
+ * Aucun champ de `WheelEvent` ne sépare de façon fiable molette et trackpad,
+ * donc on ne tente pas : le zoom demande un modificateur explicite, et le faux
+ * positif devient structurellement impossible.
  */
 export function classifyWheel(event: WheelSignal): "zoom" | "pan" {
-  if (event.ctrlKey) return "zoom";
-  if (event.deltaMode !== 0) return "zoom";
-  if (
-    event.deltaX === 0 &&
-    Number.isInteger(event.deltaY) &&
-    Math.abs(event.deltaY) >= MOUSE_WHEEL_MIN_STEP
-  ) {
-    return "zoom";
-  }
-  return "pan";
+  return event.ctrlKey || event.metaKey ? "zoom" : "pan";
 }
 
 export interface CameraOptions {
@@ -99,8 +105,9 @@ export interface CameraOptions {
 
 /**
  * Owns pan/zoom for the world `stage` container: drag-to-pan via pointer
- * events, two-finger swipe to pan, pinch and mouse wheel to zoom centered on
- * the cursor, and programmatic fit/center helpers. Bounds scale to [0.02, 3].
+ * events, two-finger swipe and bare mouse wheel to pan, pinch and
+ * Ctrl/Cmd+wheel to zoom centered on the cursor, and programmatic fit/center
+ * helpers. Bounds scale to [0.02, 3].
  */
 export class Camera {
   private readonly stage: Container;
@@ -223,8 +230,7 @@ export class Camera {
     const pointerX = event.clientX - bounds.left;
     const pointerY = event.clientY - bounds.top;
 
-    const gain = event.ctrlKey ? ZOOM_GAIN_PINCH : ZOOM_GAIN_WHEEL;
-    const zoomFactor = Math.exp(-dy * gain);
+    const zoomFactor = zoomFactorFor(dy);
     const nextScale = clamp(this.currentScale * zoomFactor, MIN_SCALE, MAX_SCALE);
     if (nextScale === this.currentScale) return;
 

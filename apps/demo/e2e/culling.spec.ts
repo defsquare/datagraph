@@ -31,6 +31,15 @@ const config = {
   groups: ["Customer"],
 }
 
+/** Zoome de `notches` crans. La molette NUE déplace la toile : le zoom exige un
+ * modificateur, seul signal qu'aucun balayage trackpad ne produit par accident
+ * (`classifyWheel`). Playwright applique l'état clavier aux événements molette. */
+async function zoom(page: Page, notches: number, deltaY: number): Promise<void> {
+  await page.keyboard.down("Control")
+  for (let i = 0; i < notches; i++) await page.mouse.wheel(0, deltaY)
+  await page.keyboard.up("Control")
+}
+
 async function gotoGraphView(page: Page): Promise<void> {
   await page.goto("/")
   await page.waitForFunction(() => (window as any).__graph !== undefined)
@@ -64,7 +73,7 @@ test("focus sur une carte hors fenêtre la trouve dessinée à l'arrivée", asyn
   // montre plus qu'une poignée de cartes. Tout le reste est alors non
   // matérialisé — c'est précisément l'état que le culling introduit.
   await page.mouse.move(cx, cy)
-  for (let i = 0; i < 12; i++) await page.mouse.wheel(0, -100)
+  await zoom(page, 12, -100)
   await page.waitForTimeout(200)
 
   // Quatre cibles éparpillées dans le jeu : après un `focus`, le centre du
@@ -87,7 +96,7 @@ test("select sur une carte hors fenêtre ne perd pas la sélection", async ({ pa
   const cx = box!.x + box!.width / 2
   const cy = box!.y + box!.height / 2
   await page.mouse.move(cx, cy)
-  for (let i = 0; i < 12; i++) await page.mouse.wheel(0, -100)
+  await zoom(page, 12, -100)
   await page.waitForTimeout(200)
 
   // `select()` ne déplace PAS la caméra : la carte reste hors écran. Elle est
