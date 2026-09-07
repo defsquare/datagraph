@@ -2,31 +2,44 @@
 
 ## Workflow
 
-**La délégation dépend du modèle de la session courante** (celui annoncé dans l'environnement, réglable par `/model`). La règle existe pour ne pas dépenser Fable sur du travail qu'un modèle moins puissant fait aussi bien — elle n'a donc de sens que quand la session tourne sous Fable.
+**Delegation depends on the current session's model** (the one announced in the environment, adjustable via `/model`). The rule exists to avoid spending Fable on work a less powerful model does just as well — so it only makes sense when the session runs on Fable.
 
-- **Session sous Fable → déléguer l'implémentation à un sous-agent `model: "opus"`** (Agent tool), par défaut et sans que l'utilisateur ait à le redemander. Le fil principal garde le brainstorming, le design et la revue.
-- **Session sous tout autre modèle (Opus, Sonnet, …) → pas de sous-agent : écrire le code directement dans le fil.** Déléguer depuis un modèle déjà moins coûteux que Fable n'économise rien et ne fait qu'ajouter un aller-retour et une perte de contexte.
+- **Session on Fable → delegate implementation to a `model: "opus"` subagent** (Agent tool), by default and without the user having to ask again. The main thread keeps brainstorming, design and review.
+- **Session on any other model (Opus, Sonnet, …) → no subagent: write the code directly in the thread.** Delegating from a model already cheaper than Fable saves nothing and only adds a round-trip and a loss of context.
 
-Deux exceptions rétablissent la délégation quel que soit le modèle : un skill qui l'impose, ou une demande explicite de l'utilisateur.
+Two exceptions restore delegation regardless of the model: a skill that mandates it, or an explicit request from the user.
 
-## Commandes
+## Mandatory ADR pass before every commit
 
-- Tests : `pnpm test` (racine, tous les packages — vitest **plus** `cargo test` via `apps/demo`, donc toolchain Rust requise) ou `pnpm --filter @defsquare/data-graph test` (le package renderer s'appelle `@defsquare/data-graph`, core `@defsquare/data-graph-core`)
-- Typecheck : `pnpm typecheck`
-- Build : `pnpm build`
-- Playground du design system : `pnpm --filter design dev` (port 5174, la démo garde 5173 — les deux tournent ensemble)
-- Desktop : `pnpm --filter demo tauri dev` / `tauri build` (Tauri v2, toolchain Rust requise) — le build produit un binaire brut `apps/demo/src-tauri/target/release/datagraph` (`bundle.active: false`, pas de `.app`/`.dmg` : l'app se lance depuis le shell) — ce binaire est aussi le CLI end-user : `datagraph <data.json> [-c <config.json>]`, sans argument il ouvre la démo
+Before every git commit, do a pass over the ADRs:
+
+- Compare the staged diff (`git diff --cached`) against the ADRs in `docs/adr/`.
+- Create a new ADR (Nygard format: Context / Decision / Alternatives / Consequences) for any new architecture decision introduced by the diff.
+- Supersede — status `Superseded by ADR-XXXX` + link — any ADR made obsolete.
+- Include in the commit message an `ADR-Reviewed: <what was checked / created / superseded>` trailer — or `ADR-Reviewed: none — no architectural decision touched.`
+
+This pass is enforced by a hook (`.claude/hooks/adr-gate.sh`, wired in `.claude/settings.json`): a commit without an `ADR-Reviewed:` trailer is blocked. Doing the pass proactively avoids the block round-trip.
+
+Also remember to update the index `docs/adr/README.md` whenever an ADR is created or superseded.
+
+## Commands
+
+- Tests: `pnpm test` (root, all packages — vitest **plus** `cargo test` via `apps/demo`, so the Rust toolchain is required) or `pnpm --filter @defsquare/data-graph test` (the renderer package is named `@defsquare/data-graph`, core is `@defsquare/data-graph-core`)
+- Typecheck: `pnpm typecheck`
+- Build: `pnpm build`
+- Design system playground: `pnpm --filter design dev` (port 5174, the demo keeps 5173 — both run side by side)
+- Desktop: `pnpm --filter demo tauri dev` / `tauri build` (Tauri v2, Rust toolchain required) — the build produces a raw binary `apps/demo/src-tauri/target/release/datagraph` (`bundle.active: false`, no `.app`/`.dmg`: the app launches from the shell) — this binary is also the end-user CLI: `datagraph <data.json> [-c <config.json>]`; with no argument it opens the demo
 
 ## Structure
 
-- `packages/tokens` — source de vérité du design system (couleurs, typographie, espacements, rayons). `theme.ts` du renderer en dérive ses thèmes Pixi, et `scripts/generate-css.ts` (`pnpm --filter @defsquare/data-graph-tokens generate:css`) en génère `apps/demo/src/tokens.css`, dont `test/css.test.ts` vérifie la fraîcheur octet à octet — un token modifié sans régénération casse `pnpm test`.
-- `packages/core` — graphe, layout (ELK + moteur deux niveaux pour la vue graphe), agrégats, recherche
-- `packages/renderer` — rendu Pixi v8 (`create.ts` orchestration, `draw.ts` dessin pur, `camera.ts`, `drag.ts`, `hover.ts`)
-- `apps/demo` — démo Vite + coquille desktop Tauri v2 (`src-tauri/`). Le Rust n'est pas du boilerplate : `cli.rs` porte le parseur argv de la CLI (testé par `cargo test`, câblé dans le script `test` du package, donc dans `pnpm test`), et `lib.rs` expose la commande Tauri `launch_payload` consommée par `src/launch.ts`. Le mode fichier est couvert côté TS par `e2e/file-mode.spec.ts`, qui simule `__TAURI_INTERNALS__` et rejoue les vraies `fixtures/`. Détails dans `apps/demo/README.md`.
-- `apps/design` — playground du design system (port 5174) : quatre vues, tokens / composants graphe / composants UI / bac à sable, chacune dans les quatre thèmes marque × mode. Jamais publié, donc ses alias Vite pointent **inconditionnellement** sur `packages/*/src` (build compris) : ce qu'il montre est l'état courant des sources, sans `pnpm -r build` préalable. C'est l'inverse du choix de la démo, dont le build de production consomme les `exports` — la raison des deux est dans `apps/design/README.md`.
+- `packages/tokens` — the design system's source of truth (colors, typography, spacing, radii). The renderer's `theme.ts` derives its Pixi themes from it, and `scripts/generate-css.ts` (`pnpm --filter @defsquare/data-graph-tokens generate:css`) generates `apps/demo/src/tokens.css` from it, whose freshness `test/css.test.ts` verifies byte for byte — a token changed without regeneration breaks `pnpm test`.
+- `packages/core` — graph, layout (ELK + the two-level engine for the graph view), aggregates, search
+- `packages/renderer` — Pixi v8 rendering (`create.ts` orchestration, `draw.ts` pure drawing, `camera.ts`, `drag.ts`, `hover.ts`)
+- `apps/demo` — Vite demo + Tauri v2 desktop shell (`src-tauri/`). The Rust is not boilerplate: `cli.rs` carries the CLI's argv parser (tested by `cargo test`, wired into the package's `test` script, hence into `pnpm test`), and `lib.rs` exposes the Tauri command `launch_payload` consumed by `src/launch.ts`. File mode is covered on the TS side by `e2e/file-mode.spec.ts`, which simulates `__TAURI_INTERNALS__` and replays the real `fixtures/`. Details in `apps/demo/README.md`.
+- `apps/design` — design system playground (port 5174): four views, tokens / graph components / UI chrome components / sandbox, each in the four brand × mode themes. Never published, so its Vite aliases point **unconditionally** at `packages/*/src` (build included): what it shows is the current state of the sources, with no prior `pnpm -r build`. This is the opposite of the demo's choice, whose production build consumes the `exports` — the rationale for both is in `apps/design/README.md`.
 
 ## Conventions
 
-- Commentaires en français, qui documentent les contraintes/invariants (le « pourquoi »), pas le « quoi ».
-- `draw.ts` ne prend que de la donnée nue (pas de graphe/état d'interface) pour rester testable sans instance.
-- Toute opération mutante async est gardée par `opGen` + `destroyed` (voir `create.ts`).
+- Code comments in English; they document constraints/invariants (the "why"), not the "what". (Legacy comments are still in French — a global translation pass over the codebase is planned; write new comments in English in the meantime.)
+- `draw.ts` takes only bare data (no graph/interface state) to stay testable without an instance.
+- Every async mutating operation is guarded by `opGen` + `destroyed` (see `create.ts`).
