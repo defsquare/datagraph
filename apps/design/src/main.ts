@@ -7,6 +7,10 @@ import "./style.css";
 
 import { renderTokensCss } from "@tokens/css.ts";
 import { onThemeChange, setTheme, themeState, type ThemeState } from "./theme-state.ts";
+// Après `./style.css` : une vue importe sa propre feuille, et celle-ci doit
+// pouvoir surcharger celle du shell — l'ordre des imports EST l'ordre en
+// cascade.
+import { mountTokensView } from "./views/tokens.ts";
 
 /**
  * Le contrat d'une vue du playground.
@@ -45,7 +49,7 @@ function placeholder(id: string, label: string): PlaygroundView {
 // La vue d'accueil est nommée, pas déduite d'un `VIEWS[0]` : réordonner le
 // registre ne doit pas déplacer l'écran d'arrivée à l'insu de celui qui
 // réordonne.
-const TOKENS_VIEW = placeholder("tokens", "Tokens");
+const TOKENS_VIEW: PlaygroundView = { id: "tokens", label: "Tokens", mount: mountTokensView };
 
 const VIEWS: PlaygroundView[] = [
   TOKENS_VIEW,

@@ -1,0 +1,354 @@
+/* Habillage de la vue « Tokens ».
+
+   Même règle que `style.css` : aucune couleur, aucun rayon, aucun espacement en
+   dur — tout vient des variables générées par le paquet de tokens. La vue qui
+   EXPOSE le design system serait mal placée pour s'en écarter.
+
+   Les couleurs EXAMINÉES, elles, sont posées en style inline par `tokens.ts`
+   depuis la source : elles doivent montrer la valeur du token, pas celle du
+   thème courant du shell. La seule exception au « pas de valeur en dur » ici
+   est le damier — un artefact de présentation destiné à révéler la
+   translucidité, qui n'a rien à faire dans un design system. */
+
+.tokens-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  /* Largeur de lecture : au-delà, les tableaux de swatches s'étirent et l'œil
+     perd la ligne entre le nom du token et sa valeur. */
+  max-width: 68rem;
+}
+
+.ds-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.ds-section-title {
+  margin: 0;
+  font-family: var(--font-title, var(--font-body));
+  font-size: 1.125rem;
+  font-weight: 500;
+  color: var(--ds-ink);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--ds-border);
+}
+
+.ds-subtitle {
+  margin: 0 0 var(--space-2);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ds-subtle);
+}
+
+.ds-note {
+  margin: 0;
+  max-width: 56rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--ds-muted);
+}
+
+.subsection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+/* ---------- Tableaux de tokens ---------- */
+
+.ds-table {
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.ds-table th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--ds-subtle);
+  padding: var(--space-1) var(--space-3) var(--space-1) 0;
+  border-bottom: 1px solid var(--ds-border);
+}
+
+.ds-table td {
+  padding: var(--space-1) var(--space-3) var(--space-1) 0;
+  border-bottom: 1px solid var(--ds-border-soft);
+  vertical-align: middle;
+}
+
+/* Rangée d'intertitre : elle sépare `surface` de `ink` sans introduire quatre
+   tableaux, qui auraient des colonnes de largeurs différentes. */
+.group-row th {
+  padding-top: var(--space-3);
+  color: var(--ds-primary);
+  border-bottom: none;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.wrapped-row td {
+  background: var(--ds-surface-muted);
+}
+
+.token-name {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--ds-fg);
+}
+
+.hex {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--ds-muted);
+  white-space: nowrap;
+}
+
+/* La bordure n'est pas décorative : sans elle, un `#ffffff` sur fond clair (ou
+   un `#161a2c` en sombre) n'aurait aucun contour et disparaîtrait. */
+.swatch {
+  display: inline-block;
+  width: 2.25rem;
+  height: 1.25rem;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--radius-sm);
+}
+
+.swatch-round {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: var(--radius-full);
+}
+
+/* ---------- Contraste ---------- */
+
+.contrast-preview {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 1.75rem;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+}
+
+.ratio {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--ds-fg);
+  margin-right: var(--space-2);
+}
+
+/* Le badge porte son verdict en TEXTE, pas seulement en couleur : lu sans
+   distinguer le vert du rouge, il doit rester exact. */
+.badge {
+  display: inline-block;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--ds-border);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--ds-muted);
+}
+
+.badge-aaa,
+.badge-aa {
+  color: var(--ds-primary);
+  border-color: var(--ds-primary);
+}
+
+.badge-fail {
+  color: var(--ds-subtle);
+}
+
+/* ---------- Chrome ---------- */
+
+.chrome-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: var(--space-4);
+}
+
+.chrome-panel {
+  border: 1px solid var(--ds-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3);
+  background: var(--ds-surface);
+}
+
+/* Damier : valeurs en dur assumées. Ce n'est pas un token mais un fond de
+   contrôle, celui des éditeurs d'image, et son seul rôle est de rendre visible
+   ce qui transparaît à travers les surfaces flottantes. Le gris neutre à
+   0.22 tient sur les deux modes ; la couleur de fond, elle, est posée en
+   inline depuis la surface de canvas de la marque. */
+.checker {
+  --checker-tint: rgb(128 128 128 / 0.22);
+  background-image:
+    linear-gradient(45deg, var(--checker-tint) 25%, transparent 25%, transparent 75%, var(--checker-tint) 75%),
+    linear-gradient(45deg, var(--checker-tint) 25%, transparent 25%, transparent 75%, var(--checker-tint) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 8px 8px;
+  border-radius: var(--radius-md);
+  padding: var(--space-6);
+  display: flex;
+  justify-content: center;
+}
+
+.float-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  min-width: 12rem;
+}
+
+.float-title {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+}
+
+.float-hover-strip {
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+}
+
+.value-list {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: var(--space-3) 0 0;
+}
+
+.value-list dd {
+  margin: 0;
+  /* Les ombres sont de longues chaînes : elles doivent pouvoir se replier
+     plutôt que d'élargir le panneau. */
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+/* ---------- Typographie ---------- */
+
+.typo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.typo-panel {
+  border: 1px solid var(--ds-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3);
+  background: var(--ds-surface);
+}
+
+/* Même hauteur de rangée que les lignes dessinées dans le canvas (46px) : les
+   deux colonnes se lisent alors ligne à ligne, ce qui est tout l'intérêt de les
+   montrer côte à côte. */
+.typo-row {
+  height: 46px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 2px;
+}
+
+.typo-meta {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--ds-subtle);
+}
+
+.typo-sample {
+  color: var(--ds-ink);
+}
+
+.typo-canvas canvas {
+  border-radius: var(--radius-md);
+  display: block;
+  max-width: 100%;
+}
+
+/* ---------- Échelles ---------- */
+
+.scale-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.scale-block {
+  border: 1px solid var(--ds-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3);
+  background: var(--ds-surface);
+}
+
+/* La première colonne tient le plus long nom de token (`matchCurrent`) : plus
+   étroite, le trait viendrait le toucher. */
+.scale-row {
+  display: grid;
+  grid-template-columns: 6.5rem 1fr 3.5rem;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 1.75rem;
+}
+
+.scale-bar {
+  display: block;
+  height: 0.75rem;
+  border-radius: var(--radius-sm);
+  background: var(--ds-primary);
+}
+
+.stroke-line {
+  display: block;
+  width: 100%;
+  background: var(--ds-ink);
+}
+
+.radii-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.radius-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.radius-box {
+  display: block;
+  width: 3.5rem;
+  height: 3.5rem;
+  background: var(--ds-surface-muted);
+  border: 1px solid var(--ds-primary);
+}
+
+/* ---------- Palette d'entités ---------- */
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+}
