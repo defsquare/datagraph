@@ -1,7 +1,7 @@
 {
   "name": "@defsquare/data-graph",
   "version": "0.1.0",
-  "description": "jsoncrack-style visualization for arbitrary JSON driven by an ids/refs/groups config, with real reference edges — Pixi.js renderer, expand/collapse, search, and theming, on top of @defsquare/data-graph-core.",
+  "description": "Interactive visualization for arbitrary JSON driven by an ids/refs/groups config, with real reference edges — Pixi.js renderer, expand/collapse, search, and theming, on top of @defsquare/data-graph-core.",
   "keywords": [
     "visualization",
     "graph",
@@ -11,7 +11,6 @@
     "reference-edges",
     "pixi",
     "pixi.js",
-    "jsoncrack",
     "canvas"
   ],
   "license": "MIT",

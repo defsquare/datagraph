@@ -11,8 +11,7 @@
     "reference-edges",
     "layout",
     "elk",
-    "search-index",
-    "jsoncrack"
+    "search-index"
   ],
   "license": "MIT",
   "repository": {

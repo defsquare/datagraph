@@ -1,6 +1,6 @@
 # @defsquare/data-graph
 
-jsoncrack-style visualization for complex objects — keyed records, with real
+Interactive visualization for complex JSON documents — keyed records, with real
 reference edges — rendered on a Pixi.js canvas. See the
 [root README](https://github.com/defsquare/data-graph#readme) for the full
 pitch and the ids/refs/groups config format, and

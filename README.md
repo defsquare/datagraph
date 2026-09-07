@@ -1,16 +1,16 @@
 # data-graph
 
-**jsoncrack-style visualization for complex objects — but for keyed records and real reference edges.**
+**Interactive visualization for complex JSON documents — keyed records and real reference edges.**
 
 Most JSON visualizers draw a literal tree: every object and array becomes a
 box, every key becomes an edge. That's fine for small documents, but it falls
 apart on real domain data — records with hundreds of nested fields, foreign
 keys that point across the document, collections with thousands of rows.
 
-`data-graph` renders the same kind of interactive box-and-line canvas as
-jsoncrack, but on top of a **domain model** instead of raw JSON structure:
-you declare, in `ids`, which paths in your data are *keyed records* (e.g.
-`Customer`, `Order`), and, in `refs`, which fields *join* them (e.g.
+`data-graph` renders that same interactive box-and-line canvas, but on top of a
+**domain model** instead of raw JSON structure: you declare, in `ids`, which
+paths in your data are *keyed records* (e.g. `Customer`, `Order`), and, in
+`refs`, which fields *join* them (e.g.
 `Order.customerId → Customer`). It then builds a graph with two edge kinds —
 containment (parent/child structure) and reference (real foreign keys) — and
 renders only what's expanded, so a 10,000-node dataset stays smooth: pan,
