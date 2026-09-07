@@ -1,0 +1,28 @@
+/* La pastille de type d'entité : voir `badge.ts`.
+
+   L'encre est un `#ffffff` en dur, et c'est le seul endroit de cette feuille qui
+   n'utilise pas un token : le design system n'a pas d'encre « sur accent ». Elle
+   tient dans les deux modes, mais de justesse en sombre (blanc sur
+   `accent.entity` #3573c3 : 4,8:1, soit AA et pas AAA), et rien ne le surveille.
+   C'est un manque du design system, pas une décision de ce fichier — le combler
+   veut dire ajouter le token, pas arranger la règle. */
+
+.badge {
+  display: inline-block;
+  padding: 2px 7px;
+  margin-bottom: var(--space-2);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #ffffff;
+  background: var(--ds-primary);
+  border-radius: var(--radius-sm);
+}
+
+/* Une règle d'auteur l'emporte sur le `[hidden] { display: none }` de la feuille
+   UA, quelle que soit sa spécificité : sans ceci, la pastille resterait
+   affichée, vide, sous l'état initial du panneau qui la porte. */
+.badge[hidden] {
+  display: none;
+}

@@ -1,0 +1,20 @@
+/* Le bouton « suivre la référence » : voir `ref-button.ts`.
+
+   Il était scopé sous `#selection-rows` quand il n'existait qu'à un seul
+   endroit ; une primitive ne dépend pas de son hôte. Aucune règle concurrente
+   n'existe, la baisse de spécificité est donc sans effet. */
+
+.ref-btn {
+  flex: none;
+  padding: 0 4px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--ds-primary);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.ref-btn:hover { color: var(--ds-accent); }
+.ref-btn[disabled] { color: var(--ds-subtle); cursor: default; }

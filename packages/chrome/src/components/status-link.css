@@ -1,0 +1,18 @@
+/* Le lien de la barre d'état : voir `status-link.ts`.
+
+   `pointer-events: auto` rétablit ce que la barre d'état retire à ses enfants :
+   elle est transparente aux gestes pour ne pas manger ceux du canvas, mais ce
+   bouton-ci doit rester cliquable. */
+
+.status-link {
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--ds-accent);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.status-link:hover { text-decoration: underline; }

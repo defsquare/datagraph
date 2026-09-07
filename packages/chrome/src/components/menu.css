@@ -1,0 +1,52 @@
+/* Le menu et ses entrées : voir `menu.ts`.
+
+   Sans ancrage : `position`, `top` et `left` disent OÙ l'application pose le
+   panneau, et c'est de la mise en place. `transform-origin` reste ici, il
+   appartient à l'animation d'ouverture — qui part du coin par lequel le panneau
+   est retenu. */
+
+/* Replié, il reste dans le DOM, masqué par `hidden` : même raison que pour la
+   recherche, la feuille UA ne suffit pas face à une règle d'auteur qui pose
+   `display`. */
+.menu[hidden] {
+  display: none;
+}
+
+.menu {
+  min-width: 216px;
+  padding: 5px;
+  transform-origin: top left;
+  animation: drop-in 160ms var(--ease-out);
+}
+
+@keyframes drop-in {
+  from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+.menu-item {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  text-align: left;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--ds-fg);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color var(--transition), color var(--transition);
+}
+
+.menu-item:hover { background: var(--float-hover); color: var(--ds-ink); }
+.menu-item:disabled { opacity: 0.5; cursor: default; }
+
+/* `outline-offset` NÉGATIF, contrairement au bouton d'icône : l'entrée occupe
+   toute la largeur du panneau, un liseré posé à l'extérieur déborderait de son
+   bord. */
+.menu-item:focus-visible {
+  outline: 2px solid var(--ds-primary);
+  outline-offset: -2px;
+}

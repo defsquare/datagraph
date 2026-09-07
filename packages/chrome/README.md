@@ -2,12 +2,30 @@
 
 Les primitives DOM du chrome de data-graph : surface flottante, bouton d'icône,
 recherche dépliante, menu, pastille d'entité, lien de statut, bouton de
-référence. Trois choses, et rien d'autre :
+référence.
 
-- `src/chrome.css` — l'habillage des primitives ;
-- `src/icons.ts` — les neuf icônes du chrome, seule source ;
-- `src/factories.ts` — les fabriques de markup (`createIconButton`,
-  `createFindbar`, `createMenu`, `createBadge`, …).
+**Une primitive par module, sa feuille à côté**, sous `src/components/` :
+
+```
+src/
+  icons.ts              les neuf icônes du chrome, seule source
+  dom.ts                le helper `element()`, interne
+  chrome.css            point d'entrée : la liste des @import
+  index.ts              la façade publique
+  components/
+    float.css           le socle, sans fabrique — une classe qu'on pose
+    cluster.ts   .css   createCluster, createClusterSeparator
+    icon-button.ts .css createIconButton
+    findbar.ts   .css   createFindbar
+    menu.ts      .css   createMenu, createMenuItem
+    badge.ts     .css   createBadge
+    status-link.ts .css createStatusLink
+    ref-button.ts  .css createRefButton
+```
+
+Les règles d'un composant vivent avec le code qui le construit : on n'ajoute pas
+un état CSS sans voir sa fabrique, ni l'inverse. Les consommateurs, eux, ne
+voient que deux points d'entrée — l'index et `chrome.css`.
 
 ```ts
 import { createIconButton, createFindbar } from "@defsquare/data-graph-chrome";

@@ -1,0 +1,18 @@
+/* La surface flottante : le socle de tout le chrome.
+
+   Translucide et floutée pour que le graphe transparaisse, mais assez opaque
+   pour rester lisible au-dessus d'une carte dense. Elle n'est pas interactive —
+   survol, focus et désactivation appartiennent à ce qu'on pose dessus.
+
+   Aucune fabrique ne lui correspond : `.float` est une classe qu'on POSE sur une
+   surface, pas un composant qu'on construit. La grappe, la recherche et le menu
+   la portent en plus de la leur. */
+
+.float {
+  background: var(--float-bg);
+  border: 1px solid var(--float-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-float);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+}

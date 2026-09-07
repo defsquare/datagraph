@@ -1,0 +1,80 @@
+/* La recherche dépliante : voir `findbar.ts`. */
+
+/* Repliée, elle reste dans le DOM, masquée par `hidden`. Une règle d'auteur qui
+   pose `display` l'emporte sur le `[hidden] { display: none }` de la feuille UA,
+   quelle que soit sa spécificité : il faut donc le redire, sinon la barre
+   s'afficherait dépliée en permanence. */
+.findbar[hidden] {
+  display: none;
+}
+
+.findbar {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  width: 296px;
+  height: 36px;
+  padding: 0 4px 0 10px;
+  transform-origin: left center;
+  animation: unfold 200ms var(--ease-out);
+}
+
+@keyframes unfold {
+  from { opacity: 0; transform: scaleX(0.82) translateX(-10px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* C'est la BARRE qui s'allume, pas le champ : les deux se lisent alors comme un
+   seul objet, ce qu'ils sont. */
+.findbar:focus-within {
+  border-color: color-mix(in srgb, var(--ds-primary) 55%, transparent);
+  box-shadow: var(--shadow-float), 0 0 0 3px color-mix(in srgb, var(--ds-primary) 16%, transparent);
+}
+
+.findbar-icon { width: 15px; height: 15px; flex: none; color: var(--ds-subtle); }
+
+.findbar-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 6px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--ds-fg);
+  background: none;
+  border: 0;
+  outline: none;
+}
+
+.findbar-input::-webkit-search-cancel-button { display: none; }
+
+.findbar-counter {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ds-subtle);
+  padding: 0 var(--space-1);
+  white-space: nowrap;
+}
+
+.findbar-nav {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  color: var(--ds-muted);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background-color var(--transition), color var(--transition);
+}
+
+.findbar-nav svg { width: 14px; height: 14px; display: block; }
+.findbar-nav:hover { background: var(--float-hover); color: var(--ds-ink); }
+
+.findbar-nav:focus-visible {
+  outline: 2px solid var(--ds-primary);
+  outline-offset: 1px;
+}

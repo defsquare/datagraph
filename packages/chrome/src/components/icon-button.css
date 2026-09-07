@@ -1,0 +1,62 @@
+/* Le bouton d'icône : voir `icon-button.ts`.
+
+   30px, sans fond au repos, l'icône en `--ds-muted`. Deux états tiennent à un
+   attribut ARIA plutôt qu'à une classe jumelle — c'est l'attribut que lit une
+   technologie d'assistance, et s'en servir aussi comme sélecteur rend impossible
+   qu'un des deux soit posé sans l'autre. */
+
+.ibtn {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--ds-muted);
+  background: none;
+  border: 0;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background-color var(--transition), color var(--transition);
+}
+
+.ibtn svg { width: 16px; height: 16px; display: block; }
+
+.ibtn:hover { background: var(--float-hover); color: var(--ds-ink); }
+.ibtn:active { transform: translateY(0.5px); }
+.ibtn:disabled { opacity: 0.45; cursor: default; }
+
+.ibtn:focus-visible {
+  outline: 2px solid var(--ds-primary);
+  outline-offset: 1px;
+}
+
+/* Un panneau ouvert reste signalé par son déclencheur. */
+.ibtn[aria-expanded="true"] {
+  color: var(--ds-primary);
+  background: color-mix(in srgb, var(--ds-primary) 14%, transparent);
+}
+
+/* Un bouton OCCUPÉ : le calcul est parti, la page reste vivante.
+ *
+ * La règle passe APRÈS `.ibtn:disabled` — l'appelant pose les deux, et c'est
+ * cette opacité-ci, plus claire, qui doit gagner : « en cours » n'est pas « pas
+ * disponible ». Une pulsation lente et une opacité, rien de plus : le vrai
+ * signal est que le reste de l'écran répond toujours, et un indicateur bruyant
+ * dirait le contraire. `prefers-reduced-motion` retire l'animation et garde
+ * l'état. */
+.ibtn[aria-busy="true"]:disabled {
+  opacity: 0.7;
+  animation: ibtn-busy 1.2s ease-in-out infinite;
+}
+
+@keyframes ibtn-busy {
+  50% { opacity: 0.3; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ibtn[aria-busy="true"]:disabled { animation: none; }
+}
+
+.ibtn-sm { width: 24px; height: 24px; border-radius: 6px; }
+.ibtn-sm svg { width: 13px; height: 13px; }

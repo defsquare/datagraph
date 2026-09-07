@@ -1,0 +1,15 @@
+/* La grappe d'icônes : voir `cluster.ts`. */
+
+.cluster {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 3px;
+}
+
+.cluster-sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 3px;
+  background: var(--float-border);
+}
