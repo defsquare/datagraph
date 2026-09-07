@@ -52,8 +52,9 @@
 // cartes. Deux cartes d'agrégats différents ne peuvent pas se recouvrir
 // puisque leurs disques ne se touchent pas, et deux cartes du même agrégat
 // sont packées avec marge. Le coût ne suit donc plus le nombre de CARTES mais
-// le nombre d'AGRÉGATS : O(k² · itérations) sur k disques, plus un packing
-// linéaire.
+// le nombre d'AGRÉGATS : k disques × itérations, plus un packing linéaire. Ce
+// fut O(k² · itérations) jusqu'à ce que la collision passe par une grille
+// spatiale — voir la réserve levée en bas de cet en-tête.
 //
 // Mesuré par la sonde (médiane de 3 runs, `clusterGap: 160` et
 // `hullPadding: 18` des deux côtés, donc à garanties égales) :
@@ -83,8 +84,8 @@
 // intra-agrégat) et `disc-simulation.ts` (écartement des disques), qui ne sont
 // importés que d'ici. Voir l'en-tête ci-dessus pour le canal d'exposition.
 //
-// CE QUE CE MOTEUR NE TRANCHE PAS (réserves de la sonde, reprises telles
-// quelles parce qu'aucune n'a été levée depuis) :
+// CE QUE CE MOTEUR NE TRANCHE PAS (réserves de la sonde ; celles qui ont été
+// levées depuis le disent, et disent par quoi) :
 //
 //   - RÉSERVE LEVÉE. Le packing intra-agrégat ignorait les arêtes ; il existe
 //     désormais en DEUX MODES, et le choix se fait par cluster sur la
@@ -101,11 +102,66 @@
 //     sur les deux jeux réels du dépôt, dont tous les agrégats sont plats, le
 //     remplissage ne bouge pas d'un dixième — 12,3 % (cœur) et 15,1 % (démo) —
 //     parce qu'ils restent en étagères.
-//   - O(k²) sur les agrégats : 143 ms à 167 disques dans la sonde, 194 ms ici
-//     une fois la passe dure resserrée. Mais la croissance est quadratique —
-//     mesuré à 500 disques (bigShop(9000), 1 000 cartes) : 3,6 s. Grille
-//     spatiale pour la collision et Barnes-Hut pour les ressorts la
-//     ramèneraient à k log k, à ne faire que si ce cardinal devient réel.
+//   - RÉSERVE LEVÉE. « O(k²) sur les agrégats […] à ne faire que si ce cardinal
+//     devient réel » : il l'est devenu. Un audit d'architecture réel — 6 251
+//     entités, ~1 300 agrégats — mettait **55,4 s** à se poser, et la même
+//     configuration sans groupes, où chaque entité est son propre disque
+//     (6 251 disques, un régime que le moteur sert légitimement), **23,5
+//     minutes**. La collision passe donc par une GRILLE SPATIALE uniforme,
+//     reconstruite à chaque passe ; l'exposé complet — dimensionnement de la
+//     maille, exhaustivité de la fenêtre, déterminisme, et surtout pourquoi
+//     l'invariant de sortie reste PROUVÉ avec un index qui se périme en cours
+//     de passe — est au-dessus de `collisionPass` (`disc-simulation.ts`), qui
+//     est l'endroit où cette histoire est racontée en entier.
+//
+//     Mesuré sur cet audit, `layout()` complet, avant → après :
+//
+//       agrégats (le régime que la vue graphe exerce)
+//         774 entités / 197 disques        283 ms →   120 ms   (×2,4)
+//       1 147 entités / 238 disques        448 ms →   184 ms   (×2,4)
+//       1 955 entités / 372 disques      1 537 ms →   512 ms   (×3,0)
+//       6 251 entités / 1 300 disques   55 410 ms → 6 065 ms   (×9,1)
+//
+//       sans groupes (un disque par entité)
+//         774 disques                   14 053 ms →   653 ms   (×22)
+//       1 147 disques                   39 606 ms → 1 639 ms   (×24)
+//       1 955 disques                  141 633 ms → 3 738 ms   (×38)
+//       6 251 disques                1 411 453 ms → 21 037 ms  (×67)
+//
+//     La colonne « après » ci-dessus date de la grille NUE. Elle a été creusée
+//     depuis par un élagage cellule par cellule — la fenêtre reste dimensionnée
+//     sur le rayon max GLOBAL, mais chaque cellule visitée est filtrée sur le
+//     rayon max qu'elle abrite RÉELLEMENT, ce qui empêche un unique disque géant
+//     d'imposer sa portée à tout le monde. Les deux lignes re-mesurées (médiane
+//     de 3 runs, même machine, grille nue → grille + élagage) :
+//
+//       6 251 entités / 1 300 disques    6 096 ms → 4 224 ms   (−31 %)
+//       6 251 disques sans groupes      21 416 ms → 21 626 ms  (+1 %)
+//
+//     Le second régime, aux rayons quasi uniformes, n'a pas de géant à
+//     contourner : on lui demande seulement de ne rien perdre. Les six autres
+//     lignes n'ont pas été re-mesurées. Détail et preuve d'exhaustivité au-dessus
+//     de `collisionPass`.
+//
+//     Une piste a par ailleurs été essayée et RETIRÉE — ne poursuivre, d'une
+//     passe dure à l'autre, que les paires dont un bout a bougé. Le jeu « sale »
+//     ne se vide jamais sur un empilement dense (~1 291 disques sur 1 300 pendant
+//     90 % des passes), donc l'alternance coûtait plus qu'elle ne rapportait ;
+//     l'argumentaire chiffré est au-dessus de `hardSeparation`.
+//
+//     La PARTIE ressorts de la réserve, elle, tombe pour une autre raison : elle
+//     n'avait pas lieu d'être. Barnes-Hut accélère une répulsion TOUTES PAIRES,
+//     et ce moteur n'en a pas — il n'a que la collision (désormais indexée) et
+//     une gravité vers l'origine, linéaire par construction. Le coût des
+//     ressorts suit le nombre de ressorts AGRÉGÉS, c'est-à-dire les références
+//     inter-agrégats dédoublonnées : linéaire, et ce n'était déjà pas le point
+//     chaud.
+//
+//     Ce qui RESTE quadratique, et qui devient le prochain plafond : le nombre
+//     de passes dures nécessaires croît linéairement avec les disques, si bien
+//     que `MAX_HARD_PASSES` (5000) est saturé au-delà de ~1 700 disques et que
+//     l'invariant d'écart cesse alors d'en être un. Mesures et arbitrage
+//     au-dessus de `hardSeparation`.
 //   - La passe dure finale peut défaire un ressort : la garantie d'écart prime
 //     sur la longueur d'arête. À 264 références sur 116 disques ça ne se voit
 //     pas ; un graphe inter-agrégat très dense pourrait se dégrader — non
