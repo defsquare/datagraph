@@ -1,26 +1,26 @@
 /**
- * Source de vérité unique des tokens de design de data-graph.
+ * The single source of truth for data-graph's design tokens.
  *
- * Les mêmes valeurs alimentent deux sorties qui, jusqu'ici, les dupliquaient
- * chacune de son côté : les thèmes Pixi de `packages/renderer/src/theme.ts` et
- * les variables CSS du shell de la démo. Un token corrigé ici doit se voir
- * partout ; c'est la raison d'être du package, et pourquoi il ne dépend de
- * rien (ni DOM, ni Pixi) et reste importable depuis un script Node.
+ * The same values feed two outputs that, until now, each duplicated them on
+ * their own side: the Pixi themes of `packages/renderer/src/theme.ts` and the
+ * CSS variables of the demo's shell. A token fixed here must show up
+ * everywhere; that is the package's reason to exist, and why it depends on
+ * nothing (no DOM, no Pixi) and stays importable from a Node script.
  *
- * Les NOMS de familles de polices sont contractuels : les `@font-face` de la
- * démo et la mesure des BitmapFont du renderer les référencent par ce nom
- * exact. Les renommer casse silencieusement le rendu (repli sur la police
- * système) — donc on ne les touche pas sans toucher aussi les deux consommateurs.
+ * Font family NAMES are contractual: the demo's `@font-face` rules and the
+ * renderer's BitmapFont measuring reference them by that exact name. Renaming
+ * them breaks rendering silently (fallback to the system font) — so we do not
+ * touch them without touching both consumers as well.
  */
 
-/** Pile de polices, du plus spécifique au repli générique. */
+/** A font stack, from the most specific down to the generic fallback. */
 export type FontStack = readonly string[];
 
 export interface ColorTokens {
   surface: { canvas: string; card: string; cardMuted: string };
   ink: { primary: string; muted: string; subtle: string };
   accent: {
-    /** Rail de repli quand `entityPalette` est vide. */
+    /** Fallback rail when `entityPalette` is empty. */
     entity: string;
     selection: string;
     match: string;
@@ -36,9 +36,9 @@ export interface ColorTokens {
 }
 
 export interface BrandTokens {
-  /** `title` est propre au shell DOM : le canvas Pixi n'en dessine jamais. */
+  /** `title` belongs to the DOM shell alone: the Pixi canvas never draws any. */
   fonts: { title?: FontStack; body: FontStack; mono: FontStack };
-  /** Couleurs de rail, assignées par ordre de déclaration des types d'entité. */
+  /** Rail colors, assigned in declaration order of the entity types. */
   entityPalette: readonly string[];
   light: ColorTokens;
   dark: ColorTokens;
@@ -50,15 +50,15 @@ const DEFSQUARE_FONTS: BrandTokens["fonts"] = {
   mono: ["Fira Code", "SF Mono", "Menlo", "Consolas", "monospace"],
 };
 
-// Commune aux thèmes clair et sombre : ces couleurs ne servent qu'en rail de
-// 3px et en pastille, elles tiennent donc sur fond clair comme sombre.
+// Shared by the light and dark themes: these colors only ever serve as a 3px
+// rail or a badge, so they hold up on a light background as on a dark one.
 const DEFSQUARE_PALETTE = [
   "#1e416e", // --color-primary-400
   "#f65e5e", // --color-accent
   "#3dbf9e", // --color-mint
   "#8d7e63", // --color-beige-deep
   "#3573c3", // --color-primary-600
-  "#a0427a", // fin de --gradient-heat
+  "#a0427a", // end of --gradient-heat
 ] as const;
 
 export const defsquare: BrandTokens = {
@@ -107,7 +107,7 @@ const NEUTRAL_FONTS: BrandTokens["fonts"] = {
 
 const NEUTRAL_PALETTE = ["#2563eb", "#7c3aed", "#059669", "#d97706", "#0891b2", "#be123c"] as const;
 
-/** Marque de repli, sans dépendance aux polices ni aux couleurs defsquare. */
+/** Fallback brand, with no dependency on the defsquare fonts or colors. */
 export const neutral: BrandTokens = {
   fonts: NEUTRAL_FONTS,
   entityPalette: NEUTRAL_PALETTE,
@@ -151,7 +151,7 @@ export interface TypeStyleToken {
   family: "body" | "mono";
   size: number;
   weight: number;
-  /** Interlettrage en em. Absent = 0. */
+  /** Letter spacing in em. Absent = 0. */
   tracking?: number;
 }
 
@@ -162,16 +162,16 @@ export const typography: Record<"header" | "badge" | "key" | "value", TypeStyleT
   value: { family: "mono", size: 12, weight: 400 },
 };
 
-/** Rayons en px. `card` est celui des cartes du canvas, aligné sur `md`. */
+/** Radii in px. `card` is the canvas cards' radius, aligned on `md`. */
 export const radii = { sm: 4, md: 6, lg: 10, full: 9999, card: 6 };
 
-/** Échelle d'espacement en px, indexée par pas de 4. */
+/** Spacing scale in px, indexed in steps of 4. */
 export const spacing = { 1: 4, 2: 8, 3: 12, 4: 16, 6: 24 };
 
-/** Épaisseurs de trait en px, telles que le renderer les dessine. */
+/** Stroke widths in px, exactly as the renderer draws them. */
 export const strokes = { border: 1, edge: 1.5, selection: 2.5, match: 2, matchCurrent: 3 };
 
-/** Valeurs CSS brutes : seul le shell DOM anime, le canvas redessine. */
+/** Raw CSS values: only the DOM shell animates, the canvas redraws. */
 export const motion = {
   transition: "150ms ease-in-out",
   easeOut: "cubic-bezier(0.2, 0.8, 0.25, 1)",
@@ -179,14 +179,14 @@ export const motion = {
 
 export interface ChromeTokens {
   fg: string;
-  /** Surfaces flottantes translucides posées au-dessus du canvas. */
+  /** Translucent floating surfaces laid over the canvas. */
   float: { bg: string; border: string; hover: string };
   shadow: string;
 }
 
 /**
- * Tokens du shell : ils n'existent que dans le DOM (translucidité, ombres),
- * notions que le canvas Pixi ne connaît pas et ne verra jamais.
+ * Shell tokens: they exist in the DOM only (translucency, shadows), notions the
+ * Pixi canvas does not know and will never see.
  */
 export const chrome: { light: ChromeTokens; dark: ChromeTokens } = {
   light: {
@@ -210,14 +210,14 @@ export const chrome: { light: ChromeTokens; dark: ChromeTokens } = {
 };
 
 /**
- * Pile pour Pixi : `fontFamily` y est parsé maison, les guillemets CSS y
- * feraient partie du nom cherché et rateraient la police.
+ * Stack for Pixi: it parses `fontFamily` itself, so CSS quotes would become
+ * part of the name looked up and would miss the font.
  */
 export function pixiFontStack(stack: FontStack): string {
   return stack.join(", ");
 }
 
-/** Pile pour CSS : un nom à espaces doit être cité pour rester une seule famille. */
+/** Stack for CSS: a name with spaces must be quoted to stay a single family. */
 export function cssFontStack(stack: FontStack): string {
   return stack.map((f) => (f.includes(" ") ? `"${f}"` : f)).join(", ");
 }

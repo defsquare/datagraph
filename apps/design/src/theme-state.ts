@@ -7,26 +7,25 @@ import {
 } from "@renderer/theme.ts";
 
 /**
- * L'état de thème du playground, et l'unique endroit qui le mute.
+ * The playground's theme state, and the only place that mutates it.
  *
- * Deux axes indépendants — la MARQUE (quel jeu de couleurs) et le MODE (clair
- * ou sombre) — parce que c'est ainsi que le renderer expose ses quatre thèmes.
- * Les croiser en un seul énuméré à quatre valeurs obligerait chaque contrôle de
- * l'interface à connaître les trois autres combinaisons pour savoir vers
- * laquelle basculer.
+ * Two independent axes — the BRAND (which color set) and the MODE (light or
+ * dark) — because that is how the renderer exposes its four themes. Crossing
+ * them into a single four-valued enum would force every control in the UI to
+ * know the other three combinations in order to know which one to switch to.
  *
- * Un seul module porte cet état : les vues (tokens, composants, bac à sable)
- * s'abonnent, elles ne se le passent pas entre elles. Une vue qui recevrait le
- * thème par un chemin détourné se désynchroniserait le jour où quelqu'un
- * ajoute un raccourci clavier ou une restauration d'URL.
+ * A single module carries this state: the views (tokens, components, sandbox)
+ * subscribe, they do not pass it around between themselves. A view receiving
+ * the theme through a roundabout path would fall out of sync the day someone
+ * adds a keyboard shortcut or URL restoration.
  */
 export interface ThemeState {
   brand: "defsquare" | "neutral";
   mode: "light" | "dark";
 }
 
-// Table plutôt que quatre `if` : la seule connaissance que ce module a des
-// thèmes du renderer est ce croisement, et il se lit d'un coup d'œil.
+// A table rather than four `if`s: the only knowledge this module has of the
+// renderer's themes is that crossing, and it reads at a glance.
 const THEMES: Record<ThemeState["brand"], Record<ThemeState["mode"], Theme>> = {
   defsquare: { light: defsquareLight, dark: defsquareDark },
   neutral: { light: neutralLight, dark: neutralDark },
@@ -36,22 +35,21 @@ let state: ThemeState = { brand: "defsquare", mode: "light" };
 
 const subscribers = new Set<(s: ThemeState) => void>();
 
-/** Instantané de l'état courant. Copie : un appelant qui muterait l'objet
- * interne contournerait `setTheme` et personne ne serait notifié. */
+/** Snapshot of the current state. A copy: a caller mutating the internal object
+ * would bypass `setTheme` and nobody would be notified. */
 export function themeState(): ThemeState {
   return { ...state };
 }
 
-/** Le thème Pixi correspondant à un état. Pur : les vues qui construisent un
- * canvas le rappellent à chaque remontage plutôt que de mémoriser une
- * référence. */
+/** The Pixi theme matching a state. Pure: views that build a canvas call it
+ * again on every remount rather than memorizing a reference. */
 export function currentTheme(s: ThemeState): Theme {
   return THEMES[s.brand][s.mode];
 }
 
-/** S'abonne aux changements. Retourne le désabonnement — les vues l'appellent
- * dans leur cleanup, sans quoi une vue démontée continuerait de réagir et
- * tiendrait en vie son canvas détruit. */
+/** Subscribes to changes. Returns the unsubscribe — views call it in their
+ * cleanup, without which an unmounted view would keep reacting and would hold
+ * its destroyed canvas alive. */
 export function onThemeChange(cb: (s: ThemeState) => void): () => void {
   subscribers.add(cb);
   return () => {
@@ -60,32 +58,33 @@ export function onThemeChange(cb: (s: ThemeState) => void): () => void {
 }
 
 /**
- * Modifie un ou deux axes, puis notifie.
+ * Changes one or both axes, then notifies.
  *
- * Sortie anticipée si rien ne change : reposer le même thème provoquerait un
- * remontage complet des vues (donc la recréation des canvases Pixi) pour rien.
+ * Early return if nothing changes: setting the same theme again would trigger a
+ * full remount of the views (hence recreating the Pixi canvases) for nothing.
  */
 export function setTheme(patch: Partial<ThemeState>): void {
   const next: ThemeState = { ...state, ...patch };
   if (next.brand === state.brand && next.mode === state.mode) return;
   state = next;
   applyMode();
-  // Itération sur une copie : un abonné peut se désabonner depuis son propre
-  // rappel — c'est exactement ce que fait une vue qui se démonte en réaction.
+  // Iterating over a copy: a subscriber may unsubscribe from within its own
+  // callback — exactly what a view unmounting in reaction does.
   for (const cb of [...subscribers]) cb(themeState());
 }
 
 /**
- * Le mode passe au CSS par `data-theme` sur `<html>` — même mécanisme que
- * `apps/demo/src/chrome.ts`, et c'est le sélecteur sur lequel la feuille
- * générée par le paquet de tokens (`html[data-theme="dark"]`) surcharge ses
- * couleurs. La marque, elle, ne change que les thèmes Pixi : les variables CSS
- * générées ne couvrent aujourd'hui que la palette defsquare.
+ * The mode reaches CSS through `data-theme` on `<html>` — same mechanism as
+ * `apps/demo/src/chrome.ts`, and it is the selector on which the sheet
+ * generated by the token package (`html[data-theme="dark"]`) overrides its
+ * colors. The brand, on the other hand, only changes the Pixi themes: today the
+ * generated CSS variables cover the defsquare palette alone.
  */
 function applyMode(): void {
   document.documentElement.setAttribute("data-theme", state.mode);
 }
 
-// L'attribut est déjà posé dans `index.html`, mais l'y laisser seul ferait de
-// l'état initial une vérité en deux exemplaires. On le réaffirme depuis l'état.
+// The attribute is already set in `index.html`, but leaving it there alone would
+// make the initial state a truth held in two copies. We restate it from the
+// state.
 applyMode();

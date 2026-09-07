@@ -1,9 +1,9 @@
 /**
- * Écrit `apps/demo/src/tokens.css` depuis la source des tokens.
+ * Writes `apps/demo/src/tokens.css` from the token source.
  *
- * Le fichier est généré ET commité : la démo est un build Vite qui importe du
- * CSS statique, elle ne peut pas exécuter le générateur. Le test de fraîcheur
- * (`test/css.test.ts`) est le garde-fou contre l'oubli de régénération.
+ * The file is generated AND committed: the demo is a Vite build importing
+ * static CSS, it cannot run the generator. The freshness test
+ * (`test/css.test.ts`) is the guard against forgetting to regenerate.
  */
 
 import { writeFileSync } from "node:fs";

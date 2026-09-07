@@ -38,35 +38,33 @@ import { currentTheme, type ThemeState } from "../theme-state.ts";
 import "./graph-components.css";
 
 /**
- * La vue « Composants graphe » : chaque visuel que `packages/renderer/src/draw.ts`
- * sait produire, dans tous ses états, dessiné par LES MÊMES fonctions que le
- * produit.
+ * The « Composants graphe » view: every visual that
+ * `packages/renderer/src/draw.ts` can produce, in all its states, drawn by THE
+ * SAME functions as the product.
  *
- * C'est la contrainte qui fait la valeur de cette planche : rien n'est
- * re-dessiné « à la ressemblance de ». Une carte survolée est un `drawNode` dont
- * on force les paramètres de survol, une arête cassée est un `drawEdges` sur un
- * graphe dont l'arête est cassée. Un spécimen ne peut donc pas mentir sur ce que
- * le renderer fait — s'il diverge, c'est le renderer qui a changé, et c'est
- * exactement ce qu'on vient voir.
+ * That constraint is what gives this board its value: nothing is redrawn "in
+ * the likeness of". A hovered card is a `drawNode` whose hover parameters are
+ * forced, a dangling edge is a `drawEdges` on a graph whose edge is dangling. A
+ * specimen therefore cannot lie about what the renderer does — if it diverges,
+ * it is the renderer that changed, and that is exactly what one comes to see.
  *
- * D'où la fabrication de DONNÉE NUE : `draw.ts` ne prend que des nœuds, des
- * rects et des couleurs (jamais un graphe vivant ni un état d'interface), ce qui
- * laisse fabriquer ici, à la main, la situation exacte de chaque état — y
- * compris celles qu'on n'atteindrait dans le produit qu'avec un jeu de données
- * complice.
+ * Hence the fabrication of BARE DATA: `draw.ts` only takes nodes, rects and
+ * colors (never a live graph nor any UI state), which allows building here, by
+ * hand, the exact situation of each state — including those one would only
+ * reach in the product with a complicit dataset.
  *
- * Les LÉGENDES, elles, sont des `Text` Pixi et non des `BitmapText` : l'atlas du
- * renderer est cuit sur `BitmapFontManager.ASCII`, où « é » et « — » manquent.
- * Un `Text` n'est pas un mensonge ici, parce que la légende n'est PAS un
- * composant du produit — c'est le cartel de l'objet exposé, pas l'objet.
+ * The CAPTIONS, for their part, are Pixi `Text` and not `BitmapText`: the
+ * renderer's atlas is baked on `BitmapFontManager.ASCII`, where « é » and « — »
+ * are missing. A `Text` is no lie here, because the caption is NOT a component
+ * of the product — it is the display card of the object shown, not the object.
  */
 
-// --- Géométrie des scènes.
+// --- Stage geometry.
 //
-// Des pixels en dur, et ce ne sont pas des tokens en fuite : ce sont les
-// dimensions d'une VITRINE (taille d'une case de grille, écart entre deux
-// spécimens), pas des décisions de design system. Les inventer en tokens
-// exporterait au renderer une notion qu'il n'a pas.
+// Hardcoded pixels, and these are not tokens leaking out: they are the
+// dimensions of a DISPLAY CASE (the size of a grid cell, the gap between two
+// specimens), not design system decisions. Inventing them as tokens would
+// export to the renderer a notion it does not have.
 
 const STAGE_PAD = 16;
 const CAPTION_HEIGHT = 16;
@@ -84,20 +82,20 @@ const HULL_GAP = 50;
 const PANEL_W = 300;
 const PANEL_H = 220;
 const PANEL_GAP = 16;
-/** Les trois échelles de la planche de zoom sémantique, choisies de part et
- * d'autre des seuils de `lodForScale` : au-dessus de `LOD0_MIN_SCALE`, entre les
- * deux, puis sous `LOD1_MIN_SCALE` — l'échelle à laquelle la vue graphe cesse de
- * dessiner ses cartes et peint les agrégats. */
+/** The three scales of the semantic zoom board, chosen on either side of
+ * `lodForScale`'s thresholds: above `LOD0_MIN_SCALE`, between the two, then
+ * below `LOD1_MIN_SCALE` — the scale at which the graph view stops drawing its
+ * cards and paints the aggregates. */
 const PANEL_SCALES = [LOD0_MIN_SCALE + 0.1, (LOD0_MIN_SCALE + LOD1_MIN_SCALE) / 2, 0.08];
 
-/** Grossissement d'une carte survolée. Miroir de `HOVER_LIFT`, qui n'est pas
- * exporté par `create.ts` : la valeur est recopiée, donc elle peut dériver — le
- * spécimen dit ce qu'il montre (« ×1.025 ») pour que l'écart se voie. */
+/** The magnification of a hovered card. Mirror of `HOVER_LIFT`, which
+ * `create.ts` does not export: the value is copied, so it can drift — the
+ * specimen states what it shows ("×1.025") so that the discrepancy shows. */
 const HOVER_LIFT = 0.025;
 
 const NO_FIELDS: ReadonlySet<string> = new Set();
 
-// --- Fabriques de donnée nue.
+// --- Bare data factories.
 
 function entityNode(
   id: NodeId,
@@ -135,9 +133,9 @@ function objectNode(id: NodeId, label: string, rows: Row[]): ObjectNode {
   };
 }
 
-/** Un graphe minimal autour de nœuds et d'arêtes fabriqués. `entityIndex` et
- * `diagnostics` restent vides : aucune fonction de dessin ne les lit — elles ne
- * consultent que `nodes`, `containEdges` et `refEdges`. */
+/** A minimal graph around fabricated nodes and edges. `entityIndex` and
+ * `diagnostics` stay empty: no drawing function reads them — they only consult
+ * `nodes`, `containEdges` and `refEdges`. */
 function graphOf(nodes: GraphNode[], refEdges: RefEdge[] = [], containEdges: Graph["containEdges"] = []): Graph {
   return {
     nodes: new Map(nodes.map((n) => [n.id, n])),
@@ -150,8 +148,8 @@ function graphOf(nodes: GraphNode[], refEdges: RefEdge[] = [], containEdges: Gra
   };
 }
 
-/** `to` nul = référence CASSÉE : c'est l'unique différence entre les deux cas,
- * côté donnée comme côté rendu. */
+/** A null `to` = a DANGLING reference: that is the only difference between the
+ * two cases, on the data side as on the rendering side. */
 function refEdge(from: NodeId, to: NodeId | null, field: string, targetType = "Customer"): RefEdge {
   return {
     kind: "ref",
@@ -169,7 +167,7 @@ function rectOf(node: GraphNode, x = 0, y = 0): Rect {
   return { x, y, ...measureNode(node) };
 }
 
-// --- Fabriques DOM.
+// --- DOM factories.
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -183,12 +181,12 @@ function el<K extends keyof HTMLElementTagNameMap>(
 }
 
 /**
- * L'ossature d'une section : titre, note, hôte du canvas.
+ * A section's frame: title, note, canvas host.
  *
- * Les classes sont propres à cette vue (`gc-*`) et non celles de la vue Tokens
- * (`ds-*`) : celles-là vivent dans `views/tokens.css`, la feuille d'une AUTRE
- * vue. Une vue qui s'appuierait dessus casserait le jour où la vue Tokens
- * renomme ou déplace sa feuille, sans que rien ne l'ait annoncé.
+ * The classes belong to this view (`gc-*`) and are not the Tokens view's
+ * (`ds-*`): those live in `views/tokens.css`, ANOTHER view's stylesheet. A view
+ * leaning on them would break the day the Tokens view renames or moves its
+ * sheet, with nothing to announce it.
  */
 function section(title: string, note: string): { node: HTMLElement; host: HTMLElement } {
   const node = el("section", "gc-section");
@@ -199,7 +197,7 @@ function section(title: string, note: string): { node: HTMLElement; host: HTMLEl
   return { node, host };
 }
 
-// --- Légendes dessinées.
+// --- Drawn captions.
 
 function caption(text: string, theme: Theme): Text {
   return new Text({
@@ -208,7 +206,7 @@ function caption(text: string, theme: Theme): Text {
   });
 }
 
-/** Une case de grille : sa légende en haut, son spécimen dessous. */
+/** A grid cell: its caption on top, its specimen underneath. */
 function cell(label: string, content: Container, theme: Theme, x: number, y: number): Container {
   const c = new Container();
   c.position.set(x, y);
@@ -223,7 +221,7 @@ function group(...children: Container[]): Container {
   return c;
 }
 
-// --- Section 1 : la carte de nœud.
+// --- Section 1: the node card.
 
 const ORDER_ROWS: Row[] = [
   { key: "status", value: "shipped", valueType: "string" },
@@ -232,9 +230,9 @@ const ORDER_ROWS: Row[] = [
   { key: "lines", value: 2, valueType: "array", arrayId: "order:lines" },
 ];
 
-/** Le champ qui porte une référence, et l'indice de sa ligne. Les deux doivent
- * rester d'accord : `drawNode` étiquette le souligné du survol
- * `ref-underline:<indice de ligne>`, pas `<nom de champ>`. */
+/** The field carrying a reference, and its row index. The two must stay in
+ * agreement: `drawNode` labels the hover underline
+ * `ref-underline:<row index>`, not `<field name>`. */
 const REF_FIELDS: ReadonlySet<string> = new Set(["customerId"]);
 const REF_ROW_INDEX = 2;
 
@@ -244,14 +242,14 @@ const ADDRESS_ROWS: Row[] = [
 ];
 
 /**
- * Un spécimen : sa légende, et de quoi le construire.
+ * A specimen: its caption, and what it takes to build it.
  *
- * `build` reçoit `useBitmap` en ARGUMENT plutôt que de le capturer : la liste
- * est ainsi constructible dès le montage, avant que le renderer n'existe et ne
- * dise s'il sait rastériser du BitmapText. C'est ce qui laisse dimensionner la
- * scène sur `specimens.length` — la taille d'un canvas Pixi se fige à son
- * `init()`, donc avant `ready`, et un compte écrit en dur à côté de la liste
- * finirait par en diverger en silence, rognant la dernière rangée.
+ * `build` receives `useBitmap` as an ARGUMENT rather than capturing it: the
+ * list is thus buildable at mount time, before the renderer exists and says
+ * whether it can rasterize BitmapText. That is what allows sizing the stage on
+ * `specimens.length` — a Pixi canvas's size is frozen at its `init()`, hence
+ * before `ready`, and a count hardcoded next to the list would end up drifting
+ * from it silently, clipping the last row.
  */
 interface Specimen {
   label: string;
@@ -265,16 +263,16 @@ function cardSpecimens(theme: Theme): Specimen[] {
   const order = entityNode("order:o1042", "Order", "o1042", ORDER_ROWS, 1);
   const rect = rectOf(order);
   const positions = new Map<NodeId, Rect>([[order.id, rect]]);
-  // Un graphe d'UN nœud suffit au surlignage de sélection : il n'y suit que la
-  // chaîne de parenté (vide ici) et les références sortantes (aucune tracée sur
-  // une carte isolée). Ce que le spécimen montre est donc exactement le contour,
-  // qui est ce qu'on vient regarder.
+  // A ONE-node graph is enough for the selection overlay: it only follows the
+  // parent chain (empty here) and the outgoing references (none drawn on an
+  // isolated card). What the specimen shows is therefore exactly the outline,
+  // which is what one comes to look at.
   const graph = graphOf([order]);
 
-  // `expandedArrays: null` : la vue graphe ne plie pas les tableaux, donc la
-  // pilule `[ 2 items ]` n'y porte pas de chevron — il promettrait un geste sans
-  // effet. Sa LARGEUR réserve quand même la place, `measureNode` ne connaissant
-  // pas la vue.
+  // `expandedArrays: null`: the graph view does not fold arrays, so the
+  // `[ 2 items ]` pill carries no chevron there — it would promise a gesture
+  // with no effect. Its WIDTH still reserves the room, `measureNode` knowing
+  // nothing of the view.
   const card = (
     useBitmap: boolean,
     opts: { expanded?: boolean; dangling?: boolean } = {},
@@ -303,9 +301,9 @@ function cardSpecimens(theme: Theme): Specimen[] {
         const c = card(bitmap);
         const scale = 1 + HOVER_LIFT;
         c.scale.set(scale);
-        // Même compensation que `create.ts` : Pixi met l'origine d'un container
-        // en haut à gauche, donc une simple échelle pousserait la carte vers le
-        // bas-droite au lieu de la faire grossir autour de son centre.
+        // Same compensation as `create.ts`: Pixi puts a container's origin at
+        // the top left, so a plain scale would push the card down-right instead
+        // of growing it around its center.
         c.position.set(-((scale - 1) * rect.width) / 2, -((scale - 1) * rect.height) / 2);
         return group(c);
       },
@@ -314,9 +312,10 @@ function cardSpecimens(theme: Theme): Specimen[] {
       label: "survol d'une ligne de référence",
       build: (bitmap) => {
         const c = card(bitmap);
-        // `drawNode` a préparé le souligné caché ; savoir quelle ligne est sous
-        // le pointeur appartient à `create.ts`, qui ne fait que basculer cette
-        // visibilité. Le spécimen fait le même geste, par le même label.
+        // `drawNode` has prepared the hidden underline; knowing which row is
+        // under the pointer belongs to `create.ts`, which only toggles that
+        // visibility. The specimen makes the same gesture, through the same
+        // label.
         const underline = c.getChildByLabel(`ref-underline:${REF_ROW_INDEX}`);
         if (underline) underline.visible = true;
         return c;
@@ -391,14 +390,14 @@ function paintCards(
   });
 }
 
-// --- Section 2 : les arêtes.
+// --- Section 2: the edges.
 
 /**
- * Une paire de cartes reliées, et ce que `draw.ts` trace entre elles.
+ * A pair of connected cards, and what `draw.ts` draws between them.
  *
- * Des cartes SANS ligne : la paire est là pour porter une arête, et des lignes
- * de contenu ne feraient que détourner le regard de ce qui est examiné — le
- * trait, son style et son point d'attache.
+ * Cards WITHOUT rows: the pair is there to carry an edge, and content rows
+ * would only pull the eye away from what is under examination — the stroke, its
+ * style and its attachment point.
  */
 function edgeSpecimens(theme: Theme): Specimen[] {
   const accents = entityAccentMap(["Order", "Customer"], theme);
@@ -513,11 +512,11 @@ function paintEdges(
   });
 }
 
-// --- Section 3 : les enveloppes d'agrégats.
+// --- Section 3: the aggregate envelopes.
 
-/** Les trois états d'une enveloppe, tels que `drawClusters` les interpole. Le
- * survol arrive DÉJÀ adouci par `attachHover` : ce que le spécimen force ici est
- * la borne haute de cette intensité, pas une courbe de plus. */
+/** An envelope's three states, exactly as `drawClusters` interpolates them. The
+ * hover arrives ALREADY eased by `attachHover`: what the specimen forces here is
+ * the upper bound of that intensity, not one more curve. */
 const HULL_STATES: { label: string; hover?: number; dim?: boolean }[] = [
   { label: "repos (hover 0)" },
   { label: "survolée (hover 1)", hover: 1 },
@@ -547,10 +546,10 @@ function paintHulls(stage: PixiStage, theme: Theme): void {
     dim: state.dim,
   }));
 
-  // UN seul appel pour les trois : c'est ainsi que le renderer les peint (un
-  // Graphics pour toutes les enveloppes visibles), et les séparer masquerait
-  // qu'un `stroke()` ne porte qu'un style — la raison pour laquelle l'estompage
-  // est un booléen et non un facteur libre.
+  // ONE single call for all three: that is how the renderer paints them (one
+  // Graphics for every visible envelope), and splitting them would hide that a
+  // `stroke()` carries only one style — the reason dimming is a boolean and not
+  // a free factor.
   stage.app.stage.addChild(drawClusters(clusters, theme));
 
   clusters.forEach((cluster, index) => {
@@ -560,21 +559,22 @@ function paintHulls(stage: PixiStage, theme: Theme): void {
   });
 }
 
-// --- Section 4 : le zoom sémantique.
+// --- Section 4: semantic zoom.
 
-/** Le monde fictif : une grille d'agrégats, chacun un bloc de cartes. Assez
- * large pour que l'échelle la plus lointaine des trois panneaux ait encore des
- * disques à montrer sur tout son cadre.
+/** The fictitious world: a grid of aggregates, each one a block of cards. Wide
+ * enough that the most distant of the three panels' scales still has discs to
+ * show across its whole frame.
  *
- * Le pas est pris NETTEMENT au-dessus du diamètre de l'enveloppe (~610 pour un
- * bloc de 3×3), et pas seulement au-dessus : les arêtes agrégées sont peintes
- * SOUS les disques, donc à disques presque jointifs il ne resterait d'elles que
- * quelques pixels et la planche prétendrait montrer `drawSemanticEdges` sans en
- * rien montrer. L'écart de respiration EST le spécimen.
+ * The pitch is taken CLEARLY above the envelope's diameter (~610 for a 3×3
+ * block), and not merely above: the aggregated edges are painted UNDER the
+ * discs, so with near-touching discs only a few pixels of them would remain and
+ * the board would claim to show `drawSemanticEdges` while showing none of it.
+ * The breathing gap IS the specimen.
  *
- * Le pas étant le même sur les deux axes et le bloc CENTRÉ dedans, le centre du
- * monde tombe exactement sur le centre de l'agrégat médian (`COLS/2 × pas`) :
- * les panneaux zoomés cadrent donc un bloc entier, quel que soit ce pas. */
+ * The pitch being the same on both axes and the block CENTERED within it, the
+ * world's center falls exactly on the center of the median aggregate
+ * (`COLS/2 × pitch`): the zoomed panels therefore frame a whole block, whatever
+ * that pitch is. */
 const AGG_COLS = 7;
 const AGG_ROWS = 5;
 const AGG_PITCH = 900;
@@ -602,9 +602,9 @@ interface FakeWorld {
   accentByNode: Map<NodeId, string>;
   aggregates: Aggregate[];
   semanticEdges: SemanticEdge[];
-  /** Le rayon de disque de référence dont `drawSemanticEdges` tire ses
-   * épaisseurs. Tous les agrégats sont ici de même taille, donc n'importe lequel
-   * fait l'affaire. */
+  /** The reference disc radius from which `drawSemanticEdges` derives its
+   * stroke widths. All the aggregates here are the same size, so any one of
+   * them will do. */
   unit: number;
 }
 
@@ -612,10 +612,10 @@ function buildFakeWorld(theme: Theme): FakeWorld {
   const types = ["Order", "Customer", "Product", "Invoice"];
   const accents = entityAccentMap(types, theme);
 
-  // Le bloc est CENTRÉ dans le pas de la grille d'agrégats : ce pas est choisi
-  // plus grand que le diamètre de l'enveloppe, sinon deux disques voisins se
-  // recouvriraient — ce que la mise en page réelle interdit par construction
-  // (elle packe des cercles disjoints).
+  // The block is CENTERED within the aggregate grid's pitch: that pitch is
+  // chosen larger than the envelope's diameter, otherwise two neighboring discs
+  // would overlap — which the real layout rules out by construction (it packs
+  // disjoint circles).
   const probe = entityNode("probe", "Order", "0", WORLD_ROWS);
   const cardSize = measureNode(probe);
   const insetX = (AGG_PITCH - (cardSize.width + (BLOCK - 1) * CARD_PITCH_X)) / 2;
@@ -648,8 +648,8 @@ function buildFakeWorld(theme: Theme): FakeWorld {
           positions.set(id, rect);
           accentByNode.set(id, color);
           rects.push(rect);
-          // Une chaîne de références dans le bloc : de quoi donner au panneau
-          // le plus zoomé des arêtes à montrer sous ses cartes.
+          // A chain of references within the block: enough to give the most
+          // zoomed-in panel some edges to show under its cards.
           if (previous !== null) refEdges.push(refEdge(previous, id, "next", type));
           previous = id;
         }
@@ -657,9 +657,9 @@ function buildFakeWorld(theme: Theme): FakeWorld {
 
       aggregates.push({
         id: `agg-${index}`,
-        // Un identifiant hiérarchique, comme dans le jeu réel : c'est ce qui
-        // rend visible la troncature par le MILIEU de `drawSemanticLabels` —
-        // une troncature par la fin rendrait tous les disques homonymes.
+        // A hierarchical identifier, as in the real dataset: that is what makes
+        // `drawSemanticLabels`'s MIDDLE truncation visible — truncating at the
+        // end would make every disc a namesake of the others.
         label: `svc.commerce.${type.toLowerCase()}.bloc-${index}`,
         color,
         circle: enclosingCircle(rects, HULL_PADDING),
@@ -683,9 +683,9 @@ function buildFakeWorld(theme: Theme): FakeWorld {
           y1: here.circle.cy,
           x2: other.circle.cx,
           y2: other.circle.cy,
-          // Une graduation déterministe qui traverse les quatre paliers de
-          // `bucketOf` : à poids constant, la planche ne montrerait qu'une
-          // épaisseur sur les quatre.
+          // A deterministic gradation crossing all four of `bucketOf`'s tiers:
+          // at constant weight, the board would show one stroke width out of
+          // the four.
           weight: ((ac * 3 + ar * 5) % 12) + 1,
         });
       }
@@ -719,19 +719,19 @@ function circleInView(circle: Circle, view: Rect): boolean {
 }
 
 /**
- * Un panneau : ce que la vue graphe peint du MÊME monde à une échelle de caméra
- * donnée.
+ * A panel: what the graph view paints of the SAME world at a given camera
+ * scale.
  *
- * Le monde est commun aux trois panneaux et seule la caméra change — c'est ce
- * qui fait de la planche trois niveaux de zoom d'un même jeu, et non trois
- * dessins qui se ressemblent. La conséquence est celle du produit : plus on
- * s'éloigne, plus il entre d'objets dans le cadre, jusqu'au point où une carte
- * n'est plus qu'un rectangle muet — et où le régime sémantique la remplace par
- * un disque nommé.
+ * The world is shared by the three panels and only the camera changes — that is
+ * what makes the board three zoom levels of one dataset, and not three drawings
+ * that resemble each other. The consequence is the product's: the further out
+ * one goes, the more objects enter the frame, until the point where a card is
+ * no more than a mute rectangle — and where the semantic regime replaces it
+ * with a named disc.
  *
- * Le contenu est CULLÉ sur la fenêtre monde, comme le fait `create.ts` : sans
- * ça le panneau le plus zoomé construirait les 315 cartes du monde pour en
- * montrer une dizaine.
+ * The content is CULLED against the world window, as `create.ts` does: without
+ * that, the most zoomed-out panel would build the world's 315 cards to show a
+ * dozen of them.
  */
 function semanticPanel(world: FakeWorld, theme: Theme, useBitmap: boolean, scale: number): Container {
   const panel = new Container();
@@ -760,8 +760,8 @@ function semanticPanel(world: FakeWorld, theme: Theme, useBitmap: boolean, scale
       label: a.label,
       count: a.count,
     }));
-    // L'ordre EST le recouvrement : les arêtes agrégées sous les disques (un
-    // disque opaque doit les masquer), les libellés au-dessus.
+    // The order IS the stacking: the aggregated edges under the discs (an
+    // opaque disc must hide them), the labels above.
     layer.addChild(
       drawSemanticEdges(world.semanticEdges, theme, world.unit),
       drawSemanticDiscs(semanticNodes, theme),
@@ -795,8 +795,9 @@ function semanticPanel(world: FakeWorld, theme: Theme, useBitmap: boolean, scale
     }
   }
 
-  // Le masque borne le panneau à son cadre : sans lui, le monde déborderait sur
-  // ses voisins et la planche ne montrerait plus trois cadrages mais une bouillie.
+  // The mask bounds the panel to its frame: without it, the world would spill
+  // over its neighbors and the board would no longer show three framings but a
+  // mush.
   const mask = new Graphics().rect(0, 0, PANEL_W, PANEL_H).fill(theme.surface.canvas);
   const frame = new Graphics()
     .rect(0.5, 0.5, PANEL_W - 1, PANEL_H - 1)
@@ -831,20 +832,20 @@ function paintSemantic(stage: PixiStage, theme: Theme, useBitmap: boolean): void
   });
 }
 
-// --- Montage.
+// --- Mounting.
 
 /**
- * Monte la vue. Conforme au contrat de `PlaygroundView.mount` : `root` est vide
- * et nous appartient, le retour démonte. Aucun abonnement au thème — le shell
- * remonte la vue entière à chaque changement, et c'est ce qui garantit qu'une
- * scène Pixi à l'écran correspond bien au thème affiché (les couleurs se
- * repeignent à chaud, mais pas les atlas de police).
+ * Mounts the view. Conforms to `PlaygroundView.mount`'s contract: `root` is
+ * empty and ours, the return unmounts. No theme subscription — the shell
+ * remounts the whole view on every change, and that is what guarantees a Pixi
+ * stage on screen really matches the theme announced (colors repaint live, font
+ * atlases do not).
  */
 export function mountGraphComponentsView(root: HTMLElement, state: ThemeState): () => void {
   const theme = currentTheme(state);
-  // Un bail sur les atlas partagés du renderer, exactement comme une instance de
-  // DataGraph : le registre les compte par référence, donc `dispose()` ne
-  // désinstalle que si personne d'autre ne les porte.
+  // A lease on the renderer's shared atlases, exactly like a DataGraph
+  // instance: the registry counts them by reference, so `dispose()` only
+  // uninstalls if nobody else holds them.
   const lease = pixiFontRegistry.lease();
   const stages: PixiStage[] = [];
   let disposed = false;
@@ -868,14 +869,14 @@ export function mountGraphComponentsView(root: HTMLElement, state: ThemeState): 
 
     stage.ready
       .then(() => {
-        // Un démontage tombé pendant l'init : la scène est déjà soldée, et
-        // dessiner dedans lèverait sur un renderer détruit.
+        // An unmount that landed during the init: the stage is already settled,
+        // and drawing into it would throw on a destroyed renderer.
         if (disposed || stage.isDestroyed()) return;
         const useBitmap = supportsBitmapText(stage.app);
         if (useBitmap && !fontsInstalled) {
-          // AVANT tout BitmapText : `drawNode` dérive le nom d'atlas du thème
-          // seul, et le lire avant que le bail ne l'ait installé rendrait des
-          // textes vides.
+          // BEFORE any BitmapText: `drawNode` derives the atlas name from the
+          // theme alone, and reading it before the lease has installed it would
+          // render empty texts.
           lease.sync(theme);
           fontsInstalled = true;
         }
@@ -883,16 +884,16 @@ export function mountGraphComponentsView(root: HTMLElement, state: ThemeState): 
         paint(stage, useBitmap);
       })
       .catch((error: unknown) => {
-        // Sans ça, une init de renderer qui échoue (WebGL coupé, contexte
-        // refusé) laisserait la légende bloquée et la raison dans une rejection
-        // non gérée. La panne se lit à l'endroit du spécimen manquant.
+        // Without this, a renderer init that fails (WebGL off, context refused)
+        // would leave the caption stuck and the reason in an unhandled
+        // rejection. The failure reads where the specimen is missing.
         status.textContent = `Le canvas Pixi n'a pas pu s'initialiser : ${String(error)}`;
       });
   };
 
-  // Les listes sont construites ICI, avant les scènes : leur longueur dimensionne
-  // le canvas, dont la taille se fige au `init()` — donc avant que `ready` ne
-  // dise si le renderer sait rastériser du BitmapText, seule inconnue à ce stade.
+  // The lists are built HERE, before the stages: their length sizes the canvas,
+  // whose size freezes at `init()` — hence before `ready` says whether the
+  // renderer can rasterize BitmapText, the only unknown at this point.
   const cards = cardSpecimens(theme);
   const edges = edgeSpecimens(theme);
 
@@ -928,8 +929,8 @@ export function mountGraphComponentsView(root: HTMLElement, state: ThemeState): 
 
   return () => {
     disposed = true;
-    // Avant les scènes : la libération des atlas ne dépend d'aucun renderer, et
-    // elle doit avoir lieu même si aucune init n'a abouti.
+    // Before the stages: releasing the atlases depends on no renderer, and it
+    // must happen even if no init ever completed.
     lease.dispose();
     for (const stage of stages) stage.destroy();
     page.remove();

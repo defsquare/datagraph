@@ -3,38 +3,38 @@ import { defineConfig } from "vite";
 
 const src = (rel: string): string => fileURLToPath(new URL(rel, import.meta.url));
 
-// Contrairement à `apps/demo`, les alias du playground sont INCONDITIONNELS :
-// ils valent en `serve` comme en `build`.
+// Unlike `apps/demo`, the playground's aliases are UNCONDITIONAL: they hold in
+// `serve` as in `build`.
 //
-// La démo, elle, n'aliase qu'en dev pour que son build de production consomme
-// les paquets par leurs `exports`, comme le ferait un consommateur externe —
-// c'est ce qui garde honnêtes les mesures de taille de bundle prises sur ce
-// build. Le playground n'a pas cette contrainte : il n'est jamais publié, ne
-// sert de référence de taille à personne, et son unique raison d'être est de
-// montrer l'ÉTAT COURANT du design system. Un `dist/` périmé d'un paquet y
-// serait un mensonge, pas une mesure ; d'où le même chemin de résolution dans
-// les deux modes, et aucune dépendance à `pnpm -r build`.
+// The demo only aliases in dev, so that its production build consumes the
+// packages through their `exports`, the way an external consumer would — that
+// is what keeps the bundle size measurements taken on that build honest. The
+// playground has no such constraint: it is never published, is nobody's size
+// reference, and its sole reason to exist is to show the CURRENT STATE of the
+// design system. A package's stale `dist/` would be a lie here, not a
+// measurement; hence the same resolution path in both modes, and no dependency
+// on `pnpm -r build`.
 //
-// Deux familles d'entrées, et il faut les distinguer :
+// Two families of entries, and they must be told apart:
 //
-//   1. Les préfixes `@tokens/`, `@renderer/`, `@core/` — c'est par eux, et
-//      seulement par eux, que le code du playground importe (`@tokens/css.ts`,
-//      `@renderer/theme.ts`). Une entrée préfixe s'applique aussi aux
-//      sous-chemins, donc un seul alias par paquet couvre tous ses modules :
-//      le playground peut piocher dans n'importe quel fichier source, y compris
-//      des modules internes qu'aucun `exports` ne publie — c'est justement ce
-//      qu'on veut d'un banc d'essai du design system.
-//   2. Les noms de paquets nus — le playground ne les écrit JAMAIS. Ils sont là
-//      pour les imports INTERNES des sources ainsi tirées : `theme.ts` du
-//      renderer importe `@defsquare/data-graph-tokens`, le renderer importe le
-//      core, etc. Sans ces entrées, ces imports-là retomberaient sur les
-//      `dist/` (quand ils sont seulement résolvables depuis apps/design, ce que
-//      pnpm ne garantit pas), et une valeur corrigée dans `packages/*/src`
-//      resterait invisible.
+//   1. The `@tokens/`, `@renderer/`, `@core/` prefixes — through them, and only
+//      through them, does the playground's own code import (`@tokens/css.ts`,
+//      `@renderer/theme.ts`). A prefix entry applies to subpaths too, so a
+//      single alias per package covers all its modules: the playground can
+//      reach into any source file, including internal modules no `exports`
+//      publishes — which is precisely what one wants from a design system test
+//      bench.
+//   2. The bare package names — the playground NEVER writes them. They are here
+//      for the INTERNAL imports of the sources thus pulled in: the renderer's
+//      `theme.ts` imports `@defsquare/data-graph-tokens`, the renderer imports
+//      the core, and so on. Without these entries, those imports would fall
+//      back to the `dist/` builds (when they are even resolvable from
+//      apps/design, which pnpm does not guarantee), and a value fixed in
+//      `packages/*/src` would stay invisible.
 //
-// L'ordre compte dans les deux familles : une entrée matche aussi les
-// sous-chemins, donc le plus spécifique doit précéder le plus général — sinon
-// `@defsquare/data-graph-core/graph-layout` se ferait réécrire en
+// Order matters in both families: an entry matches subpaths too, so the most
+// specific must come before the most general — otherwise
+// `@defsquare/data-graph-core/graph-layout` would be rewritten into
 // `.../core/src/index.ts/graph-layout`.
 export default defineConfig({
   resolve: {
@@ -78,15 +78,16 @@ export default defineConfig({
       },
     ],
   },
-  // Les woff2 et les logos sont ceux de la démo, servis tels quels : les
-  // `@font-face` de `apps/demo/src/fonts.css` — que `main.ts` importe — pointent
-  // sur `/fonts/*.woff2`, et les dupliquer ici garantirait surtout de les voir
-  // diverger. Pas de CSP à respecter côté playground : aucune coquille Tauri.
+  // The woff2 files and the logos are the demo's, served as they are: the
+  // `@font-face` rules in `apps/demo/src/fonts.css` — which `main.ts` imports —
+  // point at `/fonts/*.woff2`, and duplicating them here would mostly guarantee
+  // watching them drift apart. No CSP to honor on the playground side: no Tauri
+  // shell.
   publicDir: fileURLToPath(new URL("../demo/public", import.meta.url)),
-  // 5173 est le port de la démo : les deux doivent pouvoir tourner ensemble,
-  // typiquement pour comparer un token à son rendu réel dans le viewer.
+  // 5173 is the demo's port: both must be able to run together, typically to
+  // compare a token against its real rendering in the viewer.
   server: { port: 5174 },
-  // `main.ts` attend `document.fonts.ready` en top-level await ; la cible par
-  // défaut de Vite (chrome87) le refuse à la minification.
+  // `main.ts` awaits `document.fonts.ready` as a top-level await; Vite's default
+  // target (chrome87) rejects it at minification.
   build: { target: "es2022" },
 });

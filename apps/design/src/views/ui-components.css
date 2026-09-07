@@ -1,18 +1,17 @@
-/* Le cartel de la vue « Composants UI », et rien d'autre.
+/* The caption of the « Composants UI » view, and nothing else.
 
-   Les primitives exposées sont habillées par `@defsquare/data-graph-chrome`,
-   la feuille que la démo charge elle aussi — `main.ts` l'importe. Cette
-   feuille-ci n'habille que ce qui entoure les objets : grilles, damier,
-   légendes.
+   The primitives on display are dressed by `@defsquare/data-graph-chrome`, the
+   stylesheet the demo loads too — `main.ts` imports it. This stylesheet only
+   dresses what surrounds the objects: grids, checkerboard, captions.
 
-   Elle a longtemps porté une recopie, déclaration pour déclaration, des règles
-   du chrome de la démo : c'était la seule façon de montrer les primitives tant
-   qu'elles vivaient dans une application. La dette est éteinte, pas surveillée.
+   It long carried a copy, declaration for declaration, of the demo chrome's
+   rules: that was the only way to show the primitives while they lived inside
+   an application. The debt is paid off, not merely watched.
 
-   Même règle que `style.css` : aucune couleur, aucun rayon, aucun espacement en
-   dur — tout vient des variables générées. */
+   Same rule as `style.css`: no hardcoded color, radius or spacing — everything
+   comes from the generated variables. */
 
-/* ---------- Ossature de la planche ---------- */
+/* ---------- The board's frame ---------- */
 
 .ui-components-view {
   display: flex;
@@ -45,13 +44,13 @@
   color: var(--ds-muted);
 }
 
-/* Une grille à colonnes fixes plutôt qu'un `flex-wrap` : les légendes portent
-   ici le geste à faire (« maintenez le clic »), elles sont donc de longueurs
-   très inégales, et en flux libre chaque case prendrait la largeur de sa propre
-   légende — les spécimens ne seraient plus alignés d'une colonne à l'autre,
-   alors que les COMPARER est tout l'intérêt d'une rangée d'états. Le plancher
-   de 21rem tient la plus large des primitives (la barre de recherche, 296px
-   plus la marge du damier). */
+/* A fixed-column grid rather than a `flex-wrap`: the captions here carry the
+   gesture to perform (« maintenez le clic »), so their lengths are very
+   uneven, and in free flow each cell would take the width of its own caption —
+   the specimens would no longer line up from one column to the next, whereas
+   COMPARING them is the whole point of a row of states. The 21rem floor holds
+   the widest of the primitives (the findbar, 296px plus the checkerboard's
+   padding). */
 .uic-row {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(21rem, 1fr));
@@ -78,15 +77,15 @@
   color: var(--ds-fg);
 }
 
-/* ---------- Le damier ---------- */
+/* ---------- The checkerboard ---------- */
 
-/* Pas un décor : toutes les primitives d'ici reposent sur une surface
-   TRANSLUCIDE et floutée, et ni l'opacité ni le `backdrop-filter` ne se voient
-   sur un aplat. Valeurs en dur assumées, comme dans la vue Tokens : un fond de
-   contrôle d'éditeur d'image n'est pas un token, et le gris neutre à 0.22 tient
-   sur les deux modes. La couleur de fond, elle, est bien le canvas du thème
-   courant — composer la translucidité sur autre chose que le fond réel donnerait
-   une couleur qu'on ne verra jamais dans le produit. */
+/* Not decoration: every primitive here sits on a TRANSLUCENT, blurred surface,
+   and neither the opacity nor the `backdrop-filter` shows against a flat fill.
+   Hardcoded values, owned as such, as in the Tokens view: an image editor's
+   control background is not a token, and the neutral grey at 0.22 holds up in
+   both modes. The background color, on the other hand, really is the current
+   theme's canvas — compositing the translucency over anything but the real
+   background would yield a color one will never see in the product. */
 .uic-stage {
   --uic-checker-tint: rgb(128 128 128 / 0.22);
   background-color: var(--ds-canvas);
@@ -103,22 +102,22 @@
   justify-content: center;
 }
 
-/* Les animations d'ENTRÉE (`unfold` de la recherche, `drop-in` du menu) sont
-   neutralisées sur la planche. Le shell remonte la vue à chaque changement de
-   thème : elles rejoueraient donc à chaque bascule, pour des spécimens qui, eux,
-   sont posés en permanence. Ce sont des transitions de montage, pas des états —
-   les rejouer ici dirait quelque chose de faux sur le composant au repos. Les
-   transitions d'état (survol, focus), elles, sont intactes : ce sont justement
-   ce que la planche vient montrer. */
+/* The ENTRANCE animations (the findbar's `unfold`, the menu's `drop-in`) are
+   neutralized on the board. The shell remounts the view on every theme change:
+   they would therefore replay on every toggle, for specimens that are, in fact,
+   permanently on display. These are mount transitions, not states — replaying
+   them here would say something false about the component at rest. The state
+   transitions (hover, focus) are left intact: they are precisely what the board
+   comes to show. */
 .uic-stage .findbar,
 .uic-stage .menu {
   animation: none;
 }
 
-/* ---------- Contexte des spécimens ---------- */
+/* ---------- Specimen context ---------- */
 
-/* Propre à la planche : de quoi donner un intérieur à la surface nue, qui sans
-   contenu n'aurait pas de hauteur. */
+/* Specific to the board: enough to give an inside to the bare surface, which
+   without content would have no height. */
 .uic-float-body {
   padding: var(--space-3);
   font-family: var(--font-mono);
@@ -127,8 +126,8 @@
   color: var(--ds-fg);
 }
 
-/* Le contexte minimal de la pastille : elle ne s'emploie qu'en tête du panneau
-   de détail, au-dessus du libellé du nœud. */
+/* The badge's minimal context: it is only ever used at the head of the detail
+   panel, above the node's label. */
 .uic-detail-sample {
   display: flex;
   flex-direction: column;
@@ -138,8 +137,8 @@
   width: 15rem;
 }
 
-/* Reprise des règles de `#selection-label` : le libellé sous la pastille n'est
-   là que pour donner l'échelle réelle de celle-ci. */
+/* Taken over from `#selection-label`'s rules: the label under the badge is only
+   there to give the badge its real scale. */
 .uic-detail-label {
   margin: 0;
   font-family: var(--font-title, var(--font-body));

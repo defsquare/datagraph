@@ -2,36 +2,35 @@ import "./sandbox.css";
 
 import { createDataGraph, type DataGraph } from "@renderer/index.ts";
 import { currentTheme, type ThemeState } from "../theme-state.ts";
-// Les fixtures de la démo, importées par chemin relatif : Vite transforme un
-// `.json` en module. Les recopier ici les ferait diverger de celles que les e2e
-// du mode fichier rejouent — or l'intérêt du bac à sable est justement de
-// montrer le renderer sur les MÊMES données que le produit, pas sur un jeu
-// fabriqué pour la vitrine.
+// The demo's fixtures, imported by relative path: Vite turns a `.json` into a
+// module. Copying them here would make them drift from the ones the file-mode
+// e2e tests replay — and the point of the sandbox is precisely to show the
+// renderer on the SAME data as the product, not on a set built for the window
+// display.
 import shopConfig from "../../../demo/fixtures/shop.config.json";
 import shopData from "../../../demo/fixtures/shop.json";
 
 /**
- * La vue « Bac à sable » : une instance complète du renderer, sur une vraie
- * fixture, dans le thème courant du playground.
+ * The « Bac à sable » view: a complete renderer instance, on a real fixture, in
+ * the playground's current theme.
  *
- * Les trois autres vues montrent des PIÈCES — un token, une carte peinte hors
- * contexte, un composant DOM figé dans un état. Celle-ci montre l'assemblage :
- * c'est le seul endroit du playground où un changement de token se juge sur ce
- * que l'utilisateur verra vraiment, avec la mise en page, le survol, la
- * sélection et le pli réels.
+ * The other three views show PARTS — a token, a card painted out of context, a
+ * DOM component frozen in one state. This one shows the assembly: it is the
+ * only place in the playground where a token change is judged against what the
+ * user will really see, with the real layout, hover, selection and folding.
  *
- * SUR LE CHANGEMENT DE THÈME. Le renderer expose `setTheme()`, qui repeint les
- * couleurs sans relancer la mise en page — c'est le chemin rapide, et il est
- * légitime pour un couple clair/sombre. Cette vue ne s'en sert pourtant PAS :
- * le shell (`main.ts`) remonte toute vue active à chaque changement de thème,
- * marque comme mode, et ce remontage-là suffit ici. Une instance recréée est
- * cohérente par construction — couleurs, polices, métriques de cartes, tout est
- * relu ensemble —, là où `setTheme()` ne l'est que sous une condition que rien
- * ne vérifie à l'exécution (typographie et polices identiques entre les deux
- * thèmes). Le coût est une recréation de canvas sur un clic manuel, ce qui ne
- * se paie sur aucun chemin chaud. Montrer `setTheme()` à l'œuvre reste
- * possible plus tard, mais ce serait alors une démonstration d'API — donc son
- * propre spécimen, pas un raccourci glissé dans le bac à sable.
+ * ON THEME CHANGES. The renderer exposes `setTheme()`, which repaints the colors
+ * without rerunning the layout — that is the fast path, and it is legitimate
+ * for a light/dark pair. This view nonetheless does NOT use it: the shell
+ * (`main.ts`) remounts any active view on every theme change, brand as well as
+ * mode, and that remount is enough here. A recreated instance is coherent by
+ * construction — colors, fonts, card metrics, everything is read afresh
+ * together — whereas `setTheme()` only is under a condition nothing checks at
+ * runtime (identical typography and fonts between the two themes). The cost is
+ * one canvas recreation per manual click, which is paid on no hot path. Showing
+ * `setTheme()` at work remains possible later, but that would then be an API
+ * demonstration — hence its own specimen, not a shortcut slipped into the
+ * sandbox.
  */
 export function mountSandboxView(root: HTMLElement, state: ThemeState): () => void {
   const page = document.createElement("div");
@@ -48,10 +47,10 @@ export function mountSandboxView(root: HTMLElement, state: ThemeState): () => vo
   page.append(note, stage);
   root.append(page);
 
-  // `disposed` double la garde interne du renderer plutôt que de s'y fier : ce
-  // module doit savoir lui-même s'il a encore le droit de toucher au DOM qu'il
-  // a créé (le message d'erreur ci-dessous), et cette question-là ne concerne
-  // pas l'instance.
+  // `disposed` doubles the renderer's internal guard rather than relying on it:
+  // this module must know for itself whether it is still allowed to touch the
+  // DOM it created (the error message below), and that question is none of the
+  // instance's business.
   let disposed = false;
 
   function fail(error: unknown): void {
@@ -59,32 +58,32 @@ export function mountSandboxView(root: HTMLElement, state: ThemeState): () => vo
     note.textContent = `Échec du chargement : ${error instanceof Error ? error.message : String(error)}`;
   }
 
-  // Une `const` issue d'une IIFE plutôt qu'un `let` assigné dans un `try` : la
-  // fermeture asynchrone plus bas a besoin que le narrowing de `if (graph)`
-  // TIENNE jusque dans son corps, ce qu'une liaison mutable ne garantit pas.
+  // A `const` out of an IIFE rather than a `let` assigned inside a `try`: the
+  // async closure below needs the narrowing of `if (graph)` to HOLD all the way
+  // into its body, which a mutable binding does not guarantee.
   const graph = ((): DataGraph | null => {
     try {
       return createDataGraph(stage, {
         data: shopData,
         config: shopConfig,
         theme: currentTheme(state),
-        // Les deux mêmes URLs que `apps/demo/src/main.ts`, et pour la même
-        // raison : le bac à sable doit exercer le CÂBLAGE réel, pas une
-        // variante allégée. Chacune est sûre à passer — le renderer se replie
-        // sur un calcul en processus si le worker ne se construit pas — ce
-        // qu'elk fait d'ailleurs systématiquement sous Vite, en avertissant une
-        // fois dans la console, exactement comme dans la démo. La note de
-        // `vite.config.ts` de la démo détaille les quatre modes d'exécution ;
-        // la particularité ici est que les alias du playground sont
-        // inconditionnels, donc `serve` comme `build` chargent la SOURCE du
-        // worker de mise en page.
+        // The same two URLs as `apps/demo/src/main.ts`, and for the same
+        // reason: the sandbox must exercise the real WIRING, not a lightened
+        // variant. Each is safe to pass — the renderer falls back to an
+        // in-process computation if the worker fails to build — which is
+        // incidentally what elk does systematically under Vite, warning once in
+        // the console, exactly as in the demo. The note in the demo's
+        // `vite.config.ts` details the four execution modes; the particularity
+        // here is that the playground's aliases are unconditional, so `serve`
+        // and `build` alike load the layout worker's SOURCE.
         elkWorkerUrl: new URL("elkjs/lib/elk-worker.min.js", import.meta.url),
         graphLayoutWorkerUrl: new URL("@defsquare/data-graph/graph-layout-worker", import.meta.url),
       });
     } catch (error) {
-      // `createDataGraph` valide la config en synchrone. Sans ce catch, une
-      // fixture devenue invalide donnerait un cadre vide et une exception dans
-      // la console — c'est-à-dire un playground qui ne dit pas ce qui ne va pas.
+      // `createDataGraph` validates the config synchronously. Without this
+      // catch, a fixture gone invalid would give an empty frame and an
+      // exception in the console — that is, a playground that does not say what
+      // is wrong.
       fail(error);
       return null;
     }
@@ -93,16 +92,16 @@ export function mountSandboxView(root: HTMLElement, state: ThemeState): () => vo
   if (graph) {
     void (async () => {
       try {
-        // Les échecs asynchrones (graphe trop grand, worker) arrivent par
-        // `ready`, jamais par le `throw` ci-dessus.
+        // Asynchronous failures (graph too large, worker) arrive through
+        // `ready`, never through the `throw` above.
         await graph.ready;
       } catch (error) {
         fail(error);
         return;
       }
-      // La vue peut avoir été démontée pendant l'initialisation : `destroy()`
-      // se garde lui-même, mais cadrer une instance détruite n'aurait de toute
-      // façon aucun sens.
+      // The view may have been unmounted during initialization: `destroy()`
+      // guards itself, but framing a destroyed instance would make no sense
+      // anyway.
       if (disposed) return;
       graph.fit();
     })();
@@ -110,9 +109,9 @@ export function mountSandboxView(root: HTMLElement, state: ThemeState): () => vo
 
   return () => {
     disposed = true;
-    // Le contrat de `destroy()` couvre l'appel pendant `app.init()` : la
-    // fermeture ci-dessus peut donc encore être en vol sans rien fuir — ni
-    // canvas, ni worker de mise en page, ni écouteur clavier global.
+    // `destroy()`'s contract covers being called during `app.init()`: the
+    // closure above can therefore still be in flight without leaking anything —
+    // no canvas, no layout worker, no global keyboard listener.
     graph?.destroy();
     page.remove();
   };

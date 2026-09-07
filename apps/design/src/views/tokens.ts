@@ -22,26 +22,25 @@ import { currentTheme, type ThemeState } from "../theme-state.ts";
 import "./tokens.css";
 
 /**
- * La vue « Tokens » : chaque valeur de `packages/tokens/src/index.ts` montrée
- * telle qu'elle est, pour la marque active, dans les DEUX modes à la fois.
+ * The « Tokens » view: every value of `packages/tokens/src/index.ts` shown as it
+ * is, for the active brand, in BOTH modes at once.
  *
- * Les deux modes côte à côte plutôt qu'un seul suivant le thème du shell :
- * l'erreur qu'on cherche ici est celle d'un token corrigé en clair qui devient
- * illisible en sombre, et on ne la voit pas en basculant — on la voit en
- * comparant.
+ * Both modes side by side rather than one following the shell's theme: the
+ * mistake being hunted here is a token fixed in light that becomes illegible in
+ * dark, and one does not see it by toggling — one sees it by comparing.
  *
- * Conséquence : les couleurs affichées sont écrites en style INLINE depuis les
- * tokens, jamais via les variables CSS. Les variables ne portent que le mode
- * courant (et que la palette defsquare) ; s'en servir ici afficherait le thème
- * du shell à la place du token examiné. Les variables restent en revanche
- * seules maîtresses de l'habillage de la vue (`tokens.css`).
+ * Consequence: the colors displayed are written INLINE from the tokens, never
+ * through the CSS variables. The variables only carry the current mode (and
+ * only the defsquare palette); using them here would display the shell's theme
+ * in place of the token under examination. The variables do remain the sole
+ * masters of the view's dressing (`tokens.css`).
  */
 
 const BRANDS: Record<ThemeState["brand"], BrandTokens> = { defsquare, neutral };
 
-/** Types fictifs de la démonstration d'`entityAccentMap` : sept pour six
- * couleurs. Il en faut UN de plus que la palette, sinon le rebouclage par
- * modulo — le seul comportement non évident de la fonction — ne se voit pas. */
+/** Fictitious types for the `entityAccentMap` demonstration: seven for six
+ * colors. There must be ONE more than the palette holds, otherwise the modulo
+ * wraparound — the function's only non-obvious behavior — does not show. */
 const DEMO_ENTITY_TYPES = [
   "user",
   "order",
@@ -52,11 +51,12 @@ const DEMO_ENTITY_TYPES = [
   "supplier",
 ];
 
-/** Spécimen typographique. ASCII pur : l'atlas BitmapFont du renderer est cuit
- * sur `BitmapFontManager.ASCII`, un « — » ou un « é » y manquerait à l'écran. */
+/** Typographic specimen. Pure ASCII: the renderer's BitmapFont atlas is baked on
+ * `BitmapFontManager.ASCII`, so a « — » or an « é » would be missing on screen.
+ */
 const SPECIMEN = "Order #4821 / client_id";
 
-// --- Fabriques DOM.
+// --- DOM factories.
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -76,8 +76,8 @@ function section(title: string, note?: string): HTMLElement {
   return s;
 }
 
-/** Pastille de couleur. La bordure est indispensable : sans elle un `#ffffff`
- * sur fond clair n'existe pas à l'écran. */
+/** A color swatch. The border is indispensable: without it a `#ffffff` on a
+ * light background does not exist on screen. */
 function swatch(color: string, extraClass?: string): HTMLElement {
   const s = el("span", extraClass ? `swatch ${extraClass}` : "swatch");
   s.style.background = color;
@@ -100,10 +100,10 @@ function headerRow(labels: readonly (readonly [string, number])[]): HTMLTableRow
   return tr;
 }
 
-// --- Section « Couleurs ».
+// --- The « Couleurs » section.
 
-/** Aplatit `ColorTokens` en paires `groupe.clé` → hex, dans l'ordre de
- * déclaration : c'est l'ordre de la source, donc celui qu'on relit en diff. */
+/** Flattens `ColorTokens` into `group.key` → hex pairs, in declaration order:
+ * that is the source's order, hence the one read back in a diff. */
 function colorEntries(colors: ColorTokens): [string, string][] {
   return Object.entries(colors).flatMap(([group, values]) =>
     Object.entries(values as Record<string, string>).map(
@@ -156,9 +156,9 @@ function colorsSection(brand: BrandTokens): HTMLElement {
   return s;
 }
 
-/** Les paires réellement dessinées par le renderer : les trois encres sur la
- * surface des cartes. Les autres combinaisons n'existent pas à l'écran, les
- * noter donnerait des chiffres que personne n'a à corriger. */
+/** The pairs the renderer actually draws: the three inks on the card surface.
+ * The other combinations do not exist on screen; scoring them would give
+ * numbers nobody has to fix. */
 const CONTRAST_PAIRS: readonly (keyof ColorTokens["ink"])[] = ["primary", "muted", "subtle"];
 
 function grade(ratio: number): string {
@@ -214,11 +214,11 @@ function contrastTable(brand: BrandTokens): HTMLElement {
   return wrap;
 }
 
-// --- Section « Chrome ».
+// --- The « Chrome » section.
 
-/** Le chrome n'a pas de variante par marque : il n'existe qu'en clair et en
- * sombre, et il est translucide — d'où le damier, qui est le seul moyen de
- * voir ce que « 0.82 d'opacité » veut dire. */
+/** The chrome has no per-brand variant: it exists in light and dark only, and
+ * it is translucent — hence the checkerboard, the only way to see what "0.82
+ * opacity" means. */
 function chromeSection(brand: BrandTokens): HTMLElement {
   const s = section(
     "Chrome",
@@ -241,9 +241,9 @@ function chromePanel(
   const panel = el("div", "chrome-panel");
   panel.append(el("h3", "ds-subtitle", mode === "light" ? "Clair" : "Sombre"));
 
-  // Le damier reçoit en fond la surface de canvas de la marque : composer la
-  // translucidité sur autre chose que le fond réel donnerait une couleur qu'on
-  // ne verra jamais dans le produit.
+  // The checkerboard gets the brand's canvas surface as its background:
+  // compositing the translucency over anything but the real background would
+  // yield a color one will never see in the product.
   const checker = el("div", "checker");
   checker.style.backgroundColor = canvas;
 
@@ -276,10 +276,10 @@ function chromePanel(
   return panel;
 }
 
-// --- Section « Typographie ».
+// --- The « Typographie » section.
 
-/** Couleur d'encre de chaque rôle telle que `draw.ts` la choisit — le spécimen
- * doit ressembler à la carte, pas à un échantillon neutre. */
+/** Each role's ink color exactly as `draw.ts` picks it — the specimen must look
+ * like the card, not like a neutral sample. */
 function inkFor(role: TextRole, theme: Theme): string {
   switch (role) {
     case "header":
@@ -311,7 +311,7 @@ function typographySection(brand: BrandTokens, state: ThemeState): TypographySec
   const grid = el("div", "typo-grid");
   const theme = currentTheme(state);
 
-  // Colonne DOM.
+  // DOM column.
   const domPanel = el("div", "typo-panel");
   domPanel.append(el("h3", "ds-subtitle", "DOM"));
   for (const role of TEXT_ROLES) {
@@ -329,17 +329,17 @@ function typographySection(brand: BrandTokens, state: ThemeState): TypographySec
     sample.style.fontSize = `${style.size}px`;
     sample.style.fontWeight = String(style.weight);
     if (style.tracking) sample.style.letterSpacing = `${style.tracking}em`;
-    // Même encre que la colonne Pixi : comparer deux rendus qui ne diffèrent
-    // que par la couleur ferait passer un écart de graisse pour un écart de
-    // teinte, et c'est la graisse qu'on vient vérifier ici.
+    // Same ink as the Pixi column: comparing two renderings that differ only by
+    // color would pass a weight discrepancy off as a hue one, and weight is
+    // what we come to check here.
     sample.style.color = inkFor(role, theme);
     row.append(meta, sample);
     domPanel.append(row);
   }
 
-  // Colonne Pixi : UNE seule Application pour toute la section — les contextes
-  // WebGL sont une ressource comptée par le navigateur, et un canvas par rôle
-  // en brûlerait quatre pour afficher quatre lignes de texte.
+  // Pixi column: ONE single Application for the whole section — WebGL contexts
+  // are a resource the browser rations, and one canvas per role would burn four
+  // of them to display four lines of text.
   const pixiPanel = el("div", "typo-panel");
   pixiPanel.append(el("h3", "ds-subtitle", "Canvas (Pixi)"));
   const canvasHost = el("div", "typo-canvas");
@@ -350,9 +350,9 @@ function typographySection(brand: BrandTokens, state: ThemeState): TypographySec
   s.append(grid);
 
   const app = new Application();
-  // Bail sur les atlas partagés du renderer, exactement comme une instance de
-  // DataGraph : le registre les compte par référence, donc `dispose()` ne
-  // désinstalle que si personne d'autre ne les porte.
+  // A lease on the renderer's shared atlases, exactly like a DataGraph
+  // instance: the registry counts them by reference, so `dispose()` only
+  // uninstalls if nobody else holds them.
   const lease = pixiFontRegistry.lease();
   let disposed = false;
 
@@ -362,27 +362,27 @@ function typographySection(brand: BrandTokens, state: ThemeState): TypographySec
       height: CANVAS_PAD * 2 + TEXT_ROLES.length * CANVAS_ROW,
       background: theme.surface.canvas,
       antialias: true,
-      // Sans ces deux options le canvas est rendu en 1x puis étiré par le CSS
-      // sur un écran dense — le texte y paraîtrait flou pour une raison qui
-      // n'a rien à voir avec les tokens examinés.
+      // Without these two options the canvas is rendered at 1x then stretched
+      // by CSS on a dense screen — the text would look blurry there for a
+      // reason that has nothing to do with the tokens under examination.
       resolution: Math.min(globalThis.devicePixelRatio ?? 1, 2),
       autoDensity: true,
     });
 
-    // Le démontage a pu tomber pendant que `init()` était en vol : à ce
-    // moment `app.renderer` n'existait pas encore et le cleanup l'a sauté.
-    // C'est ici, et nulle part ailleurs, qu'on peut encore le solder.
+    // The unmount may have landed while `init()` was in flight: at that moment
+    // `app.renderer` did not exist yet and the cleanup skipped it. Here, and
+    // nowhere else, is where it can still be settled.
     if (disposed) {
-      // Forme objet et non `true` : même piège que `RENDERER_DESTROY`, voir
-      // `pixi-stage.ts` — `true` vide le `TexturePool` GLOBAL de la page.
+      // Object form and not `true`: same trap as `RENDERER_DESTROY`, see
+      // `pixi-stage.ts` — `true` empties the page's GLOBAL `TexturePool`.
       app.destroy({ removeView: true }, { children: true });
       return;
     }
 
-    // Même garde que `create.ts` : sous le renderer canvas logiciel de Pixi
-    // v8, BitmapText ne se rastérise pas et laisserait le panneau vide. On
-    // replie sur Text, et on le DIT — un spécimen silencieusement rendu par
-    // un autre chemin que celui du produit serait un faux témoignage.
+    // Same guard as `create.ts`: under Pixi v8's software canvas renderer,
+    // BitmapText does not rasterize and would leave the panel empty. We fall
+    // back to Text, and we SAY so — a specimen silently rendered through a path
+    // other than the product's would be false testimony.
     const useBitmap = app.renderer.name !== "canvas";
     caption.textContent = useBitmap
       ? "BitmapText sur les atlas installés par le registre de polices du renderer."
@@ -393,8 +393,8 @@ function typographySection(brand: BrandTokens, state: ThemeState): TypographySec
     TEXT_ROLES.forEach((role, index) => {
       const y = CANVAS_PAD + index * CANVAS_ROW;
 
-      // Le nom du rôle est écrit dans l'atlas `badge` : c'est le plus petit
-      // des quatre, et il est de toute façon installé par le bail.
+      // The role's name is written in the `badge` atlas: it is the smallest of
+      // the four, and it is installed by the lease anyway.
       const tag = makeLabel(theme, role, "badge", theme.ink.subtle, useBitmap);
       tag.x = CANVAS_PAD;
       tag.y = y;
@@ -408,9 +408,9 @@ function typographySection(brand: BrandTokens, state: ThemeState): TypographySec
 
     canvasHost.append(app.canvas);
   })().catch((error: unknown) => {
-    // Une init de renderer qui échoue (WebGL coupé, contexte refusé) laisserait
-    // sinon la légende bloquée sur « Initialisation… » et la raison dans une
-    // rejection non gérée. La panne se lit ici, à l'endroit du panneau manquant.
+    // A renderer init that fails (WebGL off, context refused) would otherwise
+    // leave the caption stuck on "Initialisation…" and the reason in an
+    // unhandled rejection. The failure reads here, where the panel is missing.
     caption.textContent = `Le canvas Pixi n'a pas pu s'initialiser : ${String(error)}`;
   });
 
@@ -418,20 +418,20 @@ function typographySection(brand: BrandTokens, state: ThemeState): TypographySec
     node: s,
     dispose(): void {
       disposed = true;
-      // Avant `app.destroy` : la libération des atlas ne dépend pas du
-      // renderer, et elle doit avoir lieu même si `init()` n'a jamais abouti.
+      // Before `app.destroy`: releasing the atlases does not depend on the
+      // renderer, and it must happen even if `init()` never completed.
       lease.dispose();
-      // Forme objet et non `true` : même piège que `RENDERER_DESTROY`, voir
-      // `pixi-stage.ts` — `true` vide le `TexturePool` GLOBAL de la page.
+      // Object form and not `true`: same trap as `RENDERER_DESTROY`, see
+      // `pixi-stage.ts` — `true` empties the page's GLOBAL `TexturePool`.
       if (app.renderer) app.destroy({ removeView: true }, { children: true });
     },
   };
 }
 
-/** Réplique locale de `createLabel` de `draw.ts` (qui n'est pas exporté). Le
- * nom d'atlas se dérive du thème seul, d'où l'appel à `fontNameFor` : c'est ce
- * qui garantit qu'on lit ici l'atlas que le bail vient d'installer, et pas un
- * homonyme d'un autre thème. */
+/** A local replica of `draw.ts`'s `createLabel` (which is not exported). The
+ * atlas name derives from the theme alone, hence the call to `fontNameFor`:
+ * that is what guarantees we read here the atlas the lease has just installed,
+ * and not a namesake from another theme. */
 function makeLabel(
   theme: Theme,
   text: string,
@@ -460,7 +460,7 @@ function makeLabel(
   });
 }
 
-// --- Section « Échelles ».
+// --- The « Échelles » section.
 
 function scalesSection(): HTMLElement {
   const s = section(
@@ -507,7 +507,7 @@ function scalesSection(): HTMLElement {
   return s;
 }
 
-// --- Section « Palette d'entités ».
+// --- The « Palette d'entités » section.
 
 function entitySection(brand: BrandTokens, state: ThemeState): HTMLElement {
   const s = section(
@@ -567,13 +567,13 @@ function entitySection(brand: BrandTokens, state: ThemeState): HTMLElement {
   return s;
 }
 
-// --- Montage.
+// --- Mounting.
 
 /**
- * Monte la vue. Conforme au contrat de `PlaygroundView.mount` : `root` est vide
- * et nous appartient, le retour démonte. Le shell remonte la vue entière à
- * chaque changement de thème, donc aucun abonnement ici — l'état arrive en
- * argument et la vue en est une pure fonction.
+ * Mounts the view. Conforms to `PlaygroundView.mount`'s contract: `root` is
+ * empty and ours, the return unmounts. The shell remounts the whole view on
+ * every theme change, so no subscription here — the state arrives as an
+ * argument and the view is a pure function of it.
  */
 export function mountTokensView(root: HTMLElement, state: ThemeState): () => void {
   const brand = BRANDS[state.brand];

@@ -1,14 +1,14 @@
-/* Vue « Bac à sable ».
+/* The « Bac à sable » view.
 
-   Trois règles seulement : tout le reste de ce que l'on voit est peint par
-   Pixi, donc décidé par le THÈME du renderer et non par cette feuille. C'est
-   voulu — un cadre CSS qui habillerait le canvas mentirait sur ce que le
-   produit rend réellement. */
+   Three rules only: everything else one sees is painted by Pixi, hence decided
+   by the renderer's THEME and not by this stylesheet. That is intended — a CSS
+   frame dressing the canvas would lie about what the product actually renders.
+   */
 
 .sb-root {
-  /* `.content` est une piste `1fr` de la grille du shell, donc de hauteur
-     définie : un pourcentage y résout. Sans cela le conteneur du graphe
-     s'effondrerait à 0 et `resizeTo` mesurerait un canvas vide. */
+  /* `.content` is a `1fr` track of the shell's grid, hence of defined height: a
+     percentage resolves against it. Without this the graph container would
+     collapse to 0 and `resizeTo` would measure an empty canvas. */
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -21,9 +21,9 @@
   font-size: 0.875rem;
 }
 
-/* `min-height: 0` : sans lui, la taille minimale automatique d'un item flex
-   empêche le conteneur de rétrécir sous la hauteur de son canvas, et la page
-   se met à déborder à chaque redimensionnement vers le bas. */
+/* `min-height: 0`: without it, a flex item's automatic minimum size stops the
+   container from shrinking below its canvas's height, and the page starts
+   overflowing on every downward resize. */
 .sb-stage {
   flex: 1;
   min-height: 0;

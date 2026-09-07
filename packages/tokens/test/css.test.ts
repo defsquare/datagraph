@@ -6,7 +6,7 @@ import { renderTokensCss } from "../src/css.js";
 describe("renderTokensCss", () => {
   it("reproduit exactement les blocs de tokens historiques de style.css", () => {
     const css = renderTokensCss();
-    // Quelques ancrages : le byte-à-byte complet est couvert par le test de fraîcheur.
+    // A few anchors: the full byte-for-byte check is the freshness test's job.
     expect(css).toContain("--ds-canvas: #eef0f3;");
     expect(css).toContain("--ds-fg: #070f19;");
     expect(css).toContain('html[data-theme="dark"]');
@@ -17,8 +17,8 @@ describe("renderTokensCss", () => {
   });
 
   it("est à jour dans apps/demo (fraîcheur du fichier généré)", () => {
-    // `import.meta.url` plutôt que `__dirname` : le package est en ESM pur, et
-    // ce chemin doit rester valable hors transformation vitest (scripts Node).
+    // `import.meta.url` rather than `__dirname`: the package is pure ESM, and
+    // this path must stay valid outside vitest's transform (Node scripts).
     const committed = readFileSync(
       fileURLToPath(new URL("../../../apps/demo/src/tokens.css", import.meta.url)),
       "utf8",

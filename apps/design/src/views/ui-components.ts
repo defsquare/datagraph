@@ -12,42 +12,43 @@ import {
 import "./ui-components.css";
 
 /**
- * La vue « Composants UI » : les primitives du chrome DOM — surface flottante,
- * bouton d'icône, champ de recherche, pastille d'entité, item de menu — chacune
- * déclinée en rangée d'états.
+ * The « Composants UI » view: the DOM chrome's primitives — floating surface,
+ * icon button, findbar, entity badge, menu item — each laid out as a row of
+ * states.
  *
- * Ces spécimens sont les COMPOSANTS EUX-MÊMES. Ils sortent des fabriques de
- * `@defsquare/data-graph-chrome`, celles que la démo appelle, et sont habillés
- * par la feuille que la démo charge. C'est le même régime que la planche des
- * composants graphe vis-à-vis de `draw.ts` : un spécimen ne peut pas mentir sur
- * ce que le produit dessine, parce qu'il EST ce que le produit dessine.
+ * These specimens are the COMPONENTS THEMSELVES. They come out of
+ * `@defsquare/data-graph-chrome`'s factories, the ones the demo calls, and are
+ * dressed by the stylesheet the demo loads. Same regime as the graph components
+ * board with respect to `draw.ts`: a specimen cannot lie about what the product
+ * draws, because it IS what the product draws.
  *
- * Cette planche a d'ailleurs commencé par recopier le CSS et les icônes du
- * chrome, faute de pouvoir les importer — c'est ce constat qui a fait extraire
- * le paquet. Il ne reste ici que le cartel autour des objets exposés.
+ * This board did in fact start out copying the chrome's CSS and icons, for want
+ * of being able to import them — that observation is what got the package
+ * extracted. All that remains here is the caption around the objects on
+ * display.
  *
- * Deux partis pris fondent la planche elle-même.
+ * Two stances found the board itself.
  *
- * 1. Les états sont RÉELS, jamais simulés. Une case « survol » est le vrai
- *    composant, qu'on survole ; une case « focus » est le vrai composant, qu'on
- *    atteint au Tab. Aucune classe jumelle du genre `.is-hover` : elle ne
- *    serait qu'une copie de la règle `:hover`, et deviendrait fausse dès la
- *    première retouche. Corollaire assumé : plusieurs cases se ressemblent au
- *    repos, et c'est la LÉGENDE qui dit le geste à faire.
+ * 1. The states are REAL, never simulated. A "hover" cell is the real
+ *    component, hovered; a "focus" cell is the real component, reached with
+ *    Tab. No twin class of the `.is-hover` sort: it would only be a copy of the
+ *    `:hover` rule, and would become false at the first touch-up. Owned
+ *    corollary: several cells look alike at rest, and it is the CAPTION that
+ *    states the gesture to perform.
  *
- * 2. Les états qui n'existent pas sont DITS absents, pas inventés. Le chrome ne
- *    définit ni `:active` pour l'item de menu, ni `:disabled` pour les chevrons
- *    de la recherche : la planche le montre tel quel et le nomme. Une planche de
- *    design system doit pouvoir servir à repérer un trou ; elle ne le peut pas
- *    si elle le rebouche en passant.
+ * 2. The states that do not exist are DECLARED absent, not invented. The chrome
+ *    defines neither `:active` for the menu item nor `:disabled` for the
+ *    findbar's chevrons: the board shows that as it is and names it. A design
+ *    system board must be usable to spot a hole; it cannot be if it patches the
+ *    hole on the way past.
  *
- * Pas de Pixi ici, et c'est l'information : ces composants-là n'existent QUE
- * dans le DOM. La translucidité, le flou d'arrière-plan et les ombres portées
- * sont exactement ce que le canvas ne sait pas faire, et c'est pourquoi le
- * chrome est resté du DOM au-dessus du canvas plutôt que d'être dessiné dedans.
+ * No Pixi here, and that is the information: these components exist ONLY in the
+ * DOM. Translucency, backdrop blur and drop shadows are exactly what the canvas
+ * cannot do, and that is why the chrome stayed DOM above the canvas rather than
+ * being drawn inside it.
  */
 
-// --- Fabriques DOM du cartel.
+// --- The caption's DOM factories.
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -61,12 +62,12 @@ function el<K extends keyof HTMLElementTagNameMap>(
 }
 
 /**
- * L'ossature d'une section : titre, note, rangée de cases.
+ * A section's frame: title, note, row of cells.
  *
- * Les classes sont propres à cette vue (`uic-*`) et non celles des vues Tokens
- * (`ds-*`) ou Composants graphe (`gc-*`) : celles-là vivent dans la feuille
- * d'une AUTRE vue, et s'y appuyer casserait le jour où cette autre vue renomme
- * ou déplace sa feuille, sans que rien ne l'ait annoncé.
+ * The classes belong to this view (`uic-*`) and are not those of the Tokens
+ * (`ds-*`) or Composants graphe (`gc-*`) views: those live in ANOTHER view's
+ * stylesheet, and leaning on them would break the day that other view renames
+ * or moves its sheet, with nothing to announce it.
  */
 function section(title: string, note: string): { node: HTMLElement; row: HTMLElement } {
   const node = el("section", "uic-section");
@@ -78,11 +79,11 @@ function section(title: string, note: string): { node: HTMLElement; row: HTMLEle
 }
 
 /**
- * Une case : le spécimen sur damier, sa légende dessous.
+ * A cell: the specimen on the checkerboard, its caption underneath.
  *
- * La légende accepte du balisage léger (`<code>`) parce qu'elle nomme des
- * attributs et des sélecteurs — `disabled`, `aria-busy="true"` — qu'un texte nu
- * ne distinguerait pas de la prose environnante.
+ * The caption accepts light markup (`<code>`) because it names attributes and
+ * selectors — `disabled`, `aria-busy="true"` — that bare text would not set
+ * apart from the surrounding prose.
  */
 function cell(label: string, ...content: Node[]): HTMLElement {
   const node = el("div", "uic-cell");
@@ -94,16 +95,16 @@ function cell(label: string, ...content: Node[]): HTMLElement {
   return node;
 }
 
-/** Une surface flottante nue. `.float` est une classe qu'on POSE, pas un
- * composant qu'on construit : elle vient de la feuille du chrome, il n'y a rien
- * à fabriquer. */
+/** A bare floating surface. `.float` is a class one SETS, not a component one
+ * builds: it comes from the chrome's stylesheet, there is nothing to
+ * manufacture. */
 function float(extraClass: string | null, ...content: Node[]): HTMLElement {
   const node = el("div", extraClass ? `float ${extraClass}` : "float");
   node.append(...content);
   return node;
 }
 
-// --- Section 1 : la surface flottante.
+// --- Section 1: the floating surface.
 
 function floatSection(): HTMLElement {
   const { node, row } = section(
@@ -138,7 +139,7 @@ function floatSection(): HTMLElement {
   return node;
 }
 
-// --- Section 2 : le bouton d'icône.
+// --- Section 2: the icon button.
 
 interface SpecimenButtonOptions {
   icon: IconName;
@@ -150,22 +151,22 @@ interface SpecimenButtonOptions {
 }
 
 /**
- * Un bouton du produit, posé dans l'état qu'on veut montrer.
+ * One of the product's buttons, set in the state we want to show.
  *
- * `disabled` et `aria-busy` ne sont pas des options de `createIconButton` et ne
- * doivent pas l'être : ce sont des états d'EXÉCUTION, que l'application pose et
- * retire au fil de ce qu'elle fait — une fabrique qui les prendrait en argument
- * suggérerait qu'ils se décident à la construction. La planche les pose donc
- * comme la démo les pose, par attribut, après coup.
+ * `disabled` and `aria-busy` are not options of `createIconButton` and must not
+ * be: they are RUNTIME states, which the application sets and clears as it
+ * goes — a factory taking them as arguments would suggest they are decided at
+ * construction. The board therefore sets them the way the demo does, by
+ * attribute, after the fact.
  */
 function specimenButton(opts: SpecimenButtonOptions): HTMLButtonElement {
   const button = createIconButton({
     icon: opts.icon,
     label: opts.label,
     small: opts.small,
-    // `aria-expanded` EST un argument de la fabrique : un déclencheur de panneau
-    // le porte dès sa construction, replié, sans quoi il annoncerait un panneau
-    // qu'il n'ouvre pas.
+    // `aria-expanded` IS a factory argument: a panel trigger carries it from
+    // construction, folded, without which it would announce a panel it does not
+    // open.
     expanded: opts.expanded,
   });
   if (opts.busy) button.setAttribute("aria-busy", "true");
@@ -173,9 +174,9 @@ function specimenButton(opts: SpecimenButtonOptions): HTMLButtonElement {
   return button;
 }
 
-/** Un bouton seul, mais sur sa grappe : hors d'une surface flottante, sa teinte
- * de survol (`--float-hover`) se composerait sur le canvas et non sur le verre,
- * donc sur une couleur que le produit ne montre jamais. */
+/** A lone button, but on its cluster: outside a floating surface, its hover tint
+ * (`--float-hover`) would composite over the canvas and not over the glass,
+ * hence over a color the product never shows. */
 function loneButton(opts: SpecimenButtonOptions): HTMLElement {
   return createCluster(specimenButton(opts));
 }
@@ -227,7 +228,7 @@ function iconButtonSection(): HTMLElement {
   return node;
 }
 
-// --- Section 3 : le champ de recherche.
+// --- Section 3: the findbar.
 
 interface FindbarSpecimenOptions {
   value?: string;
@@ -237,9 +238,9 @@ interface FindbarSpecimenOptions {
 
 function findbar(opts: FindbarSpecimenOptions = {}): HTMLElement {
   const bar = createFindbar();
-  // La fabrique la rend REPLIÉE, comme la démo en a besoin : dans le produit,
-  // la recherche n'apparaît qu'au clic sur la loupe. Sur la planche elle est
-  // l'objet exposé, donc dépliée en permanence.
+  // The factory returns it FOLDED, as the demo needs: in the product, the
+  // findbar only appears on a click on the magnifier. On the board it is the
+  // object on display, hence permanently unfolded.
   bar.root.removeAttribute("hidden");
 
   if (opts.value !== undefined) bar.input.value = opts.value;
@@ -277,7 +278,7 @@ function findbarSection(): HTMLElement {
   return node;
 }
 
-// --- Section 4 : la pastille d'entité.
+// --- Section 4: the entity badge.
 
 function badgeSample(type: string, label: string): HTMLElement {
   return float("uic-detail-sample", createBadge({ text: type }), el("p", "uic-detail-label", label));
@@ -304,7 +305,7 @@ function badgeSection(): HTMLElement {
   return node;
 }
 
-// --- Section 5 : l'item de menu.
+// --- Section 5: the menu item.
 
 interface MenuItemSpecimen {
   text: string;
@@ -312,14 +313,14 @@ interface MenuItemSpecimen {
 }
 
 /**
- * Le panneau de menu du produit, déplié.
+ * The product's menu panel, unfolded.
  *
- * `createMenu` pose `role="menu"` et `hidden`, comme la démo en a besoin. La
- * planche retire `hidden` — le panneau est ici l'objet exposé — mais garde le
- * rôle : la planche montre le composant tel qu'il est, y compris son ARIA. Ce
- * rôle promet une navigation aux flèches que ni la démo ni la planche
- * n'implémentent ; c'est un écart du produit, et le masquer ici reviendrait à
- * ce que cette planche existe précisément pour empêcher.
+ * `createMenu` sets `role="menu"` and `hidden`, as the demo needs. The board
+ * removes `hidden` — here the panel is the object on display — but keeps the
+ * role: the board shows the component as it is, ARIA included. That role
+ * promises arrow-key navigation which neither the demo nor the board
+ * implements; it is a gap in the product, and hiding it here would amount to
+ * precisely what this board exists to prevent.
  */
 function menuPanel(items: MenuItemSpecimen[]): HTMLElement {
   const panel = createMenu(
@@ -363,21 +364,21 @@ function menuSection(): HTMLElement {
   return node;
 }
 
-// --- Montage.
+// --- Mounting.
 
 /**
- * Monte la vue. Conforme au contrat de `PlaygroundView.mount` : `root` est vide
- * et nous appartient, le retour démonte.
+ * Mounts the view. Conforms to `PlaygroundView.mount`'s contract: `root` is
+ * empty and ours, the return unmounts.
  *
- * Le paramètre `state` du contrat n'est pas déclaré — cette vue n'en a pas
- * besoin. Tout ce qu'elle dessine est habillé par les variables CSS générées,
- * qui suivent `data-theme` sur `<html>` ; le thème arrive donc par la cascade,
- * sans que la vue ait à le lire. C'est aussi ce qui fait d'elle la seule à
- * survivre telle quelle à une bascule de mode — le shell la remonte quand même,
- * par uniformité avec les vues Pixi qui, elles, ne le peuvent pas.
+ * The contract's `state` parameter is not declared — this view does not need
+ * it. Everything it draws is dressed by the generated CSS variables, which
+ * follow `data-theme` on `<html>`; the theme therefore arrives through the
+ * cascade, without the view having to read it. That is also what makes it the
+ * only one to survive a mode toggle as it stands — the shell remounts it
+ * anyway, for uniformity with the Pixi views, which cannot.
  *
- * Aucune ressource à libérer non plus : ni canvas, ni abonnement, ni écouteur
- * hors de `root`. Le cleanup se borne donc à retirer le sous-arbre.
+ * No resource to release either: no canvas, no subscription, no listener
+ * outside `root`. The cleanup is thus limited to removing the subtree.
  */
 export function mountUiComponentsView(root: HTMLElement): () => void {
   const page = el("div", "ui-components-view");

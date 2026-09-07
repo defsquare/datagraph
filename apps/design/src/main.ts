@@ -1,38 +1,37 @@
-// Ordre volontaire : les `@font-face` d'abord (repris tels quels de la démo,
-// les URLs `/fonts/*.woff2` résolvent par le `publicDir` partagé), puis la
-// feuille du shell. Les variables `--ds-*`, elles, sont injectées plus bas —
-// pas importées : voir le commentaire de l'injection.
+// Deliberate order: the `@font-face` rules first (taken as they are from the
+// demo, the `/fonts/*.woff2` URLs resolve through the shared `publicDir`), then
+// the shell's stylesheet. The `--ds-*` variables are injected further down —
+// not imported: see the comment at the injection.
 import "../../demo/src/fonts.css";
 import "./style.css";
-// La feuille des primitives du chrome, celle-là même que la démo charge. La
-// planche des composants UI montre donc les composants du produit, habillés par
-// leurs vraies règles — et non une recopie, comme c'était le cas avant que ces
-// primitives ne soient extraites. Après `style.css` : les variables de tokens
-// qu'elle consomme sont injectées plus bas, et la cascade veut que le shell
-// puisse être surchargé, pas l'inverse.
+// The chrome primitives' stylesheet, the very one the demo loads. The UI
+// components board therefore shows the product's components, dressed by their
+// real rules — and not a copy, as was the case before those primitives were
+// extracted. After `style.css`: the token variables it consumes are injected
+// further down, and the cascade wants the shell to be overridable, not the
+// other way round.
 import "@chrome/chrome.css";
 
 import { renderTokensCss } from "@tokens/css.ts";
 import { onThemeChange, setTheme, themeState, type ThemeState } from "./theme-state.ts";
-// Après `./style.css` : une vue importe sa propre feuille, et celle-ci doit
-// pouvoir surcharger celle du shell — l'ordre des imports EST l'ordre en
-// cascade.
+// After `./style.css`: a view imports its own stylesheet, and that one must be
+// able to override the shell's — the import order IS the cascade order.
 import { mountGraphComponentsView } from "./views/graph-components.ts";
 import { mountSandboxView } from "./views/sandbox.ts";
 import { mountTokensView } from "./views/tokens.ts";
 import { mountUiComponentsView } from "./views/ui-components.ts";
 
 /**
- * Le contrat d'une vue du playground.
+ * The contract of a playground view.
  *
- * `mount` reçoit un élément VIDE dont elle est seule propriétaire, et retourne
- * son démontage. Ce retour n'est pas une politesse : les vues à venir créent
- * des canvases Pixi et des abonnements au thème, que rien d'autre ne peut
- * libérer à leur place. Le shell appelle le cleanup avant de vider le
- * conteneur, jamais l'inverse.
+ * `mount` receives an EMPTY element it alone owns, and returns its unmount.
+ * That return is not a courtesy: the views ahead create Pixi canvases and theme
+ * subscriptions that nothing else can release in their stead. The shell calls
+ * the cleanup before emptying the container, never the other way round.
  *
- * `state` est passé en argument plutôt que lu depuis `theme-state` par la vue :
- * une vue reste ainsi une fonction du thème, testable sans état global.
+ * `state` is passed as an argument rather than read from `theme-state` by the
+ * view: a view thus stays a function of the theme, testable without global
+ * state.
  */
 export interface PlaygroundView {
   id: string;
@@ -40,9 +39,9 @@ export interface PlaygroundView {
   mount(root: HTMLElement, state: ThemeState): () => void;
 }
 
-// La vue d'accueil est nommée, pas déduite d'un `VIEWS[0]` : réordonner le
-// registre ne doit pas déplacer l'écran d'arrivée à l'insu de celui qui
-// réordonne.
+// The landing view is named, not derived from a `VIEWS[0]`: reordering the
+// registry must not move the arrival screen behind the back of whoever
+// reorders.
 const TOKENS_VIEW: PlaygroundView = { id: "tokens", label: "Tokens", mount: mountTokensView };
 
 const VIEWS: PlaygroundView[] = [
@@ -54,15 +53,15 @@ const VIEWS: PlaygroundView[] = [
 
 const DEFAULT_VIEW = TOKENS_VIEW;
 
-// --- Les variables CSS.
+// --- The CSS variables.
 //
-// Injectées au lieu d'être importées depuis un `.css` généré comme le fait la
-// démo : le playground doit montrer les tokens tels qu'ils sont dans
-// `packages/tokens/src` à l'instant présent. En passant par `renderTokensCss()`
-// le module CSS est du code, donc soumis au HMR de Vite — corriger une couleur
-// dans la source repeint le playground entier sans rien régénérer. Un
-// `tokens.css` committé, lui, aurait exigé `pnpm generate:css` entre chaque
-// essai, ce qui est précisément le va-et-vient que ce banc d'essai supprime.
+// Injected instead of being imported from a generated `.css` as the demo does:
+// the playground must show the tokens as they are in `packages/tokens/src` at
+// this very moment. Going through `renderTokensCss()` makes the CSS module
+// code, hence subject to Vite's HMR — fixing a color in the source repaints the
+// whole playground with nothing to regenerate. A committed `tokens.css` would
+// have required `pnpm generate:css` between every attempt, which is precisely
+// the back-and-forth this test bench removes.
 const tokensStyle = document.createElement("style");
 tokensStyle.textContent = renderTokensCss();
 document.head.append(tokensStyle);
@@ -70,7 +69,7 @@ document.head.append(tokensStyle);
 const app = document.getElementById("app");
 if (!app) throw new Error("#app container not found");
 
-// --- Le shell.
+// --- The shell.
 
 const shell = document.createElement("div");
 shell.className = "shell";
@@ -84,8 +83,8 @@ brandEl.className = "sidebar-brand";
 brandEl.textContent = "data-graph";
 sidebar.append(brandEl);
 
-// Des liens, pas des boutons : la route EST le hash, donc l'élément qui y mène
-// doit être navigable, ouvrable dans un onglet et annonçable comme un lien.
+// Links, not buttons: the route IS the hash, so the element leading to it must
+// be navigable, openable in a tab, and announced as a link.
 const navLinks = new Map<string, HTMLAnchorElement>();
 for (const view of VIEWS) {
   const link = document.createElement("a");
@@ -137,7 +136,7 @@ content.className = "content";
 shell.append(sidebar, topbar, content);
 app.append(shell);
 
-// --- Montage et routage.
+// --- Mounting and routing.
 
 let unmount: (() => void) | null = null;
 let mounted: PlaygroundView | null = null;
@@ -151,12 +150,13 @@ function render(): void {
   const view = viewFromHash();
   const state = themeState();
 
-  // Démonter AVANT de vider : la vue doit pouvoir toucher son DOM une dernière
-  // fois (détruire un canvas Pixi, retirer des écouteurs) pendant qu'il existe.
-  // Gardé : un cleanup de vue qui lève ne doit pas condamner le remontage.
-  // Sans cette garde, l'exception abandonne `render()` — la nouvelle vue n'est
-  // jamais montée et l'écran reste figé sur le thème précédent, panne bien plus
-  // visible que le cleanup raté qui l'a causée. L'erreur reste en console.
+  // Unmount BEFORE emptying: the view must be able to touch its DOM one last
+  // time (destroy a Pixi canvas, remove listeners) while it still exists.
+  // Guarded: a view cleanup that throws must not condemn the remount. Without
+  // this guard, the exception abandons `render()` — the new view is never
+  // mounted and the screen stays frozen on the previous theme, a far more
+  // visible failure than the botched cleanup that caused it. The error still
+  // reaches the console.
   try {
     unmount?.();
   } catch (error: unknown) {
@@ -170,8 +170,8 @@ function render(): void {
 
   title.textContent = view.label;
   for (const [id, link] of navLinks) {
-    // `aria-current` porte l'information, la classe porte le style : les deux
-    // dérivent du même booléen, ils ne peuvent pas diverger.
+    // `aria-current` carries the information, the class carries the style: both
+    // derive from the same boolean, so they cannot diverge.
     if (id === view.id) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
     link.classList.toggle("is-active", id === view.id);
@@ -180,8 +180,8 @@ function render(): void {
 
 function syncControls(state: ThemeState): void {
   brandSelect.value = state.brand;
-  // Le bouton nomme le mode qu'il ACTIVERAIT, pas celui en place — même
-  // convention que l'entrée de menu de la démo.
+  // The button names the mode it WOULD activate, not the one in place — same
+  // convention as the demo's menu entry.
   const next = state.mode === "dark" ? "clair" : "sombre";
   modeBtn.textContent = `Thème ${next}`;
   modeBtn.setAttribute("aria-label", `Passer au thème ${next}`);
@@ -195,35 +195,34 @@ brandSelect.addEventListener("change", () => {
   setTheme({ brand: brandSelect.value as ThemeState["brand"] });
 });
 
-// Tout changement de thème REMONTE la vue active. C'est plus brutal qu'un
-// `setTheme()` de renderer appliqué à chaud, et c'est délibéré : les vues à
-// venir dessinent avec Pixi, où seules les couleurs se repeignent à chaud —
-// polices, épaisseurs et rayons demandent une reconstruction. Un remontage
-// systématique garantit que ce qui est à l'écran correspond au thème affiché,
-// quel que soit ce qu'une vue a mis dedans.
+// Any theme change REMOUNTS the active view. That is blunter than a renderer's
+// `setTheme()` applied live, and it is deliberate: the views ahead draw with
+// Pixi, where only colors repaint live — fonts, stroke widths and radii require
+// a rebuild. A systematic remount guarantees that what is on screen matches the
+// theme announced, whatever a view has put inside it.
 onThemeChange((state) => {
   syncControls(state);
   render();
 });
 
 window.addEventListener("hashchange", () => {
-  // Un hash qui retombe sur la vue déjà montée (lien re-cliqué, `#/inconnu`)
-  // ne doit pas la reconstruire : elle perdrait son état pour rien.
+  // A hash landing back on the already mounted view (link clicked again,
+  // `#/unknown`) must not rebuild it: it would lose its state for nothing.
   if (viewFromHash() === mounted) return;
   render();
 });
 
 syncControls(themeState());
 
-// Top-level await (cible es2022, cf. `vite.config.ts`). Les vues à venir
-// construisent des BitmapFonts Pixi, qui MESURENT les glyphes par nom de
-// famille : monter avant que les woff2 ne soient chargées ferait mesurer la
-// police de repli, et les largeurs figées dans l'atlas resteraient fausses même
-// une fois la vraie police arrivée. `font-display: swap` sert le DOM, pas un
-// canvas. On attend donc ici, une fois, avant le tout premier montage.
+// Top-level await (es2022 target, cf. `vite.config.ts`). The views ahead build
+// Pixi BitmapFonts, which MEASURE glyphs by family name: mounting before the
+// woff2 files are loaded would measure the fallback font, and the widths baked
+// into the atlas would stay wrong even once the real font arrived.
+// `font-display: swap` serves the DOM, not a canvas. So we wait here, once,
+// before the very first mount.
 await document.fonts.ready;
 
-// Pas de hash au chargement : on en pose un, pour que l'URL décrive toujours ce
-// qui est affiché (et soit partageable / rechargeable).
+// No hash on load: we set one, so that the URL always describes what is
+// displayed (and stays shareable / reloadable).
 if (!window.location.hash) window.location.hash = `#/${DEFAULT_VIEW.id}`;
 render();

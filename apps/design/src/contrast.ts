@@ -1,30 +1,30 @@
 /**
- * Contraste WCAG 2.x entre deux couleurs opaques.
+ * WCAG 2.x contrast between two opaque colors.
  *
- * Le playground affiche des ratios pour que celui qui touche une couleur voie
- * immédiatement ce qu'il casse : un `ink.subtle` éclairci de deux crans reste
- * joli et devient illisible, et rien dans un swatch ne le dit. Le calcul vit
- * ici plutôt que dans le paquet de tokens parce que c'est une mesure SUR les
- * tokens, pas un token : le renderer n'en a aucun usage.
+ * The playground shows ratios so that whoever touches a color immediately sees
+ * what they break: an `ink.subtle` lightened by two notches stays pretty and
+ * becomes illegible, and nothing in a swatch says so. The computation lives
+ * here rather than in the token package because it is a measurement ON the
+ * tokens, not a token: the renderer has no use for it.
  *
- * Seul `#rrggbb` est accepté — c'est le format de toutes les couleurs de
- * `packages/tokens/src/index.ts`. Les valeurs translucides du chrome
- * (`rgb(… / 0.82)`) n'ont volontairement pas de ratio : un contraste sur une
- * couleur non composée serait un chiffre faux, donc pire que pas de chiffre.
+ * Only `#rrggbb` is accepted — the format of every color in
+ * `packages/tokens/src/index.ts`. The chrome's translucent values
+ * (`rgb(… / 0.82)`) deliberately get no ratio: a contrast computed on an
+ * uncomposited color would be a wrong number, hence worse than no number.
  */
 
 const HEX = /^#([0-9a-f]{6})$/i;
 
 function channels(hex: string): [number, number, number] {
   const m = HEX.exec(hex.trim());
-  // Erreur plutôt que repli silencieux : un token hors format est un bug de la
-  // source, et un ratio calculé sur du noir par défaut le masquerait.
+  // An error rather than a silent fallback: an off-format token is a bug in the
+  // source, and a ratio computed on a default black would hide it.
   if (!m) throw new Error(`contrastRatio attend une couleur #rrggbb, reçu « ${hex} »`);
   const n = Number.parseInt(m[1]!, 16);
   return [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff];
 }
 
-/** Composante sRGB linéarisée (WCAG 2.x, §relative luminance). */
+/** Linearized sRGB component (WCAG 2.x, §relative luminance). */
 function linear(component: number): number {
   const c = component / 255;
   return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
@@ -36,10 +36,10 @@ function luminance(hex: string): number {
 }
 
 /**
- * Ratio de contraste, de 1 (identiques) à 21 (noir sur blanc), arrondi à deux
- * décimales. L'ordre des arguments n'a pas d'influence sur le résultat — la
- * formule met toujours la plus claire au numérateur — mais le nommage
- * (avant-plan, arrière-plan) garde les appels lisibles côté vue.
+ * Contrast ratio, from 1 (identical) to 21 (black on white), rounded to two
+ * decimals. Argument order has no bearing on the result — the formula always
+ * puts the lighter one in the numerator — but the naming (foreground,
+ * background) keeps the calls readable on the view side.
  */
 export function contrastRatio(fgHex: string, bgHex: string): number {
   const a = luminance(fgHex);
