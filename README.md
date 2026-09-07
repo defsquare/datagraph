@@ -35,9 +35,11 @@ app — see [The `@defsquare/data-graph` package](#the-defsquaredata-graph-packa
 
 | Package | Description |
 | --- | --- |
+| [`@defsquare/data-graph-tokens`](./packages/tokens) | Design tokens — the single source of truth behind both the renderer themes and the shell CSS variables. |
 | [`@defsquare/data-graph-core`](./packages/core) | Headless: `buildGraph`, `CollapseState`, `buildSearchIndex`, `createStructureLayoutEngine`. No rendering, no DOM. |
 | [`@defsquare/data-graph`](./packages/renderer) | Pixi.js renderer on top of core: `createDataGraph`, themes. |
 | [`apps/demo`](./apps/demo) | Vite demo, Playwright e2e, and the Tauri desktop shell that doubles as the `datagraph` CLI. |
+| [`apps/design`](./apps/design) | Design system playground: tokens, graph and UI components, and a live sandbox. Never published. |
 
 ## The `datagraph` CLI
 
@@ -287,11 +289,13 @@ exact shape.
 ```
 data-graph/
 ├── packages/
+│   ├── tokens/    @defsquare/data-graph-tokens — design tokens, CSS generator
 │   ├── core/      @defsquare/data-graph-core — graph model, layout, search
 │   └── renderer/  @defsquare/data-graph — Pixi.js renderer, themes
 ├── apps/
-│   └── demo/      Vite app demonstrating the renderer + Playwright e2e
-│       └── src-tauri/  Tauri v2 desktop shell + `datagraph` CLI (Rust)
+│   ├── demo/      Vite app demonstrating the renderer + Playwright e2e
+│   │   └── src-tauri/  Tauri v2 desktop shell + `datagraph` CLI (Rust)
+│   └── design/    design system playground (port 5174), never published
 ├── docs/
 │   ├── graph-view.md   graph-view layout, guarantees and measurements
 │   └── superpowers/    historical journal of spikes, specs and plans
@@ -311,6 +315,7 @@ pnpm bench          # non-blocking perf bench (packages/core/bench/bench.ts)
 
 pnpm --filter demo dev   # run the demo app locally
 pnpm --filter demo e2e   # Playwright e2e (starts `pnpm dev` itself)
+pnpm --filter design dev # design system playground on port 5174 (runs alongside the demo)
 
 pnpm --filter demo tauri dev    # demo as a desktop app (Tauri v2) — needs a Rust toolchain
 pnpm --filter demo tauri build  # standalone binary: apps/demo/src-tauri/target/release/datagraph

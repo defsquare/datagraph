@@ -1,0 +1,34 @@
+/* Vue « Bac à sable ».
+
+   Trois règles seulement : tout le reste de ce que l'on voit est peint par
+   Pixi, donc décidé par le THÈME du renderer et non par cette feuille. C'est
+   voulu — un cadre CSS qui habillerait le canvas mentirait sur ce que le
+   produit rend réellement. */
+
+.sb-root {
+  /* `.content` est une piste `1fr` de la grille du shell, donc de hauteur
+     définie : un pourcentage y résout. Sans cela le conteneur du graphe
+     s'effondrerait à 0 et `resizeTo` mesurerait un canvas vide. */
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.sb-note {
+  margin: 0;
+  color: var(--ds-muted);
+  font-size: 0.875rem;
+}
+
+/* `min-height: 0` : sans lui, la taille minimale automatique d'un item flex
+   empêche le conteneur de rétrécir sous la hauteur de son canvas, et la page
+   se met à déborder à chaque redimensionnement vers le bas. */
+.sb-stage {
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--ds-border-soft);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--ds-canvas);
+}

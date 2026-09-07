@@ -11,6 +11,7 @@ import { onThemeChange, setTheme, themeState, type ThemeState } from "./theme-st
 // pouvoir surcharger celle du shell — l'ordre des imports EST l'ordre en
 // cascade.
 import { mountGraphComponentsView } from "./views/graph-components.ts";
+import { mountSandboxView } from "./views/sandbox.ts";
 import { mountTokensView } from "./views/tokens.ts";
 import { mountUiComponentsView } from "./views/ui-components.ts";
 
@@ -32,22 +33,6 @@ export interface PlaygroundView {
   mount(root: HTMLElement, state: ThemeState): () => void;
 }
 
-/** Vue provisoire : les tâches suivantes remplacent chaque entrée du registre
- * par son vrai module (`mountTokensView`, etc.), de cette même forme. */
-function placeholder(id: string, label: string): PlaygroundView {
-  return {
-    id,
-    label,
-    mount(root) {
-      const p = document.createElement("p");
-      p.className = "placeholder";
-      p.textContent = `Vue « ${label} » — à venir.`;
-      root.append(p);
-      return () => {};
-    },
-  };
-}
-
 // La vue d'accueil est nommée, pas déduite d'un `VIEWS[0]` : réordonner le
 // registre ne doit pas déplacer l'écran d'arrivée à l'insu de celui qui
 // réordonne.
@@ -57,7 +42,7 @@ const VIEWS: PlaygroundView[] = [
   TOKENS_VIEW,
   { id: "graph", label: "Composants graphe", mount: mountGraphComponentsView },
   { id: "ui", label: "Composants UI", mount: mountUiComponentsView },
-  placeholder("sandbox", "Bac à sable"),
+  { id: "sandbox", label: "Bac à sable", mount: mountSandboxView },
 ];
 
 const DEFAULT_VIEW = TOKENS_VIEW;

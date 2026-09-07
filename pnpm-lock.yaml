@@ -39,6 +39,9 @@ importers:
 
   apps/design:
     dependencies:
+      elkjs:
+        specifier: ^0.12.0
+        version: 0.12.0
       pixi.js:
         specifier: ^8.0.0
         version: 8.20.1

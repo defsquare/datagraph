@@ -147,9 +147,3 @@ body {
   overflow-y: auto;
   padding: var(--space-6);
 }
-
-.placeholder {
-  margin: 0;
-  color: var(--ds-muted);
-  font-size: 0.9375rem;
-}

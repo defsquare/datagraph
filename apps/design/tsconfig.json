@@ -10,6 +10,11 @@
     // une extension `.ts` explicite sans cette option (elle exige `noEmit`,
     // posé juste au-dessus).
     "allowImportingTsExtensions": true,
+    // Le bac à sable importe les fixtures de la démo (`shop.json`) comme des
+    // modules, ce que Vite fait nativement. Sans cette option, `tsc` refuse
+    // l'import — et recopier la fixture dans un `.ts` la ferait diverger de
+    // celle que les e2e du mode fichier rejouent.
+    "resolveJsonModule": true,
     // Miroir des alias de `vite.config.ts` — voir là-bas le pourquoi des deux
     // familles d'entrées. `tsc --noEmit` ne lit pas la config Vite : sans ces
     // `paths`, le typecheck résoudrait vers les `dist/` (ou échouerait, faute

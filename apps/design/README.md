@@ -51,6 +51,35 @@ divergentes, donc un typecheck qui valide autre chose que ce qui tourne.
   cleanup retourné avant tout remontage.
 - `src/style.css` — le shell, écrit **uniquement** avec les variables générées
   par le paquet de tokens.
+- `src/pixi-stage.ts` — une scène de spécimens : un `Application` Pixi de taille
+  fixe et, surtout, les pièges de son cycle de vie (init asynchrone démontée en
+  vol, densité d'écran) résolus une fois pour toutes. Utilisé par la vue
+  Composants graphe, qui en pose une par planche.
+- `src/contrast.ts` — le ratio WCAG affiché par la vue Tokens. Une mesure **sur**
+  les tokens, pas un token : d'où sa place ici et non dans le paquet.
+
+Les quatre vues, dans l'ordre de la barre latérale :
+
+- `src/views/tokens.ts` (`#/tokens`) — la planche des tokens : couleurs, avec
+  leur ratio de contraste, typographie, espacements, rayons, ombres.
+- `src/views/graph-components.ts` (`#/graph`) — ce que `draw.ts` peint, hors
+  produit : carte de nœud par état, styles d'arêtes, enveloppes d'agrégats,
+  paliers du zoom sémantique. Les états d'interface y sont **forcés**, puisque
+  c'est `create.ts` qui les décide dans le produit.
+- `src/views/ui-components.ts` (`#/ui`) — les primitives DOM du chrome de la
+  démo (surface flottante, bouton d'icône, barre de recherche, pastille, item
+  de menu), chacune en rangée d'états **réels** — on survole, on tabule ; aucune
+  classe jumelle du genre `.is-hover`.
+- `src/views/sandbox.ts` (`#/sandbox`) — une instance complète du renderer
+  (`createDataGraph`) sur `apps/demo/fixtures/shop.json`, câblée comme la démo,
+  worker de mise en page compris. C'est le seul endroit du playground où un
+  token se juge sur l'assemblage plutôt que sur une pièce isolée.
+
+Toute vue est **remontée** à chaque changement de thème, marque comme mode : le
+shell détruit puis recrée. Le bac à sable ne se sert donc pas de
+`graph.setTheme()`, dont la sûreté est conditionnée à une typographie identique
+entre les deux thèmes — condition que rien ne vérifie à l'exécution, là où une
+instance recréée est cohérente par construction.
 
 Les variables CSS ne sont pas importées depuis un fichier généré comme dans la
 démo : `main.ts` appelle `renderTokensCss()` et injecte le résultat. Le module
