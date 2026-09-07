@@ -12,6 +12,7 @@ import { onThemeChange, setTheme, themeState, type ThemeState } from "./theme-st
 // cascade.
 import { mountGraphComponentsView } from "./views/graph-components.ts";
 import { mountTokensView } from "./views/tokens.ts";
+import { mountUiComponentsView } from "./views/ui-components.ts";
 
 /**
  * Le contrat d'une vue du playground.
@@ -55,7 +56,7 @@ const TOKENS_VIEW: PlaygroundView = { id: "tokens", label: "Tokens", mount: moun
 const VIEWS: PlaygroundView[] = [
   TOKENS_VIEW,
   { id: "graph", label: "Composants graphe", mount: mountGraphComponentsView },
-  placeholder("ui", "Composants UI"),
+  { id: "ui", label: "Composants UI", mount: mountUiComponentsView },
   placeholder("sandbox", "Bac à sable"),
 ];
 

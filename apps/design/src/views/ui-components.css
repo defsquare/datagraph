@@ -1,0 +1,361 @@
+/* Habillage et primitives de la vue « Composants UI ».
+
+   AVERTISSEMENT — Les blocs marqués « repris de la démo » recopient, déclaration
+   pour déclaration, des règles de `apps/demo/src/style.css`. Ce n'est pas un
+   import et ça ne peut pas l'être : là-bas ces règles sont ancrées en
+   `position: fixed` sur des ids de page (`#toolbar`, `#search`,
+   `#selection-type`, `#detail`), donc inutilisables hors de la démo. La recopie
+   est une DETTE assumée : si le chrome de la démo évolue, cette feuille doit
+   être re-synchronisée, faute de quoi la planche montrera un chrome qui
+   n'existe plus. C'est le prix à payer pour montrer les primitives en flux
+   normal, seule disposition où l'on peut les aligner en rangées d'états.
+
+   Ce qui a été VOLONTAIREMENT laissé de côté dans la recopie, et pourquoi :
+   - les ancrages (`position: fixed`, `top`, `left`, `z-index`) — ils placent le
+     chrome dans le viewport de la démo, ils ne décrivent pas les primitives ;
+   - les animations d'entrée (`unfold`, `drop-in`, `slide-in`) — ce sont des
+     transitions de MONTAGE, pas des états. Le shell remonte la vue entière à
+     chaque changement de thème : les rejouer ferait clignoter toute la planche
+     à chaque bascule, pour ne rien montrer de plus.
+   L'animation de `aria-busy`, elle, est bien reprise : c'est un état, pas une
+   entrée.
+
+   Le reste — grilles, damier, légendes — est l'habillage de la planche, et suit
+   la même règle que le shell : aucune couleur, aucun rayon, aucun espacement en
+   dur, tout vient des variables générées. */
+
+/* ---------- Ossature de la planche ---------- */
+
+.ui-components-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  max-width: 68rem;
+}
+
+.uic-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.uic-section-title {
+  margin: 0;
+  font-family: var(--font-title, var(--font-body));
+  font-size: 1.125rem;
+  font-weight: 500;
+  color: var(--ds-ink);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--ds-border);
+}
+
+.uic-note {
+  margin: 0;
+  max-width: 56rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--ds-muted);
+}
+
+/* Une grille à colonnes fixes plutôt qu'un `flex-wrap` : les légendes portent
+   ici le geste à faire (« maintenez le clic »), elles sont donc de longueurs
+   très inégales, et en flux libre chaque case prendrait la largeur de sa propre
+   légende — les spécimens ne seraient plus alignés d'une colonne à l'autre,
+   alors que les COMPARER est tout l'intérêt d'une rangée d'états. Le plancher
+   de 21rem tient la plus large des primitives (la barre de recherche, 296px
+   plus la marge du damier). */
+.uic-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(21rem, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.uic-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.uic-cell-label {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--ds-muted);
+}
+
+.uic-cell-label code {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--ds-fg);
+}
+
+/* Le damier n'est pas un décor : toutes les primitives d'ici reposent sur une
+   surface TRANSLUCIDE et floutée, et ni l'opacité ni le `backdrop-filter` ne se
+   voient sur un aplat. Valeurs en dur assumées, comme dans la vue Tokens : un
+   fond de contrôle d'éditeur d'image n'est pas un token, et le gris neutre à
+   0.22 tient sur les deux modes. La couleur de fond, elle, est bien le canvas
+   du thème courant — composer la translucidité sur autre chose que le fond réel
+   donnerait une couleur qu'on ne verra jamais dans le produit. */
+.uic-stage {
+  --uic-checker-tint: rgb(128 128 128 / 0.22);
+  background-color: var(--ds-canvas);
+  background-image:
+    linear-gradient(45deg, var(--uic-checker-tint) 25%, transparent 25%, transparent 75%, var(--uic-checker-tint) 75%),
+    linear-gradient(45deg, var(--uic-checker-tint) 25%, transparent 25%, transparent 75%, var(--uic-checker-tint) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 8px 8px;
+  border: 1px solid var(--ds-border-soft);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ---------- Repris de la démo : le socle flottant (`.float`) ---------- */
+
+.uic-float {
+  background: var(--float-bg);
+  border: 1px solid var(--float-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-float);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+}
+
+/* Propre à la planche : de quoi donner un intérieur au spécimen de surface nue,
+   qui sans contenu n'aurait pas de hauteur. */
+.uic-float-body {
+  padding: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  line-height: 1.6;
+  color: var(--ds-fg);
+}
+
+/* ---------- Repris de la démo : la grappe d'icônes ---------- */
+
+.uic-cluster {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 3px;
+}
+
+.uic-cluster-sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 3px;
+  background: var(--float-border);
+}
+
+/* ---------- Repris de la démo : le bouton d'icône (`.ibtn`) ---------- */
+
+.uic-ibtn {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--ds-muted);
+  background: none;
+  border: 0;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background-color var(--transition), color var(--transition);
+}
+
+.uic-ibtn svg { width: 16px; height: 16px; display: block; }
+
+.uic-ibtn:hover { background: var(--float-hover); color: var(--ds-ink); }
+.uic-ibtn:active { transform: translateY(0.5px); }
+.uic-ibtn:disabled { opacity: 0.45; cursor: default; }
+
+.uic-ibtn:focus-visible {
+  outline: 2px solid var(--ds-primary);
+  outline-offset: 1px;
+}
+
+/* Un panneau ouvert reste signalé par son déclencheur. */
+.uic-ibtn[aria-expanded="true"] {
+  color: var(--ds-primary);
+  background: color-mix(in srgb, var(--ds-primary) 14%, transparent);
+}
+
+/* Un bouton OCCUPÉ. Le sélecteur est l'attribut lui-même et non une classe
+   jumelle : `aria-busy` est ce qu'une technologie d'assistance lit, et s'en
+   servir aussi comme sélecteur rend impossible qu'un des deux soit posé sans
+   l'autre. La règle passe APRÈS `:disabled` — la bascule pose les deux, et
+   c'est cette opacité-ci, plus claire, qui doit gagner : « en cours » n'est pas
+   « pas disponible ». */
+.uic-ibtn[aria-busy="true"]:disabled {
+  opacity: 0.7;
+  animation: uic-ibtn-busy 1.2s ease-in-out infinite;
+}
+
+@keyframes uic-ibtn-busy {
+  50% { opacity: 0.3; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .uic-ibtn[aria-busy="true"]:disabled { animation: none; }
+}
+
+.uic-ibtn-sm { width: 24px; height: 24px; border-radius: 6px; }
+.uic-ibtn-sm svg { width: 13px; height: 13px; }
+
+/* ---------- Repris de la démo : la recherche dépliante (`.findbar`) ---------- */
+
+.uic-findbar {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  width: 296px;
+  height: 36px;
+  padding: 0 4px 0 10px;
+}
+
+.uic-findbar:focus-within {
+  border-color: color-mix(in srgb, var(--ds-primary) 55%, transparent);
+  box-shadow: var(--shadow-float), 0 0 0 3px color-mix(in srgb, var(--ds-primary) 16%, transparent);
+}
+
+.uic-findbar-icon { width: 15px; height: 15px; flex: none; color: var(--ds-subtle); }
+
+/* `#search` dans la démo : une règle d'id, donc à reprendre en classe ici. */
+.uic-search {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 6px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--ds-fg);
+  background: none;
+  border: 0;
+  outline: none;
+}
+
+.uic-search::-webkit-search-cancel-button { display: none; }
+
+.uic-match-counter {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ds-subtle);
+  padding: 0 var(--space-1);
+  white-space: nowrap;
+}
+
+.uic-findbar-nav {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  color: var(--ds-muted);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background-color var(--transition), color var(--transition);
+}
+
+.uic-findbar-nav svg { width: 14px; height: 14px; display: block; }
+.uic-findbar-nav:hover { background: var(--float-hover); color: var(--ds-ink); }
+
+.uic-findbar-nav:focus-visible {
+  outline: 2px solid var(--ds-primary);
+  outline-offset: 1px;
+}
+
+/* Aucune règle `:active` ni `:disabled` pour `.findbar-nav` : le chrome de la
+   démo n'en définit pas. Ne rien écrire ici est le constat, pas un oubli — en
+   inventer une ferait dire à la planche ce que le produit ne fait pas. La case
+   « disabled » de la section le montre tel quel, avec le style par défaut du
+   navigateur. */
+
+/* ---------- Repris de la démo : le menu (`.menu`, `.menu-item`) ---------- */
+
+/* Sans `position: absolute` / `top` / `left` : c'est l'ancrage sous le bouton ⋮
+   de la démo, pas une propriété du panneau. */
+.uic-menu {
+  min-width: 216px;
+  padding: 5px;
+}
+
+.uic-menu-item {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  text-align: left;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--ds-fg);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color var(--transition), color var(--transition);
+}
+
+.uic-menu-item:hover { background: var(--float-hover); color: var(--ds-ink); }
+.uic-menu-item:disabled { opacity: 0.5; cursor: default; }
+
+/* `outline-offset` NÉGATIF, contrairement au bouton d'icône : l'entrée occupe
+   toute la largeur du panneau, un liseré posé à l'extérieur déborderait sur son
+   bord. */
+.uic-menu-item:focus-visible {
+  outline: 2px solid var(--ds-primary);
+  outline-offset: -2px;
+}
+
+/* ---------- Repris de la démo : la pastille d'entité (`#selection-type`) ---------- */
+
+/* Sans le `margin-bottom` de l'original : c'est l'écart à la ligne suivante DU
+   PANNEAU DE DÉTAIL, pas une propriété de la pastille. */
+.uic-badge {
+  display: inline-block;
+  padding: 2px 7px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  /* `#ffffff` recopié tel quel : c'est la SEULE valeur en dur de cette feuille
+     qui ne soit ni un token, ni un artefact de présentation — et c'est
+     précisément le constat à faire. Le design system n'a pas d'encre « sur
+     accent » : la démo écrit donc un blanc en dur. Il tient dans les deux
+     modes, mais de justesse en sombre (blanc sur `accent.entity` #3573c3 :
+     4,8:1, soit AA et pas AAA), et rien ne le surveille — c'est exactement ce
+     qu'un token manquant coûte. Y substituer une variable ici ferait mentir le
+     spécimen sur ce que le produit dessine ; c'est le token qu'il faut
+     ajouter, pas la planche qu'il faut arranger. */
+  color: #ffffff;
+  background: var(--ds-primary);
+  border-radius: var(--radius-sm);
+}
+
+/* Propre à la planche : le contexte minimal de la pastille — elle ne s'emploie
+   qu'en tête du panneau de détail, au-dessus du libellé du nœud. */
+.uic-detail-sample {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  width: 15rem;
+}
+
+/* Reprise des règles de `#selection-label` : le libellé sous la pastille. Il
+   n'est là que pour donner l'échelle réelle de celle-ci. */
+.uic-detail-label {
+  margin: 0;
+  font-family: var(--font-title, var(--font-body));
+  font-size: 19px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--ds-ink);
+}
