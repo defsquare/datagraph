@@ -1,4 +1,4 @@
-import { BitmapText, Circle, Container, Graphics, Rectangle, Text } from "pixi.js";
+import { BitmapText, Circle, Color, Container, Graphics, Rectangle, Text } from "pixi.js";
 import {
   badgeTextFor,
   headerTextFor,
@@ -60,6 +60,45 @@ export function truncateToWidth(text: string, maxWidth: number, charWidth: numbe
   if (text.length <= maxChars) return text;
   if (maxChars === 1) return "…";
   return `${text.slice(0, maxChars - 1)}…`;
+}
+
+/**
+ * Même budget que `truncateToWidth`, mais l'ellipse mange le MILIEU.
+ *
+ * Réservé aux libellés d'agrégat du régime sémantique, et c'est leur nature qui
+ * le justifie : la racine d'un agrégat est typiquement un identifiant
+ * hiérarchique (`com.exemple.credit.domain`), dont les premiers segments sont
+ * partagés par tout le jeu de données et le dernier est le seul qui distingue.
+ * Une troncature par la fin rendrait mille disques nommés `com.exemple.cr…` —
+ * un libellé qui coûte de la place et n'apprend rien. Les CARTES, elles, gardent
+ * la troncature par la fin : leur en-tête est un id court, pas un chemin.
+ *
+ * Le milieu reste le bon endroit MÊME depuis que le contrôleur retire le préfixe
+ * dominant avant de publier les libellés (`dominantSegmentPrefix`), et c'est un choix
+ * et non un reste : ce préfixe est celui du jeu ENTIER, alors que la queue qu'il
+ * laisse reste un chemin dont les segments intermédiaires se répètent d'une
+ * branche à l'autre (`domain.project.service` contre `domain.project.repository`).
+ * Une troncature par la fin sacrifierait donc encore la partie discriminante, à
+ * un niveau plus bas ; celle-ci garde la tête — qui situe le package dans
+ * l'arbre — ET la fin — qui le nomme. Le retrait du préfixe ne change pas OÙ
+ * couper, il change combien de fois il faut couper : la plupart des libellés du
+ * jeu réel tiennent désormais entiers.
+ *
+ * La tête reçoit le caractère en trop quand le budget est impair : mieux vaut un
+ * préfixe complet d'un cran qu'un suffixe, la lecture partant de la gauche.
+ */
+export function truncateMiddle(text: string, maxWidth: number, charWidth: number): string {
+  if (maxWidth <= 0) return "";
+  const maxChars = Math.floor(maxWidth / charWidth);
+  if (maxChars <= 0) return "";
+  if (text.length <= maxChars) return text;
+  if (maxChars === 1) return "…";
+  const keep = maxChars - 1;
+  const head = Math.ceil(keep / 2);
+  const tail = keep - head;
+  return tail === 0
+    ? `${text.slice(0, head)}…`
+    : `${text.slice(0, head)}…${text.slice(text.length - tail)}`;
 }
 
 // L'installation des atlas appartient à `font-registry.ts`, qui les compte
@@ -1076,6 +1115,27 @@ export interface EdgeHit {
 const REF_HIT_WIDTH = 14;
 
 /**
+ * La boîte englobante du segment `start`→`end` touche-t-elle `view` ?
+ *
+ * Test conservateur et volontairement grossier : il garde des segments qui
+ * frôlent le cadre en diagonale sans l'atteindre, mais il ne peut JAMAIS en
+ * écarter un qui le traverse — c'est la seule direction d'erreur acceptable
+ * pour un filtre de visibilité. Le contact par un bord compte, comme partout
+ * ailleurs.
+ */
+function segmentBoxInView(
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  view: Rect,
+): boolean {
+  const minX = Math.min(start.x, end.x);
+  const maxX = Math.max(start.x, end.x);
+  const minY = Math.min(start.y, end.y);
+  const maxY = Math.max(start.y, end.y);
+  return minX <= view.x + view.width && view.x <= maxX && minY <= view.y + view.height && view.y <= maxY;
+}
+
+/**
  * Une zone de clic invisible et épaissie (14px) par arête de référence
  * RÉSOLUE. Purement géométrique : l'appelant règle `eventMode`/`cursor` et
  * branche le tap. L'alpha est 0, mais le hit-test des Graphics étant
@@ -1084,8 +1144,22 @@ const REF_HIT_WIDTH = 14;
  * Une référence cassée n'en reçoit aucune : plus rien n'est tracé pour elle, et
  * une cible posée dans le vide promettrait une navigation que `followRef` ne
  * peut pas faire. Ce qui la signale est sur la carte, où le tap de la carte suffit.
+ *
+ * `worldView`, s'il est fourni, restreint la production aux arêtes dont le SEGMENT
+ * peut traverser ce rectangle monde — testé sur sa boîte englobante, donc
+ * conservateur : une arête qui ne fait que traverser le cadre sans y avoir
+ * d'extrémité est bien conservée, et seules celles dont la boîte manque
+ * entièrement la fenêtre sont écartées. C'est le levier de coût de ce calque :
+ * il produit un Graphics INTERACTIF par arête, et un gros jeu de données en
+ * compte des dizaines de milliers, tous poussés dans la passe de rendu et dans
+ * le hit-testing alors qu'on ne peut viser que ceux à l'écran. `null` (défaut)
+ * les produit toutes, ce qui reste le comportement d'origine.
  */
-export function drawEdgeHitAreas(graph: Graph, positions: Map<NodeId, Rect>): EdgeHit[] {
+export function drawEdgeHitAreas(
+  graph: Graph,
+  positions: Map<NodeId, Rect>,
+  worldView: Rect | null = null,
+): EdgeHit[] {
   const hits: EdgeHit[] = [];
   for (const edge of graph.refEdges) {
     if (edge.to === null || edge.dangling) continue;
@@ -1098,6 +1172,7 @@ export function drawEdgeHitAreas(graph: Graph, positions: Map<NodeId, Rect>): Ed
     const to = positions.get(edge.to);
     if (!to) continue;
     const { start, end } = refEdgeEnds(from, to);
+    if (worldView && !segmentBoxInView(start, end, worldView)) continue;
     const g = new Graphics();
     g.moveTo(start.x, start.y)
       .lineTo(end.x, end.y)
@@ -1355,4 +1430,398 @@ export function drawClusterHitAreas<T extends { cx: number; cy: number; r: numbe
     hits.push({ cluster, container });
   }
   return hits;
+}
+
+// --------------------------------------------------------------------------
+// Régime SÉMANTIQUE de la vue graphe
+//
+// Sous le seuil du LOD 2, la vue graphe cesse de dessiner ses cartes et peint
+// les AGRÉGATS comme des nœuds : un disque par agrégat, à la place et au rayon
+// que la mise en page a déjà calculés, plus les références repliées sur les
+// paires d'agrégats. Ce qu'on lit alors n'est plus la donnée, c'est
+// l'architecture.
+//
+// Le seuil n'est pas un troisième réglage : c'est EXACTEMENT `lodForScale`, et
+// le LOD 2 est précisément l'échelle à laquelle une carte n'est plus qu'un
+// rectangle plein — c'est-à-dire à laquelle elle a cessé de porter la moindre
+// information. Remplacer 6 251 rectangles muets par 1 300 disques nommés y est
+// donc un gain strict, et jamais une perte. Un seuil propre au régime
+// sémantique aurait demandé son propre déclencheur de reconstruction, en
+// concurrence avec celui du LOD ; il aurait aussi ouvert une bande d'échelles
+// où les deux régimes se disputent l'écran — l'état mixte que ce découpage
+// interdit par construction.
+// --------------------------------------------------------------------------
+
+/**
+ * Un agrégat prêt à peindre comme NŒUD : la donnée nue que les trois fonctions
+ * ci-dessous consomment.
+ *
+ * Même forme que l'entrée de `drawClusters` — c'est le même disque —, augmentée
+ * de ce qu'un nœud doit dire de lui : son nom et sa taille.
+ */
+export interface SemanticNode {
+  /** L'id de l'agrégat. Sert d'ÉTIQUETTE au sous-conteneur de son libellé, ce
+   * qui laisse l'appelant retrouver et déplacer le seul libellé concerné pendant
+   * qu'un disque est saisi — au lieu de refaire les 1 300 par image. */
+  id: string;
+  circle: { cx: number; cy: number; r: number };
+  color: string;
+  label: string;
+  count: number;
+  /** Intensité du survol, de 0 à 1. Absente vaut 0. */
+  hover?: number;
+  /** Sans lien avec la sélection courante. Absent vaut faux. */
+  dim?: boolean;
+}
+
+/**
+ * La taille du libellé et celle de la pastille, en fraction du RAYON du disque.
+ *
+ * Proportionnelles, et c'est la seule façon dont un zoom sémantique tienne : le
+ * disque grandit avec la caméra, donc son nom doit grandir avec lui. Une taille
+ * en pixels de police fixe donnerait un libellé illisible au cadrage global puis
+ * démesuré trois crans plus loin.
+ */
+export const SEMANTIC_LABEL_RATIO = 0.2;
+export const SEMANTIC_BADGE_RATIO = 0.13;
+
+/**
+ * La largeur utile d'un libellé, en fraction du rayon — soit 70 % du diamètre,
+ * ce qui garde le texte dans le disque plutôt que sur la corde la plus longue,
+ * où il en sortirait par le haut et par le bas.
+ *
+ * Conséquence, et elle est voulue : combinée à `SEMANTIC_LABEL_RATIO`, cette
+ * fraction rend le budget de troncature INDÉPENDANT du rayon — le rayon
+ * s'élimine entre la largeur disponible et la taille de police. Tous les disques
+ * montrent donc le même nombre de caractères, gros comme petits, ce qui fait
+ * lire la taille du disque comme une quantité de membres et non comme une
+ * quantité de texte.
+ */
+export const SEMANTIC_LABEL_WIDTH_RATIO = 1.4;
+
+/** L'écart entre le libellé et sa pastille, en fraction de la taille du
+ * libellé. */
+const SEMANTIC_LABEL_GAP_RATIO = 0.18;
+
+/** Épaisseur du contour d'un disque, en fraction de son rayon : au repos, puis
+ * à pleine intensité. Proportionnelle pour la même raison que le libellé. */
+const SEMANTIC_STROKE_RATIO = 0.03;
+const SEMANTIC_STROKE_RATIO_HOVER = 0.05;
+
+/**
+ * Les intensités d'accent d'un disque, au repos et à pleine intensité — puis
+ * celles de son contour.
+ *
+ * Nettement au-dessus de celles d'une enveloppe (0,08 → 0,15) : une enveloppe
+ * est une RÉGION derrière des cartes, un disque sémantique EST l'objet.
+ *
+ * Ce ne sont PAS des alphas de rendu, et c'est une décision de performance
+ * mesurée : les couleurs sont pré-mélangées au canevas (`blendOver`) et peintes
+ * OPAQUES. Deux raisons, qui vont dans le même sens :
+ *  - les arêtes agrégées passent SOUS les disques ; un disque translucide les
+ *    laisserait le traverser, et sur un jeu dense chacun se remplit alors du
+ *    réseau qui le contourne, libellé compris. Il fallait donc de toute façon un
+ *    fond opaque ;
+ *  - obtenu par un second remplissage à la couleur du canevas, ce fond doublait
+ *    la surface peinte : mesuré sur le jeu réel (1 300 disques, 1600×1000, rendu
+ *    logiciel headless), 755 ms d'image au repos contre 380 ms avec un seul
+ *    remplissage. Le mélange en amont donne exactement le même pixel pour la
+ *    moitié du coût.
+ *
+ * Le libellé reste peint en `ink.primary`, la même encre que sur une carte :
+ * c'est la modération de ces intensités qui le permet, sans avoir à choisir une
+ * couleur de contraste par accent — un calcul de luminance que le thème ne porte
+ * pas et qu'un accent surchargé par l'hôte (`byEntityType`) rendrait faux.
+ */
+const SEMANTIC_FILL_MIX = 0.3;
+const SEMANTIC_FILL_MIX_HOVER = 0.5;
+const SEMANTIC_STROKE_MIX = 0.75;
+const SEMANTIC_STROKE_MIX_HOVER = 1;
+
+/**
+ * `over` posé sur `base` à `amount`, rendu en couleur OPAQUE.
+ *
+ * Mémoïsé, et il le faut : `drawSemanticDiscs` est rappelée à chaque image d'un
+ * survol d'agrégat, et sans cache elle allouerait deux `Color` par disque et par
+ * image. Le nombre de couples distincts est minuscule — une poignée d'accents ×
+ * une poignée d'intensités —, donc le cache se remplit une fois et ne grandit
+ * plus. Il est global au module et survit à un changement de thème sans
+ * risque : la clé porte les deux couleurs, donc deux thèmes ne peuvent pas
+ * partager une entrée.
+ *
+ * `Color` de Pixi plutôt qu'un analyseur maison de « #rrggbb » : un hôte peut
+ * poser n'importe quelle couleur CSS par `byEntityType`, et c'est exactement
+ * l'ensemble que Pixi sait déjà lire.
+ */
+const blendCache = new Map<string, number>();
+export function blendOver(base: string, over: string, amount: number): number {
+  const key = `${base}|${over}|${amount.toFixed(4)}`;
+  const known = blendCache.get(key);
+  if (known !== undefined) return known;
+  const [br, bg, bb] = new Color(base).toRgbArray();
+  const [or, og, ob] = new Color(over).toRgbArray();
+  const t = Math.min(1, Math.max(0, amount));
+  const mix = (b: number, o: number): number =>
+    Math.round(Math.min(255, Math.max(0, (b + (o - b) * t) * 255)));
+  const value = (mix(br!, or!) << 16) | (mix(bg!, og!) << 8) | mix(bb!, ob!);
+  blendCache.set(key, value);
+  return value;
+}
+
+/**
+ * Le nombre de côtés du polygone qui TIENT LIEU de disque.
+ *
+ * `Graphics.circle()` choisit sa finesse d'après le rayon en coordonnées MONDE,
+ * qui n'a rien à voir avec la taille à l'écran : une enveloppe de 1 000 px monde
+ * vue à l'échelle 0,04 fait 80 px, et Pixi la découpe pourtant en plusieurs
+ * centaines de segments. Sur 1 300 disques, cela fait des centaines de milliers
+ * de triangles par image — mesuré sur le jeu réel en rendu logiciel headless :
+ * 494 ms d'image au repos, contre 60 ms avec ce polygone.
+ *
+ * 36 côtés, et c'est très au-delà du nécessaire : l'écart maximal entre le
+ * polygone et le cercle vaut `r × (1 − cos(π/36))`, soit 0,4 % du rayon — moins
+ * d'un tiers de pixel sur le plus gros disque du jeu réel, à l'échelle où le
+ * régime sémantique existe. Au-delà du seuil du LOD 2, ce ne sont plus ces
+ * disques qui sont peints mais les enveloppes de `drawClusters`, qui gardent le
+ * vrai cercle : la comparaison ne se pose donc jamais côte à côte.
+ */
+const SEMANTIC_DISC_SEGMENTS = 36;
+
+function discPath(g: Graphics, cx: number, cy: number, r: number): void {
+  g.moveTo(cx + r, cy);
+  for (let i = 1; i < SEMANTIC_DISC_SEGMENTS; i++) {
+    const angle = (i / SEMANTIC_DISC_SEGMENTS) * Math.PI * 2;
+    g.lineTo(cx + r * Math.cos(angle), cy + r * Math.sin(angle));
+  }
+  g.closePath();
+}
+
+/**
+ * Peint les agrégats en disques pleins.
+ *
+ * SÉPARÉE des libellés, et ce n'est pas cosmétique : ce Graphics-ci est détruit
+ * et refait à chaque image d'un survol d'agrégat (`redrawClusters`), alors que
+ * les libellés ne dépendent d'aucune intensité. Les peindre dans le même passage
+ * ferait reconstruire 1 300 textes soixante fois par seconde pour un rendu
+ * strictement identique.
+ *
+ * Un rayon nul ou négatif est ignoré, comme pour une enveloppe : ce n'est pas
+ * une surface.
+ */
+export function drawSemanticDiscs(nodes: SemanticNode[], theme: Theme): Graphics {
+  const g = new Graphics();
+  const canvas = theme.surface.canvas;
+  for (const node of nodes) {
+    const { cx, cy, r } = node.circle;
+    if (!(r > 0)) continue;
+    const t = Math.min(1, Math.max(0, node.hover ?? 0));
+    // L'estompage MULTIPLIE l'intensité de l'accent au lieu d'ajouter une
+    // transparence : un disque estompé recule vers le canevas, comme une
+    // enveloppe estompée, mais il continue de MASQUER les arêtes qui passent
+    // dessous — sans quoi le fond du dessin remonterait par les blocs qu'on a
+    // justement écartés du regard.
+    const dim = node.dim === true ? DIM_ALPHA : 1;
+    discPath(g, cx, cy, r);
+    g.fill(
+      blendOver(
+        canvas,
+        node.color,
+        (SEMANTIC_FILL_MIX + t * (SEMANTIC_FILL_MIX_HOVER - SEMANTIC_FILL_MIX)) * dim,
+      ),
+    );
+    g.stroke({
+      // L'épaisseur échappe à l'estompage, exactement comme sur une enveloppe :
+      // elle dit la taille de l'objet, pas son importance.
+      width: r * (SEMANTIC_STROKE_RATIO + t * (SEMANTIC_STROKE_RATIO_HOVER - SEMANTIC_STROKE_RATIO)),
+      color: blendOver(
+        canvas,
+        node.color,
+        (SEMANTIC_STROKE_MIX + t * (SEMANTIC_STROKE_MIX_HOVER - SEMANTIC_STROKE_MIX)) * dim,
+      ),
+    });
+  }
+  return g;
+}
+
+/**
+ * Le nom de chaque agrégat et le compte de ses membres, centrés dans son disque.
+ *
+ * Le texte est créé à la taille du thème puis MIS À L'ÉCHELLE, au lieu d'être
+ * créé à la taille voulue : c'est ce qui laisse les 1 300 libellés partager
+ * l'atlas de police déjà installé pour les cartes. Créer 1 300 `BitmapText` à
+ * 1 300 tailles différentes en demanderait autant d'atlas.
+ *
+ * Ne dépend NI du survol NI de rien qui change par image — l'appelant ne la
+ * rappelle qu'à une reconstruction ou à un changement de sélection.
+ *
+ * Chaque libellé et sa pastille vivent dans un sous-conteneur ÉTIQUETÉ par l'id
+ * de l'agrégat — même convention que `array-token:<index>` sur les cartes. C'est
+ * ce qui laisse l'appelant translater le seul libellé d'un disque saisi, plutôt
+ * que de reconstruire le calque entier à chaque image du geste.
+ */
+export function drawSemanticLabels(
+  nodes: SemanticNode[],
+  theme: Theme,
+  useBitmapText: boolean,
+  metrics: NodeMetrics = DEFAULT_METRICS,
+): Container {
+  const layer = new Container();
+  // Aucun libellé n'est une cible : le disque en dessous porte le clic, le
+  // déplacement et le survol. Sans ça, un texte posé au centre volerait le
+  // pointeur à sa propre zone de saisie.
+  layer.eventMode = "none";
+
+  for (const node of nodes) {
+    const { cx, cy, r } = node.circle;
+    if (!(r > 0)) continue;
+    const size = r * SEMANTIC_LABEL_RATIO;
+    // L'échelle qui mène de la taille du thème à celle voulue pour ce disque.
+    const k = size / theme.typography.header.size;
+    if (!(k > 0)) continue;
+    // Le budget est exprimé dans l'espace NON MIS À L'ÉCHELLE, celui où les
+    // avances de `metrics` ont un sens : diviser la largeur utile par `k` est ce
+    // qui garde la troncature d'accord avec le texte effectivement peint.
+    const budget = (r * SEMANTIC_LABEL_WIDTH_RATIO) / k;
+    const text = truncateMiddle(node.label, budget, charWidthFor("header", metrics));
+    if (text.length === 0) continue;
+
+    const label = createLabel(text, theme, "header", theme.ink.primary, useBitmapText);
+    label.scale.set(k);
+
+    const countText = String(node.count);
+    const badge = createLabel(countText, theme, "badge", theme.ink.muted, useBitmapText);
+    const kBadge = (r * SEMANTIC_BADGE_RATIO) / theme.typography.badge.size;
+    badge.scale.set(kBadge);
+
+    // Le bloc « nom + compte » est centré VERTICALEMENT sur le disque, et non
+    // posé sur son centre : un libellé dont la ligne de base passerait par le
+    // centre pousserait la pastille hors du cercle sur les petits agrégats.
+    //
+    // Les deux boîtes sont BUDGÉTÉES depuis `metrics` et la typographie, et non
+    // mesurées sur l'objet rendu. C'est la même discipline que `measureNode` et
+    // `drawNode` sur les cartes — dessiner exactement ce qui a été budgété —, et
+    // ça a en plus une conséquence pratique : lire `.width`/`.height` d'un `Text`
+    // déclenche une mesure par canvas, donc un `document`, ce qui rendrait cette
+    // fonction intestable hors navigateur.
+    const labelWidth = text.length * charWidthFor("header", metrics) * k;
+    const labelHeight = theme.typography.header.size * k;
+    const badgeWidth = countText.length * charWidthFor("badge", metrics) * kBadge;
+    const badgeHeight = theme.typography.badge.size * kBadge;
+
+    const gap = size * SEMANTIC_LABEL_GAP_RATIO;
+    const top = cy - (labelHeight + gap + badgeHeight) / 2;
+    label.position.set(Math.round(cx - labelWidth / 2), Math.round(top));
+    badge.position.set(
+      Math.round(cx - badgeWidth / 2),
+      Math.round(top + labelHeight + gap),
+    );
+    const group = new Container();
+    group.label = node.id;
+    group.addChild(label, badge);
+    layer.addChild(group);
+  }
+
+  return layer;
+}
+
+/**
+ * Le poids à partir duquel une arête agrégée est peinte au maximum.
+ *
+ * Le plafonnement est du même esprit que celui du niveau 2 de la mise en page
+ * (`min(1, w/2)`) : au-delà d'un certain couplage, « encore plus lié » n'a plus
+ * de traduction visuelle utile, et laisser le poids courir ferait qu'une seule
+ * paire très bavarde écraserait toute la graduation. La valeur, elle, est
+ * propre au TRACÉ et pas à la simulation : sur le jeu réel (28 685 références
+ * repliées sur ~1 300 agrégats), un plafond à 2 saturerait presque toutes les
+ * paires et rendrait la graduation muette.
+ */
+export const SEMANTIC_EDGE_WEIGHT_FULL = 8;
+
+/**
+ * Le nombre de paliers de poids.
+ *
+ * Un `stroke()` ne porte qu'UN style, donc une épaisseur par arête voudrait dire
+ * un appel de tracé par arête — des milliers. Quantifier en quatre paliers
+ * ramène le tracé à huit appels au plus (quatre paliers × estompé/plein), pour
+ * une graduation que l'œil lit tout aussi bien : c'est le même découpage en
+ * passes que `drawEdges` fait déjà pour ses deux alphas.
+ */
+const SEMANTIC_EDGE_BUCKETS = 4;
+
+/** Épaisseur et alpha d'une arête agrégée, du palier le plus faible au plus
+ * fort. L'épaisseur est en fraction de `unit` — un rayon de disque de référence
+ * — et non en pixels : comme les libellés, elle doit grandir avec la vue. */
+const SEMANTIC_EDGE_WIDTH_MIN = 0.02;
+const SEMANTIC_EDGE_WIDTH_MAX = 0.12;
+// Volontairement TRÈS bas en bas de gamme. Sur le jeu réel, 28 685 références se
+// replient en plusieurs milliers de paires : à alpha lisible, chaque trait est
+// une information mais leur somme est une nappe opaque, et la vue redevient le
+// plat de spaghettis qu'elle remplace. Presque transparents, les liens faibles
+// s'ADDITIONNENT en ombrage — c'est la densité de couplage qui se lit — pendant
+// que les liens forts, eux, restent des traits qu'on suit à l'œil.
+const SEMANTIC_EDGE_ALPHA_MIN = 0.05;
+const SEMANTIC_EDGE_ALPHA_MAX = 0.45;
+
+export interface SemanticEdge {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  weight: number;
+  /** Sans lien avec la sélection courante. Absent vaut faux. */
+  dim?: boolean;
+}
+
+/**
+ * Trace les références repliées sur les agrégats, graduées par leur poids.
+ *
+ * `unit` est le rayon de disque de RÉFÉRENCE dont les épaisseurs sont des
+ * fractions. Un nombre nu, fourni par l'appelant : cette fonction ne connaît ni
+ * les disques ni la caméra, et une épaisseur en pixels écran demanderait l'une
+ * ou l'autre.
+ *
+ * L'ordre d'émission EST le recouvrement, dans un Graphics unique : les
+ * estompées d'abord, puis les pleines, et à l'intérieur de chaque groupe du
+ * palier le plus faible au plus fort. Une arête lourde passe donc au-dessus des
+ * légères qui la croisent, et la sélection au-dessus de tout.
+ */
+export function drawSemanticEdges(edges: SemanticEdge[], theme: Theme, unit: number): Graphics {
+  const g = new Graphics();
+  if (edges.length === 0 || !(unit > 0)) return g;
+
+  for (const full of [false, true]) {
+    for (let bucket = 0; bucket < SEMANTIC_EDGE_BUCKETS; bucket++) {
+      let has = false;
+      for (const edge of edges) {
+        if ((edge.dim !== true) !== full) continue;
+        if (bucketOf(edge.weight) !== bucket) continue;
+        g.moveTo(edge.x1, edge.y1);
+        g.lineTo(edge.x2, edge.y2);
+        has = true;
+      }
+      if (!has) continue;
+      // Le représentant du palier est son MILIEU : le palier le plus faible n'est
+      // ainsi jamais tracé à épaisseur nulle, et le plus fort jamais au maximum
+      // absolu, ce qui garde une marge visuelle au survol des cartes qui
+      // reviendront au zoom.
+      const t = (bucket + 0.5) / SEMANTIC_EDGE_BUCKETS;
+      g.stroke({
+        width: unit * (SEMANTIC_EDGE_WIDTH_MIN + t * (SEMANTIC_EDGE_WIDTH_MAX - SEMANTIC_EDGE_WIDTH_MIN)),
+        color: theme.edge.ref,
+        alpha:
+          (SEMANTIC_EDGE_ALPHA_MIN + t * (SEMANTIC_EDGE_ALPHA_MAX - SEMANTIC_EDGE_ALPHA_MIN)) *
+          (full ? 1 : DIM_ALPHA),
+      });
+    }
+  }
+
+  return g;
+}
+
+/** Le palier d'un poids, de 0 à `SEMANTIC_EDGE_BUCKETS - 1`. Exporté pour être
+ * testé sans Graphics : c'est toute la graduation, et une erreur d'un cran y
+ * serait invisible dans le rendu. */
+export function bucketOf(weight: number): number {
+  const t = Math.min(1, Math.max(0, weight / SEMANTIC_EDGE_WEIGHT_FULL));
+  return Math.min(SEMANTIC_EDGE_BUCKETS - 1, Math.floor(t * SEMANTIC_EDGE_BUCKETS));
 }

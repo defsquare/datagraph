@@ -63,6 +63,9 @@ import {
   drawNode,
   drawSearchHighlights,
   drawSelectionOverlay,
+  drawSemanticDiscs,
+  drawSemanticEdges,
+  drawSemanticLabels,
   edgeLabelPlacements,
   edgeLabelPosition,
   labelParamInView,
@@ -79,7 +82,9 @@ import { createSearchController } from "./search.js";
 import {
   createGraphViewController,
   type ClusterPaint,
+  type ClustersForArgs,
   type GraphViewState,
+  type SemanticNodePaint,
 } from "./graph-view.js";
 import { Emitter } from "./events.js";
 
@@ -88,8 +93,14 @@ import { Emitter } from "./events.js";
 export type DataGraphView = "structure" | "graph";
 
 /** Ce que la vue courante permet aux cartes et aux arêtes. Donnée pure,
- * dérivée de `view` seul : la calculer d'un bloc remplace les ternaires
- * éparpillés, et un futur troisième mode de vue s'écrirait ici.
+ * dérivée de `view` et du LOD courant : la calculer d'un bloc remplace les
+ * ternaires éparpillés, et un futur troisième mode de vue s'écrirait ici.
+ *
+ * Le LOD s'y est ajouté avec le régime SÉMANTIQUE de la vue graphe, qui n'est
+ * pas une vue de plus mais un autre régime de la même vue : sous le seuil du
+ * LOD 2, elle cesse de dessiner ses cartes et peint ses agrégats comme des
+ * nœuds. Ce que ce couple gouverne alors — quelles cartes existent, et ce que
+ * les agrégats peignent — reste exactement de la politique, donc reste ici.
  *
  * Ne contient QUE de la politique. Ce qui lit de l'état — les positions et les
  * nœuds visibles de la vue courante (`activePositions`/`activeVisible`), ou
@@ -113,6 +124,57 @@ interface ViewPolicy {
   /** `rebuild` : chevrons de jetons orientés par l'ensemble des tableaux
    * dépliés. Sans lui les jetons restent lisibles mais inertes. */
   expandedArrays: boolean;
+  /**
+   * `rebuild` : QUELLES cartes existent.
+   *
+   * `"unclustered"` est le régime sémantique — seules les entités hors agrégat
+   * gardent une carte, les autres étant déjà représentées par le disque de leur
+   * agrégat. Le filtre est posé sur `CardContext.drawable`, et c'est le seul
+   * endroit qui puisse le tenir : `syncCards` comme `ensureCard` s'y limitent,
+   * donc aucun chemin ne peut matérialiser une carte que le disque remplace.
+   * C'est l'invariant « jamais de cartes ET de disques ensemble », obtenu par
+   * construction plutôt que par une garde à chaque site.
+   */
+  cards: "all" | "unclustered";
+  /**
+   * `redrawClusters` : ce que les agrégats peignent.
+   *
+   * `"none"` en vue structure, qui n'en a pas. `"hull"` est la région
+   * translucide posée derrière les cartes ; `"disc"` est le nœud plein qui les
+   * REMPLACE, avec son libellé et ses arêtes agrégées. Les trois valeurs
+   * s'excluent, et c'est ce qui interdit de peindre une enveloppe sous un disque
+   * qui occupe déjà le même cercle.
+   */
+  aggregates: "none" | "hull" | "disc";
+}
+
+/**
+ * Ce qu'une reconstruction calcule UNE fois pour toutes ses cartes, et qu'une
+ * carte matérialisée plus tard — au fil d'un déplacement de caméra, ou à la
+ * demande d'un `select`/`focus` — doit retrouver à l'identique.
+ *
+ * L'existence de cet objet EST l'invariant du culling : une carte créée hors
+ * de la boucle de `rebuild()` doit être indiscernable de celles qu'elle a
+ * produites. Tout ce qui gouverne le dessin d'une carte et qui n'est pas dans
+ * son nœud ni dans son rect est donc ici, figé au moment de la reconstruction.
+ * Ce qui manque à l'appel se relit au contraire en direct — les positions (que
+ * `dragCard` mute en place) et l'ensemble de mise au point (que la sélection
+ * change) — parce que la carte doit alors refléter l'état COURANT, pas celui du
+ * dernier rebuild.
+ */
+interface CardContext {
+  policy: ViewPolicy;
+  /** Champs porteurs d'une référence sortante, par nœud. */
+  refFieldsByNode: Map<NodeId, Set<string>>;
+  /** Idem, pour les références qui ne résolvent pas. */
+  danglingFieldsByNode: Map<NodeId, Set<string>>;
+  /** Tableaux dépliés, pour orienter le chevron des jetons. */
+  expandedArrays: Set<NodeId>;
+  /** Les ids qui ONT une carte dans cette vue : les nœuds visibles, non élidés
+   * et positionnés. C'est le domaine que la matérialisation balaie — le
+   * pré-filtrer ici évite de retester `elided`/`positions.has` sur des milliers
+   * de nœuds à chaque image. */
+  drawable: Set<NodeId>;
 }
 
 export interface DataGraphOptions {
@@ -265,6 +327,138 @@ function dimFilters(): AlphaFilter[] {
  * `drawSelectionOverlay` ne voient un id que quand `kind === "node"`.
  */
 type Selection = { kind: "node"; id: NodeId } | { kind: "cluster"; aggregateId: string };
+
+/**
+ * Les trois fenêtres de la matérialisation des cartes, en FRACTIONS d'écran
+ * ajoutées de chaque côté du rectangle monde visible.
+ *
+ * Seule `PAINT` est un contrat visuel : toute carte qui l'intersecte est
+ * dessinée AVANT l'image suivante, sans budget ni report, donc l'écran montre
+ * exactement ce qu'il montrait du temps où toutes les cartes étaient créées
+ * d'un bloc. Les 15 % de marge absorbent l'image de retard entre le mouvement
+ * de la caméra et notre passage — sans eux, une carte entrant par le bord
+ * apparaîtrait une image trop tard.
+ *
+ * `PREFETCH` n'est que du confort : un écran de chaque côté, rempli au fil des
+ * images dans un budget de temps, pour qu'un déplacement franc n'ait pas à
+ * fabriquer sa bande de cartes exactement au moment où elle devient visible.
+ *
+ * `RECLAIM` est le seuil de destruction, délibérément bien plus large que
+ * `PREFETCH` : c'est cette hystérésis qui empêche un aller-retour de caméra de
+ * détruire puis recréer les mêmes cartes à chaque image.
+ */
+const PAINT_MARGIN = 0.15;
+const PREFETCH_MARGIN = 1;
+const RECLAIM_MARGIN = 2.5;
+
+/**
+ * Le temps, par image, que la matérialisation de CONFORT a le droit de prendre.
+ *
+ * 4 ms sur un budget d'image de 16 : de quoi avancer franchement sans jamais
+ * être à soi seul responsable d'une image perdue. Le budget est en TEMPS et non
+ * en nombre de cartes parce que le coût d'une carte varie d'un facteur ~100
+ * entre le LOD 2 (un rectangle plein) et le LOD 0 (en-tête, lignes, mesures de
+ * texte) : un quota fixe serait soit famélique en bas, soit ruineux en haut.
+ *
+ * La fenêtre `PAINT`, elle, n'est PAS budgétée. La rogner ferait apparaître des
+ * trous à l'écran, et elle est de toute façon bornée par ce que le rendu doit
+ * peindre de toute manière.
+ */
+const PREFETCH_BUDGET_MS = 4;
+
+/**
+ * Élargit `rect` de `margin` fois sa taille, de CHAQUE côté : `margin = 1`
+ * triple donc chaque dimension. Pur, et exporté pour être testé sans instance —
+ * ce n'est pas une API publique du paquet, `index.ts` ne le relaie pas.
+ */
+export function inflateRect(rect: Rect, margin: number): Rect {
+  const dx = rect.width * margin;
+  const dy = rect.height * margin;
+  return { x: rect.x - dx, y: rect.y - dy, width: rect.width + dx * 2, height: rect.height + dy * 2 };
+}
+
+/**
+ * Deux rectangles se touchent-ils ? Le contact par un bord COMPTE comme une
+ * intersection : une carte posée exactement sur le bord de la fenêtre doit être
+ * dessinée, et l'exclure la ferait clignoter au pixel près.
+ */
+export function rectsOverlap(a: Rect, b: Rect): boolean {
+  return (
+    a.x <= b.x + b.width && b.x <= a.x + a.width && a.y <= b.y + b.height && b.y <= a.y + a.height
+  );
+}
+
+/**
+ * Les trois fenêtres d'un passage de matérialisation, dérivées du seul
+ * rectangle monde visible. `null` partout quand il n'y a pas de caméra : aucune
+ * fenêtre n'a alors de sens, et tout doit être matérialisé — c'est le
+ * comportement d'avant le culling, gardé comme repli.
+ */
+export interface CardWindows {
+  paint: Rect | null;
+  prefetch: Rect | null;
+  reclaim: Rect | null;
+}
+
+export function cardWindowsFor(worldView: Rect | null): CardWindows {
+  if (!worldView) return { paint: null, prefetch: null, reclaim: null };
+  return {
+    paint: inflateRect(worldView, PAINT_MARGIN),
+    prefetch: inflateRect(worldView, PREFETCH_MARGIN),
+    reclaim: inflateRect(worldView, RECLAIM_MARGIN),
+  };
+}
+
+/**
+ * Le sort d'UNE carte au passage de la matérialisation. Toute la politique du
+ * culling tient ici, en donnée pure et sans scène — comme `ViewPolicy` pour la
+ * vue, comme `focus.ts` pour l'estompage : la décision se teste sans instance,
+ * et `syncCards` n'a plus qu'à l'exécuter.
+ *
+ * `"defer"` se distingue de `"none"` et ce n'est pas cosmétique : la première
+ * dit « il faudra la faire, mais pas dans cette image », la seconde « il n'y a
+ * rien à faire ». Les confondre effacerait du code la seule trace du budget.
+ *
+ * L'ordre des tests EST la politique :
+ *  - à l'écran (`paint`), on crée, budget ou pas — c'est le contrat visuel ;
+ *  - autour (`prefetch`), on crée si le budget de l'image le permet ;
+ *  - au-delà, rien ;
+ *  - une carte épinglée (sélectionnée, ou saisie par un geste en cours) n'est
+ *    jamais recyclée, où qu'elle soit ;
+ *  - une carte matérialisée n'est recyclée que HORS de `reclaim`, bien plus
+ *    large que `prefetch` : c'est l'hystérésis qui empêche un aller-retour de
+ *    caméra de détruire et recréer les mêmes cartes image après image.
+ */
+export function cardFate(
+  rect: Rect,
+  windows: CardWindows,
+  state: { materialized: boolean; pinned: boolean; budgetLeft: boolean },
+): "create" | "defer" | "reclaim" | "none" {
+  if (!state.materialized) {
+    if (windows.paint === null || rectsOverlap(rect, windows.paint)) return "create";
+    if (windows.prefetch !== null && rectsOverlap(rect, windows.prefetch)) {
+      return state.budgetLeft ? "create" : "defer";
+    }
+    return "none";
+  }
+  if (state.pinned) return "none";
+  if (windows.reclaim === null || rectsOverlap(rect, windows.reclaim)) return "none";
+  return "reclaim";
+}
+
+/**
+ * `outer` contient-il entièrement `inner` ? Sert de test de PÉREMPTION à ce qui
+ * est construit pour une fenêtre plus large que l'écran : tant que la fenêtre à
+ * peindre tient dans celle qui a servi à construire, il n'y a rien à refaire.
+ */
+export function rectContains(outer: Rect, inner: Rect): boolean {
+  return (
+    outer.x <= inner.x &&
+    outer.y <= inner.y &&
+    inner.x + inner.width <= outer.x + outer.width &&
+    inner.y + inner.height <= outer.y + outer.height
+  );
+}
 
 function boundsOf(positions: Map<NodeId, Rect>): Rect {
   let minX = Infinity;
@@ -472,9 +666,25 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
 
   const app = new Application();
   const world = new Container();
-  // Les enveloppes d'agrégats forment le calque le plus bas : elles passent
-  // derrière les arêtes et les cartes. Vide en vue structure.
+  // Les arêtes AGRÉGÉES du régime sémantique : le calque le plus bas de tous,
+  // sous les disques qu'elles relient — un trait qui passerait par-dessus ne
+  // ferait qu'épaissir leur contour par en dessous. Vide hors régime sémantique.
+  //
+  // Container PERMANENT dont on remplace les enfants, et non un Graphics
+  // réassigné comme ses deux voisins : il est refait à une reconstruction ou à
+  // un changement de sélection, jamais à l'image d'un survol, donc il n'a pas
+  // besoin de la mécanique `destroy()` + `addChildAt` — et l'éviter garde les
+  // profondeurs des autres calques stables.
+  const semanticEdgeLayer = new Container();
+  // Les agrégats : enveloppes translucides derrière les cartes, ou disques
+  // pleins qui les remplacent au régime sémantique. Vide en vue structure.
   let clustersGraphics = new Graphics();
+  // Les libellés des disques sémantiques, AU-DESSUS d'eux. Calque à part et non
+  // enfants de `clustersGraphics` : celui-ci est détruit et repeint à chaque
+  // image d'un survol d'agrégat, alors qu'un libellé ne dépend d'aucune
+  // intensité — les fondre ensemble reconstruirait 1 300 textes par image pour
+  // un rendu identique. Même partage que les arêtes et leur `edgeHitLayer`.
+  const semanticLabelLayer = new Container();
   // Les cibles de saisie des enveloppes, juste AU-DESSUS de leur visuel et SOUS
   // tout le reste. La profondeur est ce qui règle l'arbitrage des gestes : le
   // hit-testing de Pixi va du haut vers le bas, donc une carte, une zone de
@@ -507,7 +717,9 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   // calque le plus haut, où elles passent donc par-dessus tout.
   let overlayGraphics = new Container();
   world.addChild(
+    semanticEdgeLayer,
     clustersGraphics,
+    semanticLabelLayer,
     clusterHitLayer,
     edgesGraphics,
     edgeHitLayer,
@@ -570,7 +782,22 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
 
   // Node id -> its currently rendered container, so an expand/collapse can
   // interpolate each surviving node from its old to its new position.
+  //
+  // Depuis le culling à la création, cette table ne contient PLUS toutes les
+  // cartes de la vue : seulement celles qui sont matérialisées, c'est-à-dire au
+  // voisinage de l'écran. Tous ses lecteurs le supportaient déjà, parce qu'ils
+  // gardaient tous une branche pour le nœud absent (`applyFocusDim` saute,
+  // `positionAnimator` saute, `dragCluster` teste) — la seule chose qui change
+  // est que cette branche est désormais le cas COURANT et non plus une
+  // précaution. Ce qui doit voir TOUTE la vue lit `activeVisible()` ou les
+  // positions, jamais cette table : c'est le cas de `stats()`, des arêtes et des
+  // enveloppes.
   const nodeViews = new Map<NodeId, Container>();
+
+  // Le contexte de la reconstruction courante, ou `null` tant qu'aucune n'a eu
+  // lieu. C'est lui qui rend une carte matérialisée après coup identique à
+  // celles que `rebuild()` a produites — voir `CardContext`.
+  let cardContext: CardContext | null = null;
 
   // La transition de dépliage/repliage. La table est passée TELLE QUELLE et non
   // recopiée : `rebuild()` la vide et la re-remplit en place, et l'animateur doit
@@ -658,12 +885,20 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
    */
   function viewPolicy(): ViewPolicy {
     if (view === "graph") {
+      // Le LOD 2 est le régime SÉMANTIQUE : à cette échelle une carte n'est plus
+      // qu'un rectangle plein, donc elle ne dit plus rien, et les 1 300 agrégats
+      // nommés qui la remplacent disent l'architecture. Le seuil est celui de
+      // `lodForScale` et pas un troisième réglage — voir la note en tête de la
+      // section sémantique de `draw.ts`.
+      const semantic = currentLod === 2;
       return {
         edgeMode: "ref",
         chevrons: false,
         foldable: false,
         tokenHover: false,
         expandedArrays: false,
+        cards: semantic ? "unclustered" : "all",
+        aggregates: semantic ? "disc" : "hull",
       };
     }
     return {
@@ -672,6 +907,8 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       foldable: true,
       tokenHover: true,
       expandedArrays: true,
+      cards: "all",
+      aggregates: "none",
     };
   }
 
@@ -749,8 +986,21 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     // La garde sur la mise en page tient chez le contrôleur, qui rend un tableau
     // vide tant que rien n'est publié : seule la vue courante se teste ici.
     if (view !== "graph" || !graph) return [];
-    return graphView.clustersFor({
-      graph,
+    return graphView.clustersFor(clustersForArgs(graph));
+  }
+
+  /** Les agrégats prêts à peindre COMME NŒUDS. Même garde et mêmes arguments que
+   * `clustersFor` : c'est le même objet, vu sous l'autre régime. */
+  function semanticNodesFor(): SemanticNodePaint[] {
+    if (view !== "graph" || !graph) return [];
+    return graphView.semanticNodesFor(clustersForArgs(graph));
+  }
+
+  /** Ce que le contrôleur ne possède pas et que les deux régimes lui apportent
+   * à l'identique : la palette du thème, la sélection et le survol. */
+  function clustersForArgs(target: Graph): ClustersForArgs {
+    return {
+      graph: target,
       accentFor,
       fallbackColor: theme.edge.border,
       selectedAggregateId: selection?.kind === "cluster" ? selection.aggregateId : null,
@@ -759,7 +1009,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       // quadratique alors qu'il tourne à chaque image d'un déplacement.
       keep: focusKeep(),
       hoverOf: (aggregateId) => clusterHover.get(aggregateId) ?? 0,
-    });
+    };
   }
 
   function viewport(): Size {
@@ -891,18 +1141,90 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   // l'`addChild` initial du monde, et n'ont de sens qu'avec lui sous les yeux.
   function redrawClusters(): void {
     clustersGraphics.destroy();
-    clustersGraphics = drawClusters(clustersFor(), theme);
-    world.addChildAt(clustersGraphics, 0);
+    const policy = viewPolicy();
+    clustersGraphics =
+      policy.aggregates === "disc"
+        ? drawSemanticDiscs(semanticNodesFor(), theme)
+        : drawClusters(clustersFor(), theme);
+    // Index 1 : les arêtes agrégées occupent le fond (0).
+    world.addChildAt(clustersGraphics, 1);
+  }
+
+  /**
+   * Les deux calques du régime sémantique qui NE dépendent pas du survol : les
+   * arêtes agrégées et les libellés des disques.
+   *
+   * Séparés de `redrawClusters` par leur RYTHME et non par leur nature : celui-ci
+   * est rappelé à chaque image d'un survol d'agrégat et à chaque image d'un
+   * déplacement, ceux-ci seulement à une reconstruction ou à un changement de
+   * sélection. Les fondre reviendrait à refaire 1 300 textes et quelques
+   * milliers de segments soixante fois par seconde pour un rendu identique.
+   *
+   * Les deux sont vidés hors du régime sémantique, et pas seulement sautés : ce
+   * sont eux qui resteraient peints sous les cartes après un zoom.
+   */
+  function redrawSemanticLayers(): void {
+    redrawSemanticEdges();
+    for (const child of semanticLabelLayer.removeChildren()) child.destroy({ children: true });
+    if (viewPolicy().aggregates !== "disc") return;
+    semanticLabelLayer.addChild(
+      drawSemanticLabels(semanticNodesFor(), theme, useBitmapText, metrics),
+    );
+  }
+
+  /**
+   * Les seules arêtes agrégées, sans les libellés.
+   *
+   * Séparées parce qu'un déplacement d'agrégat les périme à chaque image — le
+   * disque saisi bouge, donc tous ses traits changent de bout — alors que son
+   * libellé se contente de suivre en bloc, ce que `dragCluster` fait en
+   * translatant le sous-conteneur étiqueté à son nom. Refaire 1 300 textes par
+   * image du geste pour le même rendu serait le seul vrai coût du régime.
+   */
+  function redrawSemanticEdges(): void {
+    for (const child of semanticEdgeLayer.removeChildren()) child.destroy({ children: true });
+    if (viewPolicy().aggregates !== "disc") return;
+    semanticEdgeLayer.addChild(
+      drawSemanticEdges(
+        graphView.semanticEdges(selection?.kind === "cluster" ? selection.aggregateId : null),
+        theme,
+        semanticEdgeUnit(),
+      ),
+    );
+  }
+
+  /**
+   * Le rayon de disque de RÉFÉRENCE dont les épaisseurs d'arêtes agrégées sont
+   * des fractions : la MÉDIANE des rayons peints.
+   *
+   * Une grandeur tirée de la mise en page et non de la caméra, et c'est ce qui
+   * évite de retracer les arêtes à chaque cran de zoom : les disques grandissent
+   * avec la vue, donc des traits exprimés en fraction de leur rayon gardent
+   * d'eux-mêmes leur épaisseur RELATIVE. La médiane plutôt que la moyenne parce
+   * que la distribution des tailles d'agrégats est très dissymétrique — un seul
+   * bloc géant tirerait la moyenne et rendrait tous les traits énormes.
+   */
+  function semanticEdgeUnit(): number {
+    // Lu sur les FORMES du moteur et non sur les nœuds peints : résoudre
+    // libellés, couleurs et estompage pour n'en garder que les rayons ferait
+    // payer un balayage des références à chaque image d'un déplacement.
+    const radii = graphView.clusters().map((cluster) => cluster.r).filter((r) => r > 0);
+    if (radii.length === 0) return 0;
+    radii.sort((a, b) => a - b);
+    return radii[Math.floor(radii.length / 2)]!;
   }
 
   function redrawEdges(): void {
     const positions = activePositions();
     if (!graph || !positions) return;
     edgesGraphics.destroy();
-    // Index 2 : le fond est occupé par le visuel des enveloppes (0) puis par
-    // leurs cibles de saisie (1).
+    // Index 4 : le fond est occupé par les arêtes agrégées (0), le visuel des
+    // agrégats (1), les libellés sémantiques (2) puis les cibles de saisie des
+    // agrégats (3).
     // `drawEdges` estompe les arêtes qui ne touchent aucun id de l'ensemble, et
-    // `null` (rien de sélectionné) rend le tracé nu.
+    // `null` (rien de sélectionné) rend le tracé nu. Au LOD 2 — donc au régime
+    // sémantique — elle rend un Graphics vide : les références y sont montrées
+    // repliées sur les agrégats, par `redrawSemanticLayers`.
     edgesGraphics = drawEdges(
       graph,
       positions,
@@ -912,7 +1234,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       edgeFocusIds(),
       metrics,
     );
-    world.addChildAt(edgesGraphics, 2);
+    world.addChildAt(edgesGraphics, 4);
 
     // AU-DESSUS des cartes, comme le surlignage de sélection : une étiquette
     // posée sous les cartes disparaissait dès qu'une voisine chevauchait son
@@ -1009,7 +1331,8 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       attachDrag(container, {
         scale: () => camera?.scale() ?? 1,
         onStart: beginDrag,
-        onMove: (dx, dy) => dragCluster(cluster, aggregate.memberIds, container, dx, dy),
+        onMove: (dx, dy) =>
+          dragCluster(cluster.aggregateId, cluster, aggregate.memberIds, container, dx, dy),
         // Pas de rafraîchissement des cibles de saisie au relâchement :
         // `dragCluster` a déjà tenu celle-ci à jour, et la refaire ici
         // détruirait le container depuis son propre écouteur.
@@ -1049,19 +1372,72 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     }
   }
 
+  /**
+   * La fenêtre monde pour laquelle les zones de clic d'arêtes ont été
+   * construites, et le LOD sous lequel elles l'ont été. `null` = rien de
+   * construit. Voir `redrawEdgeHitAreas` et `syncEdgeHitAreas`.
+   */
+  let edgeHitWindow: Rect | null = null;
+  let edgeHitLod: Lod | null = null;
+
   /** Les zones de clic des arêtes. Volontairement ABSENTES de la boucle de
    * déplacement d'une carte : ce sont des polygones épais, un par arête, et les
    * refaire à chaque image coûterait cher pour une cible qu'on ne peut de toute
    * façon pas viser tant qu'un bouton est enfoncé. Elles sont donc remises à
-   * jour au relâchement. */
+   * jour au relâchement.
+   *
+   * CE CALQUE EST LE PLUS CHER DE LA SCÈNE, et de loin. Mesuré sur 6 251 cartes
+   * et 28 685 références : le retirer fait passer une image au repos en vue
+   * graphe de ~1 850 ms à ~480 ms, là où retirer le TRACÉ des arêtes (un unique
+   * Graphics) ne change rien. La raison est le nombre d'objets — un Graphics
+   * interactif PAR arête, chacun un lot de rendu et un candidat au hit-test —
+   * et non la géométrie. D'où les deux restrictions ci-dessous, qui ne changent
+   * rien à ce qu'on voit puisque ce calque est invisible :
+   *
+   *  1. RIEN AU LOD 2. `drawEdges` n'y trace aucune arête (draw.ts) : les cibles
+   *     y viseraient des traits qui n'existent pas, et personne ne peut pointer
+   *     ce qu'il ne voit pas.
+   *  2. Seulement les arêtes dont le segment peut traverser la fenêtre élargie.
+   *     Une cible hors écran n'est pas atteignable. `syncEdgeHitAreas` refait le
+   *     calque quand la caméra sort de la fenêtre pour laquelle il a été bâti.
+   */
   function redrawEdgeHitAreas(): void {
     for (const child of edgeHitLayer.removeChildren()) child.destroy();
+    edgeHitWindow = null;
+    edgeHitLod = currentLod;
     const positions = activePositions();
     if (!graph || !positions) return;
-    for (const hit of drawEdgeHitAreas(graph, positions)) {
+    if (currentLod === 2) return;
+    const built = camera ? inflateRect(camera.worldViewport(viewport()), PREFETCH_MARGIN) : null;
+    for (const hit of drawEdgeHitAreas(graph, positions, built)) {
       attachTap(hit.graphics, () => followRef(hit.edge));
       edgeHitLayer.addChild(hit.graphics);
     }
+    edgeHitWindow = built;
+  }
+
+  /**
+   * Refait les zones de clic d'arêtes quand la caméra a quitté la fenêtre pour
+   * laquelle elles ont été bâties.
+   *
+   * Le déclencheur est un CONTENANT et non une distance : tant que la fenêtre à
+   * peindre reste incluse dans celle du dernier calque, toute arête atteignable
+   * a déjà sa cible, et il n'y a rien à refaire. Comme la fenêtre bâtie est un
+   * écran plus large de chaque côté, il faut déplacer la caméra de près d'un
+   * écran pour payer une reconstruction — le pan courant n'en paie aucune.
+   */
+  function syncEdgeHitAreas(paint: Rect | null): void {
+    // Changement de LOD : les cibles du LOD précédent ne visent plus les mêmes
+    // traits (et au LOD 2, plus aucun).
+    if (edgeHitLod !== currentLod) {
+      redrawEdgeHitAreas();
+      return;
+    }
+    // Au LOD 2 il n'y a rien à tenir à jour, et un calque bâti SANS caméra les
+    // contient déjà toutes.
+    if (currentLod === 2 || edgeHitWindow === null) return;
+    if (paint !== null && rectContains(edgeHitWindow, paint)) return;
+    redrawEdgeHitAreas();
   }
 
   /** Les deux bouts communs à tout déplacement, carte ou agrégat. */
@@ -1094,6 +1470,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
    * écrase ces coordonnées.
    */
   function dragCluster(
+    aggregateId: string,
     cluster: { cx: number; cy: number; r: number },
     memberIds: Set<NodeId>,
     hit: Container,
@@ -1110,6 +1487,19 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     }
     hit.position.set(cluster.cx, cluster.cy);
     redrawClusters();
+    // Au régime sémantique, le libellé du disque saisi SUIT en bloc plutôt que
+    // d'être refait : le geste est RIGIDE, donc le texte n'a ni à être retronqué
+    // ni à changer d'échelle — exactement le raisonnement qui fait translater
+    // l'enveloppe au lieu de la recalculer. Les arêtes agrégées, elles, changent
+    // toutes de bout et doivent bien être retracées. Les deux sont sans effet
+    // hors régime sémantique, où les calques sont vides.
+    // `children[0]` : le calque permanent ne contient qu'un enfant, le conteneur
+    // que rend `drawSemanticLabels`, dont les enfants directs sont les groupes
+    // étiquetés. Chercher depuis le calque lui-même ne trouverait rien — la
+    // recherche par étiquette de Pixi ne descend pas d'un cran par défaut.
+    const labelGroup = semanticLabelLayer.children[0]?.getChildByLabel(aggregateId);
+    if (labelGroup) labelGroup.position.set(labelGroup.x + dxWorld, labelGroup.y + dyWorld);
+    redrawSemanticEdges();
     redrawEdges();
     redrawOverlay();
   }
@@ -1174,6 +1564,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     if (useBitmapText) fontLease.sync(theme);
 
     redrawClusters();
+    redrawSemanticLayers();
     redrawClusterHitAreas();
     redrawEdges();
     redrawEdgeHitAreas();
@@ -1211,190 +1602,351 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       if (arrayNode?.elided && (collapseState?.isExpanded(id) ?? false)) expandedArrays.add(id);
     }
 
+    // Le domaine de la matérialisation, filtré ici une fois pour toutes.
+    // Un nœud ÉLIDÉ n'a pas de carte : il est déjà dessiné, en ligne, par la
+    // carte de son parent. Le test est explicite plutôt que laissé à l'absence
+    // de rect — celle-ci signifierait « pas encore mis en page », un tout autre
+    // cas.
+    //
+    // Au régime SÉMANTIQUE, une entité qu'un agrégat revendique n'a plus de
+    // carte du tout : son disque la dit déjà, et la dessiner par-dessus ferait
+    // l'état mixte que ce régime existe pour supprimer. Le filtre est ici et
+    // nulle part ailleurs — `syncCards` comme `ensureCard` ne balaient que cet
+    // ensemble, donc aucun chemin de matérialisation ne peut le contourner. Les
+    // entités HORS agrégat, elles, gardent leur rectangle plein : elles ne sont
+    // représentées par rien d'autre.
+    const drawable = new Set<NodeId>();
     for (const id of visible) {
       const node = graph.nodes.get(id);
-      const rect = positions.get(id);
-      // Un nœud ÉLIDÉ n'a pas de carte : il est déjà dessiné, en ligne, par la
-      // carte de son parent. Le test est explicite plutôt que laissé au
-      // `!rect` qui suit — l'absence de rect y signifierait « pas encore mis en
-      // page », un tout autre cas.
       if (!node || node.elided) continue;
-      if (!rect) continue;
-      // Les enfants élidés sont exclus du chevron (`cardChildCount`) : ils ne
-      // sont pas ce qu'il révèle. Sans pli, tout est déplié d'office — on ne
-      // lit même pas `collapseState`, qui décrit alors une autre vue.
-      const hasChevron = policy.chevrons && node.cardChildCount > 0;
-      const expanded = policy.foldable ? (collapseState?.isExpanded(id) ?? false) : true;
-      const nodeView = drawNode(
-        node,
-        rect,
-        theme,
-        currentLod,
-        useBitmapText,
-        accentFor(node),
-        metrics,
-        expanded,
-        hasChevron,
-        // `undefined` pour un nœud sans référence sortante : `drawNode` retombe
-        // alors sur son ensemble vide partagé plutôt que d'en allouer un par
-        // carte.
-        refFieldsByNode.get(id),
-        danglingFieldsByNode.get(id),
-        // `null` là où la vue ne plie rien : les jetons y restent lisibles mais
-        // inertes, comme le chevron d'en-tête.
-        policy.expandedArrays ? expandedArrays : null,
-      );
-      nodeView.position.set(rect.x, rect.y);
-      attachTap(nodeView, (event) => handleNodeTap(node, nodeView, event));
-
-      // Le jeton d'une ligne-tableau répond au pointeur POUR LUI-MÊME : c'est un
-      // objet de la scène, pas une bande calculée, donc `attachHover` s'y applique
-      // directement — même mécanique et même courbe que le lift des cartes, sans
-      // repasser par l'arithmétique de lignes de `rowIndexAt`.
-      //
-      // C'est le survol, et non le clic, qui porte l'affordance de pli, et c'est
-      // une contrainte réelle et non un choix esthétique : un clic déclenche un
-      // `rebuild()` qui reconstruit les vues de cartes, donc toute animation
-      // démarrée au clic serait détruite avant d'être vue. Le survol, lui, se joue
-      // entièrement sur la carte existante.
-      const tokenHovers: HoverHandle[] = [];
-      if (currentLod === 0 && policy.tokenHover) {
-        node.rows.forEach((row, index) => {
-          if (row.valueType !== "array") return;
-          const token = nodeView.getChildByLabel(`array-token:${index}`);
-          if (!token) return;
-          const accent = token.getChildByLabel("hover");
-          tokenHovers.push(
-            attachHover(token, {
-              ticker: app.ticker,
-              isBlocked: () => contentDragging,
-              onFrame: (t) => {
-                token.x = TOKEN_HOVER_SHIFT * t;
-                if (accent) {
-                  // La visibilité suit l'alpha : un Graphics à alpha nul reste
-                  // dans la passe de rendu, et le garder caché tant qu'il ne
-                  // peint rien évite ce coût sur toutes les cartes au repos.
-                  accent.visible = t > 0;
-                  accent.alpha = t;
-                }
-              },
-            }),
-          );
-        });
-      }
-
-      // Le souligné d'une valeur référençante, révélé au survol de SA ligne :
-      // l'affordance de lien hypertexte, que la seule teinte ne donne pas — une
-      // couleur dit « ceci est particulier », un souligné qui suit le pointeur
-      // dit « ceci répond au clic ». `drawNode` a préparé un Graphics caché par
-      // ligne concernée ; tout ce qui reste ici est une visibilité à basculer.
-      const refFields = refFieldsByNode.get(id);
-      const danglingFields = danglingFieldsByNode.get(id);
-      let underlined: number | null = null;
-      // L'index courant est MÉMORISÉ : `pointermove` arrive à chaque pixel, et
-      // une recherche par label à chaque événement parcourrait tous les enfants
-      // de la carte pour, presque toujours, retrouver la même ligne. On ne
-      // touche au graphe d'affichage que sur un vrai changement de ligne.
-      const underline = (index: number | null): void => {
-        if (index === underlined) return;
-        if (underlined !== null) {
-          const previous = nodeView.getChildByLabel(`ref-underline:${underlined}`);
-          if (previous) previous.visible = false;
-        }
-        if (index !== null) {
-          const next = nodeView.getChildByLabel(`ref-underline:${index}`);
-          if (next) next.visible = true;
-        }
-        underlined = index;
-      };
-      // Rien à câbler sur une carte sans référence sortante, ni hors du LOD 0 où
-      // aucune ligne n'est rendue : `underline` y reste un no-op, ce qui laisse
-      // le `onStart` du déplacement ci-dessous inconditionnel.
-      if (refFields && currentLod === 0) {
-        nodeView.on("pointermove", (event: FederatedPointerEvent) => {
-          // Pendant un déplacement, le pointeur ne DÉSIGNE plus une ligne, il
-          // tient la carte : souligner sous lui promettrait un clic que le
-          // geste en cours ne fera pas.
-          if (contentDragging) {
-            underline(null);
-            return;
-          }
-          const index = rowIndexAt(nodeView, node, event);
-          const row = index === null ? undefined : node.rows[index];
-          // Une référence CASSÉE est exclue explicitement, alors même que
-          // `drawNode` ne lui a préparé aucun Graphics : sans ce filtre, la
-          // ligne serait mémorisée comme « soulignée » et le prochain
-          // changement de ligne irait éteindre un souligné qui n'existe pas.
-          const underlinable =
-            row !== undefined && refFields.has(row.key) && !(danglingFields?.has(row.key) ?? false);
-          underline(underlinable ? index : null);
-        });
-        nodeView.on("pointerout", () => underline(null));
-      }
-      // Le « lift » du survol : la carte grossit de `HOVER_LIFT` AUTOUR DE SON
-      // CENTRE. Pixi met l'origine d'un container en haut à gauche, donc une
-      // simple échelle la ferait pousser vers le bas-droite ; la position est
-      // décalée d'une demi-croissance pour compenser. Ce décalage reste LOCAL à
-      // ce rappel : le rect de la mise en page, lui, garde la convention
-      // top-left que suivent `dragCard`, `dragCluster` et `animatePositions`.
-      //
-      // Le rect est RELU à chaque image plutôt que capturé : un déplacement le
-      // mute en place, et une copie figée ramènerait la carte à son point de
-      // départ au premier survol d'après le geste.
-      const hover = attachHover(nodeView, {
-        ticker: app.ticker,
-        // Pendant un déplacement, la carte saisie doit rester exactement sous
-        // le pointeur : la grossir la ferait décrocher de lui.
-        isBlocked: () => contentDragging,
-        onFrame: (t) => {
-          const live = activePositions()?.get(id);
-          if (!live) return;
-          const scale = 1 + HOVER_LIFT * t;
-          nodeView.scale.set(scale);
-          nodeView.position.set(
-            live.x - ((scale - 1) * live.width) / 2,
-            live.y - ((scale - 1) * live.height) / 2,
-          );
-        },
-      });
-      // Les deux câblages sont complémentaires et non concurrents : ils
-      // partagent le même seuil, `attachTap` ne réagit qu'en deçà et
-      // `attachDrag` qu'au-delà (voir `drag.ts`). Un clic sélectionne, plie ou
-      // suit une référence ; un clic maintenu qui bouge déplace la carte.
-      attachDrag(nodeView, {
-        scale: () => camera?.scale() ?? 1,
-        onStart: () => {
-          // Le survol est annulé AVANT que le geste ne prenne la main : il
-          // laisserait sinon la carte à une échelle et à un décalage que
-          // `dragCard` ne connaît pas, et la carte suivrait le pointeur avec un
-          // biais d'une demi-croissance pour tout le reste du geste.
-          // `isBlocked` ne suffit pas — il empêche un survol de COMMENCER, pas
-          // celui qui est déjà là de rester peint.
-          hover.cancel();
-          // Même raison, et même moment, pour le souligné et pour les jetons :
-          // un autre geste prend la main, et l'affordance d'un clic qui n'aura
-          // pas lieu doit disparaître AVEC lui, pas au prochain `pointermove`.
-          // Un jeton laissé décalé de 2 px suivrait la carte tout le geste.
-          underline(null);
-          for (const tokenHover of tokenHovers) tokenHover.cancel();
-          beginDrag();
-        },
-        onMove: (dx, dy) => dragCard(id, nodeView, dx, dy),
-        // `true` : déplacer une carte a rebattu le cercle de son agrégat, donc
-        // la zone de saisie de celui-ci est périmée. La refaire ici est sans
-        // danger — elle ne touche pas au container de la carte, qui porte le
-        // geste en train de se terminer.
-        onEnd: () => endDrag(true),
-      });
-      nodesLayer.addChild(nodeView);
-      nodeViews.set(id, nodeView);
+      if (!positions.has(id)) continue;
+      if (policy.cards === "unclustered" && graphView.aggregateIdOf(id) !== undefined) continue;
+      drawable.add(id);
     }
 
+    cardContext = { policy, refFieldsByNode, danglingFieldsByNode, expandedArrays, drawable };
+
+    // Et c'est tout : les cartes ne sont plus fabriquées d'un bloc ici, mais par
+    // la passe de matérialisation, qui n'en crée que le voisinage de l'écran.
+    // Elle est appelée de façon SYNCHRONE — sa fenêtre `PAINT` n'est pas
+    // budgétée —, donc la première image d'après ce rebuild montre exactement ce
+    // qu'elle montrait quand la boucle vivait ici.
+    syncCards();
+
     redrawOverlay();
-    // En DERNIER : les cartes viennent d'être recréées à alpha 1, et c'est ici
-    // qu'une sélection survivant au rebuild (dépliage, changement de LOD,
-    // bascule de vue) retrouve son estompage.
-    applyFocusDim();
+    // `applyFocusDim()` n'a plus lieu d'être ici : chaque carte reçoit son
+    // filtre à sa création (`createCard`), ce qui est la seule façon de tenir
+    // l'estompage pour une carte matérialisée plus tard. La fonction reste,
+    // pour les changements de sélection, qui doivent bien repasser sur les
+    // cartes DÉJÀ dessinées.
+  }
+
+  /**
+   * Fabrique la carte de `id` et la câble : clic, survol, souligné de référence,
+   * déplacement, estompage.
+   *
+   * Extrait de la boucle de `rebuild()` sans rien changer à ce qu'elle
+   * produisait, parce qu'une carte n'est plus créée à un seul moment : elle
+   * l'est aussi au fil de la caméra et à la demande d'un `select`/`focus`. Tout
+   * ce qui distinguerait ces trois chemins serait un écart visible à l'écran,
+   * d'où le `CardContext` — il porte exactement ce que la reconstruction avait
+   * calculé une fois pour toutes.
+   *
+   * `keep` est l'ensemble de mise au point du MOMENT (voir `focusKeep`) : la
+   * carte naît estompée si la sélection courante l'exclut, au lieu de naître à
+   * pleine opacité et d'attendre un repeint qui n'aurait aucune raison de venir.
+   */
+  function createCard(
+    id: NodeId,
+    rect: Rect,
+    ctx: CardContext,
+    keep: ReadonlySet<NodeId> | null,
+  ): void {
+    const node = graph?.nodes.get(id);
+    if (!node) return;
+    const { policy, refFieldsByNode, danglingFieldsByNode, expandedArrays } = ctx;
+    // Les enfants élidés sont exclus du chevron (`cardChildCount`) : ils ne
+    // sont pas ce qu'il révèle. Sans pli, tout est déplié d'office — on ne
+    // lit même pas `collapseState`, qui décrit alors une autre vue.
+    const hasChevron = policy.chevrons && node.cardChildCount > 0;
+    const expanded = policy.foldable ? (collapseState?.isExpanded(id) ?? false) : true;
+    const nodeView = drawNode(
+      node,
+      rect,
+      theme,
+      currentLod,
+      useBitmapText,
+      accentFor(node),
+      metrics,
+      expanded,
+      hasChevron,
+      // `undefined` pour un nœud sans référence sortante : `drawNode` retombe
+      // alors sur son ensemble vide partagé plutôt que d'en allouer un par
+      // carte.
+      refFieldsByNode.get(id),
+      danglingFieldsByNode.get(id),
+      // `null` là où la vue ne plie rien : les jetons y restent lisibles mais
+      // inertes, comme le chevron d'en-tête.
+      policy.expandedArrays ? expandedArrays : null,
+    );
+    nodeView.position.set(rect.x, rect.y);
+    attachTap(nodeView, (event) => handleNodeTap(node, nodeView, event));
+
+    // Le jeton d'une ligne-tableau répond au pointeur POUR LUI-MÊME : c'est un
+    // objet de la scène, pas une bande calculée, donc `attachHover` s'y applique
+    // directement — même mécanique et même courbe que le lift des cartes, sans
+    // repasser par l'arithmétique de lignes de `rowIndexAt`.
+    //
+    // C'est le survol, et non le clic, qui porte l'affordance de pli, et c'est
+    // une contrainte réelle et non un choix esthétique : un clic déclenche un
+    // `rebuild()` qui reconstruit les vues de cartes, donc toute animation
+    // démarrée au clic serait détruite avant d'être vue. Le survol, lui, se joue
+    // entièrement sur la carte existante.
+    const tokenHovers: HoverHandle[] = [];
+    if (currentLod === 0 && policy.tokenHover) {
+      node.rows.forEach((row, index) => {
+        if (row.valueType !== "array") return;
+        const token = nodeView.getChildByLabel(`array-token:${index}`);
+        if (!token) return;
+        const accent = token.getChildByLabel("hover");
+        tokenHovers.push(
+          attachHover(token, {
+            ticker: app.ticker,
+            isBlocked: () => contentDragging,
+            onFrame: (t) => {
+              token.x = TOKEN_HOVER_SHIFT * t;
+              if (accent) {
+                // La visibilité suit l'alpha : un Graphics à alpha nul reste
+                // dans la passe de rendu, et le garder caché tant qu'il ne
+                // peint rien évite ce coût sur toutes les cartes au repos.
+                accent.visible = t > 0;
+                accent.alpha = t;
+              }
+            },
+          }),
+        );
+      });
+    }
+
+    // Le souligné d'une valeur référençante, révélé au survol de SA ligne :
+    // l'affordance de lien hypertexte, que la seule teinte ne donne pas — une
+    // couleur dit « ceci est particulier », un souligné qui suit le pointeur
+    // dit « ceci répond au clic ». `drawNode` a préparé un Graphics caché par
+    // ligne concernée ; tout ce qui reste ici est une visibilité à basculer.
+    const refFields = refFieldsByNode.get(id);
+    const danglingFields = danglingFieldsByNode.get(id);
+    let underlined: number | null = null;
+    // L'index courant est MÉMORISÉ : `pointermove` arrive à chaque pixel, et
+    // une recherche par label à chaque événement parcourrait tous les enfants
+    // de la carte pour, presque toujours, retrouver la même ligne. On ne
+    // touche au graphe d'affichage que sur un vrai changement de ligne.
+    const underline = (index: number | null): void => {
+      if (index === underlined) return;
+      if (underlined !== null) {
+        const previous = nodeView.getChildByLabel(`ref-underline:${underlined}`);
+        if (previous) previous.visible = false;
+      }
+      if (index !== null) {
+        const next = nodeView.getChildByLabel(`ref-underline:${index}`);
+        if (next) next.visible = true;
+      }
+      underlined = index;
+    };
+    // Rien à câbler sur une carte sans référence sortante, ni hors du LOD 0 où
+    // aucune ligne n'est rendue : `underline` y reste un no-op, ce qui laisse
+    // le `onStart` du déplacement ci-dessous inconditionnel.
+    if (refFields && currentLod === 0) {
+      nodeView.on("pointermove", (event: FederatedPointerEvent) => {
+        // Pendant un déplacement, le pointeur ne DÉSIGNE plus une ligne, il
+        // tient la carte : souligner sous lui promettrait un clic que le
+        // geste en cours ne fera pas.
+        if (contentDragging) {
+          underline(null);
+          return;
+        }
+        const index = rowIndexAt(nodeView, node, event);
+        const row = index === null ? undefined : node.rows[index];
+        // Une référence CASSÉE est exclue explicitement, alors même que
+        // `drawNode` ne lui a préparé aucun Graphics : sans ce filtre, la
+        // ligne serait mémorisée comme « soulignée » et le prochain
+        // changement de ligne irait éteindre un souligné qui n'existe pas.
+        const underlinable =
+          row !== undefined && refFields.has(row.key) && !(danglingFields?.has(row.key) ?? false);
+        underline(underlinable ? index : null);
+      });
+      nodeView.on("pointerout", () => underline(null));
+    }
+    // Le « lift » du survol : la carte grossit de `HOVER_LIFT` AUTOUR DE SON
+    // CENTRE. Pixi met l'origine d'un container en haut à gauche, donc une
+    // simple échelle la ferait pousser vers le bas-droite ; la position est
+    // décalée d'une demi-croissance pour compenser. Ce décalage reste LOCAL à
+    // ce rappel : le rect de la mise en page, lui, garde la convention
+    // top-left que suivent `dragCard`, `dragCluster` et `animatePositions`.
+    //
+    // Le rect est RELU à chaque image plutôt que capturé : un déplacement le
+    // mute en place, et une copie figée ramènerait la carte à son point de
+    // départ au premier survol d'après le geste.
+    const hover = attachHover(nodeView, {
+      ticker: app.ticker,
+      // Pendant un déplacement, la carte saisie doit rester exactement sous
+      // le pointeur : la grossir la ferait décrocher de lui.
+      isBlocked: () => contentDragging,
+      onFrame: (t) => {
+        const live = activePositions()?.get(id);
+        if (!live) return;
+        const scale = 1 + HOVER_LIFT * t;
+        nodeView.scale.set(scale);
+        nodeView.position.set(
+          live.x - ((scale - 1) * live.width) / 2,
+          live.y - ((scale - 1) * live.height) / 2,
+        );
+      },
+    });
+    // Les deux câblages sont complémentaires et non concurrents : ils
+    // partagent le même seuil, `attachTap` ne réagit qu'en deçà et
+    // `attachDrag` qu'au-delà (voir `drag.ts`). Un clic sélectionne, plie ou
+    // suit une référence ; un clic maintenu qui bouge déplace la carte.
+    attachDrag(nodeView, {
+      scale: () => camera?.scale() ?? 1,
+      onStart: () => {
+        // Le survol est annulé AVANT que le geste ne prenne la main : il
+        // laisserait sinon la carte à une échelle et à un décalage que
+        // `dragCard` ne connaît pas, et la carte suivrait le pointeur avec un
+        // biais d'une demi-croissance pour tout le reste du geste.
+        // `isBlocked` ne suffit pas — il empêche un survol de COMMENCER, pas
+        // celui qui est déjà là de rester peint.
+        hover.cancel();
+        // Même raison, et même moment, pour le souligné et pour les jetons :
+        // un autre geste prend la main, et l'affordance d'un clic qui n'aura
+        // pas lieu doit disparaître AVEC lui, pas au prochain `pointermove`.
+        // Un jeton laissé décalé de 2 px suivrait la carte tout le geste.
+        underline(null);
+        for (const tokenHover of tokenHovers) tokenHover.cancel();
+        beginDrag();
+      },
+      onMove: (dx, dy) => dragCard(id, nodeView, dx, dy),
+      // `true` : déplacer une carte a rebattu le cercle de son agrégat, donc
+      // la zone de saisie de celui-ci est périmée. La refaire ici est sans
+      // danger — elle ne touche pas au container de la carte, qui porte le
+      // geste en train de se terminer.
+      onEnd: () => endDrag(true),
+    });
+    // L'estompage est posé À LA CRÉATION : une carte qui naît hors de la
+    // boucle d'un rebuild n'a aucun repeint global derrière elle pour le lui
+    // donner. `keep === null` veut dire « rien de sélectionné », donc rien à
+    // estomper — c'est aussi l'état de repos, où aucune carte ne porte de
+    // filtre.
+    if (keep !== null && !keep.has(id)) nodeView.filters = dimFilters();
+    nodesLayer.addChild(nodeView);
+    nodeViews.set(id, nodeView);
+  }
+
+  /**
+   * Met le calque des cartes d'accord avec la fenêtre courante : fabrique celles
+   * qui sont entrées, recycle celles qui sont sorties LARGEMENT.
+   *
+   * C'est la seconde moitié du culling, et la raison pour laquelle le
+   * `container.cullable` que pose `drawNode` ne suffisait pas — deux raisons,
+   * en fait. Il ne parle que du RENDU, alors que le coût qui faisait mal était
+   * la CRÉATION : 6 251 cartes fabriquées à chaque franchissement de seuil de
+   * LOD, dont quelques dizaines seulement à l'écran. Et il est de toute façon
+   * INERTE tant que `CullerPlugin` n'est pas installé sur l'application, ce
+   * qu'aucun site de ce paquet ne fait — le drapeau n'a jamais rien coupé.
+   *
+   * Appelée à chaque image. Le balayage est un test de rectangles par carte de
+   * la vue, soit quelques dizaines de microsecondes pour 6 000 nœuds : moins
+   * cher qu'un index spatial à tenir à jour sous un `dragCard` qui mute les
+   * positions en place. Elle tourne INCONDITIONNELLEMENT et non pas seulement
+   * quand la caméra a bougé, parce que les cartes bougent aussi sans elle — un
+   * déplacement d'agrégat en fait entrer et sortir du cadre.
+   */
+  function syncCards(): void {
+    const ctx = cardContext;
+    const positions = activePositions();
+    if (!ctx || !positions) return;
+    // Une transition de dépliage est en vol : ses containers sont à des
+    // positions INTERMÉDIAIRES, qui ne disent rien de leur point d'arrivée.
+    // Décider d'après elles ferait disparaître une carte en plein vol. 200 ms
+    // plus tard, le passage suivant remet tout d'accord.
+    if (positionAnimator.isRunning()) return;
+
+    // Sans caméra (avant l'init, ou après `destroy`), aucune fenêtre n'a de
+    // sens : on retombe sur le comportement d'origine, tout est matérialisé.
+    const windows = cardWindowsFor(camera ? camera.worldViewport(viewport()) : null);
+    const deadline = performance.now() + PREFETCH_BUDGET_MS;
+    // La carte sélectionnée n'est JAMAIS recyclée : l'anneau et le panneau de
+    // détail de l'hôte la désignent, et la voir disparaître en s'éloignant
+    // serait un mensonge sur ce qui est sélectionné.
+    const selected = selectedNodeId();
+
+    // Les cibles de clic des arêtes suivent la même fenêtre, mais avec leur
+    // propre rythme : elles ne sont refaites que lorsque la caméra sort de
+    // celle qui a servi à les bâtir (voir là-bas).
+    syncEdgeHitAreas(windows.paint);
+
+    // `focusKeep()` balaie toutes les références du graphe : calculé au plus une
+    // fois par passage, et seulement si une carte est effectivement créée.
+    let keep: ReadonlySet<NodeId> | null | undefined;
+
+    for (const id of ctx.drawable) {
+      const rect = positions.get(id);
+      if (!rect) continue;
+      const nodeView = nodeViews.get(id);
+      const materialized = nodeView !== undefined;
+      const fate = cardFate(rect, windows, {
+        materialized,
+        // Rien n'est recyclé pendant un déplacement : le container saisi porte
+        // les écouteurs du geste en cours, et son `onEnd` ne viendrait jamais.
+        // Il est de toute façon sous le pointeur, donc dans `paint` — mais la
+        // garde ne coûte rien et ne dépend d'aucun raisonnement géométrique.
+        pinned: contentDragging || id === selected,
+        // L'horloge n'est lue que quand elle peut servir : une carte déjà
+        // matérialisée ne consomme aucun budget, et `performance.now()` coûte
+        // plus cher que le test de rectangle qui la précède.
+        budgetLeft: materialized ? false : performance.now() < deadline,
+      });
+      if (fate === "create") {
+        if (keep === undefined) keep = focusKeep();
+        createCard(id, rect, ctx, keep);
+      } else if (fate === "reclaim" && nodeView) {
+        nodeViews.delete(id);
+        nodeView.destroy({ children: true });
+      }
+    }
+  }
+
+  /**
+   * Matérialise séance tenante la carte de `id`, où qu'elle soit.
+   *
+   * C'est l'échappatoire des chemins qui DÉSIGNENT une carte sans passer par le
+   * pointeur — `select()`, `focus()`, la recherche, le suivi de référence. Ils
+   * peuvent viser une carte hors de la fenêtre, et la caméra qui saute dessus
+   * doit la trouver dessinée à l'arrivée.
+   *
+   * Sans effet sur un id déjà matérialisé, hors de la vue courante, ou non
+   * positionné.
+   */
+  function ensureCard(id: NodeId): void {
+    const ctx = cardContext;
+    if (!ctx || nodeViews.has(id) || !ctx.drawable.has(id)) return;
+    const rect = activePositions()?.get(id);
+    if (!rect) return;
+    createCard(id, rect, ctx, focusKeep());
+  }
+
+  /**
+   * Remet les cartes d'accord avec la caméra : une reconstruction COMPLÈTE si le
+   * LOD a changé — toutes les cartes changent alors de forme —, une simple mise
+   * à jour de la fenêtre sinon.
+   *
+   * Le seul endroit qui décide entre les deux. L'avoir en un point unique est ce
+   * qui garantit qu'un mouvement de caméra ne produit jamais plus d'UNE
+   * reconstruction : le ticker, `fit()` et `doFocus` y passent tous.
+   */
+  function refreshCards(): void {
+    if (!camera) return;
+    if (lodForScale(camera.scale()) !== currentLod) rebuild();
+    else syncCards();
   }
 
   function doFit(): void {
@@ -1546,7 +2098,14 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
    * propre passe. Les fusionner rejouerait ces deux repeints à chaque
    * reconstruction. */
   function redrawSelection(): void {
-    if (view === "graph") redrawClusters();
+    if (view === "graph") {
+      redrawClusters();
+      // Les arêtes agrégées et les libellés portent eux aussi l'estompage : sans
+      // ce passage, sélectionner un agrégat allumerait son disque en laissant
+      // ses voisins à pleine intensité. Sans effet hors régime sémantique, où
+      // les deux calques sont vides.
+      redrawSemanticLayers();
+    }
     redrawOverlay();
     // Les arêtes portent la moitié de l'estompage : elles sont repeintes avec
     // la nouvelle sélection, les cartes reçoivent leur filtre.
@@ -1561,6 +2120,12 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     // Remplace une éventuelle sélection d'agrégat : les deux s'excluent, ce que
     // le type porte déjà.
     selection = { kind: "node", id };
+    // La sélection peut viser une carte hors fenêtre (API publique, recherche,
+    // suivi de référence) : on la matérialise AVANT de repeindre, sinon
+    // `applyFocusDim` ne trouverait rien à ne pas estomper et la carte
+    // sélectionnée resterait absente jusqu'à ce que la caméra la rejoigne.
+    // `syncCards` la garde ensuite en vie tant qu'elle est sélectionnée.
+    ensureCard(id);
     redrawSelection();
     emitter.emit("select", node);
   }
@@ -1624,7 +2189,16 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     // structure au travail sans rien montrer.
     if (view === "graph") {
       const rect = graphView.positions()?.get(id);
-      if (rect) camera.centerOn(rect, viewport(), 1);
+      if (rect) {
+        camera.centerOn(rect, viewport(), 1);
+        // La caméra vient de sauter : les cartes doivent la suivre TOUT DE
+        // SUITE, sans attendre le prochain passage du ticker. `refreshCards`
+        // d'abord (le saut fixe l'échelle à 1, ce qui peut changer le LOD et
+        // donc tout reconstruire), `ensureCard` ensuite — dans cet ordre, sinon
+        // la reconstruction jetterait la carte qu'on vient de garantir.
+        refreshCards();
+        ensureCard(id);
+      }
       return;
     }
 
@@ -1678,7 +2252,15 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     // ligne amène bien son jeton à l'écran ; `positions.get` seul rendrait
     // `undefined` et l'appel ne ferait rien du tout, sans le dire.
     const rect = anchorRectFor(graph, layoutResult.positions, id, metrics);
-    if (rect) camera.centerOn(rect, viewport(), 1);
+    if (rect) {
+      camera.centerOn(rect, viewport(), 1);
+      // Même discipline qu'en vue graphe, et pour la même raison : la carte
+      // visée doit être dessinée quand la caméra arrive dessus. `ensureCard` est
+      // sans effet sur un nœud sans carte (un tableau, que `anchorRectFor`
+      // sait pourtant cadrer par la bande de sa ligne).
+      refreshCards();
+      ensureCard(id);
+    }
   }
 
   /** Le fond cliquable, glissé sous le monde. La `hitArea` est
@@ -1795,8 +2377,16 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       if (destroyed) return;
     }
 
-    rebuild();
+    // CADRER AVANT DE CONSTRUIRE, et c'est l'ordre qui compte : `doFit` ne lit
+    // que les positions de la mise en page, jamais la scène, alors que
+    // `rebuild()` lit l'échelle de la caméra pour choisir son LOD. Construire
+    // d'abord dessinait donc toutes les cartes au LOD de l'échelle SORTANTE
+    // (1, donc LOD 0 : texte complet), puis le cadrage changeait l'échelle et le
+    // ticker constatait le changement de LOD et reconstruisait tout — la
+    // première passe entièrement jetée. Le même renversement est appliqué à
+    // `doSetData` et à `setView`.
     doFit();
+    rebuild();
     // Force one immediate, synchronous frame so the first paint is
     // deterministic instead of waiting on the ticker's next scheduled tick.
     app.render();
@@ -1811,8 +2401,9 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
 
     app.ticker.add(() => {
       if (destroyed || !camera) return;
-      const lod = lodForScale(camera.scale());
-      if (lod !== currentLod) rebuild();
+      // Reconstruit au changement de LOD, matérialise/recycle sinon. C'est ici
+      // que le culling suit la caméra, image par image.
+      refreshCards();
 
       // Aucune étiquette : aucun coût au repos, qui est l'état le plus fréquent
       // (rien de sélectionné, ou sélection sans référence sortante).
@@ -1904,8 +2495,11 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     if (graphViewFailed) view = "structure";
     if (newGraphView) graphView.publish(newGraphView);
 
-    rebuild();
+    // Cadrage AVANT reconstruction : voir la note de `ready`. Les nouvelles
+    // données ont leur propre étendue, donc leur propre échelle de cadrage, donc
+    // potentiellement un autre LOD que celui des données remplacées.
     doFit();
+    rebuild();
   }
 
   // Après `destroy()`, chaque méthode publique doit être un no-op sûr plutôt
@@ -1917,6 +2511,10 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     fit(): void {
       if (destroyed) return;
       doFit();
+      // Le cadrage change l'échelle, donc peut-être le LOD et à coup sûr la
+      // fenêtre : les cartes suivent immédiatement plutôt qu'à la prochaine
+      // image. Un seul rebuild au pire, `refreshCards` étant le seul arbitre.
+      refreshCards();
     },
 
     async expand(id: NodeId): Promise<void> {
@@ -2043,9 +2641,14 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
         selection = null;
       }
 
-      rebuild();
-      // Recadrer ICI est légitime : les deux vues n'ont aucun repère commun.
+      // Recadrer est légitime ici : les deux vues n'ont aucun repère commun. Et
+      // c'est AVANT la reconstruction que ça se joue — voir la note de `ready` :
+      // les deux vues n'ont pas la même étendue, donc pas la même échelle de
+      // cadrage, donc rarement le même LOD. Cadrer après faisait dessiner les
+      // 6 251 cartes à l'échelle de la vue sortante avant de tout jeter au
+      // premier passage du ticker.
       doFit();
+      rebuild();
       app.render();
     },
 

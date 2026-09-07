@@ -30,6 +30,83 @@ the frame-rate and expand budgets are not measured at all. They are a stated
 target and a sanity check, not a gate. The core package's README carries the
 latest numbers a `pnpm bench` run printed.
 
+## Semantic zoom: below LOD 2, aggregates *are* the nodes
+
+Zoomed out, the graph view stops drawing cards and draws the **aggregates as
+nodes**: one filled disc per aggregate — same centre, same radius as the
+envelope the layout already computed — labelled with its root entity id and its
+member count, plus **aggregated edges**: every reference mapped through
+`aggregates.byNode` to its pair of aggregates, deduplicated with a weight,
+intra-aggregate ones dropped. Entities in no aggregate keep their flat LOD 2
+rectangle; nothing else represents them.
+
+The threshold is **not a third setting**: it is exactly `lodForScale`'s LOD 2
+(`scale < 0.15`), the scale at which a card is already nothing but a filled
+rectangle and therefore carries no information at all. Replacing 6,251 mute
+rectangles by 1,300 named discs there is a strict gain. A dedicated threshold
+would have needed its own rebuild trigger, racing the LOD one, and would have
+opened a band of scales where both regimes fight over the screen — the mixed
+state this split rules out by construction.
+
+Where each piece lives:
+
+* the fold itself is `aggregateRefEdges` in `packages/renderer/src/graph-view.ts`
+  — pure, computed **once per `compute()`** and published atomically with the
+  index and the layout, never per frame;
+* the branch is one `ViewPolicy` value pair in `create.ts`
+  (`cards: "all" | "unclustered"`, `aggregates: "none" | "hull" | "disc"`).
+  `cards: "unclustered"` filters `CardContext.drawable`, which is the single set
+  both `syncCards` and `ensureCard` iterate — so no materialisation path can
+  paint a card a disc already stands for;
+* the painting is three pure functions in `draw.ts` (`drawSemanticDiscs`,
+  `drawSemanticLabels`, `drawSemanticEdges`), each taking bare arrays and
+  numbers, no graph and no state.
+
+Clicking a disc selects its aggregate through the hit areas that already
+existed (`drawClusterHitAreas` / `selection.kind === "cluster"`); hover, drag
+and dimming are the envelope mechanics unchanged. `focus()` and search still
+land on a card: they jump the camera to scale 1, which crosses the threshold,
+rebuilds, and materialises the target.
+
+### What it cost, measured
+
+On the real dataset that motivated it (6,251 entity cards, 28,685 reference
+edges, ~1,300 Package/Module aggregates), 1600×1000, headless Chromium — so a
+*software* rasteriser, which is the point: it makes the geometry costs visible
+rather than hiding them behind a GPU.
+
+| Idle frame, whole graph framed | Before | After |
+| --- | --- | --- |
+| median | 503 ms | **203 ms** |
+
+Two findings worth keeping, both from bisecting that number by layer:
+
+1. **Dropping the cards is most of the win.** With no semantic layer painted at
+   all the idle frame is 8 ms: the 6,251 card containers — all of them
+   materialised, since framing the whole graph puts them all inside the paint
+   window — were the bulk of the old 503 ms, not the envelope fills.
+2. **`Graphics.circle()` picks its tessellation from the *world* radius.** A
+   1,000 px-world envelope seen at scale 0.04 is 80 px on screen and still gets
+   several hundred segments; over 1,300 discs that is hundreds of thousands of
+   triangles per frame. Drawing each disc as a 36-sided polygon instead
+   (`SEMANTIC_DISC_SEGMENTS`) took the disc layer from 494 ms to 77 ms, for a
+   maximum deviation of `r × (1 − cos(π/36))` ≈ 0.4 % of the radius — under a
+   third of a pixel on the largest disc of that dataset. The envelopes of
+   `drawClusters` keep the true circle: the two are never on screen together.
+
+A third, smaller one: the disc's accent is **pre-blended against the canvas
+colour and painted opaque** (`blendOver`) rather than laid on as a translucent
+fill over an opaque knockout. The opacity is needed anyway — aggregated edges
+pass underneath, and a translucent disc fills with the network that skirts it —
+and doing it in one fill rather than two halved that layer again (755 → 380 ms,
+before the polygon change).
+
+The zoom traversal is unaffected: the worst frame while crossing the thresholds
+is ~1,320 ms both before and after, and it happens in the *card* regime
+(LOD 0/1), which this change does not touch. Its mean improves 610 → 485 ms.
+`setView("graph")` is unchanged at ~4.6 s on that dataset — it is layout-bound,
+not paint-bound.
+
 ## Two levels, because membership is a partition
 
 Every entity belongs to at most one aggregate (see

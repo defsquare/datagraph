@@ -252,7 +252,14 @@ describe("graph view controller — clustersFor", () => {
     const state = await controller.compute(shopGraph, graphConfig, false);
     // Un index amputé sous une mise en page intacte : on ne sait plus rien des
     // membres, donc on n'estompe pas plutôt que d'estomper par défaut.
-    controller.publish({ index: { aggregates: new Map(), byNode: new Map() }, layout: state.layout });
+    controller.publish({
+      index: { aggregates: new Map(), byNode: new Map() },
+      layout: state.layout,
+      // Un index amputé n'a plus d'appartenance, donc plus d'arête agrégée : le
+      // champ suit son index, il n'est pas repris de l'état intact.
+      semanticEdges: [],
+      semanticLabels: state.semanticLabels,
+    });
 
     const paints = controller.clustersFor(args({ keep: new Set<NodeId>() }));
     expect(paints).toHaveLength(2);

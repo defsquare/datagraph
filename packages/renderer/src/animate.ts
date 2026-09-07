@@ -76,6 +76,17 @@ export interface PositionAnimator {
    */
   animate(prevPositions: Map<NodeId, Rect>, nextPositions: Map<NodeId, Rect>): void;
   /**
+   * Une transition est-elle en vol ?
+   *
+   * Existe pour la matérialisation incrémentale des cartes (`create.ts`) : tant
+   * qu'une transition tourne, les containers sont à des positions
+   * INTERMÉDIAIRES, qui ne disent rien de l'endroit où ils vont atterrir.
+   * Décider d'après elles ce qu'il faut créer ou détruire ferait disparaître une
+   * carte en plein vol, ou en ferait apparaître une à sa position d'arrivée
+   * pendant que ses voisines glissent encore.
+   */
+  isRunning(): boolean;
+  /**
    * Désinscrit le rappel de l'animation en cours, s'il y en a une.
    *
    * À appeler AVANT toute reconstruction susceptible de détruire les containers
@@ -114,6 +125,10 @@ export function createPositionAnimator(hooks: PositionAnimatorHooks): PositionAn
 
   return {
     cancel,
+
+    isRunning(): boolean {
+      return activeTick !== null;
+    },
 
     animate(prevPositions: Map<NodeId, Rect>, nextPositions: Map<NodeId, Rect>): void {
       cancel();
