@@ -15,6 +15,7 @@ import {
   createStructureLayoutEngine,
   DEFAULT_METRICS,
   enclosingCircle,
+  pageOf,
   validateConfig,
   type Aggregate,
   type DataGraphConfig,
@@ -371,6 +372,19 @@ function dimFilters(): AlphaFilter[] {
  * `drawSelectionOverlay` ne voient un id que quand `kind === "node"`.
  */
 type Selection = { kind: "node"; id: NodeId } | { kind: "cluster"; aggregateId: string };
+
+/**
+ * Un maillon de la cascade de `doFocus` : le chemin vers une cible profonde se
+ * franchit désormais avec DEUX gestes distincts par niveau, un dépliage et une
+ * révélation de page, chacun ayant sa propre mise en page incrémentale
+ * (`layoutAfterExpand` pousse un sous-arbre à côté de son ancre,
+ * `layoutAfterReveal` insère un bloc dans une colonne déjà posée). Les typer
+ * plutôt que d'aligner deux listes garde l'ordre d'exécution — et donc le
+ * retour arrière — dans une seule séquence.
+ */
+type FocusStep =
+  | { kind: "expand"; id: NodeId }
+  | { kind: "reveal"; parentId: NodeId; page: number };
 
 /**
  * Les trois fenêtres de la matérialisation des cartes, en FRACTIONS d'écran
@@ -2421,41 +2435,69 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     if (!collapseState || !layoutResult || !engine) return;
 
     if (!collapseState.visibleNodeIds().has(id)) {
-      // Collect the collapsed ancestors WITHOUT mutating collapseState yet
-      // (unlike expandPathTo, which mutates the whole path upfront) —
-      // mutation must happen one ancestor at a time, in lockstep with the
-      // layout that actually gets applied for it. Otherwise an abort
-      // mid-cascade (gen mismatch) leaves collapseState reporting nodes as
-      // expanded/visible that have no entry in layoutResult.positions: they
-      // silently never render, and that partially-merged layoutResult goes
-      // on to corrupt the next operation as its `prev`.
-      const ancestors: NodeId[] = [];
+      // Collect the steps WITHOUT mutating collapseState yet (unlike
+      // expandPathTo, which mutates the whole path upfront) — mutation must
+      // happen one step at a time, in lockstep with the layout that actually
+      // gets applied for it. Otherwise an abort mid-cascade (gen mismatch)
+      // leaves collapseState reporting nodes as expanded/visible that have no
+      // entry in layoutResult.positions: they silently never render, and that
+      // partially-merged layoutResult goes on to corrupt the next operation as
+      // its `prev`.
+      //
+      // Depuis la pagination, la cascade ouvre les PAGES autant que les
+      // ancêtres : déplier un parent ne suffit plus à rendre la cible visible
+      // si elle vit sur une page non révélée. On parcourt donc la chaîne
+      // COMPLÈTE des parents (pas seulement les repliés), et on ne révèle que
+      // la page de l'enfant du chemin — jamais tout le préfixe, sinon
+      // atteindre le 47 312ᵉ enfant paierait 47 313 cartes.
+      const steps: FocusStep[] = [];
+      let childOnPath: NodeId = id;
       let node = graph.nodes.get(id);
       let parentId = node?.parentId ?? null;
       while (parentId !== null) {
-        if (!collapseState.isExpanded(parentId)) ancestors.push(parentId);
+        // `reverse()` renverse AUSSI l'ordre intra-niveau : pour exécuter
+        // expand AVANT reveal à chaque niveau (révéler une page d'un nœud
+        // encore replié ne montre rien), on pousse reveal d'abord ici.
+        //
+        // Un enfant du chemin ÉLIDÉ (`cardIndexOf` < 0) est une ligne de la
+        // carte de son parent : il n'a pas de page à révéler.
+        const cardIndex = collapseState.cardIndexOf(parentId, childOnPath);
+        if (cardIndex >= 0 && !collapseState.revealedPages(parentId).has(pageOf(cardIndex))) {
+          steps.push({ kind: "reveal", parentId, page: pageOf(cardIndex) });
+        }
+        if (!collapseState.isExpanded(parentId)) steps.push({ kind: "expand", id: parentId });
+        childOnPath = parentId;
         node = graph.nodes.get(parentId);
         parentId = node?.parentId ?? null;
       }
-      ancestors.reverse(); // root-first
+      steps.reverse(); // root-first, et expand avant reveal à chaque niveau
 
       const gen = ++opGen;
-      for (const ancestorId of ancestors) {
+      for (const step of steps) {
         if (destroyed || gen !== opGen) return;
-        collapseState.expand(ancestorId);
-        const next = await engine.layoutAfterExpand(
-          layoutResult,
-          graph,
-          ancestorId,
-          collapseState.visibleNodeIds(),
-          metrics,
-        );
+        if (step.kind === "expand") collapseState.expand(step.id);
+        else collapseState.revealPage(step.parentId, step.page);
+        const prev = layoutResult;
+        const visible = collapseState.visibleNodeIds();
+        // Annotation explicite : sans elle, `layoutResult = next` plus bas rend
+        // l'inférence de `next` circulaire (elle dépendrait du type de
+        // `layoutResult`, qui dépendrait d'elle) et TS abandonne le
+        // rétrécissement `LayoutResult | undefined` → `LayoutResult`.
+        const next: LayoutResult =
+          step.kind === "expand"
+            ? await engine.layoutAfterExpand(prev, graph, step.id, visible, metrics)
+            : await engine.layoutAfterReveal(prev, graph, step.parentId, visible, metrics);
         if (destroyed) return;
         if (gen !== opGen) {
           // Superseded mid-cascade: revert ONLY this not-yet-applied step so
           // collapseState never gets ahead of layoutResult by more than one
-          // in-flight ancestor.
-          collapseState.collapse(ancestorId);
+          // in-flight step.
+          //
+          // Sur une étape de révélation, le moteur garde le décalage déjà
+          // accumulé pour ce bloc : même approximation assumée que
+          // `doReveal`, dont le commentaire porte le raisonnement complet.
+          if (step.kind === "expand") collapseState.collapse(step.id);
+          else collapseState.unrevealPage(step.parentId, step.page);
           return;
         }
         layoutResult = next;
