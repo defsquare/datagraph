@@ -61,6 +61,7 @@ import {
   drawClusterHitAreas,
   drawClusters,
   drawNode,
+  drawRemainderToken,
   drawSearchHighlights,
   drawSelectionOverlay,
   drawSemanticDiscs,
@@ -70,6 +71,7 @@ import {
   edgeLabelPosition,
   labelParamInView,
   lodForScale,
+  REMAINDER_TOKEN_HEIGHT,
   type EdgeLabelPlacement,
   type Lod,
   TOKEN_HOVER_SHIFT,
@@ -306,6 +308,14 @@ export interface DataGraph {
  * survol est un repère, pas un événement.
  */
 const HOVER_LIFT = 0.025;
+
+/**
+ * L'écart qui sépare un jeton de reliquat de la carte qui l'ancre. Plus serré
+ * que l'écart entre cartes (`cardGap`, 16 px côté moteur) : le jeton appartient
+ * au bloc qu'il prolonge, et le poser à la distance d'une fratrie en ferait un
+ * objet flottant entre deux blocs plutôt que la suite de l'un d'eux.
+ */
+const REMAINDER_TOKEN_GAP = 8;
 
 // L'autre réglage d'œil de l'interaction, `DIM_ALPHA`, ne peut pas vivre ici :
 // il est partagé avec `drawEdges`, et `draw.ts` important ce fichier fermerait
@@ -774,6 +784,16 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   let edgeLabels: EdgeLabelPlacement[] = [];
   const edgeHitLayer = new Container();
   const nodesLayer = new Container();
+  // Les jetons de reliquat : un par bloc d'enfants-cartes non révélés, posé dans
+  // la colonne à la place qu'occuperaient ces cartes. Ce sont des
+  // PSEUDO-ÉLÉMENTS du renderer — jamais des nœuds du graphe, jamais des boîtes
+  // ELK : les faire entrer dans la mise en page les ferait participer au calcul
+  // qu'ils existent justement pour éviter.
+  //
+  // Calque à part, et AU-DESSUS des cartes : leur position est arithmétique et
+  // rien ne garantit qu'aucune carte ne les recouvre (un déplacement de carte
+  // suffit), or un jeton recouvert n'attraperait plus le clic qui le révèle.
+  const remainderLayer = new Container();
   // Les arêtes restent SOUS les cartes, au repos : une référence remonte
   // souvent vers la gauche et traverserait les cartes qui la séparent de sa
   // cible, ce qui surchargerait la lecture pour un gain nul la plupart du
@@ -789,6 +809,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     edgesGraphics,
     edgeHitLayer,
     nodesLayer,
+    remainderLayer,
     overlayGraphics,
   );
 
@@ -1701,12 +1722,91 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     // qu'elle montrait quand la boucle vivait ici.
     syncCards();
 
+    redrawRemainderTokens();
     redrawOverlay();
     // `applyFocusDim()` n'a plus lieu d'être ici : chaque carte reçoit son
     // filtre à sa création (`createCard`), ce qui est la seule façon de tenir
     // l'estompage pour une carte matérialisée plus tard. La fonction reste,
     // pour les changements de sélection, qui doivent bien repasser sur les
     // cartes DÉJÀ dessinées.
+  }
+
+  /**
+   * Repeint le calque des jetons de reliquat : un jeton par bloc d'enfants-cartes
+   * non révélés, à la place que ces cartes occuperaient dans la colonne.
+   *
+   * La position est ARITHMÉTIQUE et non issue d'ELK, et c'est le cœur du
+   * dispositif : un jeton mis en page serait une boîte de plus dans le calcul,
+   * or il existe précisément pour que les 47 300 cartes qu'il remplace n'y
+   * entrent pas. Il se raccroche donc à une carte voisine déjà posée — celle
+   * d'avant si le bloc précédent est là (le jeton prolonge la colonne), sinon
+   * celle d'après (le jeton la précède).
+   *
+   * Le jeton emprunte la LARGEUR de cette voisine : sa taille dit « ici, des
+   * cartes comme celles-là », ce qu'une largeur propre ne dirait pas.
+   */
+  function redrawRemainderTokens(): void {
+    for (const child of remainderLayer.removeChildren()) child.destroy({ children: true });
+    // La pagination est un fait de la vue STRUCTURE : la vue graphe ne plie ni
+    // ne révèle rien, et y poser des jetons annoncerait un geste sans effet.
+    // Même politique que les chevrons, lue au même endroit.
+    const g = graph;
+    if (!g || !collapseState || !viewPolicy().foldable) return;
+    const positions = activePositions();
+    if (!positions) return;
+
+    for (const id of collapseState.visibleNodeIds()) {
+      // `hiddenGaps` ne regarde QUE les pages : il rapporte les mêmes trous pour
+      // un nœud REPLIÉ, dont pourtant aucun enfant n'est à l'écran. Le pli se
+      // teste donc ici, et il n'a pas d'autre site où se tester : un jeton posé
+      // sous une carte repliée pendrait dans le vide, à côté d'une colonne
+      // d'enfants qui n'existe pas.
+      if (!collapseState.isExpanded(id)) continue;
+      const gaps = collapseState.hiddenGaps(id);
+      if (gaps.length === 0) continue;
+      const node = g.nodes.get(id);
+      if (!node) continue;
+      // Les enfants-CARTES, dans l'ordre de `childIds` : c'est l'indexation dont
+      // parlent les trous. Les élidés sont des lignes de la carte de `id`, donc
+      // les compter décalerait tous les indices d'un jeton à l'autre.
+      const cards = node.childIds.filter((childId) => g.nodes.get(childId)?.elided === false);
+
+      for (const gap of gaps) {
+        let anchor: Rect | undefined;
+        let below = true;
+        for (let i = gap.fromIndex - 1; i >= 0 && !anchor; i--) anchor = positions.get(cards[i]!);
+        if (!anchor) {
+          below = false;
+          for (let i = gap.fromIndex + gap.count; i < cards.length && !anchor; i++) {
+            anchor = positions.get(cards[i]!);
+          }
+        }
+        // Aucune carte posée de part et d'autre du trou. Ne devrait pas arriver
+        // pour un nœud déplié et visible — il a au moins une page révélée — mais
+        // dessiner sans ancre reviendrait à inventer une position.
+        if (!anchor) continue;
+
+        const token = drawRemainderToken({
+          count: gap.count,
+          width: anchor.width,
+          theme,
+          metrics,
+          useBitmapText,
+        });
+        token.position.set(
+          anchor.x,
+          below
+            ? anchor.y + anchor.height + REMAINDER_TOKEN_GAP
+            : anchor.y - REMAINDER_TOKEN_HEIGHT - REMAINDER_TOKEN_GAP,
+        );
+        // `attachTap` et non un `pointertap` nu : il pose bien `eventMode` et le
+        // curseur, mais il ajoute surtout le seuil que partage `attachDrag` —
+        // sans lui, un pan de la caméra commencé sur un jeton révélerait une page
+        // au relâchement, alors que le geste demandé était un déplacement.
+        attachTap(token, () => void doReveal(id, gap.nextPage));
+        remainderLayer.addChild(token);
+      }
+    }
   }
 
   /**
@@ -2129,6 +2229,43 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       // de la vue structure : elle traverse les vues, et le dégât ne se voit
       // qu'au retour en vue structure.
       collapseState.collapse(id);
+      return;
+    }
+    layoutResult = next;
+    rebuild();
+    animatePositions(prevPositions, layoutResult.positions);
+  }
+
+  /**
+   * Révèle une page d'enfants-cartes de `parentId` : le geste du jeton de
+   * reliquat.
+   *
+   * Frère de `doExpand`, et distinct de lui pour une raison de MISE EN PAGE et
+   * non d'état : déplier ouvre un sous-arbre À CÔTÉ de son ancre, révéler
+   * insère un bloc DANS une colonne déjà posée et pousse ce qui est dessous.
+   * D'où `layoutAfterReveal`, et d'où le fait qu'un jeton n'est pas un chevron.
+   */
+  async function doReveal(parentId: NodeId, page: number): Promise<void> {
+    if (!graph || !collapseState || !layoutResult || !engine) return;
+    if (collapseState.revealedPages(parentId).has(page)) return;
+    const gen = ++opGen;
+    collapseState.revealPage(parentId, page);
+    const visible = collapseState.visibleNodeIds();
+    const prevPositions = new Map(layoutResult.positions);
+    const next = await engine.layoutAfterReveal(layoutResult, graph, parentId, visible, metrics);
+    if (destroyed || gen !== opGen) {
+      // Même retour arrière que `doExpand`, et pour la même raison :
+      // `collapseState` ne doit jamais devancer `layoutResult`, sans quoi il
+      // déclare visibles des cartes qu'aucune position ne porte.
+      //
+      // APPROXIMATION ASSUMÉE : le moteur, lui, a déjà accumulé le décalage de
+      // ce bloc dans sa mémoire privée (`expansionDeltas`), et rien ici ne le
+      // lui retire — cette page révélée puis jetée y laisse donc une trace, et
+      // les prochaines poses sous `parentId` seront décalées d'autant. C'est
+      // toléré : la course est rare (il faut une seconde opération pendant
+      // l'aller-retour du layout) et le prochain `tidy()` ou la prochaine mise
+      // en page globale répare. Ce n'est pas un oubli.
+      collapseState.unrevealPage(parentId, page);
       return;
     }
     layoutResult = next;

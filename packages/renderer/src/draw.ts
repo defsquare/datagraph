@@ -263,6 +263,75 @@ function drawArrayToken(
 }
 
 /**
+ * Hauteur du jeton de reliquat, et son rayon d'arrondi. Plus haute que la
+ * pilule d'une ligne-tableau, parce que ce jeton-ci tient la place de CARTES
+ * dans une colonne et non celle d'une valeur dans une ligne : trop bas, il se
+ * lirait comme un séparateur plutôt que comme un bloc escamoté.
+ *
+ * Exportée parce que l'appelant en a besoin pour l'ANCRAGE : posé au-dessus de
+ * la carte qui le suit, le jeton doit remonter de sa propre hauteur, que rien
+ * d'autre ne lui apprend.
+ */
+export const REMAINDER_TOKEN_HEIGHT = 22;
+
+/**
+ * Le jeton qui tient la place d'un bloc d'enfants-cartes non révélés : « + 47300 ».
+ *
+ * Il est dessiné en (0,0) dans son espace local — c'est l'appelant qui le pose,
+ * puisque lui seul connaît les positions des cartes voisines qui l'ancrent.
+ *
+ * Le compte NU plutôt qu'une formule (« 47300 de plus », « avant », « après ») :
+ * c'est la POSITION du jeton dans la colonne qui dit de quel côté est le trou,
+ * et un libellé qui le redirait serait une seconde source à tenir d'accord avec
+ * l'arithmétique d'ancrage. Le « + » suffit à annoncer que le clic ajoute.
+ *
+ * Le paramètre `width` vient de la carte d'ancrage et jamais du texte : un jeton
+ * à la largeur de son libellé flotterait au milieu d'une colonne dont il est
+ * censé occuper le gabarit. C'est aussi pourquoi le libellé est TRONQUÉ ici —
+ * sur une colonne étroite, c'est lui qui cède, pas la pilule.
+ */
+export function drawRemainderToken(opts: {
+  count: number;
+  width: number;
+  theme: Theme;
+  metrics?: NodeMetrics;
+  useBitmapText?: boolean;
+}): Container {
+  const { count, width, theme } = opts;
+  const metrics = opts.metrics ?? DEFAULT_METRICS;
+  const token = new Container();
+  token.label = "remainder-token";
+
+  // Le fond reprend la surface ATTÉNUÉE des cartes non-entités, comme les nœuds
+  // conteneurs : le jeton est de la même famille que ce qu'il remplace, en
+  // retrait. La bordure et l'arrondi sont ceux des cartes, pour la même raison —
+  // un rayon propre en ferait un objet d'une autre nature dans la colonne.
+  const rest = new Graphics();
+  rest.label = "rest";
+  rest
+    .roundRect(0, 0, width, REMAINDER_TOKEN_HEIGHT, theme.radii.card)
+    .fill(theme.surface.cardMuted)
+    .stroke({ width: theme.strokes.border, color: theme.edge.border });
+  token.addChild(rest);
+
+  const charWidth = charWidthFor("value", metrics);
+  const budget = width - 2 * metrics.tokenPaddingX;
+  const text = truncateToWidth(`+ ${count}`, budget, charWidth);
+  if (text.length > 0) {
+    const label = createLabel(text, theme, "value", theme.ink.muted, opts.useBitmapText ?? false);
+    // Centré : le jeton occupe toute la largeur de la colonne, et un libellé
+    // calé à gauche laisserait une pilule qui paraît vide.
+    label.position.set(
+      Math.round(width / 2 - label.width / 2),
+      Math.round(REMAINDER_TOKEN_HEIGHT / 2 - label.height / 2),
+    );
+    token.addChild(label);
+  }
+
+  return token;
+}
+
+/**
  * Dessine le visuel d'un nœud, positionné en (0,0) dans son espace local
  * (l'appelant le place à `rect.x`/`rect.y`).
  *
