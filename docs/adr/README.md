@@ -46,3 +46,4 @@ or spec that introduced the decision.
 | 0026 | [Graph view at scale: spatial grid, culling, semantic zoom, worker](./0026-graph-view-at-scale.md) | 2026-09-07 | Accepted |
 | 0027 | [`packages/tokens`, the single source of truth for the design system](./0027-tokens-single-source-of-truth.md) | 2026-09-07 | Accepted |
 | 0028 | [`apps/design`: a never-published playground, aliased to the sources](./0028-design-playground-source-aliases.md) | 2026-09-07 | Accepted |
+| 0029 | [Chrome primitives as a shared private package](./0029-chrome-primitives-shared-package.md) | 2026-09-07 | Accepted |
