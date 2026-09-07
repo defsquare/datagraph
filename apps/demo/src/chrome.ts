@@ -164,9 +164,34 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
     toggleViewBtn.setAttribute("aria-label", label);
   }
 
+  /**
+   * Marque le bouton de bascule comme OCCUPÉ pendant le calcul de la vue.
+   *
+   * Il y a désormais quelque chose à signaler : la mise en page de la vue graphe
+   * est partie dans un Web Worker, donc la page reste vivante pendant les
+   * secondes que dure le calcul sur un gros jeu — on peut continuer à déplacer
+   * et zoomer la vue structure. C'est exactement ce qui rend l'indication
+   * nécessaire : sans elle, une interface parfaitement réactive qui ne bascule
+   * pas se lit comme un clic perdu.
+   *
+   * `aria-busy` porte l'information et la classe porte le style : l'attribut est
+   * ce que lit une technologie d'assistance, et il sert de sélecteur CSS, donc
+   * les deux ne peuvent pas se désynchroniser. `disabled` reste posé par
+   * ailleurs — deux bascules simultanées n'auraient aucun sens.
+   */
+  function setViewBusy(busy: boolean): void {
+    if (!toggleViewBtn) return;
+    if (busy) toggleViewBtn.setAttribute("aria-busy", "true");
+    else toggleViewBtn.removeAttribute("aria-busy");
+  }
+
   toggleViewBtn?.addEventListener("click", () => {
     void (async () => {
       toggleViewBtn.disabled = true;
+      // Dans le `try`/`finally` avec `disabled` : les deux se lèvent dans TOUS
+      // les chemins — bascule réussie, échec avalé par `setView`, ou abandon
+      // parce qu'un `setData` concurrent a pris la main.
+      setViewBusy(true);
       try {
         const next = graph.currentView() === "graph" ? "structure" : "graph";
         await graph.setView(next);
@@ -182,6 +207,7 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
         // compteur de la barre d'état reste sur la valeur de l'autre vue.
         updateStatus();
       } finally {
+        setViewBusy(false);
         toggleViewBtn.disabled = false;
       }
     })();

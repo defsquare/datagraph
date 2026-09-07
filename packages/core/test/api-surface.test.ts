@@ -45,10 +45,24 @@ describe("api surface", () => {
     ])
   })
 
+  /**
+   * Les deux symboles ajoutés — `extractGraphLayoutInput` et `layoutFromInput`
+   * — le sont VOLONTAIREMENT, au sens exact du paragraphe ci-dessus : ils
+   * portent la moitié du contrat du Web Worker de la vue graphe. Le renderer
+   * extrait sur le thread principal (seul endroit où le `Graph` existe) et
+   * exécute le cœur pur dans le worker ; sans ces deux exports, la frontière ne
+   * serait franchissable que par une copie du moteur.
+   *
+   * Ils ne remplacent pas `createTwoLevelLayoutEngine`, qui reste le chemin en
+   * processus et le repli du worker — les trois vivent ensemble et se
+   * maintiennent ensemble.
+   */
   it("le point d'entrée `./graph-layout` exporte exactement ces symboles d'exécution", () => {
     expect(Object.keys(graphLayout).sort()).toEqual([
       "TWO_LEVEL_LAYOUT_DEFAULTS",
       "createTwoLevelLayoutEngine",
+      "extractGraphLayoutInput",
+      "layoutFromInput",
     ])
   })
 })

@@ -69,6 +69,16 @@ try {
     // rather than failing. The option is still passed end-to-end, so the demo
     // exercises the wiring even where the browser gets no real worker.
     elkWorkerUrl: new URL("elkjs/lib/elk-worker.min.js", import.meta.url),
+    // La mise en page de la vue graphe hors du thread principal. Même forme que
+    // l'URL d'elk juste au-dessus, et la même reconnue par Vite ; ce que chacun
+    // des quatre modes d'exécution en fait est détaillé dans `vite.config.ts`,
+    // qui porte aussi l'alias de dev vers la source du worker.
+    //
+    // Sur l'audit réel (6 251 entités), c'est ce qui sépare une bascule de vue
+    // qui gèle la page ~4,4 s d'une bascule pendant laquelle la vue structure
+    // reste manipulable. Sans cette ligne, tout continue de marcher : le
+    // renderer calcule en processus.
+    graphLayoutWorkerUrl: new URL("@defsquare/data-graph/graph-layout-worker", import.meta.url),
   });
 } catch (error) {
   // `createDataGraph` valide la config en synchrone : une config

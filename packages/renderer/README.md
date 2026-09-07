@@ -250,8 +250,8 @@ await graph.setView("graph");     // and switch again
 **Dynamic import.** The first switch to `"graph"` dynamically imports the layout
 engine, which is why `setView` returns a promise. That import is isolated behind
 the dynamic `import()`: in a Vite production build (see
-[`apps/demo`](../../apps/demo)) it lands in its own chunk — **2.64 kB gzip**,
-5.76 kB raw, measured — and never enters the bundle of a consumer that only ever
+[`apps/demo`](../../apps/demo)) it lands in its own chunk — **3.58 kB gzip**,
+7.80 kB raw, measured — and never enters the bundle of a consumer that only ever
 uses the structure view. Two tests guard it, one per half of the chain:
 `packages/core/test/bundle-purity.test.ts` walks the built chunk closure of the
 core's main entry point, so a careless barrel export can't regress it, and
@@ -264,7 +264,7 @@ That chunk used to weigh **180.28 kB gzip** (577.17 kB raw), essentially all of
 it `cytoscape` and its `fcose` plugin, which the previous layout engine imported.
 That engine has been removed and both dependencies with it — hence the factor of
 68. Be clear about what this does to the guarantee above: in kilobytes, it now
-guards almost nothing, and a regression would cost 2.64 kB. Both tests are kept
+guards almost nothing, and a regression would cost 3.58 kB. Both tests are kept
 anyway, and their own comments say why: they hold the *shape* — the graph view
 loads lazily by construction, so whatever weight this view acquires next is lazy
 by default rather than by review.
@@ -366,6 +366,51 @@ object without depending on `@defsquare/data-graph-core` directly.
 > `separationMargin`'s old default) instead of being converged towards. Passing
 > the retired keys is a type error, which is the intent: silently accepting and
 > ignoring them would be worse.
+
+### Off-main-thread layout — `graphLayoutWorkerUrl`
+
+The two-level engine is fast, but it is *synchronous*: on a real architecture
+audit — 6,251 entities, ~1,300 aggregates — it spends **~4.4 s** placing discs,
+and on the main thread that is 4.4 s of frozen page. No rendering, no panning,
+no zooming, no way to cancel. Point `graphLayoutWorkerUrl` at the worker this
+package publishes and that computation moves to a Web Worker:
+
+```ts
+const graph = createDataGraph(container, {
+  data,
+  config,
+  graphLayoutWorkerUrl: new URL("@defsquare/data-graph/graph-layout-worker", import.meta.url),
+});
+```
+
+Measured on that audit, in Chromium, `setView("graph")` from the structure view
+(median of three runs each):
+
+| | in-process | worker |
+| --- | --- | --- |
+| total `setView` | 4,480–4,536 ms | 4,753–4,765 ms |
+| longest main-thread long task | **4,406–4,464 ms** | **356–364 ms** (applying the result) |
+| long tasks while the layout runs | that one | none, or one 57–62 ms extraction |
+| frames rendered while waiting | 5 | 311–330 |
+
+The total is ~5 % longer — the price of the structured clone and of starting the
+worker — and the wall of frozen time is gone: what remains on the main thread is
+the *extraction* (reading the graph into a flat, clonable input) and the
+*application* (publishing, refitting, rebuilding the cards), both of which the
+in-process path pays too. The structure view stays pannable and zoomable
+throughout.
+
+The option is safe to pass unconditionally. On the **first** failure — the URL
+won't load, `Worker` doesn't exist, the layout throws — the instance warns once
+and replays that layout in-process, permanently for the session. The worst case
+is exactly the behaviour you get without the option; it is never a view that
+fails to appear. `destroy()` terminates the worker.
+
+The worker is a self-contained ES module (the pure layout core is bundled into
+it), so it must be loaded with `{ type: "module" }` — which is what the renderer
+does. Bundlers that understand `new URL(specifier, import.meta.url)` resolve it
+through the package's `exports`; see `apps/demo/vite.config.ts` in this
+repository for the dev/build/Tauri/headless breakdown.
 
 **Selection carry-over.** The graph view only knows entities — a structure
 node nested under one (e.g. an address object) has no counterpart there.

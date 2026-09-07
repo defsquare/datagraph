@@ -100,6 +100,9 @@ const graph = createDataGraph(container, {
   // Best-effort Web Worker offload for the ELK layout pass; falls back
   // in-process automatically if the worker can't be spun up.
   elkWorkerUrl: new URL("elkjs/lib/elk-worker.min.js", import.meta.url),
+  // Same deal for the graph view's own layout, which is where the seconds are
+  // on large datasets. Same permanent in-process fallback on first failure.
+  graphLayoutWorkerUrl: new URL("@defsquare/data-graph/graph-layout-worker", import.meta.url),
 });
 
 await graph.ready;

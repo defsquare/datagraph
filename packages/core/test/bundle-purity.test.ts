@@ -16,9 +16,9 @@ import { dirname, join } from "node:path"
  * réexporter le point d'entrée depuis `index.ts` les imposait à tout
  * consommateur de la seule vue structure. Ce moteur et ces deux dépendances
  * sont retirés. Le chunk `graph-layout-*.js` du build Vite de production
- * d'`apps/demo` est tombé de **180,28 ko gzip à 2,64 ko** — mesuré —, et une
- * fusion accidentelle coûterait donc aujourd'hui 2,64 ko sur un bundle de
- * 552 ko. En kilo-octets, ce test ne garde plus rien.
+ * d'`apps/demo` est tombé de **180,28 ko gzip à 3,58 ko** — mesuré —, et une
+ * fusion accidentelle coûterait donc aujourd'hui 3,58 ko sur un bundle de
+ * 559 ko. En kilo-octets, ce test ne garde plus rien.
  *
  * Il est gardé quand même, pour ce qui reste vérifiable et qui n'a pas de
  * substitut : que la vue graphe est atteignable UNIQUEMENT par le point

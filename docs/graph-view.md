@@ -145,7 +145,7 @@ O(k² · iterations) on k discs plus a linear packing.
 | Envelope fidelity | The disc that gets spaced is the disc that gets painted: each emitted `ClusterShape` matches the minimal enclosing circle recomputed from the final card positions to 1e-6, every member's corners lie inside it, and only real aggregates emit one | `packages/core/test/graph-layout.test.ts` |
 | Jitter never weakens a guarantee | The virtual inflation applies to the simulation only: the final hard pass uses the true radius, and the emitted `ClusterShape` radii are **bit-identical** between `jitter: 0` and `jitter: 64` while the positions differ. Nearest-neighbour minimum stays at exactly `clusterGap` at every amplitude measured (0, 16, 32, 48, 64) | `packages/core/test/graph-layout.test.ts` |
 | `setView("graph")` on the demo's 350-entity dataset | **Measured, not enforced.** 220–252 ms in Chromium over three isolated Playwright runs — in the **dev server**, unminified, against the workspace *sources* (see below), so it is not a figure for published, bundled code. The committed assertion is only a 30 s ceiling; the number is logged, not asserted, because a CI machine is not a developer's | `apps/demo/e2e/view.spec.ts` |
-| `@defsquare/data-graph` bundle purity | The graph view never enters a consumer's bundle unless it calls `setView("graph")` — the structure view alone doesn't pull it in. **What this is worth in kilobytes has collapsed, and the tests say so**: the chunk it keeps out is **2.64 kB gzip** (5.76 kB raw), so a regression would now cost 2.64 kB on a 552 kB bundle. Both tests are kept for the *shape* they hold — the view loads lazily by construction, so whatever weight lands behind it next inherits that — not for the kilobytes | `packages/core/test/bundle-purity.test.ts` (core half) + `packages/renderer/test/bundle-purity.test.ts` (renderer half) |
+| `@defsquare/data-graph` bundle purity | The graph view never enters a consumer's bundle unless it calls `setView("graph")` — the structure view alone doesn't pull it in. **What this is worth in kilobytes has collapsed, and the tests say so**: the chunk it keeps out is **3.58 kB gzip** (7.80 kB raw), so a regression would now cost 3.58 kB on a 559 kB bundle. Both tests are kept for the *shape* they hold — the view loads lazily by construction, so whatever weight lands behind it next inherits that — not for the kilobytes | `packages/core/test/bundle-purity.test.ts` (core half) + `packages/renderer/test/bundle-purity.test.ts` (renderer half) |
 
 **About the e2e numbers.** `apps/demo/playwright.config.ts` starts the app with
 `pnpm dev`, and `apps/demo/vite.config.ts` aliases the workspace packages to
@@ -283,14 +283,51 @@ again.
 
 Switching to the graph view for the first time dynamically imports the
 `graph-layout` entry point, and a Vite production build of
-[`apps/demo`](../apps/demo) emits it as its own chunk — **2.64 kB gzip**
-(5.76 kB raw), against a 552.04 kB gzip main chunk.
+[`apps/demo`](../apps/demo) emits it as its own chunk — **3.58 kB gzip**
+(7.80 kB raw), against a 559.24 kB gzip main chunk.
 
-The entry point stays separate, and the honest reason is not weight: 2.64 kB does
+The entry point stays separate, and the honest reason is not weight: 3.58 kB does
 not justify an architecture. It stays because the laziness is then a property of
 the shape rather than of a review — `setView` is async for that reason, and
 whatever the graph view pulls in next is lazy by default — and because
 `./graph-layout` is a published subpath export.
+
+## The layout runs in a Web Worker
+
+The engine is deterministic and synchronous, and on a real architecture audit —
+6,251 entities, ~1,300 aggregates — it spends **~4.4 s** in `layout()`. Fast is
+not the same as non-blocking: on the main thread those 4.4 s are one long task,
+so nothing renders, nothing pans, nothing zooms, and the switch looks like a
+hang.
+
+The engine is therefore **split in two**, both exported from the `graph-layout`
+entry point:
+
+* `extractGraphLayoutInput(graph, aggregates, visible, metrics, options)` — the
+  only part that reads the `Graph`. It reads exactly three things (the visible
+  entity ids, `measureNode` on each, and `graph.refEdges`) and returns a **flat,
+  structured-clonable** `GraphLayoutInput`. A `Graph` cannot cross a
+  `postMessage`; this can.
+* `layoutFromInput(input)` — everything else. Pure: no graph, no DOM, no
+  environment. It runs on either side of the boundary.
+
+`createTwoLevelLayoutEngine` is now their composition and keeps its exact
+signature: it is still the in-process path and still the worker's fallback. The
+split changes **no bit of the output** — that is asserted against digests
+captured before the refactor, on three fixtures chosen to exercise shelves,
+radial packing and inter-aggregate springs
+(`packages/core/test/graph-layout-identity.test.ts`).
+
+The renderer takes the worker's URL through
+[`graphLayoutWorkerUrl`](../packages/renderer/README.md#off-main-thread-layout--graphlayoutworkerurl),
+extracts on the main thread, and computes in the worker. Responses carry a
+generation number and only settle the request that carries the same one; the
+first failure of any kind warns once and falls back in-process for the rest of
+the session; `destroy()` terminates the worker. Measured on the audit above,
+`setView("graph")` went from a single **4,406–4,464 ms** main-thread long task
+(5 frames rendered while waiting) to a longest long task of **356–364 ms** —
+which is applying the result, not computing it — and 311–330 frames, for ~5 %
+more wall-clock time.
 
 ## No folding
 

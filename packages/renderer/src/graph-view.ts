@@ -14,22 +14,100 @@ import {
 // `import type` UNIQUEMENT : ce point d'entrée porte la vue graphe et ne doit
 // entrer dans le bundle que de qui y bascule réellement. Un import de type ne
 // produit aucun code à l'exécution ; le seul chemin d'exécution vers le moteur
-// est l'`import()` dynamique d'`ensureEngine`, plus bas dans CE fichier.
+// est l'`import()` dynamique d'`ensureModule`, plus bas dans CE fichier.
 // `test/bundle-purity.test.ts` (côté renderer) garde ces deux lignes : le test
 // du cœur ne couvre que le `dist/` du cœur, pas ce fichier-ci.
 //
 // Ce que ces deux lignes valent a changé d'échelle depuis le retrait de
-// l'ancien moteur : 2,64 ko gzip au lieu de 180,28. Elles restent parce
+// l'ancien moteur : 3,58 ko gzip au lieu de 180,28. Elles restent parce
 // qu'elles tiennent la FORME — la vue graphe se charge à la demande par
 // construction — et non plus parce qu'elles tiennent un poids. Le raisonnement
 // complet est dans les deux tests de pureté.
 import type {
   ClusterShape,
   GraphLayoutEngine,
+  GraphLayoutInput,
   GraphLayoutResult,
   TwoLevelLayoutOptions,
 } from "@defsquare/data-graph-core/graph-layout";
 import { clusterDimmed } from "./focus.js";
+
+/**
+ * LE PROTOCOLE DU WORKER DE MISE EN PAGE, déclaré ici parce que c'est ici qu'il
+ * est parlé : le worker (`graph-layout-worker.ts`) n'en importe que les types,
+ * par un `import type` que le bundler efface. Aucun code ne traverse donc dans
+ * ce sens-là — le worker ne tire que le cœur pur du layout.
+ *
+ * `gen` est le NUMÉRO DE REQUÊTE, et le contrat est qu'une réponse ne vaut que
+ * pour la requête qui porte le même. Un `setData`, un `setView` ou un `destroy`
+ * peuvent atterrir pendant les secondes que dure un calcul ; sans ce numéro, une
+ * réponse tardive serait indiscernable de celle qu'on attend et publierait des
+ * positions calculées sur un graphe qui n'existe plus.
+ */
+export interface GraphLayoutWorkerRequest {
+  gen: number;
+  input: GraphLayoutInput;
+}
+
+/**
+ * La réponse, dans une forme choisie pour le CLONAGE STRUCTURÉ et pas pour la
+ * commodité de lecture.
+ *
+ * `positions` est un tableau de tuples `[id, x, y, w, h]` et non une `Map` de
+ * `Rect` : à 6 251 cartes, c'est un tableau plat de nombres au lieu de 6 251
+ * petits objets à allouer et à cloner des deux côtés de la frontière. Le
+ * contrôleur les réhydrate en `Rect` mutables (voir `hydrateLayout`).
+ *
+ * L'échec voyage comme un MESSAGE et pas comme une `Error` : une exception ne
+ * traverse pas `postMessage`, et ce qui compte au retour est de savoir qu'il
+ * faut se replier — le détail va dans le `console.warn` du repli.
+ */
+export type GraphLayoutWorkerResponse =
+  | {
+      gen: number;
+      ok: true;
+      positions: [NodeId, number, number, number, number][];
+      clusters: ClusterShape[];
+    }
+  | { gen: number; ok: false; message: string };
+
+/** Ce que le contrôleur fait d'un worker : lui poster une requête, et le
+ * terminer. Le reste — la construction, l'URL, `new Worker` — appartient à
+ * l'orchestrateur (`create.ts`), qui est le seul à connaître le DOM. */
+export interface GraphLayoutWorkerHandle {
+  post(request: GraphLayoutWorkerRequest): void;
+  terminate(): void;
+}
+
+/**
+ * La fabrique de worker, injectée par l'appelant.
+ *
+ * C'est une FONCTION et non une URL, pour que ce module reste ce qu'il a
+ * toujours été : une machine de données, sans `new Worker` ni la moindre
+ * hypothèse d'environnement. `create.ts` en construit une depuis
+ * `DataGraphOptions.graphLayoutWorkerUrl` ; les tests en injectent une qui rend
+ * un faux worker, ce qui rend le protocole testable sans navigateur.
+ *
+ * Elle a le droit de LEVER (URL injouable, `Worker` absent) : l'appel est gardé
+ * et un échec de construction déclenche le même repli définitif qu'un échec de
+ * calcul.
+ */
+export type GraphLayoutWorkerSpawn = (
+  onMessage: (data: unknown) => void,
+  onError: (error: unknown) => void,
+) => GraphLayoutWorkerHandle;
+
+/**
+ * Le namespace du point d'entrée `./graph-layout`, tel que l'`import()`
+ * dynamique d'`ensureModule` le rend.
+ *
+ * `typeof import(…)` est une position de TYPE : elle n'émet aucun code, donc
+ * elle ne rouvre pas la porte que les deux tests de pureté ferment. Il en faut
+ * un nom parce que le contrôleur garde ce namespace en variable — le chemin
+ * worker y prend `extractGraphLayoutInput`, le chemin en processus
+ * `createTwoLevelLayoutEngine`, et les deux `TWO_LEVEL_LAYOUT_DEFAULTS`.
+ */
+type GraphLayoutModule = typeof import("@defsquare/data-graph-core/graph-layout");
 
 /**
  * Le lien entre DEUX AGRÉGATS, et le nombre de références qu'il résume.
@@ -312,6 +390,16 @@ export interface GraphViewHooks {
    * autre taille que celles qui sont peintes.
    */
   getMetrics(): NodeMetrics;
+  /**
+   * De quoi ouvrir le Web Worker de mise en page, ou `undefined` pour rester en
+   * processus.
+   *
+   * `undefined` est le DÉFAUT et pas un mode dégradé : c'est ce que voient
+   * vitest, un hôte sans worker, et tout consommateur qui n'a pas fourni
+   * `graphLayoutWorkerUrl`. Le comportement y est exactement celui d'avant le
+   * worker — même moteur, même sortie, même thread.
+   */
+  spawnLayoutWorker?: GraphLayoutWorkerSpawn | undefined;
 }
 
 export interface GraphViewController {
@@ -353,6 +441,22 @@ export interface GraphViewController {
    * ne survivent pas à un changement de données. Les invalider séparément
    * laisserait un couple dépareillé le temps d'une instruction. */
   invalidate(): void;
+  /**
+   * Termine le worker de mise en page, s'il y en a un, et fait échouer les
+   * calculs encore en vol.
+   *
+   * Distinct d'`invalidate()`, qui jette l'état PUBLIÉ et laisse le contrôleur
+   * utilisable : celui-ci est définitif, et c'est ce que `destroy()` côté
+   * instance appelle. Sans lui, un worker survivrait à l'instance qui l'a
+   * ouvert et continuerait à mouliner 4 s de mise en page pour personne.
+   *
+   * Les requêtes en vol sont REJETÉES plutôt que laissées en suspens : un
+   * `setView` qui attendait doit se terminer, pas geler son appelant (et le
+   * bouton qu'il a mis en attente). Le rejet ne déclenche PAS le repli en
+   * processus — rejouer 4 s de calcul pour une instance détruite serait
+   * exactement le gel qu'on vient de supprimer.
+   */
+  destroy(): void;
 
   /** Les positions publiées, `undefined` tant que rien ne l'a été. */
   positions(): Map<NodeId, Rect> | undefined;
@@ -465,10 +569,29 @@ export function createGraphViewController(hooks: GraphViewHooks): GraphViewContr
   // agrégats ni le chargement du moteur.
   let aggregateIndex: AggregateIndex | undefined;
   let graphLayout: GraphLayoutResult | undefined;
+  // Le NAMESPACE du point d'entrée `./graph-layout`, gardé plutôt que le seul
+  // moteur : le chemin worker en tire aussi `extractGraphLayoutInput`, et le
+  // chemin en processus reste construit depuis lui.
+  let graphModule: GraphLayoutModule | undefined;
   let graphEngine: GraphLayoutEngine | undefined;
-  // Renseignée en même temps que le moteur, dont elle sort : le défaut vient du
-  // cœur (voir `ensureEngine`), jamais d'une copie locale du nombre.
+  // Renseignée en même temps que le module, dont elle sort : le défaut vient du
+  // cœur (voir `ensureModule`), jamais d'une copie locale du nombre.
   let graphHullPadding = 0;
+
+  // --- Le worker de mise en page, et le peu d'état qu'il demande.
+  let workerHandle: GraphLayoutWorkerHandle | null = null;
+  // Vrai dès le premier échec, et pour toute la session : voir `retireWorker`.
+  let workerRetired = false;
+  let controllerDestroyed = false;
+  // Le numéro de la prochaine requête. Monotone et jamais réinitialisé, y
+  // compris après un `invalidate()` : deux requêtes de la même session ne
+  // doivent jamais partager un numéro, sans quoi la réponse de l'une pourrait
+  // résoudre l'autre.
+  let workerGen = 0;
+  const pendingByGen = new Map<
+    number,
+    { resolve: (result: GraphLayoutResult) => void; reject: (error: unknown) => void }
+  >();
   // Les références repliées sur les agrégats, publiées avec le reste.
   let semanticEdgeList: AggregateEdge[] = [];
   // Les libellés prêts à peindre, publiés avec le reste : préfixe commun déjà
@@ -486,9 +609,16 @@ export function createGraphViewController(hooks: GraphViewHooks): GraphViewContr
   const NO_CLUSTERS: ClusterShape[] = [];
 
   /**
-   * Charge le moteur de la vue graphe à la demande.
+   * Charge le POINT D'ENTRÉE de la vue graphe à la demande — le namespace, pas
+   * seulement le moteur.
    *
-   * C'est `createTwoLevelLayoutEngine` — packing en étagères intra-agrégat,
+   * Le namespace, parce qu'il y a désormais deux chemins qui en tirent des
+   * choses différentes : le chemin en processus prend `createTwoLevelLayoutEngine`
+   * (voir `ensureEngine`), le chemin worker prend `extractGraphLayoutInput` pour
+   * faire, ici, la seule moitié du calcul qui ait besoin du `Graph`. Les deux
+   * prennent `TWO_LEVEL_LAYOUT_DEFAULTS`.
+   *
+   * Le moteur, lui, c'est `createTwoLevelLayoutEngine` — packing en étagères intra-agrégat,
    * puis simulation sur les agrégats devenus disques rigides —, et c'est le
    * seul depuis le retrait de `createGraphLayoutEngine` (fcose +
    * `separateOverlaps` + `separateClusters`) et de `cytoscape` avec lui. La
@@ -499,16 +629,15 @@ export function createGraphViewController(hooks: GraphViewHooks): GraphViewContr
    * passé de 4 310–4 484 ms à 220–252 ms.
    *
    * L'`import()` reste dynamique. Le chunk qu'émet le build Vite de production
-   * d'`apps/demo` ne pèse plus que **2,64 ko gzip** (5,76 ko bruts, contre
+   * d'`apps/demo` ne pèse plus que **3,58 ko gzip** (7,80 ko bruts, contre
    * 180,28 / 577,17 avant le retrait), donc ce n'est plus le poids qui justifie
    * la paresse : c'est qu'elle est la forme par défaut de cette vue, et que
    * `setView` est asynchrone pour cette raison. Les deux tests de pureté de
    * bundle portent le raisonnement complet.
    */
-  async function ensureEngine(): Promise<GraphLayoutEngine> {
-    if (!graphEngine) {
-      const mod = await import("@defsquare/data-graph-core/graph-layout");
-      graphEngine = mod.createTwoLevelLayoutEngine(hooks.layoutOptions);
+  async function ensureModule(): Promise<GraphLayoutModule> {
+    if (!graphModule) {
+      graphModule = await import("@defsquare/data-graph-core/graph-layout");
       // C'est ici, et NULLE PART ailleurs, qu'on apprend la marge d'enveloppe
       // par défaut : le namespace du module chargé la porte, donc le renderer
       // la connaît sans en garder de copie et sans importer statiquement ce
@@ -516,9 +645,176 @@ export function createGraphViewController(hooks: GraphViewHooks): GraphViewContr
       // déplacement d'une carte en a besoin pour recalculer les disques comme
       // le moteur les a calculés, et il n'y a de disques qu'en vue graphe,
       // c'est-à-dire exactement quand ce module est déjà chargé.
-      graphHullPadding = hooks.layoutOptions?.hullPadding ?? mod.TWO_LEVEL_LAYOUT_DEFAULTS.hullPadding;
+      graphHullPadding =
+        hooks.layoutOptions?.hullPadding ?? graphModule.TWO_LEVEL_LAYOUT_DEFAULTS.hullPadding;
     }
+    return graphModule;
+  }
+
+  /**
+   * Le moteur EN PROCESSUS, construit une fois sur le module déjà chargé.
+   *
+   * Il reste le chemin par défaut (pas d'URL de worker : vitest, headless, hôte
+   * sans worker) ET le repli du worker. Le construire paresseusement ici plutôt
+   * qu'au chargement du module évite de l'allouer dans la session qui n'utilise
+   * que le worker et n'échoue jamais.
+   */
+  async function ensureEngine(): Promise<GraphLayoutEngine> {
+    const mod = await ensureModule();
+    if (!graphEngine) graphEngine = mod.createTwoLevelLayoutEngine(hooks.layoutOptions);
     return graphEngine;
+  }
+
+  /**
+   * Ouvre le worker au PREMIER besoin, et le garde pour la session.
+   *
+   * Un seul worker, réutilisé : le démarrer coûte le chargement d'un module, et
+   * une bascule de vue peut se répéter. Il est ouvert à la première mise en page
+   * et non à la construction du contrôleur, pour la raison qui vaut déjà pour le
+   * moteur — un consommateur de la seule vue structure ne paie rien de la vue
+   * graphe.
+   *
+   * Rend `null` dès que le worker est hors jeu : pas d'URL fournie, ou repli
+   * définitif déjà déclenché.
+   */
+  function ensureWorker(): GraphLayoutWorkerHandle | null {
+    if (workerRetired || !hooks.spawnLayoutWorker) return null;
+    if (workerHandle) return workerHandle;
+    try {
+      workerHandle = hooks.spawnLayoutWorker(onWorkerMessage, onWorkerError);
+    } catch (err) {
+      // Une construction qui lève (URL injouable, chunk absent, `Worker` absent)
+      // se traite exactement comme un calcul qui échoue.
+      retireWorker(err);
+      return null;
+    }
+    return workerHandle;
+  }
+
+  /**
+   * LE REPLI, et il est DÉFINITIF pour la session.
+   *
+   * Même discipline que le repli d'`elkWorkerUrl` côté vue structure : au
+   * premier échec, on avertit une fois et on rejoue en processus, pour toujours.
+   * Pas de seconde chance et pas de délai d'attente arbitraire — les deux causes
+   * réelles (URL qui ne se charge pas, environnement sans worker utilisable) ne
+   * se réparent pas d'un essai à l'autre, et un `setTimeout` sur un calcul dont
+   * on sait qu'il dure des secondes ne mesurerait qu'une opinion sur la vitesse
+   * de la machine.
+   *
+   * Les requêtes encore en vol sont rejetées : leurs appelants se replieront
+   * chacun de leur côté, ce qui est exactement la bonne chose — elles portent
+   * des graphes potentiellement différents.
+   */
+  function retireWorker(reason: unknown): void {
+    if (!workerRetired) {
+      workerRetired = true;
+      console.warn("[data-graph] graph layout via graphLayoutWorkerUrl failed, falling back to in-process layout", reason);
+    }
+    closeWorker(new Error("[data-graph] graph layout worker retired"));
+  }
+
+  /** Termine le worker et solde les requêtes en vol avec `reason`. */
+  function closeWorker(reason: Error): void {
+    workerHandle?.terminate();
+    workerHandle = null;
+    const inFlight = [...pendingByGen.values()];
+    pendingByGen.clear();
+    for (const entry of inFlight) entry.reject(reason);
+  }
+
+  /**
+   * L'arrivée d'une réponse. Toute la garde de génération tient dans la
+   * recherche : une réponse dont la génération n'a plus de requête en vol est
+   * JETÉE en silence — c'est le cas d'un worker qu'on vient de retirer ou de
+   * terminer, dont les messages déjà postés continuent d'arriver.
+   */
+  function onWorkerMessage(data: unknown): void {
+    const response = data as GraphLayoutWorkerResponse;
+    const entry = pendingByGen.get(response.gen);
+    if (!entry) return;
+    pendingByGen.delete(response.gen);
+    if (!response.ok) {
+      entry.reject(new Error(response.message));
+      return;
+    }
+    entry.resolve(hydrateLayout(response));
+  }
+
+  /** Une erreur du worker lui-même (et non d'un calcul) : rien ne dit quelle
+   * requête elle concerne, donc elle condamne le worker. */
+  function onWorkerError(error: unknown): void {
+    retireWorker(error);
+  }
+
+  /**
+   * Reconstruit la mise en page depuis la réponse.
+   *
+   * Les `Rect` sont alloués ici et les `ClusterShape` viennent du clonage
+   * structuré : dans les deux cas ce sont des OBJETS ORDINAIRES ET MUTABLES, et
+   * ce n'est pas un détail. Le déplacement d'une carte ou d'un agrégat mute les
+   * enveloppes et les rects EN PLACE (`translateCluster`,
+   * `recomputeClusterCircle` chez l'appelant), et les calques sémantiques
+   * relisent ces mêmes objets à chaque image. Une structure figée ou un
+   * `Object.freeze` de confort casserait le déplacement, et seulement lui.
+   */
+  function hydrateLayout(response: GraphLayoutWorkerResponse & { ok: true }): GraphLayoutResult {
+    const positions = new Map<NodeId, Rect>();
+    for (const [id, x, y, width, height] of response.positions) {
+      positions.set(id, { x, y, width, height });
+    }
+    return { positions, clusters: response.clusters };
+  }
+
+  /** Poste une requête et rend la promesse de SA réponse. */
+  function postToWorker(
+    worker: GraphLayoutWorkerHandle,
+    input: GraphLayoutInput,
+  ): Promise<GraphLayoutResult> {
+    const gen = ++workerGen;
+    return new Promise<GraphLayoutResult>((resolve, reject) => {
+      pendingByGen.set(gen, { resolve, reject });
+      try {
+        worker.post({ gen, input });
+      } catch (err) {
+        // Un `postMessage` qui lève (entrée non clonable) ne produira jamais de
+        // réponse : sans ce rattrapage la promesse resterait en suspens à vie.
+        pendingByGen.delete(gen);
+        reject(err);
+      }
+    });
+  }
+
+  /**
+   * La mise en page, par le worker si l'hôte en a fourni un, en processus
+   * sinon — et en processus AUSSI au premier échec du worker.
+   *
+   * L'EXTRACTION reste ici, sur le thread principal, et c'est structurel : elle
+   * est la seule partie qui lise le `Graph`, qui ne traverse pas un
+   * `postMessage`. Ce qu'elle coûte est linéaire (une mesure de carte par
+   * entité, un balayage des références) ; ce qu'elle épargne est la simulation,
+   * qui est tout le temps mesuré.
+   */
+  async function layoutOf(target: Graph, index: AggregateIndex): Promise<GraphLayoutResult> {
+    const mod = await ensureModule();
+    const visible = entityIdsOf(target);
+    const metrics = hooks.getMetrics();
+
+    const worker = ensureWorker();
+    if (worker) {
+      const input = mod.extractGraphLayoutInput(target, index, visible, metrics, hooks.layoutOptions);
+      try {
+        return await postToWorker(worker, input);
+      } catch (err) {
+        // Une instance détruite ne se replie pas : rejouer en processus le
+        // calcul de plusieurs secondes qu'on vient d'abandonner est le contraire
+        // de ce que `destroy()` demande.
+        if (controllerDestroyed) throw err;
+        retireWorker(err);
+      }
+    }
+
+    return (await ensureEngine()).layout(target, index, visible, metrics);
   }
 
   /** Index d'agrégats pour `target`. */
@@ -578,15 +874,8 @@ export function createGraphViewController(hooks: GraphViewHooks): GraphViewContr
     reuse: boolean,
   ): Promise<GraphViewState> {
     const base = reuse && aggregateIndex ? { index: aggregateIndex } : buildAggregateState(target, config);
-    // Pas `engine` tout court à l'appel : chez l'appelant ce nom désigne le
-    // moteur ELK de la vue structure, et les deux ne doivent pas se confondre.
-    const twoLevelEngine = await ensureEngine();
-    const layout = await twoLevelEngine.layout(
-      target,
-      base.index,
-      entityIdsOf(target),
-      hooks.getMetrics(),
-    );
+    // `layoutOf` tranche worker / en processus et porte le repli : voir là-bas.
+    const layout = await layoutOf(target, base.index);
     // Recalculé même quand l'index est réutilisé : c'est un seul balayage des
     // références, sans commune mesure avec la mise en page qu'on vient
     // d'attendre, et le mémoriser demanderait de savoir contre quel graphe il a
@@ -638,6 +927,12 @@ export function createGraphViewController(hooks: GraphViewHooks): GraphViewContr
       semanticEdgeList = [];
       semanticLabelById = new Map();
       clusterById = new Map();
+    },
+
+    destroy(): void {
+      if (controllerDestroyed) return;
+      controllerDestroyed = true;
+      closeWorker(new Error("[data-graph] instance destroyed while the graph layout was in flight"));
     },
 
     positions(): Map<NodeId, Rect> | undefined {

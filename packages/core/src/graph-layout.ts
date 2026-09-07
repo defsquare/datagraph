@@ -6,6 +6,17 @@
 //
 // Moteur de mise en page de la vue graphe à DEUX NIVEAUX, et le seul.
 //
+// IL EST SCINDÉ EN DEUX, et cette scission est la structure du fichier :
+// `extractGraphLayoutInput` (la seule fonction qui lise le `Graph`) produit un
+// `GraphLayoutInput` PLAT, `layoutFromInput` fait tout le calcul sans jamais
+// toucher au graphe ni à un DOM. `createTwoLevelLayoutEngine` n'est que leur
+// composition, à la signature inchangée. Le pourquoi tient en une mesure : sur
+// un audit réel de 6 251 entités le calcul dure ~4,4 s, ce qui n'est tolérable
+// que hors du thread principal — et un `Graph` ne traverse pas un
+// `postMessage`. Le contrat complet est au-dessus de `GraphLayoutInput`, et
+// l'invariant « la scission ne change aucun bit » dans
+// `test/graph-layout-identity.test.ts`.
+//
 // Il a remplacé un pipeline global corrigé — `createGraphLayoutEngine`, qui
 // demandait à fcose une mise en page de toutes les cartes puis la réparait par
 // deux passes de relaxation, `separateOverlaps` (cartes) puis
@@ -398,6 +409,55 @@ export const TWO_LEVEL_LAYOUT_DEFAULTS: Required<TwoLevelLayoutOptions> = {
 }
 
 /**
+ * L'ENTRÉE DU CŒUR PUR : tout ce que le moteur consomme, et rien d'autre.
+ *
+ * Ce type existe pour une raison unique et mesurée : sur un audit réel — 6 251
+ * entités, ~1 300 agrégats — `layout()` passe ~4,4 s dans un calcul entièrement
+ * synchrone, ce qui gèle le thread principal du navigateur pendant toute la
+ * bascule de vue. Le seul remède qui garde le temps total est de déporter le
+ * calcul dans un Web Worker ; or un `Graph` ne traverse pas un `postMessage` —
+ * il porte des `Map` de nœuds, des arêtes indexées, et pèse plusieurs ordres de
+ * grandeur de plus que ce que le moteur en lit.
+ *
+ * D'où la scission : `extractGraphLayoutInput` est la SEULE partie qui touche au
+ * `Graph`, elle tourne sur le thread principal, et elle rend cet objet PLAT —
+ * que le clonage structuré transporte tel quel. `layoutFromInput` est tout le
+ * reste : pur, sans DOM, sans graphe, donc exécutable des deux côtés de la
+ * frontière. L'invariant qui tient l'ensemble est écrit dans
+ * `test/graph-layout-identity.test.ts` : la scission ne change AUCUN bit de la
+ * sortie, c'est le même code réordonné.
+ *
+ * CE QUI N'Y EST PAS, et pourquoi : les `NodeMetrics`. Elles ne servent qu'à
+ * `measureNode`, que l'extraction a déjà appelé — la taille de chaque carte est
+ * dans `entities`. Les faire traverser en plus serait transporter la RECETTE
+ * d'un résultat qu'on transporte déjà.
+ */
+export interface GraphLayoutInput {
+  /** Les entités à placer, triées par id — le tri est une CONDITION du
+   * déterminisme du moteur, pas un confort de lecture. `w`/`h` sont la taille
+   * de la carte, déjà mesurée. */
+  entities: { id: NodeId; w: number; h: number }[]
+  /**
+   * Les références qui relient deux entités placées, DANS L'ORDRE de
+   * `graph.refEdges` et sans dédoublonnage : le niveau 2 fait le poids de
+   * chaque ressort avec la multiplicité, et le niveau 1 dédoublonne lui-même ce
+   * dont il a besoin. Les bouts sont `fromEntity` et `to` — c'est l'entité
+   * porteuse qui est placée, jamais le value object qui écrit le champ.
+   */
+  refs: { from: NodeId; to: NodeId }[]
+  /**
+   * Les agrégats qui revendiquent au moins une entité placée, avec ces
+   * entités-là pour membres. C'est la forme groupée de la partition que porte
+   * `AggregateIndex.byNode` — une entité absente de toutes ces listes est un
+   * singleton, exactement comme un `byNode` vide chez l'appelant.
+   */
+  aggregates: { id: string; rootId: NodeId; memberIds: NodeId[] }[]
+  /** Les réglages RÉSOLUS : l'extraction applique les défauts, le cœur pur ne
+   * relit jamais `TWO_LEVEL_LAYOUT_DEFAULTS`. */
+  options: Required<TwoLevelLayoutOptions>
+}
+
+/**
  * Un cluster du niveau 2 : un agrégat, ou une entité seule promue en disque.
  *
  * Il ÉTEND `Disc`, ce qui est tout le raccord entre les deux niveaux : la
@@ -417,36 +477,37 @@ interface LocalCluster extends Disc {
 }
 
 /**
- * Le MODÈLE INTERMÉDIAIRE du moteur : ce qu'il retient du `Graph`, et la seule
- * partie qui le lit. Tout ce qui vient après ne travaille plus que sur ces
- * structures — c'est ce qui permet aux deux niveaux d'ignorer le graphe.
+ * L'EXTRACTION : la seule fonction du moteur qui lise le `Graph`, et tout ce
+ * qu'elle en lit.
+ *
+ * Trois lectures, et pas une de plus — c'est ce qui rend la frontière du worker
+ * vérifiable plutôt que crue sur parole :
+ *  1. les ids des nœuds VISIBLES de type entité (les nœuds structurels — racine,
+ *     tableaux, objets — n'existent pas dans cette vue) ;
+ *  2. `measureNode` sur chacun, pour la taille de sa carte ;
+ *  3. `graph.refEdges`, filtré aux références résolues dont les DEUX bouts sont
+ *     des entités placées.
+ *
+ * Le reste vient de l'`AggregateIndex`. `byNode[0]` est sûr parce que
+ * l'appartenance est une PARTITION — chaque tableau tient au plus un id (voir
+ * `AggregateIndex`), et l'index qui le produit remplit toujours `aggregates` en
+ * même temps, ce qui est ce qui autorise le `rootId` non nullable ci-dessous.
+ *
+ * Exportée parce qu'un appelant qui veut faire tourner le cœur AILLEURS — un
+ * Web Worker, typiquement — doit pouvoir faire cette moitié-ci sur le thread qui
+ * possède le graphe. `createTwoLevelLayoutEngine` n'est plus que la composition
+ * des deux.
  */
-interface ClusterModel {
-  /** Les entités visibles — la seule population que ce moteur place. */
-  entitySet: Set<NodeId>
-  sizes: Map<NodeId, { width: number; height: number }>
-  /** Entité → id de son cluster : l'agrégat, ou `single:<id>`. */
-  clusterOf: Map<NodeId, string>
-  /** Id de cluster → ses membres. */
-  members: Map<string, NodeId[]>
-  /** Cible → sources INTRA-cluster qui la référencent, triées et dédoublonnées. */
-  childrenOf: Map<NodeId, NodeId[]>
-}
-
-/**
- * Construction de ce modèle. Sortie de `run` en fonction nommée et non en
- * module : elle n'a de sens que pour ce moteur-ci, là où `graph-pack.ts` et
- * `disc-simulation.ts` sont deux sous-systèmes fermés réutilisables tels quels.
- */
-function buildClusterModel(
+export function extractGraphLayoutInput(
   graph: Graph,
   aggregates: AggregateIndex,
   visible: Set<NodeId>,
-  metrics: NodeMetrics,
-): ClusterModel {
-  // Sommets : les entités visibles, et rien d'autre. Les nœuds structurels
-  // (racine, tableaux, objets) n'existent pas dans cette vue. Le tri est une
-  // CONDITION du déterminisme, pas une commodité de lecture.
+  metrics: NodeMetrics = DEFAULT_METRICS,
+  options: TwoLevelLayoutOptions = {},
+): GraphLayoutInput {
+  // Le tri est une CONDITION du déterminisme, pas une commodité de lecture :
+  // `visible` est un `Set` construit par l'appelant, dont l'ordre d'itération
+  // n'est le contrat de personne.
   const entityIds: NodeId[] = []
   for (const id of visible) {
     const node = graph.nodes.get(id)
@@ -454,45 +515,112 @@ function buildClusterModel(
   }
   entityIds.sort()
 
-  const sizes = new Map<NodeId, { width: number; height: number }>()
-  for (const id of entityIds) sizes.set(id, measureNode(graph.nodes.get(id)!, metrics))
-
-  // Partition en clusters : l'agrégat s'il existe, un singleton sinon. Le
-  // `byNode[0]` est sûr parce que l'appartenance est une partition — chaque
-  // tableau tient au plus un id (voir `AggregateIndex`).
-  const clusterOf = new Map<NodeId, string>()
-  const members = new Map<string, NodeId[]>()
+  const entities: GraphLayoutInput["entities"] = []
+  const entitySet = new Set<NodeId>()
   for (const id of entityIds) {
-    const aggIds = aggregates.byNode.get(id)
-    const cid = aggIds && aggIds.length > 0 ? aggIds[0]! : `single:${id}`
-    clusterOf.set(id, cid)
-    const list = members.get(cid)
+    const size = measureNode(graph.nodes.get(id)!, metrics)
+    entities.push({ id, w: size.width, h: size.height })
+    entitySet.add(id)
+  }
+
+  // Les agrégats, groupés depuis `byNode` : c'est la même partition, dite dans
+  // l'autre sens. Ne sont retenus que ceux qui revendiquent une entité PLACÉE —
+  // un agrégat dont aucun membre n'est visible n'a ni disque ni enveloppe.
+  const memberIdsByAggregate = new Map<string, NodeId[]>()
+  for (const id of entityIds) {
+    const aggId = aggregates.byNode.get(id)?.[0]
+    if (aggId === undefined) continue
+    const list = memberIdsByAggregate.get(aggId)
     if (list) list.push(id)
-    else members.set(cid, [id])
+    else memberIdsByAggregate.set(aggId, [id])
+  }
+  const inputAggregates: GraphLayoutInput["aggregates"] = []
+  for (const [id, memberIds] of memberIdsByAggregate) {
+    // Un id de `byNode` absent d'`aggregates` ne peut pas arriver — les deux
+    // tables sortent du même `buildAggregates` — et le sauter plutôt que de
+    // porter un `rootId` nullable dans le contrat public est le choix assumé :
+    // la seule sortie possible d'un tel cluster serait un groupe sans enveloppe
+    // à peindre, indiscernable de singletons.
+    const rootId = aggregates.aggregates.get(id)?.rootId
+    if (rootId === undefined) continue
+    inputAggregates.push({ id, rootId, memberIds })
+  }
+
+  // Une paire PAR référence, doublons compris et dans l'ordre du graphe : la
+  // multiplicité fait le poids des ressorts du niveau 2, et le niveau 1
+  // dédoublonne lui-même ce dont il a besoin. `fromEntity` et non `from` : c'est
+  // l'entité porteuse qui est placée, un value object n'a pas de carte.
+  const refs: GraphLayoutInput["refs"] = []
+  for (const edge of graph.refEdges) {
+    if (edge.to === null || edge.dangling) continue
+    if (!entitySet.has(edge.fromEntity) || !entitySet.has(edge.to)) continue
+    refs.push({ from: edge.fromEntity, to: edge.to })
+  }
+
+  return {
+    entities,
+    refs,
+    aggregates: inputAggregates,
+    options: { ...TWO_LEVEL_LAYOUT_DEFAULTS, ...options },
+  }
+}
+
+/**
+ * LE CŒUR PUR : les deux niveaux, sans graphe, sans DOM, sans état.
+ *
+ * C'est exactement l'ancien `run` moins ses lectures du `Graph`, qui sont
+ * passées dans `extractGraphLayoutInput`. Le déplacement est textuel et
+ * l'identité de la sortie est asserté au bit près
+ * (`test/graph-layout-identity.test.ts`).
+ *
+ * « Pure » a ici un sens opérationnel : cette fonction peut tourner dans un Web
+ * Worker, où il n'existe ni `document`, ni `window`, ni le `Graph` du thread
+ * principal. Y ajouter la moindre lecture d'environnement casserait le worker
+ * du renderer (`packages/renderer/src/graph-layout-worker.ts`) sans casser un
+ * seul test de ce dossier — d'où cet avertissement plutôt qu'une garde
+ * illusoire.
+ */
+export function layoutFromInput(input: GraphLayoutInput): GraphLayoutResult {
+  const o = input.options
+
+  const sizes = new Map<NodeId, { width: number; height: number }>()
+  for (const entity of input.entities) sizes.set(entity.id, { width: entity.w, height: entity.h })
+
+  // Partition en clusters : l'agrégat s'il existe, un singleton sinon.
+  const clusterOf = new Map<NodeId, string>()
+  const rootOf = new Map<string, NodeId>()
+  for (const agg of input.aggregates) {
+    rootOf.set(agg.id, agg.rootId)
+    for (const memberId of agg.memberIds) clusterOf.set(memberId, agg.id)
+  }
+  const members = new Map<string, NodeId[]>()
+  for (const entity of input.entities) {
+    let cid = clusterOf.get(entity.id)
+    if (cid === undefined) {
+      cid = `single:${entity.id}`
+      clusterOf.set(entity.id, cid)
+    }
+    const list = members.get(cid)
+    if (list) list.push(entity.id)
+    else members.set(cid, [entity.id])
   }
 
   // Adjacence inverse INTRA-cluster : cible → sources qui la référencent, les
   // deux bouts dans le même cluster. C'est ce qui donne au placement radial sa
   // distance de référence ; le niveau 2 ignore ces arêtes-là, et se sert des
-  // arêtes INTER-cluster (`refPairs`, dans `run`), qui sont exactement les
-  // autres.
+  // arêtes INTER-cluster (`refPairs`, plus bas), qui sont exactement les autres.
   //
   // Le sens est celui de `buildAggregates` — on remonte de la cible vers la
   // source —, sans quoi la distance d'anneau ne coïnciderait pas avec la
-  // distance d'appartenance qui a formé le cluster. Et la source est
-  // `fromEntity` pour la même raison : la vue graphe ne place que des entités,
-  // un value object n'y a pas de carte à mettre dans un anneau.
+  // distance d'appartenance qui a formé le cluster.
   const childrenOf = new Map<NodeId, NodeId[]>()
-  const entitySet = new Set(entityIds)
-  for (const edge of graph.refEdges) {
-    if (edge.to === null || edge.dangling) continue
-    if (!entitySet.has(edge.fromEntity) || !entitySet.has(edge.to)) continue
-    if (clusterOf.get(edge.fromEntity) !== clusterOf.get(edge.to)) continue
-    const list = childrenOf.get(edge.to)
-    if (list) list.push(edge.fromEntity)
-    else childrenOf.set(edge.to, [edge.fromEntity])
+  for (const ref of input.refs) {
+    if (clusterOf.get(ref.from) !== clusterOf.get(ref.to)) continue
+    const list = childrenOf.get(ref.to)
+    if (list) list.push(ref.from)
+    else childrenOf.set(ref.to, [ref.from])
   }
-  // Tri des listes d'adjacence : l'ordre de `graph.refEdges` ne doit pas
+  // Tri des listes d'adjacence : l'ordre des références du graphe ne doit pas
   // transparaître dans la sortie. Dédoublonnage au passage — deux champs de la
   // même carte peuvent référencer la même cible, ce qui la ferait compter deux
   // fois dans un anneau.
@@ -504,34 +632,17 @@ function buildClusterModel(
     )
   }
 
-  return { entitySet, sizes, clusterOf, members, childrenOf }
-}
-
-function run(
-  graph: Graph,
-  aggregates: AggregateIndex,
-  visible: Set<NodeId>,
-  metrics: NodeMetrics,
-  o: Required<TwoLevelLayoutOptions>,
-): GraphLayoutResult {
-  const { entitySet, sizes, clusterOf, members, childrenOf } = buildClusterModel(
-    graph,
-    aggregates,
-    visible,
-    metrics,
-  )
-
   // NIVEAU 1 : packing local de chaque cluster, racine au centre.
   const clusters: LocalCluster[] = []
   for (const cid of [...members.keys()].sort()) {
-    const agg = aggregates.aggregates.get(cid)
+    const rootId = rootOf.get(cid)
     const ids = members.get(cid)!
     ids.sort()
-    if (agg) {
-      const i = ids.indexOf(agg.rootId)
+    if (rootId !== undefined) {
+      const i = ids.indexOf(rootId)
       if (i > 0) {
         ids.splice(i, 1)
-        ids.unshift(agg.rootId)
+        ids.unshift(rootId)
       }
     }
     const local = packCluster(ids, sizes, o.cardGap, childrenOf)
@@ -542,8 +653,8 @@ function run(
     }
     clusters.push({
       id: cid,
-      rootId: agg ? agg.rootId : null,
-      isAggregate: Boolean(agg),
+      rootId: rootId ?? null,
+      isAggregate: rootId !== undefined,
       memberIds: ids,
       local,
       r: circle.r,
@@ -552,18 +663,13 @@ function run(
     })
   }
 
-  // Les paires de clusters reliées par une référence, dans l'ordre de
-  // `graph.refEdges` : une paire PAR référence, les doublons faisant le poids
-  // du ressort et les paires intra-cluster étant écartées par
+  // Les paires de clusters reliées par une référence, dans l'ordre des
+  // références du graphe : une paire PAR référence, les doublons faisant le
+  // poids du ressort et les paires intra-cluster étant écartées par
   // `aggregateSprings`. C'est tout ce que le niveau 2 apprend du graphe.
-  //
-  // `fromEntity` : c'est l'entité qui est placée, donc elle seule appartient à
-  // un cluster et peut tirer sur un autre.
   const refPairs: [string, string][] = []
-  for (const edge of graph.refEdges) {
-    if (edge.to === null || edge.dangling) continue
-    if (!entitySet.has(edge.fromEntity) || !entitySet.has(edge.to)) continue
-    refPairs.push([clusterOf.get(edge.fromEntity)!, clusterOf.get(edge.to)!])
+  for (const ref of input.refs) {
+    refPairs.push([clusterOf.get(ref.from)!, clusterOf.get(ref.to)!])
   }
 
   // NIVEAU 2 : amorçage, ressorts, gravité, collision, puis la passe dure qui
@@ -619,13 +725,19 @@ function run(
  * `layout()` est `async` par conformité d'interface seulement : ce calcul est
  * entièrement synchrone et ne cède jamais la main (~64–143 ms sur les jeux
  * mesurés, contre 1,6–4,2 s pour l'ancien moteur qui, lui, attendait un
- * `layoutstop` de cytoscape).
+ * `layoutstop` de cytoscape ; ~4,4 s sur l'audit réel de 6 251 entités, ce qui
+ * est la mesure qui a motivé la scission ci-dessus).
+ *
+ * Ce moteur-ci reste le chemin EN PROCESSUS, et il ne devient pas un détail
+ * d'implémentation du worker : c'est lui que le renderer exécute quand aucune
+ * URL de worker n'est fournie (vitest, headless, hôte sans worker) et c'est sur
+ * lui qu'il se replie DÉFINITIVEMENT au premier échec du worker. Sa signature
+ * ne bouge donc pas d'un iota.
  */
 export function createTwoLevelLayoutEngine(opts: TwoLevelLayoutOptions = {}): GraphLayoutEngine {
-  const options: Required<TwoLevelLayoutOptions> = { ...TWO_LEVEL_LAYOUT_DEFAULTS, ...opts }
   return {
     async layout(graph, aggregates, visible, metrics = DEFAULT_METRICS) {
-      return run(graph, aggregates, visible, metrics, options)
+      return layoutFromInput(extractGraphLayoutInput(graph, aggregates, visible, metrics, opts))
     },
   }
 }

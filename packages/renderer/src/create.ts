@@ -40,7 +40,7 @@ import {
 // cœur ne couvre que le `dist/` du cœur, pas les sources du renderer.
 //
 // Ce que cette discipline vaut a changé d'échelle depuis le retrait de l'ancien
-// moteur : 2,64 ko gzip au lieu de 180,28. Elle reste parce qu'elle tient la
+// moteur : 3,58 ko gzip au lieu de 180,28. Elle reste parce qu'elle tient la
 // FORME — la vue graphe se charge à la demande par construction — et non plus
 // parce qu'elle tient un poids. Le raisonnement complet est dans les deux tests
 // de pureté.
@@ -83,6 +83,7 @@ import {
   createGraphViewController,
   type ClusterPaint,
   type ClustersForArgs,
+  type GraphLayoutWorkerSpawn,
   type GraphViewState,
   type SemanticNodePaint,
 } from "./graph-view.js";
@@ -214,6 +215,33 @@ export interface DataGraphOptions {
    * peut dégrader aucune garantie — voir sa documentation côté cœur.
    */
   graphLayoutOptions?: TwoLevelLayoutOptions;
+  /**
+   * L'URL du Web Worker qui calcule la mise en page de la vue graphe. Absente,
+   * le calcul reste EN PROCESSUS, exactement comme avant l'existence de cette
+   * option.
+   *
+   * Ce que ça achète, mesuré : sur un audit réel de 6 251 entités et ~1 300
+   * agrégats, `setView("graph")` passe ~4,4 s dans un calcul entièrement
+   * synchrone. Sur le thread principal, c'est 4,4 s de page gelée — ni rendu, ni
+   * pan, ni zoom. Déporté, le thread principal ne fait plus que l'extraction
+   * (linéaire) et l'application du résultat, et la vue structure reste
+   * manipulable pendant toute l'attente.
+   *
+   * L'URL doit désigner le worker publié par ce paquet,
+   * `@defsquare/data-graph/graph-layout-worker` — un module ESM autonome, chargé
+   * avec `{ type: "module" }`. Sous un empaqueteur, la forme usuelle est
+   * `new URL("@defsquare/data-graph/graph-layout-worker", import.meta.url)` ;
+   * `apps/demo` le fait ainsi, avec la note de `vite.config.ts` sur les quatre
+   * modes d'exécution.
+   *
+   * REPLI. L'option est sûre à passer : au PREMIER échec — construction
+   * impossible, worker injouable, calcul qui lève — l'instance avertit une fois
+   * et rejoue la mise en page en processus, définitivement pour la session. Le
+   * pire cas est donc le comportement d'avant l'option, jamais une vue qui ne
+   * s'affiche pas. Même discipline que le repli d'`elkWorkerUrl`, en plus
+   * strict : celui-ci ne réessaie pas à la mise en page suivante.
+   */
+  graphLayoutWorkerUrl?: string | URL;
 }
 
 export type DataGraphEvent = "select" | "followRef";
@@ -571,6 +599,43 @@ function buildLayoutEngine(elkWorkerUrl: string | URL | undefined): StructureLay
 }
 
 /**
+ * La fabrique du worker de mise en page de la vue graphe, ou `undefined` quand
+ * l'hôte n'en a pas fourni l'URL.
+ *
+ * C'est le SEUL endroit du dépôt où `new Worker` est écrit, et c'est voulu : le
+ * contrôleur de la vue graphe (`graph-view.ts`) reste une machine de données
+ * sans hypothèse d'environnement, et reçoit une fonction plutôt qu'une URL. Les
+ * tests du protocole en injectent une autre, sans navigateur.
+ *
+ * `{ type: "module" }` n'est pas négociable : le worker publié est un module
+ * ESM, et en développement l'empaqueteur en sert la SOURCE, dont les imports
+ * sont réécrits en imports de module. Un worker classique refuserait les deux.
+ *
+ * Rien n'est gardé ici : `new Worker` peut lever (URL injouable, `Worker` absent
+ * de l'environnement) et c'est le contrôleur qui traite cet échec comme tous les
+ * autres — un avertissement, puis le moteur en processus pour la session.
+ */
+function buildGraphLayoutWorkerSpawn(
+  graphLayoutWorkerUrl: string | URL | undefined,
+): GraphLayoutWorkerSpawn | undefined {
+  if (!graphLayoutWorkerUrl) return undefined;
+  return (onMessage, onError) => {
+    const worker = new Worker(graphLayoutWorkerUrl, { type: "module" });
+    worker.onmessage = (event: MessageEvent) => onMessage(event.data);
+    // Les deux échecs qu'un worker signale hors protocole : le script qui ne se
+    // charge ou ne s'exécute pas (`error`), et un message qu'on n'a pas pu
+    // désérialiser (`messageerror`). Aucun des deux ne dit à quelle requête il
+    // se rapporte, d'où le traitement global côté contrôleur.
+    worker.onerror = (event) => onError(event);
+    worker.onmessageerror = (event) => onError(event);
+    return {
+      post: (request) => worker.postMessage(request),
+      terminate: () => worker.terminate(),
+    };
+  };
+}
+
+/**
  * Wires a display object for click interaction: `eventMode = "static"`,
  * a pointer cursor, and a `pointertap` handler gated by a `TAP_THRESHOLD`px
  * movement check against the matching `pointerdown` (so a drag-to-pan
@@ -829,6 +894,9 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     // Accesseur et non valeur : `metrics` n'est mesurée qu'après `fontsReady`,
     // bien après la construction du contrôleur.
     getMetrics: () => metrics,
+    // Construite à la création mais APPELÉE au premier besoin seulement : le
+    // worker n'est ouvert que par la première mise en page de la vue graphe.
+    spawnLayoutWorker: buildGraphLayoutWorkerSpawn(options.graphLayoutWorkerUrl),
   });
 
   const emitter = new Emitter<DataGraphEvents>();
@@ -2664,6 +2732,10 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       // Le seul écouteur global qui ne soit pas porté par la caméra ni par le
       // stage (que `app.destroy` emporte) : il faut le retirer à la main.
       window.removeEventListener("keydown", handleKeyDown);
+      // Le worker de la vue graphe ne meurt pas avec le canvas : il survivrait à
+      // l'instance et continuerait à mouliner des secondes de mise en page pour
+      // personne. `graphView.destroy()` le termine et solde les calculs en vol.
+      graphView.destroy();
       // Libère la part de cette instance dans les atlas partagés : ils ne sont
       // désinstallés que si plus aucune autre instance ne les porte.
       fontLease.dispose();

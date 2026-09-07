@@ -165,6 +165,31 @@ html, body {
   background: color-mix(in srgb, var(--ds-primary) 14%, transparent);
 }
 
+/* Un bouton OCCUPÉ : le calcul est parti, la page reste vivante.
+ *
+ * Le sélecteur est l'attribut lui-même et non une classe jumelle : `aria-busy`
+ * est ce qu'une technologie d'assistance lit, et s'en servir aussi comme
+ * sélecteur rend impossible qu'un des deux soit posé sans l'autre.
+ *
+ * La règle passe APRÈS `.ibtn:disabled` — la bascule pose les deux, et c'est
+ * cette opacité-ci, plus claire, qui doit gagner : « en cours » n'est pas « pas
+ * disponible ». Une pulsation lente et une opacité, rien de plus : le vrai
+ * signal est que le reste de l'écran répond toujours, et un indicateur bruyant
+ * dirait le contraire. `prefers-reduced-motion` retire l'animation et garde
+ * l'état. */
+.ibtn[aria-busy="true"]:disabled {
+  opacity: 0.7;
+  animation: ibtn-busy 1.2s ease-in-out infinite;
+}
+
+@keyframes ibtn-busy {
+  50% { opacity: 0.3; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ibtn[aria-busy="true"]:disabled { animation: none; }
+}
+
 .ibtn-sm { width: 24px; height: 24px; border-radius: 6px; }
 .ibtn-sm svg { width: 13px; height: 13px; }
 
