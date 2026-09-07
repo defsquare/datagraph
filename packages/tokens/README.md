@@ -26,6 +26,19 @@ cssFontStack(defsquare.fonts.body); // '"IBM Plex Sans Condensed", "IBM Plex San
 Font family **names** are contractual: the demo's `@font-face` rules and the renderer's
 BitmapFont measurement reference them by these exact names.
 
+## CSS output
+
+The `./css` subpath renders the tokens as CSS custom properties. It is kept out of the
+index so the index stays pure data for the renderer, which has no use for a string of CSS.
+
+```ts
+import { renderTokensCss } from "@defsquare/data-graph-tokens/css";
+```
+
+`apps/demo/src/tokens.css` is generated from it and committed (Vite imports static CSS, it
+cannot run the generator). Regenerate with `pnpm --filter @defsquare/data-graph-tokens
+generate:css`; a freshness test fails if the committed file drifts from the tokens.
+
 ## License
 
 MIT

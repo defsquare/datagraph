@@ -1,0 +1,61 @@
+/* GÉNÉRÉ par @defsquare/data-graph-tokens — NE PAS ÉDITER À LA MAIN.
+   Régénérer : pnpm --filter @defsquare/data-graph-tokens generate:css
+   Un test de fraîcheur (packages/tokens/test/css.test.ts) casse si ce fichier
+   diverge de la source des tokens. */
+
+:root {
+  --ds-canvas: #eef0f3;
+  --ds-surface: #ffffff;
+  --ds-surface-muted: #f7f7f8;
+  --ds-ink: #172741;
+  --ds-fg: #070f19;
+  --ds-muted: #4b5563;
+  --ds-subtle: #9ca3af;
+  --ds-accent: #f65e5e;
+  --ds-primary: #1e416e;
+  --ds-border: #dfe3e9;
+  --ds-border-soft: #f1f1f3;
+
+  /* Surfaces flottantes : translucides pour que le graphe transparaisse, mais
+     assez opaques pour rester lisibles au-dessus d'une carte dense. */
+  --float-bg: rgb(255 255 255 / 0.82);
+  --float-border: rgb(23 39 65 / 0.1);
+  --float-hover: rgb(23 39 65 / 0.06);
+  --shadow-float: 0 1px 2px rgb(15 23 42 / 0.06), 0 10px 28px -10px rgb(15 23 42 / 0.22);
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-full: 9999px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+
+  --transition: 150ms ease-in-out;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.25, 1);
+
+  --font-title: "EB Garamond", Garamond, Cambria, Georgia, serif;
+  --font-body: "IBM Plex Sans Condensed", "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "Fira Code", "SF Mono", Menlo, Consolas, monospace;
+}
+
+html[data-theme="dark"] {
+  --ds-canvas: #161a2c;
+  --ds-surface: #1e2335;
+  --ds-surface-muted: #1a1f30;
+  --ds-ink: #f0f5fc;
+  --ds-fg: #f0f5fc;
+  --ds-muted: #9bb2d9;
+  --ds-subtle: #6b7794;
+  --ds-primary: #3573c3;
+  --ds-border: #2c3247;
+  --ds-border-soft: #272d42;
+
+  --float-bg: rgb(30 35 53 / 0.82);
+  --float-border: rgb(240 245 252 / 0.1);
+  --float-hover: rgb(240 245 252 / 0.08);
+  --shadow-float: 0 1px 2px rgb(0 0 0 / 0.35), 0 12px 30px -10px rgb(0 0 0 / 0.6);
+}
