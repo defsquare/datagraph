@@ -28,8 +28,16 @@ export {
 export { buildGraph } from "./build.js"
 // `PAGE_SIZE` et `pageOf` sortent avec `CollapseState` parce que la pagination
 // n'est pas un détail interne : le renderer dessine les jetons de trous et doit
-// nommer les mêmes pages que l'état de pli.
-export { CollapseState, PAGE_SIZE, pageOf, type HiddenGap } from "./collapse.js"
+// nommer les mêmes pages que l'état de pli. `INITIAL_CARD_BUDGET` sort pour la
+// même raison : c'est le défaut qu'un appelant surcharge par `opts`, et le
+// nommer évite qu'il soit recopié en littéral hors du cœur.
+export {
+  CollapseState,
+  PAGE_SIZE,
+  INITIAL_CARD_BUDGET,
+  pageOf,
+  type HiddenGap,
+} from "./collapse.js"
 export { buildAggregates, type Aggregate, type AggregateIndex } from "./aggregate.js"
 export { enclosingCircle, type Circle } from "./hull.js"
 // `SearchIndex` est relayé en TYPE seul : un index ne s'obtient que de

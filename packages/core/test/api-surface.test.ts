@@ -26,6 +26,10 @@ describe("api surface", () => {
       "ConfigError",
       "DEFAULT_METRICS",
       "GraphTooLargeError",
+      // Ajout VOLONTAIRE : le budget de dépliage initial est le défaut qu'un
+      // appelant surcharge (`new CollapseState(g, { initialCardBudget })`) ;
+      // il doit être nommable hors du cœur plutôt que recopié en littéral.
+      "INITIAL_CARD_BUDGET",
       // Ajout VOLONTAIRE : la pagination des enfants-cartes est un contrat
       // partagé avec le renderer, qui dessine les jetons de trous — il lui faut
       // la taille de page et la fonction qui nomme la page d'un indice.

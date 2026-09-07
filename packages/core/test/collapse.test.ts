@@ -49,16 +49,21 @@ describe("CollapseState — pages révélées", () => {
     expect(visible.has("/items/249")).toBe(false)
   })
 
-  it("revealPage ajoute une page ; les descendants de la page suivent la règle normale", () => {
+  it("revealPage ajoute une page ; les cartes révélées arrivent repliées", () => {
     const g = buildGraph(manyItems(250), noConfig)
     const cs = new CollapseState(g)
     cs.revealPage("/items", 2)
     const visible = cs.visibleNodeIds()
     expect(visible.has("/items/200")).toBe(true)
     expect(visible.has("/items/249")).toBe(true)
-    // `/items/200` est un objet non-entité, donc déplié par le BFS : révéler sa
-    // page le fait entrer AVEC sa descendance, sans autre geste.
-    expect(visible.has("/items/200/w")).toBe(true)
+    // Le BFS initial n'a enfilé que la PREMIÈRE page de `/items` : `/items/200`
+    // n'a donc jamais été marqué déplié, et révéler sa page le fait entrer seul.
+    // C'est voulu — révéler une page ne doit pas faire entrer un sous-arbre que
+    // le budget initial avait justement écarté ; l'utilisateur déplie ensuite.
+    expect(cs.isExpanded("/items/200")).toBe(false)
+    expect(visible.has("/items/200/w")).toBe(false)
+    cs.expand("/items/200")
+    expect(cs.visibleNodeIds().has("/items/200/w")).toBe(true)
     expect(visible.has("/items/100")).toBe(false) // la page 1 reste cachée
   })
 
@@ -127,5 +132,57 @@ describe("CollapseState — pages révélées", () => {
     expect(pageOf(0)).toBe(0)
     expect(pageOf(99)).toBe(0)
     expect(pageOf(100)).toBe(1)
+  })
+})
+
+describe("CollapseState — budget initial", () => {
+  // Trois niveaux : root -> a,b (objets) -> chacun 10 enfants objets.
+  function tiers(): unknown {
+    const child = () => Object.fromEntries(
+      Array.from({ length: 10 }, (_, i) => [`k${i}`, { leaf: i }]),
+    )
+    return { a: child(), b: child() }
+  }
+
+  it("cesse de déplier une fois le budget de cartes atteint, niveaux hauts d'abord", () => {
+    const g = buildGraph(tiers(), noConfig)
+    const cs = new CollapseState(g, { initialCardBudget: 5 })
+    const visible = cs.visibleNodeIds()
+    // la racine et ses 2 enfants tiennent dans 5 ; les 10 petits-enfants
+    // de /a en feraient 13 -> /a et /b restent des cartes repliées visibles
+    expect(visible.has("/a")).toBe(true)
+    expect(visible.has("/b")).toBe(true)
+    expect(cs.isExpanded("/a")).toBe(false)
+    expect(visible.has("/a/k0")).toBe(false)
+  })
+
+  it("la racine est toujours dépliée, même sous un budget de 0", () => {
+    const g = buildGraph(tiers(), noConfig)
+    const cs = new CollapseState(g, { initialCardBudget: 0 })
+    expect(cs.isExpanded(g.rootId)).toBe(true)
+    expect(cs.visibleNodeIds().has("/a")).toBe(true) // enfants de la racine = cartes visibles repliées
+  })
+
+  it("un document sous le budget est intégralement déplié, comme avant", () => {
+    const g = buildGraph(tiers(), noConfig)
+    const cs = new CollapseState(g) // défaut 300 >> ~23 cartes
+    expect(cs.isExpanded("/a")).toBe(true)
+    expect(cs.visibleNodeIds().has("/a/k0")).toBe(true)
+  })
+
+  it("la frontière d'entité reste prioritaire : une entité n'est jamais dépliée par le BFS", () => {
+    const g = buildGraph(
+      { customers: [{ id: "c1", extra: { x: 1 } }] },
+      { ids: { Customer: "$.customers[*].id" } },
+    )
+    const cs = new CollapseState(g, { initialCardBudget: 10_000 })
+    const entity = [...g.nodes.values()].find((n) => n.kind === "entity")!
+    expect(cs.isExpanded(entity.id)).toBe(false)
+  })
+
+  it("un nœud marqué déplié ne révèle que sa première page (interaction budget × pages)", () => {
+    const g = buildGraph(manyItems(250), noConfig)
+    const cs = new CollapseState(g) // 250 cartes > 100 mais budget 300 : marqué déplié
+    expect(cs.visibleNodeIds().has("/items/100")).toBe(false)
   })
 })

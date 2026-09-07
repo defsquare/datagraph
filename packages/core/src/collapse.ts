@@ -18,6 +18,13 @@ export function pageOf(cardIndex: number): number {
 }
 
 /**
+ * Nombre de cartes que le dépliage initial s'autorise à « acheter ». Ce n'est
+ * pas une limite de rendu mais une limite d'APERÇU : au-delà, ce qui s'ouvre
+ * n'est plus lisible et le coût du layout devient celui du document entier.
+ */
+export const INITIAL_CARD_BUDGET = 300
+
+/**
  * Une plage CONTIGUË d'enfants-cartes non révélés : de quoi dessiner un jeton
  * « … n de plus » à sa place dans l'ordre des enfants, et savoir quelle page
  * révéler quand on le clique.
@@ -35,6 +42,12 @@ export interface HiddenGap {
  * Initial state (constructor): BFS from the root, marking every
  * non-entity node encountered as expanded; descent stops at the first
  * entity node on each branch (entities start collapsed).
+ *
+ * Ce dépliage est en outre BORNÉ par un budget de cartes (`initialCardBudget`,
+ * défaut `INITIAL_CARD_BUDGET`) : sans entités — le cas du mode CLI sans config
+ * — la frontière d'entités ne freine rien et le BFS déplierait le document
+ * entier. Le budget rend l'état initial un APERÇU des niveaux hauts ; ce qu'il
+ * refuse reste visible, simplement replié.
  */
 export class CollapseState {
   private readonly graph: Graph
@@ -50,9 +63,17 @@ export class CollapseState {
   private readonly revealed: Map<NodeId, Set<number>> = new Map()
   private static readonly DEFAULT_PAGES: ReadonlySet<number> = new Set([0])
 
-  constructor(graph: Graph) {
+  constructor(graph: Graph, opts: { initialCardBudget?: number } = {}) {
     this.graph = graph
+    const budget = opts.initialCardBudget ?? INITIAL_CARD_BUDGET
 
+    // Le BFS historique dépliait tout jusqu'aux frontières d'entités — sans
+    // config il n'y a pas d'entités, donc aucun frein, et le document entier
+    // partait dans ELK en un appel (16 s à 50k nœuds). Le budget est le second
+    // frein : on cesse de MARQUER déplié dès qu'on a « acheté » assez de cartes
+    // visibles. Le BFS sert les niveaux hauts d'abord — c'est l'aperçu.
+    // Un nœud atteint mais non marqué reste une carte repliée visible.
+    let cards = 1 // la racine elle-même
     const queue: NodeId[] = [graph.rootId]
     while (queue.length > 0) {
       const id = queue.shift()!
@@ -63,11 +84,29 @@ export class CollapseState {
       // the entity-boundary rule below.
       if (node.kind === "entity" && id !== graph.rootId) continue
 
+      // Déplier `id` révèle sa première page d'enfants-cartes : c'est ce que ça
+      // coûte au budget. La racine est toujours dépliée — un document qui
+      // s'ouvre sur rien du tout n'est pas un aperçu.
+      const cost = Math.min(this.cardChildren(id).length, PAGE_SIZE)
+      if (id !== graph.rootId && cards + cost > budget) continue
+      cards += cost
+
       this.expanded.add(id)
       if (node.kind === "entity") continue // do not descend past an entity boundary
 
+      // N'enfiler que ce qui peut devenir visible : les élidés (toujours des
+      // lignes) et la PREMIÈRE page d'enfants-cartes. Enfiler au-delà ferait
+      // dépenser le budget à marquer déplié des nœuds que les pages cachent.
+      let cardIndex = 0
       for (const childId of node.childIds) {
-        queue.push(childId)
+        const child = graph.nodes.get(childId)
+        if (!child) continue
+        if (child.elided) {
+          queue.push(childId)
+          continue
+        }
+        if (cardIndex < PAGE_SIZE) queue.push(childId)
+        cardIndex++
       }
     }
   }
