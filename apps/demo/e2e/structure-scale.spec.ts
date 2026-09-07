@@ -75,17 +75,30 @@ async function canvasCenter(page: Page): Promise<{ cx: number; cy: number }> {
 }
 
 /**
- * Cadre `id` puis clique au centre : la seule preuve recevable qu'une carte est
- * DESSINÉE. L'appelant lit ensuite `__selected`, alimenté par l'événement
- * public — c'est là que se trouve la réponse, pas dans un retour.
+ * Attend que `id` soit CADRÉ ET DESSINÉ, en réessayant le clic au centre jusqu'à
+ * ce qu'il le sélectionne.
+ *
+ * Le clic est dans le poll, et pas avant lui : un `focus()` rend la main tout de
+ * suite, sa cascade de révélations et son cadrage suivent, et un clic tiré trop
+ * tôt sur le centre d'alors ne désignerait pas la cible — l'attendre à la montre
+ * reviendrait à parier sur la durée d'une mise en page qu'on ne contrôle pas.
+ *
+ * Rejouer le clic est sans danger, et c'est ce qui rend ce poll légitime :
+ * `select` ne touche ni à `opGen` ni à la caméra (`doSelect`), donc il ne peut
+ * pas perturber l'opération qu'il attend. Un clic à côté sélectionne au pire une
+ * carte voisine, ce que l'itération suivante corrige.
  */
-async function focusThenClickCenter(page: Page, id: string): Promise<void> {
-  await page.evaluate((target) => (window as any).__graph.focus(target), id)
-  // `focus()` rend la main tout de suite : la cascade de dépliages/révélations
-  // et le cadrage suivent. Plus long que l'animation de position (200 ms).
-  await page.waitForTimeout(600)
-  const { cx, cy } = await canvasCenter(page)
-  await page.mouse.click(cx, cy)
+async function proveDrawnAtCenter(page: Page, id: string): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const { cx, cy } = await canvasCenter(page)
+        await page.mouse.click(cx, cy)
+        return page.evaluate(() => (window as any).__selected.at(-1))
+      },
+      { timeout: 20_000 },
+    )
+    .toBe(id)
 }
 
 /**
@@ -105,11 +118,17 @@ async function focusThenClickCenter(page: Page, id: string): Promise<void> {
  */
 async function revealByToken(page: Page, anchorId: string): Promise<boolean> {
   await page.evaluate((id) => (window as any).__graph.focus(id), anchorId)
-  await page.waitForTimeout(600)
+  // Le cadrage est attendu par sa PREUVE, pas par une temporisation : tant que
+  // la carte d'ancrage ne répond pas au centre, l'ordonnée du jeton n'est pas
+  // encore celle qu'on s'apprête à balayer.
+  await proveDrawnAtCenter(page, anchorId)
   const { cx, cy } = await canvasCenter(page)
   const before = await visibleCount(page)
   for (let dy = 30; dy <= 78; dy += 3) {
     await page.mouse.click(cx, cy + dy)
+    // Le seul délai fixe qui reste ici, et il est sans enjeu : une révélation qui
+    // met plus longtemps à se voir est simplement constatée à l'itération
+    // suivante, la comparaison étant faite avec le compte D'AVANT le balayage.
     await page.waitForTimeout(250)
     if ((await visibleCount(page)) > before) return true
   }
@@ -185,10 +204,7 @@ test("la recherche revele une page profonde et centre la cible", async ({ page }
 
   // La preuve de la révélation par le seul canal qui ne ment pas : la caméra a
   // sauté sur la cible, et elle l'a trouvée dessinée à l'arrivée.
-  await page.waitForTimeout(600)
-  const { cx, cy } = await canvasCenter(page)
-  await page.mouse.click(cx, cy)
-  await expect.poll(() => page.evaluate(() => (window as any).__selected.at(-1))).toBe(target)
+  await proveDrawnAtCenter(page, target)
 
   expect(errors).toEqual([])
 })
@@ -206,10 +222,27 @@ test("Ranger garde une vue coherente apres des revelations", async ({ page }) =>
   // Deux révélations ÉLOIGNÉES l'une de l'autre : c'est précisément l'état
   // dérivé que `tidy()` existe pour réparer — deux blocs insérés dans une pose
   // qu'aucun calcul global n'a jamais vue en entier.
-  for (const term of ["Item 2777", "Item 1500"]) {
+  //
+  // Chaque révélation est attendue par DEUX polls, aucune temporisation fixe.
+  // Le premier guette le compteur : la page est alors DÉCIDÉE. Le second guette
+  // le pointeur : la mise en page est alors POSÉE et dessinée.
+  //
+  // Le second n'est pas du zèle. Entre les deux, `collapseState` a déjà révélé
+  // la page mais `engine.layoutAfterReveal` est encore en vol, et toute
+  // opération qui incrémente `opGen` pendant ce vol — le `nextMatch()` suivant,
+  // le clic sur « Ranger » — fait abandonner la cascade, qui ANNULE alors sa
+  // propre révélation (`doFocus`, branche `gen !== opGen`). S'arrêter au
+  // compteur laisserait donc une course qui retire une page sur deux.
+  const reveals = [
+    ["Item 2777", "/items/2777"],
+    ["Item 1500", "/items/1500"],
+  ] as const
+  for (const [term, target] of reveals) {
+    const before = await visibleCount(page)
     await page.evaluate((q) => (window as any).__graph.search(q), term)
     await page.evaluate(() => (window as any).__graph.nextMatch())
-    await page.waitForTimeout(1200)
+    await expect.poll(() => visibleCount(page), { timeout: 20_000 }).toBe(before + PAGE_SIZE)
+    await proveDrawnAtCenter(page, target)
   }
   const drifted = await stats(page)
   expect(drifted.visibleNodeCount).toBe(opened.visibleNodeCount + 2 * PAGE_SIZE)
@@ -229,10 +262,8 @@ test("Ranger garde une vue coherente apres des revelations", async ({ page }) =>
   // Et la vue reste VIVANTE : la carte révélée avant le rangement répond
   // toujours au pointeur, à sa nouvelle place. Un `tidy()` qui aurait publié
   // une pose sans reconstruire les cartes laisserait ce clic dans le vide.
-  await focusThenClickCenter(page, "/items/2777")
-  await expect
-    .poll(() => page.evaluate(() => (window as any).__selected.at(-1)))
-    .toBe("/items/2777")
+  await page.evaluate(() => (window as any).__graph.focus("/items/2777"))
+  await proveDrawnAtCenter(page, "/items/2777")
 
   expect(errors).toEqual([])
 })
