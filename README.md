@@ -25,6 +25,12 @@ into DDD aggregates drawn as circular envelopes — see [`config.groups`](#confi
 [the renderer's graph view docs](./packages/renderer/README.md#graph-view)
 and [`docs/graph-view.md`](./docs/graph-view.md).
 
+There are two ways to use it. As a **standalone desktop app**, the `datagraph`
+binary opens a JSON file straight from the shell, no code to write — see
+[The `datagraph` CLI](#the-datagraph-cli). As a **JS package**,
+`@defsquare/data-graph` mounts the same canvas into a container in your own
+app — see [The `@defsquare/data-graph` package](#the-defsquaredata-graph-package).
+
 ## Packages
 
 | Package | Description |
@@ -33,7 +39,58 @@ and [`docs/graph-view.md`](./docs/graph-view.md).
 | [`@defsquare/data-graph`](./packages/renderer) | Pixi.js renderer on top of core: `createDataGraph`, themes. |
 | [`apps/demo`](./apps/demo) | Vite demo, Playwright e2e, and the Tauri desktop shell that doubles as the `datagraph` CLI. |
 
-## Quickstart
+## The `datagraph` CLI
+
+`datagraph` is the demo app packaged as a **Tauri v2 desktop app**, and that
+binary is the end-user tool: point it at a JSON document and it opens the
+canvas described above, with no project to set up and no code to write.
+
+**Install: build from source.** There is no pre-built binary to download, and
+no `.app` / `.dmg` bundle — `bundle.active` is `false`, so `tauri build`
+produces a raw executable meant to be launched from a shell, which is what
+makes the CLI arguments useful in the first place. You need **pnpm** and a
+**Rust toolchain** (Tauri v2).
+
+```bash
+# from a clone of this repository
+pnpm install
+pnpm --filter demo tauri build   # → apps/demo/src-tauri/target/release/datagraph
+```
+
+The binary is not on your `PATH`: copy it, or symlink it, somewhere that is.
+
+```bash
+ln -s "$PWD/apps/demo/src-tauri/target/release/datagraph" /usr/local/bin/datagraph
+```
+
+**Usage.**
+
+```bash
+datagraph data.json -c config.json  # a JSON document with its ids/refs/groups config
+datagraph data.json                 # no config: structure view only
+datagraph                           # no argument: the built-in demo dataset
+datagraph --help
+```
+
+The `-c` file is the `ids` / `refs` / `groups` object documented in
+[Config: ids, refs, groups](#config-ids-refs-groups), as plain JSON. Without
+it, nothing is declared as an entity or a join, so you get the containment
+structure view only.
+
+Sample files ship with the repo, so a fresh build has something to open:
+
+```bash
+datagraph apps/demo/fixtures/shop.json -c apps/demo/fixtures/shop.config.json
+```
+
+Argument and file errors are reported on stderr with a non-zero exit code
+before any window opens. See [`apps/demo/README.md`](./apps/demo/README.md) for
+the details — exit codes, the CSP, the vendored fonts.
+
+## The `@defsquare/data-graph` package
+
+The other way in: embedding the renderer in your own app, rather than opening a
+file with [the CLI](#the-datagraph-cli) above.
 
 ```bash
 pnpm add @defsquare/data-graph
@@ -262,9 +319,9 @@ script runs `cargo test --manifest-path src-tauri/Cargo.toml`, so `pnpm -r test`
 at the root covers them alongside vitest. A Rust toolchain is therefore required
 for a full `pnpm test` — run `pnpm --filter '!demo' -r test` to skip it.
 
-**Desktop app and CLI.** The demo doubles as a Tauri v2 desktop app whose binary
-is also the end-user CLI (`datagraph <data.json> [-c <config.json>]`). See
-[`apps/demo/README.md`](./apps/demo/README.md).
+**Desktop app and CLI.** Both `tauri` commands need a Rust toolchain. What the
+resulting binary is, and how to install it, is in
+[The `datagraph` CLI](#the-datagraph-cli).
 
 ## License
 
