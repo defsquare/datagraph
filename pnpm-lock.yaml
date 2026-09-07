@@ -53,6 +53,18 @@ importers:
         specifier: ^6.0.0
         version: 6.4.3(@types/node@26.4.0)(lightningcss@1.33.0)(tsx@4.23.13)
 
+  packages/chrome:
+    devDependencies:
+      '@types/node':
+        specifier: ^20.19.43
+        version: 20.19.43
+      happy-dom:
+        specifier: ^15.11.7
+        version: 15.11.7
+      vitest:
+        specifier: ^4.1.11
+        version: 4.1.11(@types/node@20.19.43)(happy-dom@15.11.7)(vite@8.2.2(@types/node@20.19.43)(esbuild@0.28.2)(tsx@4.23.13))
+
   packages/core:
     dependencies:
       elkjs:
@@ -70,7 +82,7 @@ importers:
         version: 4.23.13
       vitest:
         specifier: ^4.1.11
-        version: 4.1.11(@types/node@20.19.43)(vite@8.2.2(@types/node@20.19.43)(esbuild@0.27.7)(tsx@4.23.13))
+        version: 4.1.11(@types/node@20.19.43)(happy-dom@15.11.7)(vite@8.2.2(@types/node@20.19.43)(esbuild@0.27.7)(tsx@4.23.13))
 
   packages/renderer:
     dependencies:
@@ -95,7 +107,7 @@ importers:
         version: 8.5.1(postcss@8.5.26)(tsx@4.23.13)(typescript@5.9.3)
       vitest:
         specifier: ^4.1.11
-        version: 4.1.11(@types/node@20.19.43)(vite@8.2.2(@types/node@20.19.43)(esbuild@0.28.2)(tsx@4.23.13))
+        version: 4.1.11(@types/node@20.19.43)(happy-dom@15.11.7)(vite@8.2.2(@types/node@20.19.43)(esbuild@0.28.2)(tsx@4.23.13))
 
   packages/tokens:
     devDependencies:
@@ -110,7 +122,7 @@ importers:
         version: 4.23.13
       vitest:
         specifier: ^4.1.11
-        version: 4.1.11(@types/node@20.19.43)(vite@8.2.2(@types/node@20.19.43)(esbuild@0.28.2)(tsx@4.23.13))
+        version: 4.1.11(@types/node@20.19.43)(happy-dom@15.11.7)(vite@8.2.2(@types/node@20.19.43)(esbuild@0.28.2)(tsx@4.23.13))
 
 packages:
 
@@ -1049,6 +1061,10 @@ packages:
   elkjs@0.12.0:
     resolution: {integrity: sha512-YZcKynxVxYoKIOEpywEPwCFdg+BTbxQRNf3pbwdDCvc8O3kQD8bmIwSxKU1eOTVc4Xo+VG9Te+575mlfvOrhEQ==}
 
+  entities@4.5.0:
+    resolution: {integrity: sha512-V0hjH4dGPh9Ao5p0MoRY6BVqtwCjhz6vI5LT8AJ55H+4g9/4vbHx1I54fS0XuclLhDHArPQCiMjDxjaL8fPxhw==}
+    engines: {node: '>=0.12'}
+
   es-module-lexer@2.3.2:
     resolution: {integrity: sha512-poHGpORABojJJucnV9KbOavETW8lBVnphkW77ER5/BQ5Fz7oXSoCNek7IH3vR5nRjdsEz926ibFYX8KtLQmdyw==}
 
@@ -1101,6 +1117,10 @@ packages:
 
   gifuct-js@2.1.2:
     resolution: {integrity: sha512-rI2asw77u0mGgwhV3qA+OEgYqaDn5UNqgs+Bx0FGwSpuqfYn+Ir6RQY5ENNQ8SbIiG/m5gVa7CD5RriO4f4Lsg==}
+
+  happy-dom@15.11.7:
+    resolution: {integrity: sha512-KyrFvnl+J9US63TEzwoiJOQzZBJY7KgBushJA8X61DMbNsH+2ONkDuLDnCnwUiPTF42tLoEmrPyoqbenVA5zrg==}
+    engines: {node: '>=18.0.0'}
 
   ismobilejs@1.1.1:
     resolution: {integrity: sha512-VaFW53yt8QO61k2WJui0dHf4SlL8lxBofUuUmwBo0ljPk0Drz2TiuDW4jo3wDcv41qy/SxrJ+VAzJ/qYqsmzRw==}
@@ -1514,6 +1534,14 @@ packages:
         optional: true
       jsdom:
         optional: true
+
+  webidl-conversions@7.0.0:
+    resolution: {integrity: sha512-VwddBukDzu71offAQR975unBIGqfKZpM+8ZX6ySk8nYhVoo5CYaZyzt3YBvYtRtO+aoGlqxPg/B87NGVZ/fu6g==}
+    engines: {node: '>=12'}
+
+  whatwg-mimetype@3.0.0:
+    resolution: {integrity: sha512-nt+N2dzIutVRxARx1nghPKGv1xHikU7HKdfafKkLNLindmPU/ch3U31NOCGGA/dmPcmb1VlofO0vnKAcsm0o/Q==}
+    engines: {node: '>=12'}
 
   why-is-node-running@2.3.0:
     resolution: {integrity: sha512-hUrmaWBdVDcxvYqnyh09zunKzROWjbZTiNy8dBEjkS7ehEDQibXJ7XvlmtbwuTclUiIyN+CyXQD4Vmko8fNm8w==}
@@ -2064,6 +2092,8 @@ snapshots:
 
   elkjs@0.12.0: {}
 
+  entities@4.5.0: {}
+
   es-module-lexer@2.3.2: {}
 
   esbuild@0.25.12:
@@ -2180,6 +2210,12 @@ snapshots:
   gifuct-js@2.1.2:
     dependencies:
       js-binary-schema-parser: 2.0.3
+
+  happy-dom@15.11.7:
+    dependencies:
+      entities: 4.5.0
+      webidl-conversions: 7.0.0
+      whatwg-mimetype: 3.0.0
 
   ismobilejs@1.1.1: {}
 
@@ -2504,7 +2540,7 @@ snapshots:
       fsevents: 2.3.3
       tsx: 4.23.13
 
-  vitest@4.1.11(@types/node@20.19.43)(vite@8.2.2(@types/node@20.19.43)(esbuild@0.27.7)(tsx@4.23.13)):
+  vitest@4.1.11(@types/node@20.19.43)(happy-dom@15.11.7)(vite@8.2.2(@types/node@20.19.43)(esbuild@0.27.7)(tsx@4.23.13)):
     dependencies:
       '@vitest/expect': 4.1.11
       '@vitest/mocker': 4.1.11(vite@8.2.2(@types/node@20.19.43)(esbuild@0.27.7)(tsx@4.23.13))
@@ -2528,10 +2564,11 @@ snapshots:
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@types/node': 20.19.43
+      happy-dom: 15.11.7
     transitivePeerDependencies:
       - msw
 
-  vitest@4.1.11(@types/node@20.19.43)(vite@8.2.2(@types/node@20.19.43)(esbuild@0.28.2)(tsx@4.23.13)):
+  vitest@4.1.11(@types/node@20.19.43)(happy-dom@15.11.7)(vite@8.2.2(@types/node@20.19.43)(esbuild@0.28.2)(tsx@4.23.13)):
     dependencies:
       '@vitest/expect': 4.1.11
       '@vitest/mocker': 4.1.11(vite@8.2.2(@types/node@20.19.43)(esbuild@0.28.2)(tsx@4.23.13))
@@ -2555,8 +2592,13 @@ snapshots:
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@types/node': 20.19.43
+      happy-dom: 15.11.7
     transitivePeerDependencies:
       - msw
+
+  webidl-conversions@7.0.0: {}
+
+  whatwg-mimetype@3.0.0: {}
 
   why-is-node-running@2.3.0:
     dependencies:
