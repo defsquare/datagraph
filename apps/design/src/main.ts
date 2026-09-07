@@ -4,6 +4,13 @@
 // pas importées : voir le commentaire de l'injection.
 import "../../demo/src/fonts.css";
 import "./style.css";
+// La feuille des primitives du chrome, celle-là même que la démo charge. La
+// planche des composants UI montre donc les composants du produit, habillés par
+// leurs vraies règles — et non une recopie, comme c'était le cas avant que ces
+// primitives ne soient extraites. Après `style.css` : les variables de tokens
+// qu'elle consomme sont injectées plus bas, et la cascade veut que le shell
+// puisse être surchargé, pas l'inverse.
+import "@chrome/chrome.css";
 
 import { renderTokensCss } from "@tokens/css.ts";
 import { onThemeChange, setTheme, themeState, type ThemeState } from "./theme-state.ts";

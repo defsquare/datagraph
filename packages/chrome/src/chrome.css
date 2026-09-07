@@ -186,10 +186,12 @@
 
 /* ---------- Menu ---------- */
 
+/* Sans ancrage : `position`, `top` et `left` disent OÙ le menu de la démo se
+   pose — sous son bouton ⋮, dans la barre d'outils — et c'est de la mise en
+   place, pas une propriété du panneau. L'application les pose sur son instance.
+   `transform-origin` reste ici : il appartient à l'animation d'ouverture, qui
+   part du coin par lequel le panneau est retenu. */
 .menu {
-  position: absolute;
-  top: 44px;
-  left: 0;
   min-width: 216px;
   padding: 5px;
   transform-origin: top left;

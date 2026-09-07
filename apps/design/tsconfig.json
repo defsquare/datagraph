@@ -25,12 +25,14 @@
       "@tokens/*": ["../../packages/tokens/src/*"],
       "@renderer/*": ["../../packages/renderer/src/*"],
       "@core/*": ["../../packages/core/src/*"],
+      "@chrome/*": ["../../packages/chrome/src/*"],
 
       "@defsquare/data-graph-core/graph-layout": ["../../packages/core/src/graph-layout.ts"],
       "@defsquare/data-graph-core": ["../../packages/core/src/index.ts"],
       "@defsquare/data-graph/graph-layout-worker": ["../../packages/renderer/src/graph-layout-worker.ts"],
       "@defsquare/data-graph-tokens/css": ["../../packages/tokens/src/css.ts"],
       "@defsquare/data-graph-tokens": ["../../packages/tokens/src/index.ts"],
+      "@defsquare/data-graph-chrome": ["../../packages/chrome/src/index.ts"],
       "@defsquare/data-graph": ["../../packages/renderer/src/index.ts"]
     }
   },

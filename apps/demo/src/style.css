@@ -60,6 +60,15 @@ html, body {
   gap: var(--space-2);
 }
 
+/* L'ancrage du menu ⋮ : sous son bouton, dans la barre d'outils. C'est de la
+   mise en place — le panneau lui-même (largeur, marge, ouverture) vient de
+   `chrome.css`, qui n'a pas à savoir où la démo le pose. */
+#menu {
+  position: absolute;
+  top: 44px;
+  left: 0;
+}
+
 /* L'icône affichée est celle de la vue CIBLE, portée par `data-target`. Les deux
    icônes sont posées dans le bouton par `createIconButton`, qui les classe ;
    laquelle se voit est une décision de la démo, donc cette règle reste ici. */

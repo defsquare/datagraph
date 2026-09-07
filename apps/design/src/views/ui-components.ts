@@ -1,3 +1,14 @@
+import {
+  createBadge,
+  createCluster,
+  createClusterSeparator,
+  createFindbar,
+  createIconButton,
+  createMenu,
+  createMenuItem,
+  type IconName,
+} from "@chrome/index.ts";
+
 import "./ui-components.css";
 
 /**
@@ -5,27 +16,30 @@ import "./ui-components.css";
  * bouton d'icône, champ de recherche, pastille d'entité, item de menu — chacune
  * déclinée en rangée d'états.
  *
- * Deux partis pris fondent cette planche.
+ * Ces spécimens sont les COMPOSANTS EUX-MÊMES. Ils sortent des fabriques de
+ * `@defsquare/data-graph-chrome`, celles que la démo appelle, et sont habillés
+ * par la feuille que la démo charge. C'est le même régime que la planche des
+ * composants graphe vis-à-vis de `draw.ts` : un spécimen ne peut pas mentir sur
+ * ce que le produit dessine, parce qu'il EST ce que le produit dessine.
+ *
+ * Cette planche a d'ailleurs commencé par recopier le CSS et les icônes du
+ * chrome, faute de pouvoir les importer — c'est ce constat qui a fait extraire
+ * le paquet. Il ne reste ici que le cartel autour des objets exposés.
+ *
+ * Deux partis pris fondent la planche elle-même.
  *
  * 1. Les états sont RÉELS, jamais simulés. Une case « survol » est le vrai
  *    composant, qu'on survole ; une case « focus » est le vrai composant, qu'on
  *    atteint au Tab. Aucune classe jumelle du genre `.is-hover` : elle ne
- *    serait qu'une copie de la règle `:hover`, et deviendrait fausse dès que
- *    l'une des deux changerait sans l'autre — c'est-à-dire dès la première
- *    retouche. Corollaire assumé : plusieurs cases se ressemblent au repos, et
- *    c'est la LÉGENDE qui dit le geste à faire. Le prix est faible ; la
- *    garantie qu'aucun spécimen ne ment, non.
+ *    serait qu'une copie de la règle `:hover`, et deviendrait fausse dès la
+ *    première retouche. Corollaire assumé : plusieurs cases se ressemblent au
+ *    repos, et c'est la LÉGENDE qui dit le geste à faire.
  *
- * 2. Les états qui n'existent pas sont DITS absents, pas inventés. Le chrome de
- *    la démo ne définit ni `:active` pour l'item de menu, ni `:disabled` pour
- *    les chevrons de la recherche : la planche le montre tel quel et le nomme.
- *    Une planche de design system doit pouvoir servir à repérer un trou ; elle
- *    ne le peut pas si elle le rebouche en passant.
- *
- * Le CSS, lui, est une RECOPIE de `apps/demo/src/style.css` sous des classes
- * locales — voir l'avertissement en tête de `ui-components.css` pour la raison
- * (les règles d'origine sont ancrées en `position: fixed` sur des ids de page)
- * et pour la dette que cela crée.
+ * 2. Les états qui n'existent pas sont DITS absents, pas inventés. Le chrome ne
+ *    définit ni `:active` pour l'item de menu, ni `:disabled` pour les chevrons
+ *    de la recherche : la planche le montre tel quel et le nomme. Une planche de
+ *    design system doit pouvoir servir à repérer un trou ; elle ne le peut pas
+ *    si elle le rebouche en passant.
  *
  * Pas de Pixi ici, et c'est l'information : ces composants-là n'existent QUE
  * dans le DOM. La translucidité, le flou d'arrière-plan et les ombres portées
@@ -33,35 +47,7 @@ import "./ui-components.css";
  * chrome est resté du DOM au-dessus du canvas plutôt que d'être dessiné dedans.
  */
 
-const SVG_NS = "http://www.w3.org/2000/svg";
-
-/** Corps des icônes du chrome, recopiés de `apps/demo/index.html`. Même dette
- * que la feuille : ce sont les vraies icônes, dupliquées faute de pouvoir les
- * importer (elles vivent en dur dans le HTML de la démo, pas dans un module). */
-const ICONS = {
-  search: `
-    <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5" />
-    <line x1="10.5" y1="10.5" x2="14" y2="14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />`,
-  fit: `
-    <path d="M2 5.5V3.2A1.2 1.2 0 0 1 3.2 2h2.3M10.5 2h2.3A1.2 1.2 0 0 1 14 3.2v2.3M14 10.5v2.3a1.2 1.2 0 0 1-1.2 1.2h-2.3M5.5 14H3.2A1.2 1.2 0 0 1 2 12.8v-2.3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-    <rect x="5.75" y="5.75" width="4.5" height="4.5" rx="1" fill="currentColor" opacity="0.35" />`,
-  graph: `
-    <path d="M4.2 4.2 11.8 6M11.8 6 7 12.2M4.2 4.2 7 12.2" fill="none" stroke="currentColor" stroke-width="1.3" />
-    <circle cx="4.2" cy="4.2" r="2" fill="currentColor" />
-    <circle cx="11.8" cy="6" r="2" fill="currentColor" />
-    <circle cx="7" cy="12.2" r="2" fill="currentColor" />`,
-  dots: `
-    <circle cx="8" cy="3.4" r="1.25" fill="currentColor" />
-    <circle cx="8" cy="8" r="1.25" fill="currentColor" />
-    <circle cx="8" cy="12.6" r="1.25" fill="currentColor" />`,
-  close: `<path d="m4.5 4.5 7 7m0-7-7 7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />`,
-  up: `<path d="M4.5 9.5 8 6l3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />`,
-  down: `<path d="M4.5 6.5 8 10l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />`,
-} as const;
-
-type IconName = keyof typeof ICONS;
-
-// --- Fabriques DOM.
+// --- Fabriques DOM du cartel.
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -72,19 +58,6 @@ function el<K extends keyof HTMLElementTagNameMap>(
   if (className) node.className = className;
   if (text !== undefined) node.textContent = text;
   return node;
-}
-
-/** `innerHTML` sur un littéral figé du module : aucune donnée extérieure ne
- * transite ici, et c'est de loin la façon la plus lisible de garder les tracés
- * SVG identiques à ceux du HTML de la démo — les réécrire en appels
- * `createElementNS` rendrait la prochaine comparaison illisible. */
-function icon(name: IconName, className?: string): SVGSVGElement {
-  const svg = document.createElementNS(SVG_NS, "svg");
-  svg.setAttribute("viewBox", "0 0 16 16");
-  svg.setAttribute("aria-hidden", "true");
-  if (className) svg.setAttribute("class", className);
-  svg.innerHTML = ICONS[name];
-  return svg;
 }
 
 /**
@@ -121,11 +94,11 @@ function cell(label: string, ...content: Node[]): HTMLElement {
   return node;
 }
 
-/** Le socle flottant, sur lequel TOUT le reste repose : dans la démo, aucune de
- * ces primitives n'apparaît jamais à nu sur le canvas. Les composer ici sur
- * autre chose donnerait des couleurs de survol qu'on ne verra jamais. */
-function float(className: string | null, ...content: Node[]): HTMLElement {
-  const node = el("div", className ? `uic-float ${className}` : "uic-float");
+/** Une surface flottante nue. `.float` est une classe qu'on POSE, pas un
+ * composant qu'on construit : elle vient de la feuille du chrome, il n'y a rien
+ * à fabriquer. */
+function float(extraClass: string | null, ...content: Node[]): HTMLElement {
+  const node = el("div", extraClass ? `float ${extraClass}` : "float");
   node.append(...content);
   return node;
 }
@@ -151,14 +124,13 @@ function floatSection(): HTMLElement {
       float(null, body),
     ),
     cell(
-      "la grappe d'icônes (<code>.cluster</code>) — la même surface, resserrée à 3px autour de ses boutons, avec son séparateur d'1px.",
-      float(
-        "uic-cluster",
-        iconButton({ icon: "search", label: "Rechercher" }),
-        iconButton({ icon: "fit", label: "Ajuster à la vue" }),
-        iconButton({ icon: "graph", label: "Vue graphe" }),
-        el("span", "uic-cluster-sep"),
-        iconButton({ icon: "dots", label: "Menu" }),
+      "la grappe d'icônes (<code>createCluster</code>) — la même surface, resserrée à 3px autour de ses boutons, avec son séparateur d'1px. C'est l'assemblage exact de la barre d'outils de la démo.",
+      createCluster(
+        createIconButton({ icon: "search", label: "Rechercher" }),
+        createIconButton({ icon: "fit", label: "Ajuster à la vue" }),
+        createIconButton({ icon: "graph", label: "Vue graphe" }),
+        createClusterSeparator(),
+        createIconButton({ icon: "dots", label: "Menu" }),
       ),
     ),
   );
@@ -168,7 +140,7 @@ function floatSection(): HTMLElement {
 
 // --- Section 2 : le bouton d'icône.
 
-interface IconButtonOptions {
+interface SpecimenButtonOptions {
   icon: IconName;
   label: string;
   small?: boolean;
@@ -177,27 +149,35 @@ interface IconButtonOptions {
   busy?: boolean;
 }
 
-function iconButton(opts: IconButtonOptions): HTMLButtonElement {
-  const button = el("button", opts.small ? "uic-ibtn uic-ibtn-sm" : "uic-ibtn");
-  button.type = "button";
-  button.setAttribute("aria-label", opts.label);
-  button.title = opts.label;
-  // `aria-expanded` et `aria-busy` sont posés en ATTRIBUT, jamais en classe :
-  // ce sont eux que la feuille sélectionne, exactement comme dans la démo, et
-  // c'est ce qui rend impossible un état visuel sans son annonce aux
-  // technologies d'assistance.
-  if (opts.expanded) button.setAttribute("aria-expanded", "true");
+/**
+ * Un bouton du produit, posé dans l'état qu'on veut montrer.
+ *
+ * `disabled` et `aria-busy` ne sont pas des options de `createIconButton` et ne
+ * doivent pas l'être : ce sont des états d'EXÉCUTION, que l'application pose et
+ * retire au fil de ce qu'elle fait — une fabrique qui les prendrait en argument
+ * suggérerait qu'ils se décident à la construction. La planche les pose donc
+ * comme la démo les pose, par attribut, après coup.
+ */
+function specimenButton(opts: SpecimenButtonOptions): HTMLButtonElement {
+  const button = createIconButton({
+    icon: opts.icon,
+    label: opts.label,
+    small: opts.small,
+    // `aria-expanded` EST un argument de la fabrique : un déclencheur de panneau
+    // le porte dès sa construction, replié, sans quoi il annoncerait un panneau
+    // qu'il n'ouvre pas.
+    expanded: opts.expanded,
+  });
   if (opts.busy) button.setAttribute("aria-busy", "true");
   if (opts.disabled) button.disabled = true;
-  button.append(icon(opts.icon));
   return button;
 }
 
 /** Un bouton seul, mais sur sa grappe : hors d'une surface flottante, sa teinte
  * de survol (`--float-hover`) se composerait sur le canvas et non sur le verre,
  * donc sur une couleur que le produit ne montre jamais. */
-function loneButton(opts: IconButtonOptions): HTMLElement {
-  return float("uic-cluster", iconButton(opts));
+function loneButton(opts: SpecimenButtonOptions): HTMLElement {
+  return createCluster(specimenButton(opts));
 }
 
 function iconButtonSection(): HTMLElement {
@@ -233,8 +213,14 @@ function iconButtonSection(): HTMLElement {
       loneButton({ icon: "fit", label: "Ajuster à la vue", busy: true, disabled: true }),
     ),
     cell(
-      "variante <code>.ibtn-sm</code> — 24px, la seule autre taille du chrome ; elle ne sert qu'à fermer le panneau de détail. Mêmes états que ci-dessus.",
+      "variante <code>small</code> (<code>.ibtn-sm</code>) — 24px, la seule autre taille du chrome ; elle ne sert qu'à fermer le panneau de détail. Mêmes états que ci-dessus.",
       loneButton({ icon: "close", label: "Fermer le panneau", small: true }),
+    ),
+    cell(
+      "deux icônes dans un bouton — c'est ainsi que la bascule de vue porte l'état courant ET l'état cible, la feuille de la démo en masquant une selon <code>data-target</code>. Hors de la démo, aucune règle ne les départage : les deux se voient, ce qui est la structure nue.",
+      createCluster(
+        createIconButton({ icon: ["graph", "structure"], label: "Vue graphe" }),
+      ),
     ),
   );
 
@@ -243,39 +229,27 @@ function iconButtonSection(): HTMLElement {
 
 // --- Section 3 : le champ de recherche.
 
-interface FindbarOptions {
+interface FindbarSpecimenOptions {
   value?: string;
   counter?: string;
   disabled?: boolean;
 }
 
-function findbar(opts: FindbarOptions = {}): HTMLElement {
-  const input = el("input", "uic-search");
-  input.type = "search";
-  input.placeholder = "Rechercher…";
-  input.autocomplete = "off";
-  input.setAttribute("aria-label", "Rechercher");
-  if (opts.value !== undefined) input.value = opts.value;
-  if (opts.disabled) input.disabled = true;
+function findbar(opts: FindbarSpecimenOptions = {}): HTMLElement {
+  const bar = createFindbar();
+  // La fabrique la rend REPLIÉE, comme la démo en a besoin : dans le produit,
+  // la recherche n'apparaît qu'au clic sur la loupe. Sur la planche elle est
+  // l'objet exposé, donc dépliée en permanence.
+  bar.root.removeAttribute("hidden");
 
-  const nav = (name: "up" | "down", label: string): HTMLButtonElement => {
-    const button = el("button", "uic-findbar-nav");
-    button.type = "button";
-    button.setAttribute("aria-label", label);
-    button.title = label;
-    if (opts.disabled) button.disabled = true;
-    button.append(icon(name));
-    return button;
-  };
-
-  return float(
-    "uic-findbar",
-    icon("search", "uic-findbar-icon"),
-    input,
-    el("span", "uic-match-counter", opts.counter ?? ""),
-    nav("up", "Résultat précédent"),
-    nav("down", "Résultat suivant"),
-  );
+  if (opts.value !== undefined) bar.input.value = opts.value;
+  if (opts.counter !== undefined) bar.counter.textContent = opts.counter;
+  if (opts.disabled) {
+    bar.input.disabled = true;
+    bar.prev.disabled = true;
+    bar.next.disabled = true;
+  }
+  return bar.root;
 }
 
 function findbarSection(): HTMLElement {
@@ -295,7 +269,7 @@ function findbarSection(): HTMLElement {
       findbar({ value: "order", counter: "3/17" }),
     ),
     cell(
-      "<code>disabled</code> sur le champ et les chevrons — <strong>et c'est un trou</strong> : le chrome de la démo ne définit aucune règle désactivée pour eux. Ce qu'on voit est le style par défaut du navigateur, pas une décision du design system.",
+      "<code>disabled</code> sur le champ et les chevrons — <strong>et c'est un trou</strong> : le chrome ne définit aucune règle désactivée pour eux. Ce qu'on voit est le style par défaut du navigateur, pas une décision du design system.",
       findbar({ value: "order", counter: "0/0", disabled: true }),
     ),
   );
@@ -306,11 +280,7 @@ function findbarSection(): HTMLElement {
 // --- Section 4 : la pastille d'entité.
 
 function badgeSample(type: string, label: string): HTMLElement {
-  return float(
-    "uic-detail-sample",
-    el("span", "uic-badge", type),
-    el("p", "uic-detail-label", label),
-  );
+  return float("uic-detail-sample", createBadge({ text: type }), el("p", "uic-detail-label", label));
 }
 
 function badgeSection(): HTMLElement {
@@ -326,7 +296,7 @@ function badgeSection(): HTMLElement {
       badgeSample("PurchaseOrderLine", "PurchaseOrderLine #77-3"),
     ),
     cell(
-      "l'encre est un <code>#ffffff</code> écrit en dur dans le chrome, pas un token — <strong>le design system n'a pas d'encre « sur accent »</strong>. Recopié tel quel ici : y substituer une variable ferait mentir le spécimen sur ce que le produit dessine.",
+      "l'encre est un <code>#ffffff</code> écrit en dur dans <code>chrome.css</code>, pas un token — <strong>le design system n'a pas d'encre « sur accent »</strong>. C'est la vraie règle qui s'applique ici, donc le trou se voit tel qu'il est.",
       badgeSample("Customer", "Customer #c1"),
     ),
   );
@@ -336,23 +306,31 @@ function badgeSection(): HTMLElement {
 
 // --- Section 5 : l'item de menu.
 
-interface MenuItemOptions {
+interface MenuItemSpecimen {
   text: string;
   disabled?: boolean;
 }
 
-function menuPanel(items: MenuItemOptions[]): HTMLElement {
-  // Sans `role="menu"` / `role="menuitem"`, contrairement à la démo : ces rôles
-  // promettent une navigation aux flèches que cette planche n'implémente pas.
-  // Une promesse d'accessibilité non tenue est pire que son absence, et les
-  // rôles ne changent RIEN au visuel examiné ici.
-  const panel = float("uic-menu");
-  for (const item of items) {
-    const button = el("button", "uic-menu-item", item.text);
-    button.type = "button";
-    if (item.disabled) button.disabled = true;
-    panel.append(button);
-  }
+/**
+ * Le panneau de menu du produit, déplié.
+ *
+ * `createMenu` pose `role="menu"` et `hidden`, comme la démo en a besoin. La
+ * planche retire `hidden` — le panneau est ici l'objet exposé — mais garde le
+ * rôle : la planche montre le composant tel qu'il est, y compris son ARIA. Ce
+ * rôle promet une navigation aux flèches que ni la démo ni la planche
+ * n'implémentent ; c'est un écart du produit, et le masquer ici reviendrait à
+ * ce que cette planche existe précisément pour empêcher.
+ */
+function menuPanel(items: MenuItemSpecimen[]): HTMLElement {
+  const panel = createMenu(
+    {},
+    ...items.map((item) => {
+      const button = createMenuItem({ label: item.text });
+      if (item.disabled) button.disabled = true;
+      return button;
+    }),
+  );
+  panel.removeAttribute("hidden");
   return panel;
 }
 

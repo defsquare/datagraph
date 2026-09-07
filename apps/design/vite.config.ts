@@ -42,6 +42,7 @@ export default defineConfig({
       { find: "@tokens/", replacement: src("../../packages/tokens/src/") },
       { find: "@renderer/", replacement: src("../../packages/renderer/src/") },
       { find: "@core/", replacement: src("../../packages/core/src/") },
+      { find: "@chrome/", replacement: src("../../packages/chrome/src/") },
 
       {
         find: "@defsquare/data-graph-core/graph-layout",
@@ -62,6 +63,14 @@ export default defineConfig({
       {
         find: "@defsquare/data-graph-tokens",
         replacement: src("../../packages/tokens/src/index.ts"),
+      },
+      {
+        find: "@defsquare/data-graph-chrome/chrome.css",
+        replacement: src("../../packages/chrome/src/chrome.css"),
+      },
+      {
+        find: "@defsquare/data-graph-chrome",
+        replacement: src("../../packages/chrome/src/index.ts"),
       },
       {
         find: "@defsquare/data-graph",
