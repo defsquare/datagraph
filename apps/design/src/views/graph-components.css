@@ -1,0 +1,72 @@
+/* Habillage de la vue « Composants graphe ».
+
+   Même règle que `style.css` et `tokens.css` : aucune couleur, aucun rayon,
+   aucun espacement en dur — tout vient des variables générées par le paquet de
+   tokens. Ce qui est EXAMINÉ ici n'est de toute façon pas du DOM : les
+   spécimens sont dessinés par Pixi, sur le fond de canevas du thème. Cette
+   feuille n'habille que le cartel autour d'eux.
+
+   Les classes sont préfixées `gc-` et non `ds-` : les `ds-*` vivent dans
+   `views/tokens.css`, la feuille d'une AUTRE vue. Deux vues qui se partageraient
+   des classes par le hasard de l'ordre des imports se casseraient mutuellement
+   au premier renommage. */
+
+.graph-components-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.gc-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.gc-section-title {
+  margin: 0;
+  font-family: var(--font-title, var(--font-body));
+  font-size: 1.125rem;
+  font-weight: 500;
+  color: var(--ds-ink);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--ds-border);
+}
+
+.gc-note {
+  margin: 0;
+  max-width: 56rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--ds-muted);
+}
+
+/* Les planches les plus larges (le zoom sémantique) dépassent la colonne de
+   contenu sur un écran étroit. Elles DÉFILENT au lieu de se réduire : un
+   spécimen de design system se juge à sa taille réelle, et le rétrécir ferait
+   passer un flou d'échantillonnage pour un défaut du rendu.
+
+   Le défilement est porté par l'hôte et non par le canvas : `autoDensity` pose
+   une largeur ET une hauteur INLINE sur l'élément, qu'aucune règle de cette
+   feuille ne peut surcharger — un `max-width: 100%` d'ici gagnerait sur la
+   largeur, la hauteur inline resterait, et la planche s'écraserait. */
+.gc-stage {
+  overflow-x: auto;
+}
+
+/* La scène est bordée : son fond est `surface.canvas`, qui vaut presque la
+   surface de la page en mode clair — sans contour, on ne verrait pas où
+   commence le canvas, donc pas sur quel fond le spécimen est jugé. */
+.gc-stage canvas {
+  display: block;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--radius-md);
+}
+
+/* Le statut d'initialisation, retiré dès que la scène est peinte : il ne
+   subsiste que si l'init échoue, et il porte alors la raison. */
+.gc-status {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--ds-subtle);
+}

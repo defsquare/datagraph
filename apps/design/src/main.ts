@@ -10,6 +10,7 @@ import { onThemeChange, setTheme, themeState, type ThemeState } from "./theme-st
 // Après `./style.css` : une vue importe sa propre feuille, et celle-ci doit
 // pouvoir surcharger celle du shell — l'ordre des imports EST l'ordre en
 // cascade.
+import { mountGraphComponentsView } from "./views/graph-components.ts";
 import { mountTokensView } from "./views/tokens.ts";
 
 /**
@@ -53,7 +54,7 @@ const TOKENS_VIEW: PlaygroundView = { id: "tokens", label: "Tokens", mount: moun
 
 const VIEWS: PlaygroundView[] = [
   TOKENS_VIEW,
-  placeholder("graph", "Composants graphe"),
+  { id: "graph", label: "Composants graphe", mount: mountGraphComponentsView },
   placeholder("ui", "Composants UI"),
   placeholder("sandbox", "Bac à sable"),
 ];
