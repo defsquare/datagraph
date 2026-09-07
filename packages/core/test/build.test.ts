@@ -35,6 +35,12 @@ describe("buildGraph", () => {
   it("throws GraphTooLargeError above maxNodes", () => {
     expect(() => buildGraph(bigShop(2000), { ...shopConfig, maxNodes: 100 })).toThrow(GraphTooLargeError)
   })
+  it("GraphTooLargeError dit comment relever le plafond", () => {
+    // Le plafond est une garde mémoire délibérément relevable : le message doit
+    // nommer le levier (`maxNodes` dans la config), sinon l'utilisateur bloqué
+    // n'a aucune issue.
+    expect(() => buildGraph(bigShop(2000), { ...shopConfig, maxNodes: 100 })).toThrow(/maxNodes.*config/)
+  })
   it("handles 10k logical nodes under 1s", () => {
     const t0 = performance.now()
     const big = buildGraph(bigShop(10_000), shopConfig)

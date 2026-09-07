@@ -27,7 +27,12 @@ describe("validateConfig", () => {
         path: "$.orders[*].customerId",
       },
     ])
-    expect(v.maxNodes).toBe(50_000)
+    // `maxNodes` ne garde plus le coût du layout (la vue graphe borne elle-même
+    // ce qu'elle dispose) : c'est une pure garde MÉMOIRE sur buildGraph +
+    // buildSearchIndex, linéaires. Le défaut est calibré au bench — 1 M nœuds
+    // logiques tiennent en ~430 Mo de heap / ~0,8 s sous les options node par
+    // défaut (voir bench/bench.ts, section « échelle mémoire »).
+    expect(v.maxNodes).toBe(1_000_000)
     expect(v.rootLabel).toBe("$")
   })
 

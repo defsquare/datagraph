@@ -155,7 +155,9 @@ export interface Graph {
 
 export class GraphTooLargeError extends Error {
   constructor(public count: number, public max: number) {
-    super(`Graph exceeds maxNodes: ${count} > ${max}`)
+    // Le plafond est délibérément relevable : le message doit nommer le levier,
+    // sinon l'utilisateur bloqué n'a aucune issue depuis la CLI.
+    super(`Graph exceeds maxNodes: ${count} > ${max} — relevez "maxNodes" dans la config (option -c de la CLI)`)
     this.name = "GraphTooLargeError"
   }
 }

@@ -47,6 +47,48 @@ function report(label: string, ms: number, budgetMs: number | null): void {
   console.log(`${label}: ${ms.toFixed(1)}ms${budgetStr}${flag}`)
 }
 
+function mb(bytes: number): string {
+  return `${(bytes / 1024 / 1024).toFixed(0)} MB`
+}
+
+// Mesure d'échelle : `maxNodes` n'est plus une garde de coût de layout (la vue
+// graphe borne ce qu'elle dispose) mais une garde MÉMOIRE sur buildGraph +
+// buildSearchIndex, tous deux linéaires. Le défaut de `config.ts` se choisit
+// donc sur ces chiffres-là, mesurés sous les options node PAR DÉFAUT : la
+// webview n'aura pas de `--max-old-space-size` non plus.
+async function scaleSweep(): Promise<void> {
+  console.log("\n--- échelle mémoire buildGraph + buildSearchIndex ---")
+  // MAX_SAFE_INTEGER : sans quoi la mesure serait bloquée par le défaut en
+  // vigueur, qui est précisément ce qu'on cherche à calibrer.
+  const unbounded: DataGraphConfig = { ...bigShopConfig, maxNodes: Number.MAX_SAFE_INTEGER }
+
+  for (const n of [100_000, 500_000, 1_000_000]) {
+    try {
+      const before = process.memoryUsage().heapUsed
+      const data = bigShop(n)
+      const afterData = process.memoryUsage().heapUsed
+
+      const t0 = performance.now()
+      const graph = buildGraph(data, unbounded)
+      const buildMs = performance.now() - t0
+
+      const t1 = performance.now()
+      buildSearchIndex(graph)
+      const indexMs = performance.now() - t1
+
+      const peak = process.memoryUsage().heapUsed
+      console.log(
+        `n=${n}: build ${buildMs.toFixed(0)}ms + index ${indexMs.toFixed(0)}ms = ${(buildMs + indexMs).toFixed(0)}ms` +
+        ` | heap ${mb(peak)} (données source ${mb(afterData - before)}, graphe+index ${mb(peak - afterData)})` +
+        ` | ${graph.logicalNodeCount} nœuds logiques`,
+      )
+    } catch (err: unknown) {
+      // Un OOM/échec à un palier EST une mesure : on l'imprime et on continue.
+      console.log(`n=${n}: ÉCHEC — ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+}
+
 async function main(): Promise<void> {
   const N = 10_000
   console.log(`--- data-graph-core bench (bigShop(${N})) ---`)
@@ -74,6 +116,8 @@ async function main(): Promise<void> {
   await engine.layout(graph, visible)
   report("layout initial (default-visible set)", performance.now() - t3, null)
   console.log(`  -> ${visible.size} nodes visible by default`)
+
+  await scaleSweep()
 }
 
 main()
