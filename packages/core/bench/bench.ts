@@ -56,13 +56,39 @@ function mb(bytes: number): string {
 // buildSearchIndex, tous deux linéaires. Le défaut de `config.ts` se choisit
 // donc sur ces chiffres-là, mesurés sous les options node PAR DÉFAUT : la
 // webview n'aura pas de `--max-old-space-size` non plus.
+//
+// MÉTHODOLOGIE — le balayage groupé (les trois paliers d'affilée) est un
+// MAJORANT BRUITÉ, pas la mesure de décision : les paliers s'enchaînent dans le
+// même heap, le GC n'a pas forcément tourné entre eux, donc le `heap` imprimé
+// porte encore des restes du palier précédent (jusqu'à ~650 Mo observés à 1 M).
+// Le défaut `maxNodes: 1_000_000` de `config.ts` a été figé sur des exécutions
+// ISOLÉES, un process par palier, via `BENCH_SCALE_N` :
+//
+//   BENCH_SCALE_N=100000  pnpm --filter @defsquare/data-graph-core bench  →  95 Mo,  66 ms
+//   BENCH_SCALE_N=500000  ...                                            → 291 Mo, 338 ms
+//   BENCH_SCALE_N=1000000 ...                                            → 479 Mo, 814 ms
+//
+// (heap absolu et build+index ; node 25 / darwin arm64, options par défaut.)
+// Ces heaps incluent ~40 Mo de socle : le bench a déjà construit le graphe 10k
+// et son moteur de layout plus haut, et ne les libère pas. La croissance reste
+// linéaire — ~0,43 Ko et ~0,8 µs par nœud logique — et 479 Mo laisse 3× de marge
+// sous le budget de ~1,5 Go visé, d'où 1 M.
+//
+// Refaire ces trois runs isolés avant de retoucher le défaut : les chiffres du
+// balayage groupé ne leur sont pas comparables.
 async function scaleSweep(): Promise<void> {
   console.log("\n--- échelle mémoire buildGraph + buildSearchIndex ---")
+  console.log("    (balayage groupé = majorant bruité par le GC ; le défaut maxNodes est calé sur des runs isolés, cf. commentaire de scaleSweep)")
   // MAX_SAFE_INTEGER : sans quoi la mesure serait bloquée par le défaut en
   // vigueur, qui est précisément ce qu'on cherche à calibrer.
   const unbounded: DataGraphConfig = { ...bigShopConfig, maxNodes: Number.MAX_SAFE_INTEGER }
 
-  for (const n of [100_000, 500_000, 1_000_000]) {
+  // `BENCH_SCALE_N` restreint le balayage à un seul palier : c'est ce qui rend
+  // le protocole isolé ci-dessus reproductible sans script hors dépôt.
+  const override = process.env.BENCH_SCALE_N
+  const tiers = override !== undefined ? [Number(override)] : [100_000, 500_000, 1_000_000]
+
+  for (const n of tiers) {
     try {
       const before = process.memoryUsage().heapUsed
       const data = bigShop(n)
@@ -79,7 +105,10 @@ async function scaleSweep(): Promise<void> {
       const peak = process.memoryUsage().heapUsed
       console.log(
         `n=${n}: build ${buildMs.toFixed(0)}ms + index ${indexMs.toFixed(0)}ms = ${(buildMs + indexMs).toFixed(0)}ms` +
-        ` | heap ${mb(peak)} (données source ${mb(afterData - before)}, graphe+index ${mb(peak - afterData)})` +
+        // Les deux deltas peuvent sortir NÉGATIFS : ce sont des différences de
+        // `heapUsed` entre deux instants, et un GC survenu entre les bornes
+        // libère plus qu'on n'a alloué. Seul le `heap` absolu fait foi.
+        ` | heap ${mb(peak)} (deltas GC-bruités, parfois négatifs — source ${mb(afterData - before)}, graphe+index ${mb(peak - afterData)})` +
         ` | ${graph.logicalNodeCount} nœuds logiques`,
       )
     } catch (err: unknown) {
