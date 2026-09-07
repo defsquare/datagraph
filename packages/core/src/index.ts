@@ -26,7 +26,10 @@ export {
 } from "./config.js"
 
 export { buildGraph } from "./build.js"
-export { CollapseState } from "./collapse.js"
+// `PAGE_SIZE` et `pageOf` sortent avec `CollapseState` parce que la pagination
+// n'est pas un détail interne : le renderer dessine les jetons de trous et doit
+// nommer les mêmes pages que l'état de pli.
+export { CollapseState, PAGE_SIZE, pageOf, type HiddenGap } from "./collapse.js"
 export { buildAggregates, type Aggregate, type AggregateIndex } from "./aggregate.js"
 export { enclosingCircle, type Circle } from "./hull.js"
 // `SearchIndex` est relayé en TYPE seul : un index ne s'obtient que de

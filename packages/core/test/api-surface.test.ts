@@ -26,6 +26,10 @@ describe("api surface", () => {
       "ConfigError",
       "DEFAULT_METRICS",
       "GraphTooLargeError",
+      // Ajout VOLONTAIRE : la pagination des enfants-cartes est un contrat
+      // partagé avec le renderer, qui dessine les jetons de trous — il lui faut
+      // la taille de page et la fonction qui nomme la page d'un indice.
+      "PAGE_SIZE",
       "VERSION",
       "anchorRectFor",
       "arrayTokenTextFor",
@@ -40,6 +44,7 @@ describe("api surface", () => {
       "isValueOnlyRow",
       "measureNode",
       "nearestCardRectFor",
+      "pageOf",
       "rowRectFor",
       "validateConfig",
     ])

@@ -1,6 +1,34 @@
 import type { Graph, NodeId } from "./model.js"
 
 /**
+ * Nombre d'enfants-cartes révélés d'un coup. La pagination existe parce qu'un
+ * seul nœud peut porter des centaines de milliers d'enfants : mesurer, poser
+ * et dessiner tout ça coûte plus que ce qu'un écran peut montrer.
+ */
+export const PAGE_SIZE = 100
+
+/**
+ * La page ALIGNÉE qui contient l'indice de carte donné : la page `p` couvre
+ * exactement `[p * PAGE_SIZE, (p + 1) * PAGE_SIZE)`. L'alignement est ce qui
+ * rend une page identifiable par un seul entier, donc révélable, annulable et
+ * comparable sans mémoriser de bornes.
+ */
+export function pageOf(cardIndex: number): number {
+  return Math.floor(cardIndex / PAGE_SIZE)
+}
+
+/**
+ * Une plage CONTIGUË d'enfants-cartes non révélés : de quoi dessiner un jeton
+ * « … n de plus » à sa place dans l'ordre des enfants, et savoir quelle page
+ * révéler quand on le clique.
+ */
+export interface HiddenGap {
+  fromIndex: number
+  count: number
+  nextPage: number
+}
+
+/**
  * Tracks which nodes of a Graph are expanded vs collapsed, and derives
  * visibility from that state.
  *
@@ -11,6 +39,16 @@ import type { Graph, NodeId } from "./model.js"
 export class CollapseState {
   private readonly graph: Graph
   private readonly expanded: Set<NodeId> = new Set()
+  /**
+   * Pages d'enfants-cartes révélées, par nœud. L'ABSENCE d'entrée vaut `{0}` :
+   * le dépliage ordinaire n'écrit donc rien, et la pagination s'applique d'
+   * elle-même dès qu'un nœud dépasse `PAGE_SIZE` enfants-cartes — c'est ce qui
+   * garde le coût de l'état proportionnel aux pages ouvertes, pas au graphe.
+   * La PRÉSENCE d'une entrée fait foi, même vide : `unrevealPage(id, 0)` est un
+   * état légitime (« rien de révélé ») et non un retour au défaut.
+   */
+  private readonly revealed: Map<NodeId, Set<number>> = new Map()
+  private static readonly DEFAULT_PAGES: ReadonlySet<number> = new Set([0])
 
   constructor(graph: Graph) {
     this.graph = graph
@@ -46,6 +84,79 @@ export class CollapseState {
     this.expanded.delete(id)
   }
 
+  revealedPages(id: NodeId): ReadonlySet<number> {
+    return this.revealed.get(id) ?? CollapseState.DEFAULT_PAGES
+  }
+
+  revealPage(id: NodeId, page: number): void {
+    this.mutablePages(id).add(page)
+  }
+
+  unrevealPage(id: NodeId, page: number): void {
+    this.mutablePages(id).delete(page)
+  }
+
+  /**
+   * L'ensemble modifiable des pages de `id`, matérialisé au premier écrit à
+   * partir du défaut. Copier `DEFAULT_PAGES` plutôt que la partager est vital :
+   * elle est statique, la muter paginerait tout le graphe d'un coup.
+   */
+  private mutablePages(id: NodeId): Set<number> {
+    let pages = this.revealed.get(id)
+    if (!pages) {
+      pages = new Set(CollapseState.DEFAULT_PAGES)
+      this.revealed.set(id, pages)
+    }
+    return pages
+  }
+
+  /**
+   * Les enfants de `id` qui sont des CARTES, dans l'ordre de `childIds`. Les
+   * élidés sont écartés parce qu'ils sont des lignes de la carte de `id` : ils
+   * ne se paginent pas, et les compter décalerait l'indice des vraies cartes.
+   */
+  private cardChildren(id: NodeId): NodeId[] {
+    const node = this.graph.nodes.get(id)
+    if (!node) return []
+    return node.childIds.filter((childId) => {
+      const child = this.graph.nodes.get(childId)
+      return child !== undefined && !child.elided
+    })
+  }
+
+  /** Rang de `childId` parmi les enfants-cartes de `parentId` ; -1 si absent ou élidé. */
+  cardIndexOf(parentId: NodeId, childId: NodeId): number {
+    return this.cardChildren(parentId).indexOf(childId)
+  }
+
+  /**
+   * Les plages d'enfants-cartes non révélées de `id`, en ordre d'indices
+   * croissants. Les pages non révélées consécutives sont FUSIONNÉES en une
+   * seule plage : elles se remplacent à l'écran par un jeton unique, et le
+   * révéler entame le trou par sa première page (`nextPage`).
+   */
+  hiddenGaps(id: NodeId): HiddenGap[] {
+    const cards = this.cardChildren(id)
+    const pageCount = Math.ceil(cards.length / PAGE_SIZE)
+    const pages = this.revealedPages(id)
+    const gaps: HiddenGap[] = []
+    let page = 0
+    while (page < pageCount) {
+      if (pages.has(page)) {
+        page++
+        continue
+      }
+      const start = page
+      while (page < pageCount && !pages.has(page)) page++
+      const fromIndex = start * PAGE_SIZE
+      // La dernière page est incomplète : borner sur le nombre réel de cartes,
+      // sinon le jeton annoncerait des enfants qui n'existent pas.
+      const count = Math.min(page * PAGE_SIZE, cards.length) - fromIndex
+      gaps.push({ fromIndex, count, nextPage: start })
+    }
+    return gaps
+  }
+
   /**
    * DFS from root; a node is included as soon as it is reached (its
    * parent chain is all expanded), and we only descend through it if
@@ -57,6 +168,10 @@ export class CollapseState {
    * jeton `[ n items ]` visible sur une entité repliée — sinon le jeton serait
    * dessiné (les lignes le sont toujours) alors que le nœud qu'il pilote
    * n'existerait pas pour le pli, et le clic ne déplierait rien.
+   *
+   * Un enfant-CARTE, lui, ne suffit pas d'être atteint : sa page doit être
+   * révélée. L'indice de carte se tient au fil du parcours plutôt que par
+   * `cardIndexOf`, qui referait la liste filtrée pour chaque enfant.
    */
   visibleNodeIds(): Set<NodeId> {
     const visible = new Set<NodeId>()
@@ -67,10 +182,17 @@ export class CollapseState {
       if (!node) continue
       visible.add(id)
       const expanded = this.isExpanded(id)
+      const pages = this.revealedPages(id)
+      let cardIndex = 0
       for (const childId of node.childIds) {
         const child = this.graph.nodes.get(childId)
         if (!child) continue
-        if (child.elided || expanded) stack.push(childId)
+        if (child.elided) {
+          stack.push(childId)
+          continue
+        }
+        if (expanded && pages.has(pageOf(cardIndex))) stack.push(childId)
+        cardIndex++
       }
     }
     return visible
