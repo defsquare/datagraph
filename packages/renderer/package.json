@@ -50,6 +50,7 @@
   },
   "dependencies": {
     "@defsquare/data-graph-core": "workspace:*",
+    "@defsquare/data-graph-tokens": "workspace:*",
     "pixi.js": "^8.0.0",
     "elkjs": "^0.12.0"
   }

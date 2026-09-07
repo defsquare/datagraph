@@ -73,6 +73,19 @@ export default defineConfig(({ command }) => ({
               find: "@defsquare/data-graph/graph-layout-worker",
               replacement: src("../../packages/renderer/src/graph-layout-worker.ts"),
             },
+            // Les tokens, la démo ne les importe pas directement — c'est
+            // `theme.ts` du renderer, lui-même aliasé vers ses sources, qui les
+            // tire. Sans ces deux entrées, ce chemin-là retomberait sur le
+            // `dist/` du paquet et une couleur corrigée dans
+            // `packages/tokens/src` resterait invisible en dev.
+            {
+              find: "@defsquare/data-graph-tokens/css",
+              replacement: src("../../packages/tokens/src/css.ts"),
+            },
+            {
+              find: "@defsquare/data-graph-tokens",
+              replacement: src("../../packages/tokens/src/index.ts"),
+            },
             {
               find: "@defsquare/data-graph",
               replacement: src("../../packages/renderer/src/index.ts"),
