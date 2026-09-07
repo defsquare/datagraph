@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="fr" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>data-graph — playground du design system</title>
+    <link rel="icon" type="image/svg+xml" href="/defsquare-short-dark-red.svg" />
+  </head>
+  <body>
+    <!-- Coquille vide : `main.ts` construit tout le shell (barre haute, nav,
+         zone de vue). Rien n'est écrit en dur ici parce que la liste des vues
+         est un registre TypeScript — un index HTML qui la doublerait ne
+         pourrait que se désynchroniser. La feuille de style et les tokens sont
+         eux aussi chargés par `main.ts`, pour que l'ordre @font-face → tokens →
+         style soit tenu par un seul endroit. -->
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

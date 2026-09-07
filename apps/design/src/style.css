@@ -1,0 +1,155 @@
+/* Shell du playground du design system.
+
+   Aucune valeur brute ici : couleurs, rayons, espacements, polices et durées
+   viennent des variables générées par @defsquare/data-graph-tokens (injectées
+   par `main.ts`). Le playground est le premier consommateur du design system —
+   s'il se permettait un `#f5f5f5` de confort, il cesserait d'être une preuve
+   que les tokens suffisent à habiller une interface.
+
+   Les seules valeurs en dur sont des dimensions de MISE EN PAGE propres à cette
+   coquille (largeur de la barre latérale, largeur de lecture) : ce ne sont pas
+   des décisions de design system, et les inventer en tokens exporterait au
+   renderer une notion qu'il n'a pas. */
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--ds-canvas);
+  color: var(--ds-fg);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  /* La transition rend la bascule clair/sombre lisible comme un changement
+     d'état plutôt que comme un clignotement. */
+  transition: background var(--transition), color var(--transition);
+}
+
+/* ---------- Structure : barre latérale fixe, contenu défilant ---------- */
+
+.shell {
+  display: grid;
+  grid-template-columns: 15rem 1fr;
+  grid-template-rows: auto 1fr;
+  /* La grille occupe le viewport et NE défile PAS : seul `.content` défile,
+     pour que la nav et les contrôles de thème restent atteignables quelle que
+     soit la longueur d'une vue. */
+  height: 100vh;
+}
+
+/* Placement explicite des trois zones : la barre latérale enjambe les deux
+   rangées, et un placement automatique autour d'un élément qui enjambe se
+   raisonne mal — autant l'écrire. */
+.sidebar {
+  grid-column: 1;
+  grid-row: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-4) var(--space-3);
+  background: var(--ds-surface-muted);
+  border-right: 1px solid var(--ds-border-soft);
+  overflow-y: auto;
+}
+
+.sidebar-brand {
+  font-family: var(--font-title, var(--font-body));
+  font-size: 1.125rem;
+  color: var(--ds-ink);
+  padding: 0 var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.nav-link {
+  display: block;
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  color: var(--ds-muted);
+  text-decoration: none;
+  font-size: 0.9375rem;
+  transition: background var(--transition), color var(--transition);
+}
+
+.nav-link:hover {
+  background: var(--float-hover);
+  color: var(--ds-fg);
+}
+
+/* La vue active est marquée par la couleur d'accent ET par un poids : la seule
+   couleur ne suffirait pas à qui ne la distingue pas. */
+.nav-link.is-active {
+  background: var(--float-hover);
+  color: var(--ds-primary);
+  font-weight: 600;
+}
+
+.topbar {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-6);
+  border-bottom: 1px solid var(--ds-border-soft);
+  background: var(--ds-surface);
+}
+
+.topbar-title {
+  margin: 0;
+  font-family: var(--font-title, var(--font-body));
+  font-size: 1.25rem;
+  font-weight: 500;
+  color: var(--ds-ink);
+}
+
+.topbar-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.control-label {
+  color: var(--ds-subtle);
+  font-size: 0.8125rem;
+}
+
+/* Bouton et select partagent une seule classe : ce sont les deux contrôles de
+   la barre, ils doivent peser pareil à l'œil. */
+.control {
+  font: inherit;
+  font-size: 0.875rem;
+  color: var(--ds-fg);
+  background: var(--float-bg);
+  border: 1px solid var(--float-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.control:hover {
+  background: var(--float-hover);
+}
+
+.control:focus-visible {
+  outline: 2px solid var(--ds-accent);
+  outline-offset: 2px;
+}
+
+.content {
+  grid-column: 2;
+  grid-row: 2;
+  overflow-y: auto;
+  padding: var(--space-6);
+}
+
+.placeholder {
+  margin: 0;
+  color: var(--ds-muted);
+  font-size: 0.9375rem;
+}

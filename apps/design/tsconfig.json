@@ -1,0 +1,33 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["vite/client"],
+    "noEmit": true,
+    // Le playground importe les sources par leur chemin exact, extension
+    // comprise (`@tokens/css.ts`) : c'est Vite qui résout, et lui donner le
+    // fichier plutôt qu'un specifier à deviner évite toute ambiguïté. TS refuse
+    // une extension `.ts` explicite sans cette option (elle exige `noEmit`,
+    // posé juste au-dessus).
+    "allowImportingTsExtensions": true,
+    // Miroir des alias de `vite.config.ts` — voir là-bas le pourquoi des deux
+    // familles d'entrées. `tsc --noEmit` ne lit pas la config Vite : sans ces
+    // `paths`, le typecheck résoudrait vers les `dist/` (ou échouerait, faute
+    // de dépendance déclarée) là où le bundler, lui, sert les sources. Deux
+    // résolutions divergentes, c'est un typecheck qui valide autre chose que ce
+    // qui tourne.
+    "paths": {
+      "@tokens/*": ["../../packages/tokens/src/*"],
+      "@renderer/*": ["../../packages/renderer/src/*"],
+      "@core/*": ["../../packages/core/src/*"],
+
+      "@defsquare/data-graph-core/graph-layout": ["../../packages/core/src/graph-layout.ts"],
+      "@defsquare/data-graph-core": ["../../packages/core/src/index.ts"],
+      "@defsquare/data-graph/graph-layout-worker": ["../../packages/renderer/src/graph-layout-worker.ts"],
+      "@defsquare/data-graph-tokens/css": ["../../packages/tokens/src/css.ts"],
+      "@defsquare/data-graph-tokens": ["../../packages/tokens/src/index.ts"],
+      "@defsquare/data-graph": ["../../packages/renderer/src/index.ts"]
+    }
+  },
+  "include": ["src"]
+}
