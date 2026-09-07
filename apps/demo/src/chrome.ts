@@ -215,5 +215,10 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
 
   document.getElementById("fit")?.addEventListener("click", () => graph.fit());
 
+  // `tidy()` est asynchrone (il refait la mise en page complète) mais rien ici
+  // n'a à attendre son résultat : la promesse est explicitement jetée, et
+  // l'instance se garde elle-même contre les opérations concurrentes.
+  document.getElementById("tidy")?.addEventListener("click", () => void graph.tidy());
+
   return { updateStatus, applyTheme, syncViewButton };
 }

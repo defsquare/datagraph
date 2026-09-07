@@ -257,6 +257,21 @@ type DataGraphEvents = {
 export interface DataGraph {
   ready: Promise<void>;
   fit(): void;
+  /**
+   * Recalcule la mise en page COMPLÈTE de la vue structure, puis cadre.
+   *
+   * La vue structure se construit par opérations incrémentales — dépliages,
+   * replis, pages révélées —, chacune insérant un bloc dans une pose existante
+   * plutôt que de la refaire. C'est ce qui les rend instantanées, et c'est aussi
+   * ce qui fait dériver la vue : après une longue session d'exploration, les
+   * colonnes ne sont plus celles qu'un rangement global donnerait. `tidy()` est
+   * l'action de réparation — le « Ranger » de l'hôte —, à proposer à
+   * l'utilisateur plutôt qu'à déclencher tout seul : la pose change sous ses
+   * yeux, ce doit être son geste.
+   *
+   * Sans effet en vue graphe, qui a son propre moteur et ne dérive pas.
+   */
+  tidy(): Promise<void>;
   /** Déplie un nœud de l'arbre de containment — une opération de la VUE
    * STRUCTURE. En vue graphe elle reste sans effet visible : l'état est bien
    * mis à jour, et se verra au retour dans la vue structure, mais la vue graphe
@@ -2772,6 +2787,39 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       // Le cadrage change l'échelle, donc peut-être le LOD et à coup sûr la
       // fenêtre : les cartes suivent immédiatement plutôt qu'à la prochaine
       // image. Un seul rebuild au pire, `refreshCards` étant le seul arbitre.
+      refreshCards();
+    },
+
+    async tidy(): Promise<void> {
+      // Vue structure seulement : la vue graphe a son propre moteur deux
+      // niveaux, qui repose tout à chaque calcul et ne dérive donc pas — un
+      // rangement n'y aurait rien à réparer.
+      if (destroyed || view === "graph") return;
+      if (!graph || !collapseState || !engine || !layoutResult) return;
+      const gen = ++opGen;
+      const prevPositions = new Map(layoutResult.positions);
+      const visible = collapseState.visibleNodeIds();
+      // Le chemin GLOBAL, celui de la mise en page initiale. Il est abordable
+      // parce que l'ensemble visible est borné — budget de cartes et pages de
+      // fratrie —, et c'est précisément ce qui rend ce bouton possible.
+      //
+      // `layout()` purge au passage la mémoire de deltas du moteur : cette pose
+      // globale devient la nouvelle vérité, et les décalages accumulés par les
+      // dépliages passés n'ont plus rien à annuler. C'est ce qui fait de `tidy`
+      // la réparation de la dérive incrémentale, et pas seulement un recadrage.
+      const next = await engine.layout(graph, visible, metrics);
+      // Une opération concurrente a publié sa propre pose pendant l'attente :
+      // appliquer celle-ci l'écraserait. Aucun retour arrière à faire, à la
+      // différence de `doExpand` — rien n'a été muté avant l'`await`.
+      if (destroyed || gen !== opGen) return;
+      layoutResult = next;
+      rebuild();
+      animatePositions(prevPositions, layoutResult.positions);
+      doFit();
+      // Même raison que dans `fit()` : le cadrage vient de changer l'échelle, et
+      // la pose globale n'a pas la même étendue que celle qu'elle remplace — le
+      // LOD peut donc basculer. `refreshCards` est le seul arbitre, un rebuild
+      // au pire.
       refreshCards();
     },
 

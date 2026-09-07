@@ -45,6 +45,19 @@
           </svg>
         </button>
 
+        <!-- « Ranger » : une remise en page globale à la demande, qui répare la
+             dérive accumulée par les dépliages et révélations successifs. Sans
+             effet en vue graphe, par contrat de `tidy()`. L'icône dit l'idée —
+             des blocs remis en colonne, alignés sur un même bord. -->
+        <button id="tidy" type="button" class="ibtn" title="Ranger" aria-label="Ranger">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <line x1="2.5" y1="2" x2="2.5" y2="14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+            <rect x="5" y="3" width="8.5" height="2.6" rx="0.9" fill="currentColor" />
+            <rect x="5" y="6.7" width="5.5" height="2.6" rx="0.9" fill="currentColor" opacity="0.55" />
+            <rect x="5" y="10.4" width="7" height="2.6" rx="0.9" fill="currentColor" />
+          </svg>
+        </button>
+
         <!-- `data-target` porte la vue que le clic ACTIVERAIT : l'icône affichée
              est donc celle de la vue cible, comme l'était le libellé. main.ts la
              pose depuis `graph.currentView()` réel, jamais depuis la demande. -->
