@@ -241,6 +241,11 @@ export class CollapseState {
    * Expands every ancestor of `id` (not `id` itself). Returns the ids
    * that were newly expanded by this call, in root-first order.
    * Idempotent: calling again with the same id returns [].
+   *
+   * Révèle EN PLUS, à chaque maillon du chemin, la page qui contient l'enfant
+   * suivant : depuis la pagination, un ancêtre déplié ne garantit plus la
+   * visibilité de sa descendance. Ces révélations sont un effet de bord — elles
+   * n'entrent pas dans la valeur de retour, qui reste la liste des dépliages.
    */
   expandPathTo(id: NodeId): NodeId[] {
     const ancestors: NodeId[] = []
@@ -260,6 +265,21 @@ export class CollapseState {
         newly.push(ancestorId)
       }
     }
+
+    // Seconde passe sur la chaîne COMPLÈTE — pas seulement sur `newly` : un
+    // parent déjà déplié peut très bien avoir la mauvaise page révélée. On ne
+    // révèle que la page de l'enfant du chemin, jamais tout le préfixe, sinon
+    // atteindre `/orders/47312` paierait 47313 cartes. Un enfant élidé
+    // (`cardIndexOf` < 0) est une ligne de la carte de son parent : il est déjà
+    // visible, il n'a pas de page.
+    let childId: NodeId = id
+    for (let i = ancestors.length - 1; i >= 0; i--) {
+      const parentId = ancestors[i]!
+      const index = this.cardIndexOf(parentId, childId)
+      if (index >= 0) this.revealPage(parentId, pageOf(index))
+      childId = parentId
+    }
+
     return newly
   }
 }

@@ -127,6 +127,18 @@ describe("CollapseState — pages révélées", () => {
     expect(cs.cardIndexOf("/", "/items")).toBe(-1)
   })
 
+  it("expandPathTo révèle la page de chaque maillon du chemin, pas tout le préfixe", () => {
+    const g = buildGraph(manyItems(250), noConfig)
+    const cs = new CollapseState(g)
+    cs.collapse("/items") // repartir d'un tableau replié
+    cs.expandPathTo("/items/213/w")
+    const visible = cs.visibleNodeIds()
+    expect(visible.has("/items/213")).toBe(true)
+    expect(visible.has("/items/100")).toBe(false) // la page 1 n'a pas été payée
+    expect(cs.revealedPages("/items").has(2)).toBe(true)
+    expect(cs.expandPathTo("/items/213/w")).toEqual([]) // idempotent
+  })
+
   it("pageOf aligne sur PAGE_SIZE", () => {
     expect(PAGE_SIZE).toBe(100)
     expect(pageOf(0)).toBe(0)
