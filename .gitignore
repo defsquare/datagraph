@@ -3,6 +3,7 @@ dist/
 *.log
 .DS_Store
 .idea/
+.claude/worktrees/
 test-results/
 playwright-report/
 apps/demo/src-tauri/target/
