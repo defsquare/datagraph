@@ -263,16 +263,26 @@ function drawArrayToken(
 }
 
 /**
- * Hauteur du jeton de reliquat, et son rayon d'arrondi. Plus haute que la
- * pilule d'une ligne-tableau, parce que ce jeton-ci tient la place de CARTES
- * dans une colonne et non celle d'une valeur dans une ligne : trop bas, il se
- * lirait comme un séparateur plutôt que comme un bloc escamoté.
+ * Hauteur du jeton de reliquat.
+ *
+ * INVARIANT : `REMAINDER_TOKEN_GAP + REMAINDER_TOKEN_HEIGHT < NODE_GAP`, où
+ * `NODE_GAP` vaut 24 px (`packages/core/src/structure-layout.ts`, aligné sur
+ * `elk.spacing.nodeNode`). La mise en page ne réserve AUCUNE place pour les
+ * jetons — ce sont des pseudo-éléments qu'ELK ne voit pas — donc le jeton doit
+ * tenir dans la bande qui sépare déjà deux cartes empilées. À 22 px + 8 px
+ * d'écart il en débordait de 6, qu'il peignait par-dessus la carte suivante et,
+ * son calque étant au-dessus, dont il volait les clics. 4 + 16 laisse 4 px de
+ * dégagement. Si l'espacement du moteur change, ces deux constantes sont à
+ * revoir avec lui.
+ *
+ * 16 px porte le libellé de rôle `value` (12 px) sans le serrer : c'est le même
+ * couple que la pilule d'une ligne-tableau, haute de 15 px pour le même texte.
  *
  * Exportée parce que l'appelant en a besoin pour l'ANCRAGE : posé au-dessus de
  * la carte qui le suit, le jeton doit remonter de sa propre hauteur, que rien
  * d'autre ne lui apprend.
  */
-export const REMAINDER_TOKEN_HEIGHT = 22;
+export const REMAINDER_TOKEN_HEIGHT = 16;
 
 /**
  * Le jeton qui tient la place d'un bloc d'enfants-cartes non révélés : « + 47300 ».

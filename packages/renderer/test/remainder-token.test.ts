@@ -75,6 +75,14 @@ describe("jeton de reliquat", () => {
     expect(rect.h).toBe(REMAINDER_TOKEN_HEIGHT);
   });
 
+  it("tient dans la bande qui separe deux cartes empilees", () => {
+    // La mise en page ne réserve aucune place au jeton : au-delà de `NODE_GAP`
+    // (24 px, `packages/core/src/structure-layout.ts`) il recouvre la carte
+    // voisine ET lui vole ses clics, son calque étant au-dessus. L'écart que
+    // `create.ts` ajoute doit encore tenir dans ce qui reste.
+    expect(REMAINDER_TOKEN_HEIGHT).toBeLessThan(24);
+  });
+
   it("se dessine en (0,0) dans son espace local, comme une carte", () => {
     // C'est l'appelant qui le place : `create.ts` calcule l'ancrage à partir des
     // positions, et un décalage interne le décalerait deux fois.

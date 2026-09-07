@@ -310,12 +310,18 @@ export interface DataGraph {
 const HOVER_LIFT = 0.025;
 
 /**
- * L'écart qui sépare un jeton de reliquat de la carte qui l'ancre. Plus serré
- * que l'écart entre cartes (`cardGap`, 16 px côté moteur) : le jeton appartient
- * au bloc qu'il prolonge, et le poser à la distance d'une fratrie en ferait un
- * objet flottant entre deux blocs plutôt que la suite de l'un d'eux.
+ * L'écart qui sépare un jeton de reliquat de la carte qui l'ancre.
+ *
+ * INVARIANT, avec `REMAINDER_TOKEN_HEIGHT` (voir sa note dans `draw.ts`) :
+ * `REMAINDER_TOKEN_GAP + REMAINDER_TOKEN_HEIGHT < NODE_GAP`, où `NODE_GAP` vaut
+ * 24 px (`packages/core/src/structure-layout.ts`, aligné sur
+ * `elk.spacing.nodeNode`). Un jeton n'est pas une boîte de la mise en page :
+ * celle-ci ne lui réserve rien, il doit donc tenir dans la bande qui sépare déjà
+ * deux cartes empilées, sans quoi il recouvre sa voisine et lui vole ses clics.
+ * 4 + 16 laisse 4 px de dégagement ; un changement d'espacement du moteur oblige
+ * à revoir ce couple.
  */
-const REMAINDER_TOKEN_GAP = 8;
+const REMAINDER_TOKEN_GAP = 4;
 
 // L'autre réglage d'œil de l'interaction, `DIM_ALPHA`, ne peut pas vivre ici :
 // il est partagé avec `drawEdges`, et `draw.ts` important ce fichier fermerait
@@ -1744,6 +1750,11 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
    *
    * Le jeton emprunte la LARGEUR de cette voisine : sa taille dit « ici, des
    * cartes comme celles-là », ce qu'une largeur propre ne dirait pas.
+   *
+   * Les jetons ne suivent délibérément PAS une carte déplacée à la main : ils
+   * sont posés depuis les positions du dernier `rebuild()` et attendent le
+   * suivant, un déplacement étant un geste local qui ne change ni les pages
+   * révélées ni la colonne où le bloc caché s'insérera.
    */
   function redrawRemainderTokens(): void {
     for (const child of remainderLayer.removeChildren()) child.destroy({ children: true });
@@ -2247,7 +2258,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
    */
   async function doReveal(parentId: NodeId, page: number): Promise<void> {
     if (!graph || !collapseState || !layoutResult || !engine) return;
-    if (collapseState.revealedPages(parentId).has(page)) return;
+    if (!graph.nodes.has(parentId) || collapseState.revealedPages(parentId).has(page)) return;
     const gen = ++opGen;
     collapseState.revealPage(parentId, page);
     const visible = collapseState.visibleNodeIds();
