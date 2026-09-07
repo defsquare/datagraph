@@ -12,129 +12,28 @@
   </head>
   <body>
     <!-- Le canvas occupe tout le viewport ; tout le chrome ci-dessous flotte
-         au-dessus de lui en `position: fixed`. -->
+         au-dessus de lui en `position: fixed`.
+
+         Ce fichier ne porte plus que la MISE EN PLACE — les conteneurs
+         positionnés — et le contenu d'ASSEMBLAGE propre à la démo. Les
+         primitives (boutons d'icône, recherche, menu, pastille, lien de statut)
+         sont construites par les fabriques de @defsquare/data-graph-chrome,
+         seule source partagée avec le catalogue du design system : les écrire
+         ici en dur les rendrait inaccessibles à tout autre consommateur, ce qui
+         est exactement ce qui avait fini par en faire recopier une copie. -->
     <div id="app"></div>
 
-    <div id="toolbar">
-      <div class="cluster float">
-        <button
-          id="search-toggle"
-          type="button"
-          class="ibtn"
-          title="Rechercher"
-          aria-label="Rechercher"
-          aria-expanded="false"
-          aria-controls="findbar"
-        >
-          <svg viewBox="0 0 16 16" aria-hidden="true">
-            <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5" />
-            <line x1="10.5" y1="10.5" x2="14" y2="14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-          </svg>
-        </button>
-
-        <button id="fit" type="button" class="ibtn" title="Ajuster à la vue" aria-label="Ajuster à la vue">
-          <svg viewBox="0 0 16 16" aria-hidden="true">
-            <path
-              d="M2 5.5V3.2A1.2 1.2 0 0 1 3.2 2h2.3M10.5 2h2.3A1.2 1.2 0 0 1 14 3.2v2.3M14 10.5v2.3a1.2 1.2 0 0 1-1.2 1.2h-2.3M5.5 14H3.2A1.2 1.2 0 0 1 2 12.8v-2.3"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-            />
-            <rect x="5.75" y="5.75" width="4.5" height="4.5" rx="1" fill="currentColor" opacity="0.35" />
-          </svg>
-        </button>
-
-        <!-- « Ranger » : une remise en page globale à la demande, qui répare la
-             dérive accumulée par les dépliages et révélations successifs. Sans
-             effet en vue graphe, par contrat de `tidy()`. L'icône dit l'idée —
-             des blocs remis en colonne, alignés sur un même bord. -->
-        <button id="tidy" type="button" class="ibtn" title="Ranger" aria-label="Ranger">
-          <svg viewBox="0 0 16 16" aria-hidden="true">
-            <line x1="2.5" y1="2" x2="2.5" y2="14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-            <rect x="5" y="3" width="8.5" height="2.6" rx="0.9" fill="currentColor" />
-            <rect x="5" y="6.7" width="5.5" height="2.6" rx="0.9" fill="currentColor" opacity="0.55" />
-            <rect x="5" y="10.4" width="7" height="2.6" rx="0.9" fill="currentColor" />
-          </svg>
-        </button>
-
-        <!-- `data-target` porte la vue que le clic ACTIVERAIT : l'icône affichée
-             est donc celle de la vue cible, comme l'était le libellé. main.ts la
-             pose depuis `graph.currentView()` réel, jamais depuis la demande. -->
-        <button id="toggle-view" type="button" class="ibtn" data-target="graph" title="Vue graphe" aria-label="Vue graphe">
-          <svg class="icon-graph" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M4.2 4.2 11.8 6M11.8 6 7 12.2M4.2 4.2 7 12.2" fill="none" stroke="currentColor" stroke-width="1.3" />
-            <circle cx="4.2" cy="4.2" r="2" fill="currentColor" />
-            <circle cx="11.8" cy="6" r="2" fill="currentColor" />
-            <circle cx="7" cy="12.2" r="2" fill="currentColor" />
-          </svg>
-          <svg class="icon-structure" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M8 5.2v2.9M4 8.1h8M4 8.1v2.4M12 8.1v2.4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
-            <rect x="5.4" y="1.6" width="5.2" height="3.6" rx="1.1" fill="currentColor" />
-            <rect x="1.4" y="10.8" width="5.2" height="3.6" rx="1.1" fill="currentColor" />
-            <rect x="9.4" y="10.8" width="5.2" height="3.6" rx="1.1" fill="currentColor" />
-          </svg>
-        </button>
-
-        <span class="cluster-sep" aria-hidden="true"></span>
-
-        <button
-          id="menu-toggle"
-          type="button"
-          class="ibtn"
-          title="Menu"
-          aria-label="Menu"
-          aria-haspopup="menu"
-          aria-expanded="false"
-          aria-controls="menu"
-        >
-          <svg viewBox="0 0 16 16" aria-hidden="true">
-            <circle cx="8" cy="3.4" r="1.25" fill="currentColor" />
-            <circle cx="8" cy="8" r="1.25" fill="currentColor" />
-            <circle cx="8" cy="12.6" r="1.25" fill="currentColor" />
-          </svg>
-        </button>
-      </div>
-
-      <div id="findbar" class="findbar float" hidden>
-        <svg class="findbar-icon" viewBox="0 0 16 16" aria-hidden="true">
-          <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5" />
-          <line x1="10.5" y1="10.5" x2="14" y2="14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-        </svg>
-        <input type="search" id="search" placeholder="Rechercher…" autocomplete="off" aria-label="Rechercher" />
-        <span id="match-counter" aria-live="polite"></span>
-        <button id="prev-match" type="button" class="findbar-nav" title="Résultat précédent (Maj+Entrée)" aria-label="Résultat précédent">
-          <svg viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M4.5 9.5 8 6l3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-        </button>
-        <button id="next-match" type="button" class="findbar-nav" title="Résultat suivant (Entrée)" aria-label="Résultat suivant">
-          <svg viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M4.5 6.5 8 10l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-        </button>
-      </div>
-
-      <!-- Les entrées du menu n'ont que du texte : main.ts réécrit leur
-           `textContent` pour refléter l'état courant, ce qu'une icône enfant ne
-           survivrait pas. -->
-      <div id="menu" class="menu float" role="menu" aria-labelledby="menu-toggle" hidden>
-        <button id="toggle-dataset" type="button" class="menu-item" role="menuitem">Jeu de données étendu (4000)</button>
-        <button id="toggle-theme" type="button" class="menu-item" role="menuitem">Thème sombre</button>
-      </div>
-    </div>
+    <!-- Rempli par `chrome.ts` : grappe d'icônes, recherche dépliante, menu ⋮. -->
+    <div id="toolbar"></div>
 
     <aside id="detail" hidden>
       <div class="detail-head">
         <h2>Détail du nœud</h2>
-        <button id="detail-close" type="button" class="ibtn ibtn-sm" title="Fermer le panneau" aria-label="Fermer le panneau">
-          <svg viewBox="0 0 16 16" aria-hidden="true">
-            <path d="m4.5 4.5 7 7m0-7-7 7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-          </svg>
-        </button>
+        <!-- La croix (`#detail-close`) est ajoutée ici par `chrome.ts`. -->
       </div>
       <p id="selection-empty">Sélectionnez un nœud pour voir son détail.</p>
-      <span id="selection-type" hidden></span>
+      <!-- La pastille de type (`#selection-type`) est insérée ici par
+           `detail-panel.ts`, juste après le message d'état vide. -->
       <p id="selection-label" hidden></p>
       <p id="selection-path" hidden></p>
       <dl id="selection-rows"></dl>
@@ -143,7 +42,11 @@
     <!-- Écran d'erreur de chargement (mode fichier) : la validation sémantique
          de la config n'a lieu qu'ici, côté TS — Rust n'a vérifié que la syntaxe
          JSON. Le message brut (anglais, ConfigError du cœur) est cité tel quel :
-         c'est la déclaration que l'auteur de la config doit relire. -->
+         c'est la déclaration que l'auteur de la config doit relire.
+
+         `.float` est appliquée directement : c'est une classe qu'on POSE sur une
+         surface, pas un composant qu'on construit — la partager par la feuille
+         suffit. -->
     <div id="load-error" class="float" hidden>
       <h2>Impossible d'ouvrir le document</h2>
       <pre id="load-error-message"></pre>
@@ -152,7 +55,8 @@
     <div id="statusbar">
       <span><strong id="stat-nodes">0</strong> nœuds</span>
       <span><strong id="stat-visible">0</strong> visibles</span>
-      <button id="stat-diagnostics" type="button" class="status-link" hidden></button>
+      <!-- Le lien de diagnostics (`#stat-diagnostics`) est ajouté ici par
+           `chrome.ts`. -->
     </div>
 
     <img id="logo" src="/defsquare-short-dark-red.svg" alt="defsquare" />

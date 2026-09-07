@@ -86,6 +86,19 @@ export default defineConfig(({ command }) => ({
               find: "@defsquare/data-graph-tokens",
               replacement: src("../../packages/tokens/src/index.ts"),
             },
+            // Le chrome partagé. Ses deux entrées doivent précéder celle du
+            // paquet nu ci-dessous pour la raison d'ordre déjà expliquée :
+            // `@defsquare/data-graph` matche aussi le préfixe de
+            // `@defsquare/data-graph-chrome`, qui se ferait réécrire en
+            // `.../renderer/src/index.ts-chrome`.
+            {
+              find: "@defsquare/data-graph-chrome/chrome.css",
+              replacement: src("../../packages/chrome/src/chrome.css"),
+            },
+            {
+              find: "@defsquare/data-graph-chrome",
+              replacement: src("../../packages/chrome/src/index.ts"),
+            },
             {
               find: "@defsquare/data-graph",
               replacement: src("../../packages/renderer/src/index.ts"),

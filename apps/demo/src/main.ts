@@ -22,24 +22,6 @@ if (!container) throw new Error("#app container not found");
 // fichier entier dans une fonction.
 const launch = await resolveLaunch();
 
-// Le chrome se taille AVANT que les modules plus bas ne relisent le DOM : un
-// bouton retiré donne `getElementById` → null, et tous les gestionnaires
-// savent déjà vivre sans leur élément.
-if (launch.mode === "file") {
-  // La bascule petit/grand jeu de données est un outil de démo. Son module
-  // n'est pas chargé ici, mais le bouton, lui, est dans `index.html` : sans ce
-  // retrait le menu offrirait une entrée morte.
-  document.getElementById("toggle-dataset")?.remove();
-  // `?? {}` : une config du disque peut n'avoir aucune clé `ids`, et ce
-  // test est HORS du try/catch plus bas — exploser ici donnerait une fenêtre
-  // blanche. On laisse passer, `createDataGraph` la rejette proprement et son
-  // catch affiche l'écran d'erreur.
-  if (Object.keys(launch.config.ids ?? {}).length === 0) {
-    // Sans entités la vue graphe n'a rien à montrer : structure seule.
-    document.getElementById("toggle-view")?.remove();
-  }
-}
-
 function showLoadError(error: unknown): void {
   const messageEl = document.getElementById("load-error-message");
   if (messageEl) messageEl.textContent = error instanceof Error ? error.message : String(error);
@@ -98,9 +80,38 @@ declare global {
 }
 window.__graph = graph;
 
+// L'ORDRE DE CES TROIS LIGNES EST CONTRAINT, et le reste de ce bloc avec.
+//
+// `createChrome` ne fait pas que câbler : il CONSTRUIT la barre d'outils, la
+// recherche et le menu depuis les fabriques du paquet de chrome. Tout ce qui lit
+// ce DOM doit donc venir après lui — `createSearchUi` cherche `#search`,
+// `createDetailPanel` cherche `#detail-close`, et le taillage du mode fichier
+// ci-dessous retire des boutons qui n'existent pas encore avant cet appel.
+// (Auparavant ce markup était écrit en dur dans `index.html`, donc présent dès
+// le premier octet : l'ordre n'avait pas d'importance.)
+//
+// Le rappel `onSearchOpen` référence `search`, déclaré plus bas : c'est une
+// fermeture, elle n'est appelée qu'au premier clic sur la loupe — bien après
+// l'évaluation de ce module.
+const chrome = createChrome(graph, { onSearchOpen: () => search.focus() });
+
+// Le chrome se taille APRÈS avoir été construit et AVANT que les modules plus
+// bas ne le relisent : un bouton retiré donne `getElementById` → null, et tous
+// les gestionnaires savent déjà vivre sans leur élément.
+if (launch.mode === "file") {
+  // La bascule petit/grand jeu de données est un outil de démo. Son module
+  // n'est pas chargé ici, mais l'entrée de menu, elle, vient d'être créée :
+  // sans ce retrait le menu offrirait une entrée morte.
+  document.getElementById("toggle-dataset")?.remove();
+  // `?? {}` : une config du disque peut n'avoir aucune clé `ids`.
+  if (Object.keys(launch.config.ids ?? {}).length === 0) {
+    // Sans entités la vue graphe n'a rien à montrer : structure seule.
+    document.getElementById("toggle-view")?.remove();
+  }
+}
+
 const detail = createDetailPanel(graph);
 const search = createSearchUi(graph);
-const chrome = createChrome(graph, { onSearchOpen: () => search.focus() });
 
 graph.on("select", (node: GraphNode) => {
   detail.render(node);

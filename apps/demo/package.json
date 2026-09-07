@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@defsquare/data-graph": "workspace:*",
+    "@defsquare/data-graph-chrome": "workspace:*",
     "@tauri-apps/api": "^2.11.1",
     "elkjs": "^0.12.0"
   },

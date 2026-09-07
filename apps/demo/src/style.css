@@ -2,10 +2,16 @@
    qu'en tête de feuille. */
 @import "./fonts.css";
 @import "./tokens.css";
+@import "@defsquare/data-graph-chrome/chrome.css";
 
 /* Shell defsquare pour la démo data-graph.
    Les tokens (`--ds-*`, `--float-*`, échelles, polices) sont générés depuis
    @defsquare/data-graph-tokens dans ./tokens.css — ne pas les redéclarer ici.
+   Les PRIMITIVES du chrome (surface flottante, bouton d'icône, recherche, menu,
+   pastille, lien de statut) viennent de @defsquare/data-graph-chrome, seule
+   source partagée avec le catalogue du design system — ne pas les redéclarer
+   ici non plus. Cette feuille ne garde que la MISE EN PLACE et les ASSEMBLAGES
+   propres à la démo.
    Le canvas n'est plus « le héros au milieu du chrome » : il EST la page, et
    tout le reste (grappe d'icônes, recherche, menu, détail, état, logo) flotte
    au-dessus en `position: fixed`, sur des surfaces translucides qui laissent
@@ -33,21 +39,11 @@ html, body {
 
 /* ---------- Socle commun des éléments flottants ---------- */
 
-.float {
-  background: var(--float-bg);
-  border: 1px solid var(--float-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-float);
-  backdrop-filter: blur(16px) saturate(160%);
-  -webkit-backdrop-filter: blur(16px) saturate(160%);
-}
-
-/* Les panneaux repliés restent dans le DOM, masqués par `hidden`. Une règle
+/* Le panneau de détail reste dans le DOM, masqué par `hidden`. Une règle
    d'auteur qui pose `display` l'emporte sur le `[hidden] { display: none }` de
-   la feuille UA, quelle que soit sa spécificité : il faut donc le redire ici,
-   sinon la recherche s'afficherait dépliée en permanence. */
-.findbar[hidden],
-.menu[hidden],
+   la feuille UA, quelle que soit sa spécificité : il faut donc le redire ici.
+   (Les panneaux du chrome — recherche, menu — le redisent de leur côté, dans
+   `chrome.css`.) */
 #detail[hidden] {
   display: none;
 }
@@ -64,195 +60,11 @@ html, body {
   gap: var(--space-2);
 }
 
-.cluster {
-  display: flex;
-  align-items: center;
-  gap: 1px;
-  padding: 3px;
-}
-
-.cluster-sep {
-  width: 1px;
-  height: 18px;
-  margin: 0 3px;
-  background: var(--float-border);
-}
-
-.ibtn {
-  flex: none;
-  width: 30px;
-  height: 30px;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  color: var(--ds-muted);
-  background: none;
-  border: 0;
-  border-radius: 7px;
-  cursor: pointer;
-  transition: background-color var(--transition), color var(--transition);
-}
-
-.ibtn svg { width: 16px; height: 16px; display: block; }
-
-.ibtn:hover { background: var(--float-hover); color: var(--ds-ink); }
-.ibtn:active { transform: translateY(0.5px); }
-.ibtn:disabled { opacity: 0.45; cursor: default; }
-
-.ibtn:focus-visible {
-  outline: 2px solid var(--ds-primary);
-  outline-offset: 1px;
-}
-
-/* Un panneau ouvert reste signalé par son déclencheur. */
-.ibtn[aria-expanded="true"] {
-  color: var(--ds-primary);
-  background: color-mix(in srgb, var(--ds-primary) 14%, transparent);
-}
-
-/* Un bouton OCCUPÉ : le calcul est parti, la page reste vivante.
- *
- * Le sélecteur est l'attribut lui-même et non une classe jumelle : `aria-busy`
- * est ce qu'une technologie d'assistance lit, et s'en servir aussi comme
- * sélecteur rend impossible qu'un des deux soit posé sans l'autre.
- *
- * La règle passe APRÈS `.ibtn:disabled` — la bascule pose les deux, et c'est
- * cette opacité-ci, plus claire, qui doit gagner : « en cours » n'est pas « pas
- * disponible ». Une pulsation lente et une opacité, rien de plus : le vrai
- * signal est que le reste de l'écran répond toujours, et un indicateur bruyant
- * dirait le contraire. `prefers-reduced-motion` retire l'animation et garde
- * l'état. */
-.ibtn[aria-busy="true"]:disabled {
-  opacity: 0.7;
-  animation: ibtn-busy 1.2s ease-in-out infinite;
-}
-
-@keyframes ibtn-busy {
-  50% { opacity: 0.3; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ibtn[aria-busy="true"]:disabled { animation: none; }
-}
-
-.ibtn-sm { width: 24px; height: 24px; border-radius: 6px; }
-.ibtn-sm svg { width: 13px; height: 13px; }
-
-/* L'icône affichée est celle de la vue CIBLE, portée par `data-target`. */
+/* L'icône affichée est celle de la vue CIBLE, portée par `data-target`. Les deux
+   icônes sont posées dans le bouton par `createIconButton`, qui les classe ;
+   laquelle se voit est une décision de la démo, donc cette règle reste ici. */
 #toggle-view[data-target="graph"] .icon-structure,
 #toggle-view[data-target="structure"] .icon-graph { display: none; }
-
-/* ---------- Recherche dépliante ---------- */
-
-.findbar {
-  display: flex;
-  align-items: center;
-  gap: 1px;
-  width: 296px;
-  height: 36px;
-  padding: 0 4px 0 10px;
-  transform-origin: left center;
-  animation: unfold 200ms var(--ease-out);
-}
-
-@keyframes unfold {
-  from { opacity: 0; transform: scaleX(0.82) translateX(-10px); }
-  to { opacity: 1; transform: none; }
-}
-
-.findbar:focus-within {
-  border-color: color-mix(in srgb, var(--ds-primary) 55%, transparent);
-  box-shadow: var(--shadow-float), 0 0 0 3px color-mix(in srgb, var(--ds-primary) 16%, transparent);
-}
-
-.findbar-icon { width: 15px; height: 15px; flex: none; color: var(--ds-subtle); }
-
-#search {
-  flex: 1;
-  min-width: 0;
-  padding: 6px 6px;
-  font-family: inherit;
-  font-size: 13px;
-  color: var(--ds-fg);
-  background: none;
-  border: 0;
-  outline: none;
-}
-
-#search::-webkit-search-cancel-button { display: none; }
-
-#match-counter {
-  flex: none;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--ds-subtle);
-  padding: 0 var(--space-1);
-  white-space: nowrap;
-}
-
-.findbar-nav {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  color: var(--ds-muted);
-  background: none;
-  border: 0;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  transition: background-color var(--transition), color var(--transition);
-}
-
-.findbar-nav svg { width: 14px; height: 14px; display: block; }
-.findbar-nav:hover { background: var(--float-hover); color: var(--ds-ink); }
-
-.findbar-nav:focus-visible {
-  outline: 2px solid var(--ds-primary);
-  outline-offset: 1px;
-}
-
-/* ---------- Menu ⋮ ---------- */
-
-.menu {
-  position: absolute;
-  top: 44px;
-  left: 0;
-  min-width: 216px;
-  padding: 5px;
-  transform-origin: top left;
-  animation: drop-in 160ms var(--ease-out);
-}
-
-@keyframes drop-in {
-  from { opacity: 0; transform: translateY(-6px) scale(0.98); }
-  to { opacity: 1; transform: none; }
-}
-
-.menu-item {
-  display: block;
-  width: 100%;
-  padding: 7px 10px;
-  text-align: left;
-  font-family: inherit;
-  font-size: 13px;
-  color: var(--ds-fg);
-  background: none;
-  border: 0;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background-color var(--transition), color var(--transition);
-}
-
-.menu-item:hover { background: var(--float-hover); color: var(--ds-ink); }
-.menu-item:disabled { opacity: 0.5; cursor: default; }
-
-.menu-item:focus-visible {
-  outline: 2px solid var(--ds-primary);
-  outline-offset: -2px;
-}
 
 /* ---------- Panneau de détail flottant (droite) ---------- */
 
@@ -299,25 +111,6 @@ html, body {
 
 #selection-empty { margin: 0; color: var(--ds-muted); }
 
-#selection-type {
-  display: inline-block;
-  padding: 2px 7px;
-  margin-bottom: var(--space-2);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: #ffffff;
-  background: var(--ds-primary);
-  border-radius: var(--radius-sm);
-}
-
-/* Une règle d'id l'emporte sur `[hidden] { display: none }` de la feuille UA :
-   sans ceci, la pastille reste affichée, vide, sous l'état initial du panneau. */
-#selection-type[hidden] {
-  display: none;
-}
-
 #selection-label {
   margin: 0 0 var(--space-1);
   font-family: var(--font-title);
@@ -361,21 +154,6 @@ html, body {
   word-break: break-all;
 }
 
-#selection-rows .ref-btn {
-  flex: none;
-  padding: 0 4px;
-  font-size: 12px;
-  line-height: 1;
-  color: var(--ds-primary);
-  background: none;
-  border: 0;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-}
-
-#selection-rows .ref-btn:hover { color: var(--ds-accent); }
-#selection-rows .ref-btn[disabled] { color: var(--ds-subtle); cursor: default; }
-
 /* ---------- État (bas gauche) ---------- */
 
 /* Texte nu sur le canvas : le halo de la couleur de fond le décolle d'une
@@ -400,19 +178,6 @@ html, body {
   font-weight: 500;
   color: var(--ds-ink);
 }
-
-.status-link {
-  font-family: inherit;
-  font-size: 11px;
-  color: var(--ds-accent);
-  background: none;
-  border: 0;
-  padding: 0;
-  cursor: pointer;
-  pointer-events: auto;
-}
-
-.status-link:hover { text-decoration: underline; }
 
 /* ---------- Logo (bas droite) ---------- */
 

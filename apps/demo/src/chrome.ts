@@ -1,4 +1,13 @@
 import { defsquareLight, defsquareDark, type DataGraph } from "@defsquare/data-graph";
+import {
+  createCluster,
+  createClusterSeparator,
+  createFindbar,
+  createIconButton,
+  createMenu,
+  createMenuItem,
+  createStatusLink,
+} from "@defsquare/data-graph-chrome";
 
 declare global {
   interface Window {
@@ -25,14 +34,94 @@ export interface ChromeHooks {
 }
 
 export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
+  // --- Construction du chrome.
+  //
+  // Les primitives viennent des fabriques du paquet de chrome ; ce fichier
+  // décide seulement QUELS boutons existent, dans quel ordre, et ce qu'ils
+  // font — c'est-à-dire l'assemblage, qui est un choix produit et reste ici.
+  //
+  // Les ids sont posés explicitement : le câblage ci-dessous s'en passe (il
+  // tient les références directement), mais les tests de bout en bout, eux,
+  // désignent ces éléments par id. Les laisser tomber casserait la suite e2e
+  // sans que rien d'autre ne le signale.
+  const searchToggleBtn = createIconButton({
+    id: "search-toggle",
+    icon: "search",
+    label: "Rechercher",
+    controls: "findbar",
+    expanded: false,
+  });
+  const fitBtn = createIconButton({ id: "fit", icon: "fit", label: "Ajuster à la vue" });
+  // « Ranger » : une remise en page globale à la demande, qui répare la dérive
+  // accumulée par les dépliages et révélations successifs. Sans effet en vue
+  // graphe, par contrat de `tidy()`.
+  const tidyBtn = createIconButton({ id: "tidy", icon: "tidy", label: "Ranger" });
+  // `data-target` porte la vue que le clic ACTIVERAIT : l'icône affichée est
+  // donc celle de la vue cible. `syncViewButton()` la pose depuis
+  // `graph.currentView()` réel, jamais depuis la demande.
+  const toggleViewBtn = createIconButton({
+    id: "toggle-view",
+    icon: ["graph", "structure"],
+    label: "Vue graphe",
+  });
+  toggleViewBtn.dataset.target = "graph";
+  const menuToggleBtn = createIconButton({
+    id: "menu-toggle",
+    icon: "dots",
+    label: "Menu",
+    controls: "menu",
+    expanded: false,
+  });
+  menuToggleBtn.setAttribute("aria-haspopup", "menu");
+
+  const findbar = createFindbar({
+    id: "findbar",
+    inputId: "search",
+    counterId: "match-counter",
+    prevId: "prev-match",
+    nextId: "next-match",
+  });
+  const findbarEl = findbar.root;
+
+  // Les entrées du menu n'ont que du texte : leur `textContent` est réécrit pour
+  // refléter l'état courant, ce qu'une icône enfant ne survivrait pas.
+  const datasetItem = createMenuItem({
+    id: "toggle-dataset",
+    label: "Jeu de données étendu (4000)",
+  });
+  const themeBtn = createMenuItem({ id: "toggle-theme", label: "Thème sombre" });
+  const menuEl = createMenu({ id: "menu", labelledBy: "menu-toggle" }, datasetItem, themeBtn);
+
+  document
+    .getElementById("toolbar")
+    ?.append(
+      createCluster(
+        searchToggleBtn,
+        fitBtn,
+        tidyBtn,
+        toggleViewBtn,
+        createClusterSeparator(),
+        menuToggleBtn,
+      ),
+      findbarEl,
+      menuEl,
+    );
+
+  document
+    .querySelector(".detail-head")
+    ?.append(
+      createIconButton({
+        id: "detail-close",
+        icon: "close",
+        label: "Fermer le panneau",
+        small: true,
+      }),
+    );
+
   // --- Chrome flottant : dépliage de la recherche, menu ⋮.
   // Aucune de ces bascules ne touche à l'état du graphe — la recherche garde sa
   // requête et ses résultats quand on la replie, la sélection survit à la
   // fermeture du panneau. Ce n'est que de l'affichage.
-  const searchToggleBtn = document.getElementById("search-toggle");
-  const findbarEl = document.getElementById("findbar");
-  const menuToggleBtn = document.getElementById("menu-toggle");
-  const menuEl = document.getElementById("menu");
 
   function setExpanded(panel: HTMLElement | null, trigger: HTMLElement | null, open: boolean): void {
     if (open) panel?.removeAttribute("hidden");
@@ -107,7 +196,8 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
   // --- Barre d'état : compteurs et diagnostics.
   const statNodesEl = document.getElementById("stat-nodes");
   const statVisibleEl = document.getElementById("stat-visible");
-  const statDiagEl = document.getElementById("stat-diagnostics");
+  const statDiagEl = createStatusLink({ id: "stat-diagnostics" });
+  document.getElementById("statusbar")?.append(statDiagEl);
 
   function updateStatus(): void {
     const stats = graph.stats();
@@ -115,7 +205,6 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
     if (statVisibleEl) statVisibleEl.textContent = String(stats.visibleNodeCount);
 
     const diagnostics = graph.diagnostics();
-    if (!statDiagEl) return;
     if (diagnostics.length === 0) {
       statDiagEl.setAttribute("hidden", "");
       return;
@@ -124,12 +213,11 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
     statDiagEl.textContent = `${diagnostics.length} diagnostic${diagnostics.length > 1 ? "s" : ""}`;
   }
 
-  statDiagEl?.addEventListener("click", () => {
+  statDiagEl.addEventListener("click", () => {
     for (const d of graph.diagnostics()) console.warn(`[data-graph] ${d.code} @ ${d.path}: ${d.message}`);
   });
 
   // --- Thème : la lib et le shell DOM basculent ensemble.
-  const themeBtn = document.getElementById("toggle-theme");
   const logoEl = document.getElementById("logo") as HTMLImageElement | null;
   let dark = false;
 
@@ -139,24 +227,22 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
       logoEl.src = dark ? "/defsquare-short-white-red.svg" : "/defsquare-short-dark-red.svg";
     }
     // L'entrée de menu nomme le thème qu'elle ACTIVERAIT, pas celui en place.
-    if (themeBtn) themeBtn.textContent = dark ? "Thème clair" : "Thème sombre";
+    themeBtn.textContent = dark ? "Thème clair" : "Thème sombre";
     graph.setTheme(dark ? defsquareDark : defsquareLight);
     window.__theme = dark ? "dark" : "light";
   }
 
-  themeBtn?.addEventListener("click", () => {
+  themeBtn.addEventListener("click", () => {
     dark = !dark;
     applyTheme();
   });
 
   // --- Bascule Structure / Graphe.
-  const toggleViewBtn = document.getElementById("toggle-view") as HTMLButtonElement | null;
 
   /** Aligne icône et libellé accessible du bouton sur la vue que le prochain clic
    * activerait. Lit la vue RÉELLEMENT active, jamais celle qu'on a demandée
    * (voir le commentaire du gestionnaire). */
   function syncViewButton(): void {
-    if (!toggleViewBtn) return;
     const target = graph.currentView() === "graph" ? "structure" : "graph";
     const label = target === "graph" ? "Vue graphe" : "Vue structure";
     toggleViewBtn.dataset.target = target;
@@ -180,12 +266,11 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
    * ailleurs — deux bascules simultanées n'auraient aucun sens.
    */
   function setViewBusy(busy: boolean): void {
-    if (!toggleViewBtn) return;
     if (busy) toggleViewBtn.setAttribute("aria-busy", "true");
     else toggleViewBtn.removeAttribute("aria-busy");
   }
 
-  toggleViewBtn?.addEventListener("click", () => {
+  toggleViewBtn.addEventListener("click", () => {
     void (async () => {
       toggleViewBtn.disabled = true;
       // Dans le `try`/`finally` avec `disabled` : les deux se lèvent dans TOUS
@@ -213,12 +298,12 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
     })();
   });
 
-  document.getElementById("fit")?.addEventListener("click", () => graph.fit());
+  fitBtn.addEventListener("click", () => graph.fit());
 
   // `tidy()` est asynchrone (il refait la mise en page complète) mais rien ici
   // n'a à attendre son résultat : la promesse est explicitement jetée, et
   // l'instance se garde elle-même contre les opérations concurrentes.
-  document.getElementById("tidy")?.addEventListener("click", () => void graph.tidy());
+  tidyBtn.addEventListener("click", () => void graph.tidy());
 
   return { updateStatus, applyTheme, syncViewButton };
 }

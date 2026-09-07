@@ -4,6 +4,7 @@ import {
   type GraphNode,
   type RefEdge,
 } from "@defsquare/data-graph";
+import { createBadge, createRefButton } from "@defsquare/data-graph-chrome";
 
 /** Preuve que l'événement public « select » du renderer suffit à construire un
  * panneau de détail entièrement hors de la bibliothèque : du DOM nu, aucun
@@ -15,8 +16,12 @@ export interface DetailPanel {
 
 export function createDetailPanel(graph: DataGraph): DetailPanel {
   const detailEl = document.getElementById("detail");
-  const typeEl = document.getElementById("selection-type");
   const emptyEl = document.getElementById("selection-empty");
+  // La pastille est une primitive partagée : elle est construite ici et insérée
+  // à sa place plutôt qu'écrite dans `index.html`, où elle serait inaccessible
+  // au catalogue du design system.
+  const typeEl = createBadge({ id: "selection-type" });
+  emptyEl?.after(typeEl);
   const labelEl = document.getElementById("selection-label");
   const pathEl = document.getElementById("selection-path");
   const rowsEl = document.getElementById("selection-rows");
@@ -44,13 +49,11 @@ export function createDetailPanel(graph: DataGraph): DetailPanel {
     emptyEl?.setAttribute("hidden", "");
     for (const el of [labelEl, pathEl]) el?.removeAttribute("hidden");
 
-    if (typeEl) {
-      if (node.kind === "entity") {
-        typeEl.textContent = node.entityType.toUpperCase();
-        typeEl.removeAttribute("hidden");
-      } else {
-        typeEl.setAttribute("hidden", "");
-      }
+    if (node.kind === "entity") {
+      typeEl.textContent = node.entityType.toUpperCase();
+      typeEl.removeAttribute("hidden");
+    } else {
+      typeEl.setAttribute("hidden", "");
     }
     if (labelEl) labelEl.textContent = node.label;
     if (pathEl) pathEl.textContent = node.path.length > 0 ? `/${node.path.join("/")}` : "/";
@@ -74,14 +77,14 @@ export function createDetailPanel(graph: DataGraph): DetailPanel {
 
         const ref = refs.get(row.key);
         if (ref) {
-          const btn = document.createElement("button");
-          btn.className = "ref-btn";
-          btn.textContent = "→";
-          if (ref.to === null || ref.dangling) {
-            btn.disabled = true;
-            btn.title = `Référence cassée : ${ref.targetType}#${ref.targetId}`;
-          } else {
-            btn.title = `Aller à ${ref.targetType}#${ref.targetId}`;
+          const broken = ref.to === null || ref.dangling;
+          const btn = createRefButton({
+            title: broken
+              ? `Référence cassée : ${ref.targetType}#${ref.targetId}`
+              : `Aller à ${ref.targetType}#${ref.targetId}`,
+            disabled: broken,
+          });
+          if (!broken) {
             btn.addEventListener("click", () => {
               graph.select(ref.to!);
               graph.focus(ref.to!);
