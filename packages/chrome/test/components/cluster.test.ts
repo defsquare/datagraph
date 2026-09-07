@@ -3,18 +3,18 @@ import { createCluster, createClusterSeparator } from "../../src/components/clus
 import { createIconButton } from "../../src/components/icon-button.js";
 
 describe("createCluster", () => {
-  it("pose la surface flottante autour de ses enfants", () => {
+  it("puts the floating surface around its children", () => {
     const sep = createClusterSeparator();
     const cluster = createCluster(createIconButton({ icon: "fit", label: "Ajuster" }), sep);
-    // `float` en plus de `cluster` : un bouton du chrome n'apparaît jamais à nu
-    // sur le canvas, sa teinte de survol se compose sur le verre.
+    // `float` on top of `cluster`: a chrome button never appears bare over the
+    // canvas, its hover tint composes onto the glass.
     expect(cluster.className).toBe("cluster float");
     expect(cluster.children).toHaveLength(2);
   });
 });
 
 describe("createClusterSeparator", () => {
-  it("est décoratif : il n'a rien à annoncer", () => {
+  it("is decorative: it has nothing to announce", () => {
     const sep = createClusterSeparator();
     expect(sep.className).toBe("cluster-sep");
     expect(sep.getAttribute("aria-hidden")).toBe("true");

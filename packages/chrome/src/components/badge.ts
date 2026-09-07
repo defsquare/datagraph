@@ -1,10 +1,10 @@
 import { element } from "../dom.js";
 
 /**
- * La pastille de type d'entité, en tête du panneau de détail.
+ * The entity type badge, at the head of the detail panel.
  *
- * Repliée tant qu'elle n'a rien à dire : une pastille vide occuperait une ligne
- * et signalerait un type qui n'existe pas.
+ * Folded as long as it has nothing to say: an empty badge would take a line and
+ * announce a type that does not exist.
  */
 export function createBadge(o: { id?: string; text?: string } = {}): HTMLSpanElement {
   const badge = element("span", "badge", o.id);

@@ -1,10 +1,10 @@
 import { element } from "../dom.js";
 
 /**
- * La grappe : le regroupement serré de boutons du chrome.
+ * The cluster: the chrome's tight grouping of buttons.
  *
- * Elle EST une surface flottante — les boutons du chrome n'apparaissent jamais
- * à nu sur le canvas, et leur teinte de survol se compose sur le verre.
+ * It IS a floating surface — chrome buttons never appear bare over the canvas,
+ * and their hover tint composes onto the glass.
  */
 export function createCluster(...children: Node[]): HTMLDivElement {
   const cluster = element("div", "cluster float");
@@ -12,8 +12,8 @@ export function createCluster(...children: Node[]): HTMLDivElement {
   return cluster;
 }
 
-/** Le trait qui sépare deux familles de commandes dans une grappe. Décoratif :
- * il n'a rien à annoncer, le groupement se lit à l'espacement. */
+/** The rule separating two families of commands inside a cluster. Decorative: it
+ * has nothing to announce, the grouping reads from the spacing. */
 export function createClusterSeparator(): HTMLSpanElement {
   const sep = element("span", "cluster-sep");
   sep.setAttribute("aria-hidden", "true");

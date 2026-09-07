@@ -1,28 +1,28 @@
-/* Les primitives du chrome : la surface flottante et ce qui se pose dessus.
+/* The chrome primitives: the floating surface and what sits on it.
 
-   Ce fichier n'est qu'un point d'entrée. Chaque primitive porte ses règles à
-   côté de sa fabrique, dans `components/` — c'est ce qui empêche d'ajouter un
-   état CSS sans voir le code qui construit l'élément, et inversement.
+   This file is only an entry point. Each primitive carries its rules beside its
+   factory, under `components/` — which is what prevents adding a CSS state
+   without seeing the code that builds the element, and the other way round.
 
-   Ces règles viennent de `apps/demo/src/style.css`, où elles étaient les seules
-   à décrire des composants plutôt que la mise en place d'une page. Elles sont
-   ici pour qu'`apps/demo` et `apps/design` les partagent : la planche du
-   catalogue habillait auparavant des copies, qui ne pouvaient que dériver.
+   These rules come from `apps/demo/src/style.css`, where they were the only ones
+   describing components rather than the layout of a page. They live here so that
+   `apps/demo` and `apps/design` share them: the catalogue's board used to dress
+   copies, which could only drift.
 
-   Elles consomment les variables du paquet de tokens (`--ds-*`, `--float-*`,
-   `--radius-*`, `--space-*`, `--transition`, `--ease-out`) : cette feuille doit
-   donc être importée APRÈS `tokens.css`.
+   They consume the tokens package's variables (`--ds-*`, `--float-*`,
+   `--radius-*`, `--space-*`, `--transition`, `--ease-out`): this stylesheet must
+   therefore be imported AFTER `tokens.css`.
 
-   Trois sélecteurs d'id sont devenus des classes en chemin — `#search` →
+   Three id selectors became classes along the way — `#search` →
    `.findbar-input`, `#match-counter` → `.findbar-counter`, `#selection-type` →
-   `.badge`. Une primitive ne peut pas être stylée par l'id d'une de ses
-   instances : le second exemplaire n'aurait plus d'habillage. Les ids restent
-   posés sur les instances, où ils servent de prise au câblage et aux tests.
+   `.badge`. A primitive cannot be styled through the id of one of its instances:
+   the second copy would have no dressing. The ids stay on the instances, where
+   they serve as handles for the wiring and the tests.
 
-   L'ordre ci-dessous va du socle aux composants qui s'y posent. Aucune de ces
-   feuilles ne se dispute une propriété avec une autre — la surface décide du
-   fond et du cadre, chaque composant de sa géométrie — mais lire le socle en
-   premier reste ce qui se raisonne le mieux. */
+   The order below goes from the base to the components that sit on it. None of
+   these sheets fights another over a property — the surface decides background
+   and frame, each component its own geometry — but reading the base first is
+   still what reasons best. */
 
 @import "./components/float.css";
 @import "./components/cluster.css";

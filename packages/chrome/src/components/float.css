@@ -1,12 +1,12 @@
-/* La surface flottante : le socle de tout le chrome.
+/* The floating surface: the base of the whole chrome.
 
-   Translucide et floutée pour que le graphe transparaisse, mais assez opaque
-   pour rester lisible au-dessus d'une carte dense. Elle n'est pas interactive —
-   survol, focus et désactivation appartiennent à ce qu'on pose dessus.
+   Translucent and blurred so the graph shows through, but opaque enough to stay
+   legible above a dense card. It is not interactive — hover, focus and disabling
+   belong to whatever is placed on it.
 
-   Aucune fabrique ne lui correspond : `.float` est une classe qu'on POSE sur une
-   surface, pas un composant qu'on construit. La grappe, la recherche et le menu
-   la portent en plus de la leur. */
+   No factory matches it: `.float` is a class you PUT on a surface, not a
+   component you build. The cluster, the findbar and the menu carry it in
+   addition to their own. */
 
 .float {
   background: var(--float-bg);

@@ -1,11 +1,11 @@
-/* La pastille de type d'entité : voir `badge.ts`.
+/* The entity type badge: see `badge.ts`.
 
-   L'encre est un `#ffffff` en dur, et c'est le seul endroit de cette feuille qui
-   n'utilise pas un token : le design system n'a pas d'encre « sur accent ». Elle
-   tient dans les deux modes, mais de justesse en sombre (blanc sur
-   `accent.entity` #3573c3 : 4,8:1, soit AA et pas AAA), et rien ne le surveille.
-   C'est un manque du design system, pas une décision de ce fichier — le combler
-   veut dire ajouter le token, pas arranger la règle. */
+   The ink is a hard-coded `#ffffff`, and it is the only place in this stylesheet
+   that does not use a token: the design system has no "ink on accent". It holds
+   in both modes, but barely in dark (white on `accent.entity` #3573c3: 4.8:1, so
+   AA and not AAA), and nothing watches it. That is a gap in the design system,
+   not a decision of this file — closing it means adding the token, not patching
+   the rule. */
 
 .badge {
   display: inline-block;
@@ -20,9 +20,9 @@
   border-radius: var(--radius-sm);
 }
 
-/* Une règle d'auteur l'emporte sur le `[hidden] { display: none }` de la feuille
-   UA, quelle que soit sa spécificité : sans ceci, la pastille resterait
-   affichée, vide, sous l'état initial du panneau qui la porte. */
+/* An author rule beats the UA sheet's `[hidden] { display: none }` whatever its
+   specificity: without this, the badge would stay on screen, empty, under the
+   initial state of the panel carrying it. */
 .badge[hidden] {
   display: none;
 }

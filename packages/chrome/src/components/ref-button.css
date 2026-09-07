@@ -1,8 +1,8 @@
-/* Le bouton « suivre la référence » : voir `ref-button.ts`.
+/* The "follow the reference" button: see `ref-button.ts`.
 
-   Il était scopé sous `#selection-rows` quand il n'existait qu'à un seul
-   endroit ; une primitive ne dépend pas de son hôte. Aucune règle concurrente
-   n'existe, la baisse de spécificité est donc sans effet. */
+   It was scoped under `#selection-rows` back when it existed in one place only;
+   a primitive does not depend on its host. No competing rule exists, so the drop
+   in specificity has no effect. */
 
 .ref-btn {
   flex: none;

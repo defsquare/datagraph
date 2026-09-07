@@ -1,19 +1,18 @@
 # @defsquare/data-graph-chrome
 
-Les primitives DOM du chrome de data-graph : surface flottante, bouton d'icône,
-recherche dépliante, menu, pastille d'entité, lien de statut, bouton de
-référence.
+The DOM primitives of data-graph's chrome: floating surface, icon button,
+unfolding search bar, menu, entity badge, status link, reference button.
 
-**Une primitive par module, sa feuille à côté**, sous `src/components/` :
+**One primitive per module, its stylesheet beside it**, under `src/components/`:
 
 ```
 src/
-  icons.ts              les neuf icônes du chrome, seule source
-  dom.ts                le helper `element()`, interne
-  chrome.css            point d'entrée : la liste des @import
-  index.ts              la façade publique
+  icons.ts              the chrome's nine icons, single source
+  dom.ts                the `element()` helper, internal
+  chrome.css            entry point: the list of @imports
+  index.ts              the public façade
   components/
-    float.css           le socle, sans fabrique — une classe qu'on pose
+    float.css           the base, with no factory — a class you put on
     cluster.ts   .css   createCluster, createClusterSeparator
     icon-button.ts .css createIconButton
     findbar.ts   .css   createFindbar
@@ -23,52 +22,50 @@ src/
     ref-button.ts  .css createRefButton
 ```
 
-Les règles d'un composant vivent avec le code qui le construit : on n'ajoute pas
-un état CSS sans voir sa fabrique, ni l'inverse. Les consommateurs, eux, ne
-voient que deux points d'entrée — l'index et `chrome.css`.
+A component's rules live with the code that builds it: you do not add a CSS
+state without seeing its factory, nor the other way round. Consumers, for their
+part, see only two entry points — the index and `chrome.css`.
 
 ```ts
 import { createIconButton, createFindbar } from "@defsquare/data-graph-chrome";
-import "@defsquare/data-graph-chrome/chrome.css"; // APRÈS les tokens
+import "@defsquare/data-graph-chrome/chrome.css"; // AFTER the tokens
 ```
 
-## Pourquoi ce paquet existe
+## Why this package exists
 
-`apps/design` catalogue le design system. Sa planche des composants graphe
-appelle les vraies fonctions de dessin du renderer, donc un spécimen ne peut pas
-mentir sur ce que le produit peint. Sa planche des composants UI ne pouvait pas
-en faire autant : les primitives vivaient dans `apps/demo`, et la planche les
-**recopiait** — CSS et tracés SVG. Deux sources dérivent, et rien ne casse quand
-elles dérivent.
+`apps/design` catalogues the design system. Its graph-components board calls the
+renderer's real drawing functions, so a specimen cannot lie about what the
+product paints. Its UI-components board could not do the same: the primitives
+lived inside `apps/demo`, and the board **copied** them — CSS and SVG paths. Two
+sources drift, and nothing breaks when they do.
 
-Les deux applications consomment désormais ce paquet. La recopie a disparu, elle
-n'est donc plus à surveiller.
+Both applications now consume this package. The copy is gone, so there is
+nothing left to keep in sync.
 
-## Ce que ce paquet ne contient pas
+## What this package does not contain
 
-- **Aucun comportement.** Pas de gestion d'ouverture, pas d'écouteur global, pas
-  d'état. Les fabriques produisent du DOM inerte. La politique d'Échap de la
-  démo — un seul niveau à la fois, `preventDefault` pour que le champ de
-  recherche ne se vide pas en silence — est une décision sur SES deux panneaux.
-- **Aucun assemblage.** Le contenu de la barre d'outils, les entrées du menu, la
-  structure du panneau de détail et la barre d'état appartiennent à
-  l'application : ce sont des choix produit, et les héberger ici ferait de ce
-  paquet le passage obligé de toute évolution de l'interface.
+- **No behaviour.** No disclosure handling, no global listener, no state. The
+  factories produce inert DOM. The demo's Escape policy — one level at a time,
+  `preventDefault` so the search field is not silently cleared — is a decision
+  about ITS two panels.
+- **No assemblies.** The toolbar's contents, the menu entries, the structure of
+  the detail panel and the status bar belong to the application: those are
+  product choices, and hosting them here would make this package the mandatory
+  path for every interface change.
 
-## Forme du paquet
+## Shape of the package
 
-Privé, sans build : les `exports` pointent directement sur `src/`. Les deux
-consommateurs sont des applications Vite, elles compilent la source. Le rendre
-publiable coûterait un `tsup.config.ts` et un README public — rien de
-structurel.
+Private, build-less: the `exports` point straight at `src/`. Both consumers are
+Vite applications that compile source. Making it publishable would cost a
+`tsup.config.ts` and a public README — nothing structural.
 
-Les fabriques acceptent toutes un `id` : les instances de la démo sont désignées
-par id, par son câblage comme par ses tests de bout en bout.
+Every factory accepts an `id`: the demo's instances are addressed by id, by its
+wiring as much as by its end-to-end tests.
 
-`pnpm --filter @defsquare/data-graph-chrome test` — les fabriques sont testées
-sous happy-dom, le premier environnement DOM du dépôt. Ce que ces tests figent
-(classes, ids, attributs ARIA) est le contrat que la démo et le catalogue
-partagent.
+`pnpm --filter @defsquare/data-graph-chrome test` — the factories are tested
+under happy-dom, the repo's first DOM environment. What those tests freeze
+(classes, ids, ARIA attributes) is the contract the demo and the catalogue now
+share.
 
-Décision et alternatives rejetées :
+Decision and rejected alternatives:
 [`docs/adr/0029-chrome-primitives-shared-package.md`](../../docs/adr/0029-chrome-primitives-shared-package.md).

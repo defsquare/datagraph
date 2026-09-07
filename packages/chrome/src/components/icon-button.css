@@ -1,9 +1,9 @@
-/* Le bouton d'icône : voir `icon-button.ts`.
+/* The icon button: see `icon-button.ts`.
 
-   30px, sans fond au repos, l'icône en `--ds-muted`. Deux états tiennent à un
-   attribut ARIA plutôt qu'à une classe jumelle — c'est l'attribut que lit une
-   technologie d'assistance, et s'en servir aussi comme sélecteur rend impossible
-   qu'un des deux soit posé sans l'autre. */
+   30px, no background at rest, the icon in `--ds-muted`. Two states hang on an
+   ARIA attribute rather than a twin class — the attribute is what assistive
+   technology reads, and using it as the selector too makes it impossible for one
+   to be set without the other. */
 
 .ibtn {
   flex: none;
@@ -31,20 +31,19 @@
   outline-offset: 1px;
 }
 
-/* Un panneau ouvert reste signalé par son déclencheur. */
+/* An open panel stays signalled by its trigger. */
 .ibtn[aria-expanded="true"] {
   color: var(--ds-primary);
   background: color-mix(in srgb, var(--ds-primary) 14%, transparent);
 }
 
-/* Un bouton OCCUPÉ : le calcul est parti, la page reste vivante.
+/* A BUSY button: the computation has left, the page stays alive.
  *
- * La règle passe APRÈS `.ibtn:disabled` — l'appelant pose les deux, et c'est
- * cette opacité-ci, plus claire, qui doit gagner : « en cours » n'est pas « pas
- * disponible ». Une pulsation lente et une opacité, rien de plus : le vrai
- * signal est que le reste de l'écran répond toujours, et un indicateur bruyant
- * dirait le contraire. `prefers-reduced-motion` retire l'animation et garde
- * l'état. */
+ * The rule comes AFTER `.ibtn:disabled` — the caller sets both, and it is this
+ * lighter opacity that must win: "in progress" is not "not available". A slow
+ * pulse and an opacity, nothing more: the real signal is that the rest of the
+ * screen still responds, and a noisy indicator would say the opposite.
+ * `prefers-reduced-motion` drops the animation and keeps the state. */
 .ibtn[aria-busy="true"]:disabled {
   opacity: 0.7;
   animation: ibtn-busy 1.2s ease-in-out infinite;

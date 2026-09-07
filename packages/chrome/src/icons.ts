@@ -1,15 +1,15 @@
 /**
- * Les icônes du chrome, et leur seule source.
+ * The chrome's icons, and their only source.
  *
- * Elles vivaient en dur dans `apps/demo/index.html` — donc inaccessibles à tout
- * autre consommateur — et se retrouvaient recopiées à la main dans la planche
- * des composants du playground. Les deux jeux ne pouvaient que diverger, sans
- * que rien ne le signale. Elles sont désormais ici, et nulle part ailleurs.
+ * They used to live inline in `apps/demo/index.html` — hence out of reach for
+ * any other consumer — and were copied by hand into the playground's component
+ * board. The two sets could only drift, with nothing to signal it. They now live
+ * here, and nowhere else.
  *
- * Toutes sont dessinées dans un carré de 16, à `currentColor` : c'est le bouton
- * qui porte la couleur, l'icône n'en décide pas. Aucune ne porte de titre ni de
- * rôle — le nom accessible est sur le bouton englobant (voir `createIconButton`),
- * et une icône qui se nommerait elle-même le doublerait.
+ * All are drawn in a 16-unit square, in `currentColor`: the button carries the
+ * colour, the icon does not decide it. None carries a title or a role — the
+ * accessible name is on the enclosing button (see `createIconButton`), and an
+ * icon naming itself would only duplicate it.
  */
 
 export const ICON_NAMES = [
@@ -41,8 +41,8 @@ const PATHS: Record<IconName, string> = {
       stroke-linecap="round"
     />
     <rect x="5.75" y="5.75" width="4.5" height="4.5" rx="1" fill="currentColor" opacity="0.35" />`,
-  // « Ranger » : des blocs remis en colonne, alignés sur un même bord — l'icône
-  // dit l'idée de la remise en page globale qu'elle déclenche.
+  // "Tidy": blocks put back in a column, aligned on one edge — the icon states
+  // the idea of the global relayout it triggers.
   tidy: `
     <line x1="2.5" y1="2" x2="2.5" y2="14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
     <rect x="5" y="3" width="8.5" height="2.6" rx="0.9" fill="currentColor" />
@@ -68,10 +68,10 @@ const PATHS: Record<IconName, string> = {
 };
 
 /**
- * `innerHTML` sur un littéral figé du module : aucune donnée extérieure n'y
- * transite, et c'est la forme la plus lisible pour garder les tracés identiques
- * à ceux qu'ils remplacent — les réécrire en `createElementNS` rendrait toute
- * comparaison future illisible.
+ * `innerHTML` over a frozen module literal: no outside data flows through here,
+ * and it is by far the most readable way to keep the paths identical to the ones
+ * they replace — rewriting them as `createElementNS` calls would make any future
+ * comparison unreadable.
  */
 export function icon(name: IconName, className?: string): SVGSVGElement {
   const svg = document.createElementNS(SVG_NS, "svg");

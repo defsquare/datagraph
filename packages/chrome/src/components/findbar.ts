@@ -2,11 +2,11 @@ import { element } from "../dom.js";
 import { icon, type IconName } from "../icons.js";
 
 /**
- * La recherche dépliante : une surface flottante qui porte l'icône, le champ nu,
- * le compteur de résultats et les deux chevrons de navigation.
+ * The unfolding search bar: a floating surface carrying the icon, the bare
+ * field, the match counter and the two navigation chevrons.
  *
- * Le champ n'a ni bordure ni contour propres : c'est la BARRE qui réagit au
- * focus (`:focus-within`), pour que l'ensemble se lise comme un seul objet.
+ * The field has neither border nor outline of its own: it is the BAR that reacts
+ * to focus (`:focus-within`), so the whole reads as a single object.
  */
 export interface FindbarOptions {
   id?: string;
@@ -24,12 +24,12 @@ export interface Findbar {
   next: HTMLButtonElement;
 }
 
-/** Les cinq parties sont retournées plutôt que retrouvées par sélecteur :
- * l'appelant les câble toutes, et une requête sur le DOM rendrait ce câblage
- * silencieusement faux le jour où la structure interne change. */
+/** The five parts are returned rather than found by selector: the caller wires
+ * them all, and a DOM query would make that wiring silently wrong the day the
+ * internal structure changes. */
 export function createFindbar(o: FindbarOptions = {}): Findbar {
   const root = element("div", "findbar float", o.id);
-  // Repliée : dans le produit, la recherche n'apparaît qu'au clic sur la loupe.
+  // Folded: in the product, search only appears on a click on the magnifier.
   root.setAttribute("hidden", "");
 
   const input = element("input", "findbar-input", o.inputId);
@@ -39,8 +39,8 @@ export function createFindbar(o: FindbarOptions = {}): Findbar {
   input.setAttribute("aria-label", "Rechercher");
 
   const counter = element("span", "findbar-counter", o.counterId);
-  // Le compteur s'annonce quand il change : c'est le seul retour de recherche
-  // pour qui ne voit pas le canvas.
+  // The counter announces itself when it changes: it is the only search feedback
+  // for anyone who cannot see the canvas.
   counter.setAttribute("aria-live", "polite");
 
   const prev = navButton("up", "Résultat précédent (Maj+Entrée)", "Résultat précédent", o.prevId);
@@ -50,8 +50,8 @@ export function createFindbar(o: FindbarOptions = {}): Findbar {
   return { root, input, counter, prev, next };
 }
 
-/** Le `title` cite le raccourci, l'`aria-label` non : lu à voix haute, un
- * raccourci clavier au milieu du nom d'un bouton n'aide pas à le désigner. */
+/** The `title` quotes the shortcut, the `aria-label` does not: read aloud, a
+ * keyboard shortcut in the middle of a button's name does not help identify it. */
 function navButton(
   name: IconName,
   title: string,

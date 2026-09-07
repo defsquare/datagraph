@@ -1,9 +1,9 @@
 /**
- * Le seul helper partagé par les fabriques : créer un élément, lui poser sa
- * classe et, si l'appelant en veut un, son id.
+ * The only helper shared by the factories: create an element, set its class and,
+ * if the caller wants one, its id.
  *
- * Interne au paquet — `index.ts` ne le réexporte pas. Ce n'est pas une primitive
- * du chrome, seulement l'économie des trois mêmes lignes dans chaque composant.
+ * Internal to the package — `index.ts` does not re-export it. It is not a chrome
+ * primitive, only the three same lines saved in every component.
  */
 export function element<K extends keyof HTMLElementTagNameMap>(
   tag: K,

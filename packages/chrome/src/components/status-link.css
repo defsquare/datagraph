@@ -1,8 +1,8 @@
-/* Le lien de la barre d'état : voir `status-link.ts`.
+/* The status bar's link: see `status-link.ts`.
 
-   `pointer-events: auto` rétablit ce que la barre d'état retire à ses enfants :
-   elle est transparente aux gestes pour ne pas manger ceux du canvas, mais ce
-   bouton-ci doit rester cliquable. */
+   `pointer-events: auto` restores what the status bar takes away from its
+   children: the bar is transparent to gestures so it does not eat the canvas's,
+   but this button must stay clickable. */
 
 .status-link {
   font-family: inherit;

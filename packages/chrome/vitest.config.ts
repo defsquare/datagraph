@@ -1,8 +1,8 @@
 import { defineConfig } from "vitest/config";
 
-// Les fabriques produisent du DOM : elles se testent dans un document, pas dans
-// un navigateur. happy-dom suffit — aucune de ces primitives ne dépend d'une
-// mise en page calculée, seulement des classes, ids et attributs ARIA émis.
+// The factories produce DOM: they are tested in a document, not in a browser.
+// happy-dom is enough — none of these primitives depends on a computed layout,
+// only on the classes, ids and ARIA attributes emitted.
 export default defineConfig({
   test: { environment: "happy-dom" },
 });

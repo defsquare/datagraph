@@ -1,14 +1,14 @@
 /**
- * Les primitives du chrome, partagées par `apps/demo` et `apps/design`.
+ * The chrome primitives, shared by `apps/demo` and `apps/design`.
  *
- * Une primitive par module sous `components/`, chacune avec sa feuille à côté.
- * Cet index est leur seule façade : les consommateurs importent d'ici, jamais
- * d'un module de composant — ce qui laisse libre de scinder ou renommer un
- * fichier sans toucher à ce qu'ils écrivent.
+ * One primitive per module under `components/`, each with its stylesheet beside
+ * it. This index is their only façade: consumers import from here, never from a
+ * component module — which leaves us free to split or rename a file without
+ * touching what they write.
  *
- * La feuille n'est pas réexportée ici — elle s'importe par le sous-chemin
- * `@defsquare/data-graph-chrome/chrome.css`, et APRÈS les variables du paquet
- * de tokens dont elle dépend.
+ * The stylesheet is not re-exported here — it is imported through the
+ * `@defsquare/data-graph-chrome/chrome.css` subpath, and AFTER the tokens
+ * package's variables it depends on.
  */
 export * from "./icons.js";
 

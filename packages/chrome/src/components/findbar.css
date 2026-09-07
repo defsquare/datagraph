@@ -1,9 +1,9 @@
-/* La recherche dépliante : voir `findbar.ts`. */
+/* The unfolding search bar: see `findbar.ts`. */
 
-/* Repliée, elle reste dans le DOM, masquée par `hidden`. Une règle d'auteur qui
-   pose `display` l'emporte sur le `[hidden] { display: none }` de la feuille UA,
-   quelle que soit sa spécificité : il faut donc le redire, sinon la barre
-   s'afficherait dépliée en permanence. */
+/* Folded, it stays in the DOM, hidden by `hidden`. An author rule that sets
+   `display` beats the UA sheet's `[hidden] { display: none }` whatever its
+   specificity: it must therefore be restated, or the bar would show unfolded
+   permanently. */
 .findbar[hidden] {
   display: none;
 }
@@ -24,8 +24,8 @@
   to { opacity: 1; transform: none; }
 }
 
-/* C'est la BARRE qui s'allume, pas le champ : les deux se lisent alors comme un
-   seul objet, ce qu'ils sont. */
+/* It is the BAR that lights up, not the field: the two then read as a single
+   object, which is what they are. */
 .findbar:focus-within {
   border-color: color-mix(in srgb, var(--ds-primary) 55%, transparent);
   box-shadow: var(--shadow-float), 0 0 0 3px color-mix(in srgb, var(--ds-primary) 16%, transparent);

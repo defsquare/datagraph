@@ -1,13 +1,11 @@
-/* Le menu et ses entrées : voir `menu.ts`.
+/* The menu and its entries: see `menu.ts`.
 
-   Sans ancrage : `position`, `top` et `left` disent OÙ l'application pose le
-   panneau, et c'est de la mise en place. `transform-origin` reste ici, il
-   appartient à l'animation d'ouverture — qui part du coin par lequel le panneau
-   est retenu. */
+   No anchoring: `position`, `top` and `left` say WHERE the application places the
+   panel, and that is layout. `transform-origin` stays here, it belongs to the
+   opening animation — which starts from the corner the panel hangs by. */
 
-/* Replié, il reste dans le DOM, masqué par `hidden` : même raison que pour la
-   recherche, la feuille UA ne suffit pas face à une règle d'auteur qui pose
-   `display`. */
+/* Folded, it stays in the DOM, hidden by `hidden`: same reason as the findbar,
+   the UA sheet is not enough against an author rule that sets `display`. */
 .menu[hidden] {
   display: none;
 }
@@ -43,9 +41,8 @@
 .menu-item:hover { background: var(--float-hover); color: var(--ds-ink); }
 .menu-item:disabled { opacity: 0.5; cursor: default; }
 
-/* `outline-offset` NÉGATIF, contrairement au bouton d'icône : l'entrée occupe
-   toute la largeur du panneau, un liseré posé à l'extérieur déborderait de son
-   bord. */
+/* NEGATIVE `outline-offset`, unlike the icon button: the entry spans the full
+   width of the panel, so an outline drawn outside would overflow its edge. */
 .menu-item:focus-visible {
   outline: 2px solid var(--ds-primary);
   outline-offset: -2px;
