@@ -47,6 +47,18 @@ const layout = await engine.layout(graph, collapseState.visibleNodeIds());
 searchIndex.search("dupont"); // -> SearchResult[]
 ```
 
+`new CollapseState(graph)` opens on a **preview**, not on the whole document:
+the initial expansion stops at the first of the entity boundary or
+`INITIAL_CARD_BUDGET` (300) cards, so `visibleNodeIds()` — and therefore the
+layout — stays bounded whatever the document's size. Past that, a node's card
+children are revealed one **aligned** page of `PAGE_SIZE` (100) at a time
+(`pageOf`, `revealPage`, `revealedPages`); `hiddenGaps(id)` returns the
+contiguous runs still hidden, which a renderer draws as clickable `+ n` tokens,
+and `expandPathTo(id)` reveals the page holding each link of the chain rather
+than everything before it — that is what keeps reaching a deep search hit cheap.
+`buildGraph` is untouched by all this: the graph stays complete, so search,
+references and diagnostics never see a truncated document.
+
 ## Glossary
 
 Four words look interchangeable and are not. They name four different things,
@@ -266,12 +278,26 @@ always exits 0). Latest measured numbers:
 These come from a single `pnpm bench` run and will vary by machine — treat
 them as a sanity check against the budgets, not a strict benchmark.
 
+The same script also sweeps `buildGraph` + `buildSearchIndex` at 100k / 500k /
+1M logical nodes, which is what fixed the `maxNodes` default at `1_000_000`.
+The grouped sweep over-reports (the tiers share one heap and the GC has not
+necessarily run between them), so the deciding numbers were taken one process
+per tier — `BENCH_SCALE_N=1000000 pnpm --filter @defsquare/data-graph-core bench`:
+95 MB / 66 ms at 100k, 291 MB / 338 ms at 500k, 479 MB / 814 ms at 1M, i.e.
+linear and ~3× under the ~1.5 GB targeted — measured under **default** node heap
+options, since the desktop WebView gets no `--max-old-space-size` either. Re-run
+those three isolated tiers before touching the default; the methodology block
+above `scaleSweep()` in `bench/bench.ts` spells the protocol out.
+
 ## API surface
 
 `buildGraph`, `CollapseState`, `buildSearchIndex`, `createStructureLayoutEngine`,
-`measureNode`, `validateConfig`, `buildAggregates`, plus the `Graph`,
-`GraphNode`, `RefEdge`, `Diagnostic`, `DataGraphConfig`, `Aggregate`,
-`AggregateIndex`, `SearchIndex` types. See the
+`measureNode`, `validateConfig`, `buildAggregates`, and the pagination vocabulary
+`PAGE_SIZE` / `pageOf` / `INITIAL_CARD_BUDGET` — a renderer draws the `+ n`
+tokens, so it has to name the same pages as `CollapseState` and read the same
+budget rather than copy the literals. Plus the `Graph`, `GraphNode`, `RefEdge`,
+`Diagnostic`, `DataGraphConfig`, `Aggregate`, `AggregateIndex`, `HiddenGap`,
+`SearchIndex` types. See the
 [root README](https://github.com/defsquare/data-graph#readme) for the config
 shape and `packages/core/src/index.ts` for the full export list.
 

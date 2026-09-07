@@ -28,7 +28,8 @@ coût des dépliages *suivants* — seul le premier appel est massif.
    inchangés.
 3. **Gros dépliages** : pagination. Un dépliage révèle la première page
    d'enfants (~100) et pose un jeton reliquat cliquable.
-4. **maxNodes** : relevé (~1 M, à valider au bench) ; il redevient une garde
+4. **maxNodes** : relevé à 1 000 000 (validé au bench : 479 Mo de heap et
+   814 ms de build+index à 1 M) ; il redevient une garde
    mémoire sur `buildGraph` + index, plus une garde de layout. Message d'erreur
    enrichi de l'échappatoire (`maxNodes` en config).
 5. **Dérive incrémentale** : action explicite « Ranger » (`tidy()`) qui relance
@@ -166,11 +167,12 @@ gagne un bouton « Ranger » dans son chrome.
 
 ### 5. `maxNodes` : garde mémoire, défaut relevé
 
-- Le défaut passe de `50_000` à une valeur validée au bench (**cible 1 M**) :
-  le bench (`packages/core/bench`) gagne une mesure `buildGraph` +
-  `buildSearchIndex` + heap à 100k / 500k / 1M, et le défaut est calé sur ce
-  qui tient confortablement (< ~1 Go de heap). Si 1 M ne tient pas, on fige la
-  plus grande valeur ronde qui tient et la spec est amendée d'une ligne.
+- Le défaut passe de `50_000` à **`1_000_000`**, validé au bench : le bench
+  (`packages/core/bench`) gagne une mesure `buildGraph` + `buildSearchIndex` +
+  heap à 100k / 500k / 1M, en process isolé par palier (`BENCH_SCALE_N`).
+  Mesuré, sous options node par défaut : 95 Mo / 66 ms à 100k, 291 Mo / 338 ms
+  à 500k, 479 Mo / 814 ms à 1 M — croissance linéaire, ~3× de marge sous le
+  budget de ~1,5 Go visé. La cible 1 M tient, le défaut est figé là.
 - Le message de `GraphTooLargeError` gagne l'échappatoire : dépasser le
   plafond dit comment le relever (`maxNodes` dans la config `-c`).
 - Le champ de config existe déjà et reste : rien d'autre ne change.

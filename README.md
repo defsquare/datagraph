@@ -83,6 +83,16 @@ Sample files ship with the repo, so a fresh build has something to open:
 datagraph apps/demo/fixtures/shop.json -c apps/demo/fixtures/shop.config.json
 ```
 
+**A large file opens on a preview, not in full.** The initial expansion stops
+at ~300 cards, so what gets laid out on opening no longer grows with the file;
+a single expansion then reveals 100 children at a time, a clickable
+`+ n` token standing in for each run still hidden (search reveals just the page
+holding its target, tokens on either side); and the toolbar's **Ranger** button
+— `tidy()` in the API — re-lays out everything visible in one pass, which is
+how you straighten the columns after a long exploration. Nothing changes for a
+document that fits under the budget. The rules, and why they are these ones,
+are in [Structure view](./packages/renderer/README.md#structure-view).
+
 Argument and file errors are reported on stderr with a non-zero exit code
 before any window opens. See [`apps/demo/README.md`](./apps/demo/README.md) for
 the details — exit codes, the CSP, the vendored fonts.
@@ -194,7 +204,7 @@ highlighted differently if the target id doesn't exist).
     { "from": "$.orders[*].customerId", "to": "$.customers[*].id" }
   ],
   "groups": ["Customer"],
-  "maxNodes": 50000,
+  "maxNodes": 1000000,
   "rootLabel": "$"
 }
 ```
@@ -206,7 +216,14 @@ highlighted differently if the target id doesn't exist).
   is load-bearing: it decides which root claims a record that reaches two of them at the same
   distance. See [the core package README](./packages/core/README.md#aggregates) for the membership
   rule and the [graph view](./packages/renderer/README.md#graph-view) it powers.
-- `maxNodes` — optional safety cap (default `50000`); `buildGraph` throws `GraphTooLargeError` past it.
+- `maxNodes` — optional safety cap (default `1000000`); `buildGraph` throws `GraphTooLargeError`
+  past it, and the message names the way out (raise `maxNodes` in the `-c` config). It guards the
+  *memory* of the built graph and its search index, not layout cost — the views bound what they
+  lay out themselves (see [Structure view](./packages/renderer/README.md#structure-view)), which
+  is why the cap could be raised twentyfold. The default is where the
+  benchmark put it: 1M logical nodes measured at ~479 MB of heap and ~814 ms to build and index,
+  about 3× under the budget — see
+  [the core package's benchmark](./packages/core/README.md#benchmark).
 - `rootLabel` — label shown on the root node (default `"$"`, the root symbol of
   the same selector syntax `ids` uses). Set it to something your users
   recognise — `"Shop"`, `"Invoice"` — when the graph is customer-facing. An
@@ -220,7 +237,7 @@ highlighted differently if the target id doesn't exist).
 `createDataGraph(container, options)` returns a `DataGraph` handle:
 
 - **Camera and navigation** — `ready`, `fit()`, `focus(id)`, `destroy()`.
-- **Structure view only** — `expand(id)`, `collapse(id)`.
+- **Structure view only** — `expand(id)`, `collapse(id)`, `tidy()`.
 - **Selection and events** — `select(id)`, `on("select" | "followRef", cb)`, `refEdges(from)`.
 - **Search** — `search(query)`, `nextMatch()`, `prevMatch()`.
 - **Data, views, theme** — `setData(data, config?)`, `setView("structure" | "graph")`,

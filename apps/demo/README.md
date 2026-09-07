@@ -29,6 +29,15 @@ WebView. Only JSON *syntax* is validated up front; a semantically invalid config
 (unknown group, malformed selector) is reported in-app by the TypeScript core,
 which is the single source of truth for it.
 
+Size is no longer a reason a document refuses to open: it opens on a bounded
+preview (~300 cards), each expansion then reveals 100 children at a
+time behind clickable `+ n` tokens, and the toolbar's **Ranger** button — the
+renderer's `tidy()` — re-lays out the whole visible set when incremental
+expansions have made the columns drift. See
+[Structure view](../../packages/renderer/README.md#structure-view). The only
+hard cap left is `maxNodes` in the `-c` config (default 1,000,000, a memory
+guard); exceeding it fails with a message that says to raise it.
+
 Sample files to try it with:
 
 - [`fixtures/shop.json`](./fixtures/shop.json) — two customers, two orders, one
@@ -140,7 +149,7 @@ root `pnpm test` covers them; a Rust toolchain is required for it.
 
 ```
 apps/demo/
-├── e2e/            Playwright specs (smoke, view switching, refs, array tokens, file mode)
+├── e2e/            Playwright specs (smoke, view switching, refs, array tokens, file mode, structure scale)
 ├── fixtures/       sample data + config for the CLI — also consumed by e2e/file-mode.spec.ts and cli.rs
 ├── public/         static assets (logos, fonts/ — vendored woff2 + OFL texts)
 ├── src/            the web app (see below)
@@ -156,7 +165,7 @@ src/
 ├── launch.ts        the Tauri seam: what the CLI asked for (a file, or the demo)
 ├── detail-panel.ts  the `#detail` panel, built from the public `select` event and `refEdges`
 ├── search-ui.ts     the findbar's input: debounce, `N/total` counter, next/prev navigation
-├── chrome.ts        viewer chrome: search/menu disclosures, Escape, click-outside, status bar, theme, view toggle
+├── chrome.ts        viewer chrome: search/menu disclosures, Escape, click-outside, status bar, theme, view toggle, the "Ranger" (tidy) button
 ├── demo-mode.ts     demo-only tooling: the starting dataset and the small/large dataset toggle
 ├── sample-data.ts   the e-commerce fixture and its `bigShop(n)` generator
 ├── fonts.css        the @font-face block for the vendored fonts, imported by style.css

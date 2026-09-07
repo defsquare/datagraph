@@ -89,7 +89,8 @@ Returned by `createDataGraph(container, options)`.
 | `fit()` | Frames the camera to fit every currently laid-out node in the viewport. |
 | `expand(id): Promise<void>` | **Structure-view operation.** Expands a node (reveals its children), re-lays-out, and animates the transition. In the graph view it updates the (invisible) containment state but has no visible effect — see [graph view](#graph-view). |
 | `collapse(id): Promise<void>` | **Structure-view operation.** Collapses a node (hides its children) and animates the transition. Same graph-view caveat as `expand`. |
-| `focus(id)` | Expands every collapsed ancestor of `id` as needed, then centers the camera on it. |
+| `tidy(): Promise<void>` | **Structure-view operation.** Re-runs the *global* layout over everything currently visible, then reframes — the repair for the drift left behind by incremental expands, collapses and page reveals. Meant to be offered to the user (the demo's "Ranger" button), not triggered on its own: the layout moves under their eyes. No effect in the graph view, which has its own engine and does not drift — see [structure view](#structure-view). |
+| `focus(id)` | Expands every collapsed ancestor of `id` as needed, revealing the page that holds each link of the chain, then centers the camera on it. |
 | `select(id)` | Marks a node as selected (drawn with a selection overlay, everything unrelated dimmed — cards, edges, and the graph view's aggregate envelopes) and emits a `select` event. In the graph view a click on an aggregate's envelope selects that whole aggregate instead — same dimming, no event, and either selection replaces the other. Clicking the empty background or pressing <kbd>Esc</kbd> clears the selection — see [Navigation](#navigation). |
 | `search(query): SearchResult[]` | Full-text search across every node label, entity id, and row key/value; returns all matches and resets the next/prev cursor. |
 | `nextMatch(): SearchResult \| null` | Advances to the next search result (circular), auto-expanding and focusing it. |
@@ -107,7 +108,7 @@ Returned by `createDataGraph(container, options)`.
 `DataGraphOptions.view?: "structure" \| "graph"` (default `"structure"`) picks the initial view at
 `createDataGraph` time; `setView`/`currentView` switch and query it afterwards. The graph view folds
 nothing: every entity is always visible there, and a header click just selects the card. `expand`/
-`collapse` remain structure-view-only. Cards can be dragged in both views; in the graph view,
+`collapse`/`tidy` remain structure-view-only. Cards can be dragged in both views; in the graph view,
 dragging an aggregate's envelope moves the whole aggregate rigidly, and clicking it (below the same
 4 px threshold) selects the whole aggregate. Neither drag is persisted — the next relayout
 recomputes positions (see [Navigation](#navigation)).
@@ -216,6 +217,51 @@ emits an event; selection state is read from `select`.
 Zoom is bounded to `[0.02, 3]`. `fit()` never scales past `1` — magnifying a
 bitmap-font atlas baked at its nominal size is what made text look soft — so a
 graph smaller than the viewport is centred rather than blown up.
+
+## Structure view
+
+The default view lays out the containment tree, and what it puts on screen is
+**bounded by construction**: opening a document, and every gesture that grows
+what is shown, costs a fixed amount of layout regardless of how big the
+document is. Three rules, and one repair.
+
+**Opening is a preview.** The initial expansion walks the tree breadth-first
+from the root and stops at the first of two limits: the entity boundary
+(entities start collapsed, as they always did) or a budget of ~300 cards
+(`INITIAL_CARD_BUDGET`, exported by the core package). The second limit is the
+one that matters without a config: no `ids` means no entities, so the boundary
+never fires and the walk would otherwise expand the whole file. A document that
+fits under the budget opens exactly as before — nothing that used to be visible
+is now hidden — and what the budget declines is still on screen, just collapsed.
+
+**Expansions are paginated.** Expanding a node reveals one **aligned** page of
+100 card children (`PAGE_SIZE`), not a prefix: page `p` is exactly
+`[p × 100, (p + 1) × 100)`. Each contiguous run of unrevealed pages is drawn in
+its place among the siblings as a clickable `+ n` token, and clicking it reveals
+that run's first page. Alignment is what keeps search cheap: `search` +
+`nextMatch` reaching `orders[47 312]` reveals *only* the page holding it, with a
+`+ 47 300` token above and a `+ 600` token below, where a prefix-based
+pagination would have had to materialize 47 313 cards to get there. Elided
+children — the ones drawn as rows of their parent's card rather than as cards —
+are never paginated; they are not cards, and counting them would shift every
+card index.
+
+**`tidy()` repairs the drift.** Expands, collapses and page reveals are
+incremental: each inserts (or removes) its block inside the existing layout
+instead of recomputing it, which is what makes them instant, and also what makes
+the columns diverge, over a long session, from what a global layout would give.
+`tidy()` re-runs the global layout over the currently visible set — bounded by
+the rules above, hence cheap — drops the engine's memory of past incremental
+offsets, and reframes. It is deliberately an offered action rather than an
+automatic one: the layout moves under the reader's eyes, so it should be their
+gesture. `apps/demo` wires it to a "Ranger" (tidy up) button in its chrome.
+
+None of this touches the graph — `buildGraph` still builds every node, so
+search, references and diagnostics never see a truncated document, and
+`stats().logicalNodeCount` still counts the whole thing while
+`visibleNodeCount` counts what these rules let through. The hard cap on the
+document itself is `config.maxNodes` (default 1,000,000), a memory guard on
+build + index; see the [root README](https://github.com/defsquare/data-graph#config-ids-refs-groups).
 
 ## Graph view
 
