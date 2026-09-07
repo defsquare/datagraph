@@ -146,7 +146,15 @@ function render(): void {
 
   // Démonter AVANT de vider : la vue doit pouvoir toucher son DOM une dernière
   // fois (détruire un canvas Pixi, retirer des écouteurs) pendant qu'il existe.
-  unmount?.();
+  // Gardé : un cleanup de vue qui lève ne doit pas condamner le remontage.
+  // Sans cette garde, l'exception abandonne `render()` — la nouvelle vue n'est
+  // jamais montée et l'écran reste figé sur le thème précédent, panne bien plus
+  // visible que le cleanup raté qui l'a causée. L'erreur reste en console.
+  try {
+    unmount?.();
+  } catch (error: unknown) {
+    console.error("Le démontage de la vue a échoué, on remonte quand même :", error);
+  }
   unmount = null;
   content.replaceChildren();
 

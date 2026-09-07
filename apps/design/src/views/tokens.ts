@@ -373,7 +373,9 @@ function typographySection(brand: BrandTokens, state: ThemeState): TypographySec
     // moment `app.renderer` n'existait pas encore et le cleanup l'a sauté.
     // C'est ici, et nulle part ailleurs, qu'on peut encore le solder.
     if (disposed) {
-      app.destroy(true, { children: true });
+      // Forme objet et non `true` : même piège que `RENDERER_DESTROY`, voir
+      // `pixi-stage.ts` — `true` vide le `TexturePool` GLOBAL de la page.
+      app.destroy({ removeView: true }, { children: true });
       return;
     }
 
@@ -419,7 +421,9 @@ function typographySection(brand: BrandTokens, state: ThemeState): TypographySec
       // Avant `app.destroy` : la libération des atlas ne dépend pas du
       // renderer, et elle doit avoir lieu même si `init()` n'a jamais abouti.
       lease.dispose();
-      if (app.renderer) app.destroy(true, { children: true });
+      // Forme objet et non `true` : même piège que `RENDERER_DESTROY`, voir
+      // `pixi-stage.ts` — `true` vide le `TexturePool` GLOBAL de la page.
+      if (app.renderer) app.destroy({ removeView: true }, { children: true });
     },
   };
 }
