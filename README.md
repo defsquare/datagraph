@@ -36,6 +36,7 @@ app — see [The `@defsquare/data-graph` package](#the-defsquaredata-graph-packa
 | Package | Description |
 | --- | --- |
 | [`@defsquare/data-graph-tokens`](./packages/tokens) | Design tokens — the single source of truth behind both the renderer themes and the shell CSS variables. |
+| [`@defsquare/data-graph-chrome`](./packages/chrome) | Chrome primitives — CSS, icons and markup factories shared by the demo and the playground. Never published. |
 | [`@defsquare/data-graph-core`](./packages/core) | Headless: `buildGraph`, `CollapseState`, `buildSearchIndex`, `createStructureLayoutEngine`. No rendering, no DOM. |
 | [`@defsquare/data-graph`](./packages/renderer) | Pixi.js renderer on top of core: `createDataGraph`, themes. |
 | [`apps/demo`](./apps/demo) | Vite demo, Playwright e2e, and the Tauri desktop shell that doubles as the `datagraph` CLI. |
@@ -290,6 +291,7 @@ exact shape.
 data-graph/
 ├── packages/
 │   ├── tokens/    @defsquare/data-graph-tokens — design tokens, CSS generator
+│   ├── chrome/    @defsquare/data-graph-chrome — chrome primitives, never published
 │   ├── core/      @defsquare/data-graph-core — graph model, layout, search
 │   └── renderer/  @defsquare/data-graph — Pixi.js renderer, themes
 ├── apps/

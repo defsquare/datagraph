@@ -143,9 +143,16 @@
   margin-right: var(--space-2);
 }
 
-/* Le badge porte son verdict en TEXTE, pas seulement en couleur : lu sans
-   distinguer le vert du rouge, il doit rester exact. */
-.badge {
+/* La mention porte son verdict en TEXTE, pas seulement en couleur : lue sans
+   distinguer le vert du rouge, elle doit rester exacte.
+
+   Nommée `ds-grade` et non `badge` : `.badge` est désormais une PRIMITIVE du
+   chrome (la pastille de type d'entité), déclarée dans la feuille partagée que
+   le playground charge en entier. Deux `.badge` de sens différents dans le même
+   document se recouvrent — et se recouvraient : la mention héritait du fond
+   `--ds-primary` de la pastille tout en gardant sa propre encre `--ds-primary`,
+   soit du bleu sur du bleu. Les classes d'une vue doivent rester à elle. */
+.ds-grade {
   display: inline-block;
   padding: 0 var(--space-1);
   border-radius: var(--radius-sm);
@@ -156,13 +163,13 @@
   color: var(--ds-muted);
 }
 
-.badge-aaa,
-.badge-aa {
+.ds-grade-aaa,
+.ds-grade-aa {
   color: var(--ds-primary);
   border-color: var(--ds-primary);
 }
 
-.badge-fail {
+.ds-grade-fail {
   color: var(--ds-subtle);
 }
 

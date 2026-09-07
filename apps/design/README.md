@@ -66,10 +66,14 @@ Les quatre vues, dans l'ordre de la barre latérale :
   produit : carte de nœud par état, styles d'arêtes, enveloppes d'agrégats,
   paliers du zoom sémantique. Les états d'interface y sont **forcés**, puisque
   c'est `create.ts` qui les décide dans le produit.
-- `src/views/ui-components.ts` (`#/ui`) — les primitives DOM du chrome de la
-  démo (surface flottante, bouton d'icône, barre de recherche, pastille, item
-  de menu), chacune en rangée d'états **réels** — on survole, on tabule ; aucune
-  classe jumelle du genre `.is-hover`.
+- `src/views/ui-components.ts` (`#/ui`) — les primitives DOM du chrome (surface
+  flottante, bouton d'icône, barre de recherche, pastille, item de menu),
+  chacune en rangée d'états **réels** — on survole, on tabule ; aucune classe
+  jumelle du genre `.is-hover`. Les spécimens sortent des fabriques de
+  `@defsquare/data-graph-chrome` et sont habillés par sa feuille, celle que la
+  démo charge : même régime que la vue Composants graphe vis-à-vis de `draw.ts`.
+  Cette planche a commencé par recopier le CSS et les icônes de la démo, faute
+  de pouvoir les importer — c'est ce constat qui a fait extraire le paquet.
 - `src/views/sandbox.ts` (`#/sandbox`) — une instance complète du renderer
   (`createDataGraph`) sur `apps/demo/fixtures/shop.json`, câblée comme la démo,
   worker de mise en page compris. C'est le seul endroit du playground où un

@@ -178,7 +178,7 @@ function contrastCells(colors: ColorTokens, ink: keyof ColorTokens["ink"]): HTML
   preview.style.background = bg;
 
   const score = el("span", "ratio", ratio.toFixed(2));
-  const tag = el("span", `badge badge-${badge === "—" ? "fail" : badge.toLowerCase()}`, badge);
+  const tag = el("span", `ds-grade ds-grade-${badge === "—" ? "fail" : badge.toLowerCase()}`, badge);
 
   return [cell(preview), cell(score, tag)];
 }
