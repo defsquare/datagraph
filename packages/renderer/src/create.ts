@@ -239,11 +239,17 @@ export interface DataGraphOptions {
   graphLayoutWorkerUrl?: string | URL;
 }
 
-export type DataGraphEvent = "select" | "followRef";
+export type DataGraphEvent = "select" | "followRef" | "deselect" | "statschange";
 
 type DataGraphEvents = {
   select: GraphNode;
   followRef: RefEdge;
+  /** The selection returned to rest. No payload: there is nothing left to
+   * describe, and the host's own state is what it has to undo. */
+  deselect: void;
+  /** What `stats()` reports has changed. No payload either — the host re-reads
+   * `stats()`, so a counter added there needs no new event shape. */
+  statschange: void;
 };
 
 export interface DataGraph {
@@ -1603,6 +1609,36 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     redrawOverlay();
   }
 
+  /**
+   * The last counters announced through `"statschange"`, so a rebuild that
+   * changes no count stays silent.
+   *
+   * `rebuild()` is the single emission point — every operation that changes the
+   * visible set ends there, and an operation abandoned by the `opGen` guard never
+   * reaches it, which is what keeps a cancelled expansion from announcing a
+   * layout it rolled back. But `rebuild()` also runs on a LOD flip and on
+   * `setTheme`, where nothing counted has moved: without this memo the host would
+   * be woken on every zoom notch.
+   *
+   * `-1` is unreachable for both counters, so the FIRST rebuild always emits.
+   */
+  let announcedStats = { logicalNodeCount: -1, visibleNodeCount: -1 };
+
+  function emitStatsIfChanged(): void {
+    const next = {
+      logicalNodeCount: graph?.logicalNodeCount ?? 0,
+      visibleNodeCount: drawnVisibleCount(),
+    };
+    if (
+      next.logicalNodeCount === announcedStats.logicalNodeCount &&
+      next.visibleNodeCount === announcedStats.visibleNodeCount
+    ) {
+      return;
+    }
+    announcedStats = next;
+    emitter.emit("statschange", undefined);
+  }
+
   function rebuild(): void {
     const positions = activePositions();
     if (!graph || !positions) return;
@@ -1696,6 +1732,8 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     // creation (`createCard`), which is the only way to hold dimming for a card
     // materialized later. The function stays, for changes of selection, which do
     // have to pass again over the cards ALREADY drawn.
+
+    emitStatsIfChanged();
   }
 
   /**
@@ -2313,15 +2351,17 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
    * Clears the selection and undoes everything it had set: the overlay's ring and
    * highlighted references, the cards' dimming, the edges', the lit envelope.
    *
-   * No public event: the selection is state the host reads through `"select"`, and
-   * inventing a `"deselect"` here would grow the API for a gesture that merely
-   * returns to rest. With no selection there is nothing to undo — hence the immediate
-   * return, which avoids several repaints per Escape key pressed into the void.
+   * Emits `"deselect"` — the host has a panel open on the node that was selected,
+   * and `"select"` alone never tells it when to close. The early return is what
+   * keeps that event honest: with no selection there is nothing to undo, so a
+   * host wiring a panel onto it never sees a phantom event at boot or on an
+   * Escape pressed into the void.
    */
   function doDeselect(): void {
     if (selection === null) return;
     selection = null;
     redrawSelection();
+    emitter.emit("deselect", undefined);
   }
 
   /** Always emits "followRef" (even for a dangling edge, so a host can show
@@ -2846,6 +2886,10 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
         if (selection?.kind === "node") {
           const nearest = nearestEntityAncestor(current, selection.id);
           selection = nearest === null ? null : { kind: "node", id: nearest };
+          // No enclosing entity: the selection is GONE, not carried. The host is
+          // told, exactly as on a background click — otherwise its panel keeps
+          // describing a node the view no longer designates.
+          if (nearest === null) emitter.emit("deselect", undefined);
         }
       } else if (selection?.kind === "cluster") {
         // Symmetric, and with no carry-over possible: an aggregate selection only
