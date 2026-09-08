@@ -42,21 +42,20 @@ export function createSearchUi(graph: DataGraph): SearchUi {
   }
 
   /**
-   * Runs the query, then LANDS on the first result — the resting state of every
-   * standard findbar. Without this the counter read "0/3" and the camera had not
-   * moved, so a search that had worked looked like one that had not.
-   *
-   * The debounce handle is cleared BEFORE stepping: `goToNextMatch` starts by
-   * flushing a pending search, and this call is that search — leaving the handle
-   * set would run the query a second time and reset the cursor it just moved.
+   * Runs the query. `landOnFirst` is what tells apart the two callers instead of
+   * having them recurse into each other: the debounce timer passes `true` — a
+   * settled, user-driven search should LAND on the first result, the resting
+   * state of every standard findbar (without it the counter read "0/3" and the
+   * camera had not moved, so a search that had worked looked like one that had
+   * not). `flushPendingSearch` passes `false`: it runs inside `goToNextMatch`/
+   * `goToPrevMatch`, only to make the results current before ITS caller's own
+   * single step — landing here too would turn one keypress into two steps.
    */
-  function runSearch(query: string): void {
+  function runSearch(query: string, landOnFirst: boolean): void {
     const results = graph.search(query);
     matchTotal = results.length;
     matchCursor = -1;
-    if (matchTotal > 0) {
-      clearTimeout(debounceHandle);
-      debounceHandle = undefined;
+    if (landOnFirst && matchTotal > 0) {
       goToNextMatch();
       return;
     }
@@ -65,12 +64,14 @@ export function createSearchUi(graph: DataGraph): SearchUi {
 
   /** Runs a pending debounced search right away — so that Enter (or a navigation
    * button) pressed just after a keystroke does not navigate stale results from
-   * before the last key. */
+   * before the last key. Never lands on a match itself (`landOnFirst: false`):
+   * it exists to make `goToNextMatch`/`goToPrevMatch`'s own step land on current
+   * results, not to take a step of its own ahead of them. */
   function flushPendingSearch(): void {
     if (debounceHandle === undefined) return;
     clearTimeout(debounceHandle);
     debounceHandle = undefined;
-    runSearch(searchInput?.value ?? "");
+    runSearch(searchInput?.value ?? "", false);
   }
 
   function goToNextMatch(): void {
@@ -93,7 +94,7 @@ export function createSearchUi(graph: DataGraph): SearchUi {
       const value = searchInput.value;
       debounceHandle = setTimeout(() => {
         debounceHandle = undefined;
-        runSearch(value);
+        runSearch(value, true);
       }, SEARCH_DEBOUNCE_MS);
     });
 

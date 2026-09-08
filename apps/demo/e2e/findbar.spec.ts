@@ -35,3 +35,20 @@ test("an empty field leaves the counter empty", async ({ page }) => {
   await page.fill("#search", "")
   await expect(page.locator("#match-counter")).toHaveText("")
 })
+
+test("Enter pressed inside the debounce window steps once, not twice", async ({ page }) => {
+  await gotoReady(page)
+  await openSearch(page)
+  // `page.fill` then `page.press` are two separate CDP round-trips: on a loaded
+  // machine the 150ms debounce can elapse between them, and the race would never
+  // be exercised. Dispatching both DOM events from one `page.evaluate` keeps them
+  // in the same synchronous tick, so the debounce timer has no chance to fire
+  // between the keystroke and the Enter — the window is entered deterministically.
+  await page.evaluate(() => {
+    const input = document.getElementById("search") as HTMLInputElement
+    input.value = "camille"
+    input.dispatchEvent(new Event("input", { bubbles: true }))
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+  })
+  await expect(page.locator("#match-counter")).toHaveText(/^1\/\d+$/)
+})
