@@ -70,3 +70,25 @@ test("the magnifier carries a badge while a query survives the fold", async ({ p
   await page.keyboard.press("Escape")
   await expect(page.locator("#search-toggle")).not.toHaveAttribute("data-badge", "true")
 })
+
+test("Cmd/Ctrl+F opens the findbar and focuses the field", async ({ page }) => {
+  await gotoReady(page)
+  await expect(page.locator("#findbar")).toBeHidden()
+
+  // ControlOrMeta resolves to the platform's own modifier, which is exactly the
+  // pair the handler accepts.
+  await page.keyboard.press("ControlOrMeta+f")
+  await expect(page.locator("#findbar")).toBeVisible()
+  await expect(page.locator("#search")).toBeFocused()
+})
+
+test("Cmd/Ctrl+F inside the open field does not fight the browser", async ({ page }) => {
+  await gotoReady(page)
+  await page.click("#search-toggle")
+  await page.fill("#search", "camille")
+  // Already open with the field focused: the shortcut is not ours to intercept,
+  // so the field must keep its content and its focus.
+  await page.keyboard.press("ControlOrMeta+f")
+  await expect(page.locator("#search")).toBeFocused()
+  await expect(page.locator("#search")).toHaveValue("camille")
+})

@@ -199,6 +199,18 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
   );
 
   document.addEventListener("keydown", (event) => {
+    if (event.key !== "f" && event.key !== "F") return;
+    if (!event.ctrlKey && !event.metaKey) return;
+    // Hands the shortcut back to the browser when the findbar is already open
+    // with the field focused: at that point the user is asking for the PAGE's
+    // find, not for ours, and stealing it would be a dead key.
+    const focused = document.activeElement;
+    if (isOpen(findbarEl) && focused instanceof HTMLElement && findbarEl?.contains(focused)) return;
+    event.preventDefault();
+    openSearch();
+  });
+
+  document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
     // Escape closes one level at a time, the most recent one first.
     if (isOpen(menuEl)) {
