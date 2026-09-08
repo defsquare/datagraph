@@ -1343,9 +1343,19 @@ export function drawSelectionOverlay(
 }
 
 /**
- * Search highlight: a washed fill plus an outline on every visible result, and a
- * heavier outline in the selection color on the current result, drawn last so it
- * goes on top. An id absent from `positions` is ignored without a sound.
+ * Search highlight: a halo around every visible result and a heavier outline in
+ * `accent.matchCurrent` on the current one, drawn last so it goes on top. An id
+ * absent from `positions` is ignored without a sound.
+ *
+ * NO FILL OVER THE CARD. The previous treatment laid a translucent veil across
+ * the whole box, which lowered the contrast of the very text the user was
+ * hunting for: the emphasis made the result harder to read than its neighbours.
+ * The halo carries the same weight from the outside and leaves the body alone.
+ *
+ * And the current match no longer wears `accent.selection`: a found card looked
+ * selected, when the two are different notions the user chains — search, then
+ * select. One costume for two concepts is what made the pair unreadable side by
+ * side.
  */
 export function drawSearchHighlights(
   positions: Map<NodeId, Rect>,
@@ -1354,21 +1364,28 @@ export function drawSearchHighlights(
   currentId: NodeId | null,
 ): Graphics {
   const g = new Graphics();
+
+  // The halo sits OUTSIDE the card: inflated by its own width so the stroke's
+  // inner edge lands on the card's outline rather than across its border.
+  const halo = theme.strokes.match * 2;
+
   for (const id of matchedIds) {
     if (id === currentId) continue; // drawn below, so it goes on top
     const rect = positions.get(id);
     if (!rect) continue;
+    g.roundRect(rect.x - halo, rect.y - halo, rect.width + halo * 2, rect.height + halo * 2, theme.radii.card + halo)
+      .stroke({ width: theme.strokes.match, color: theme.accent.matchStroke, alpha: 0.55 });
     g.roundRect(rect.x, rect.y, rect.width, rect.height, theme.radii.card)
-      .fill({ color: theme.accent.match, alpha: 0.55 })
       .stroke({ width: theme.strokes.match, color: theme.accent.matchStroke });
   }
 
   if (currentId !== null) {
     const rect = positions.get(currentId);
     if (rect) {
+      g.roundRect(rect.x - halo, rect.y - halo, rect.width + halo * 2, rect.height + halo * 2, theme.radii.card + halo)
+        .stroke({ width: theme.strokes.matchCurrent, color: theme.accent.matchCurrent, alpha: 0.55 });
       g.roundRect(rect.x, rect.y, rect.width, rect.height, theme.radii.card)
-        .fill({ color: theme.accent.match, alpha: 0.55 })
-        .stroke({ width: theme.strokes.matchCurrent, color: theme.accent.selection });
+        .stroke({ width: theme.strokes.matchCurrent, color: theme.accent.matchCurrent });
     }
   }
 

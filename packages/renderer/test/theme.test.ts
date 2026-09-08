@@ -21,7 +21,7 @@ describe("theme contract", () => {
     expect(Object.keys(theme.surface).sort()).toEqual(["canvas", "card", "cardMuted"]);
     expect(Object.keys(theme.ink).sort()).toEqual(["muted", "primary", "subtle"]);
     expect(Object.keys(theme.accent).sort()).toEqual([
-      "entity", "match", "matchStroke", "selection",
+      "entity", "match", "matchCurrent", "matchStroke", "selection",
     ]);
     expect(Object.keys(theme.edge).sort()).toEqual([
       "border", "contain", "dangling", "hairline", "ref",

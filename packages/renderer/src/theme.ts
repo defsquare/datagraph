@@ -38,6 +38,8 @@ export interface Theme {
     selection: string;
     match: string;
     matchStroke: string;
+    /** The current search result's outline — see the token's comment. */
+    matchCurrent: string;
   };
   edge: {
     contain: string;

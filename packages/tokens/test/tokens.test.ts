@@ -8,13 +8,13 @@ describe("tokens defsquare", () => {
   it("carries the current light colors", () => {
     expect(defsquare.light.surface).toEqual({ canvas: "#eef0f3", card: "#ffffff", cardMuted: "#f7f7f8" });
     expect(defsquare.light.ink).toEqual({ primary: "#172741", muted: "#4b5563", subtle: "#9ca3af" });
-    expect(defsquare.light.accent).toEqual({ entity: "#1e416e", selection: "#f65e5e", match: "#ede2cf", matchStroke: "#8d7e63" });
+    expect(defsquare.light.accent).toEqual({ entity: "#1e416e", selection: "#f65e5e", match: "#ede2cf", matchStroke: "#8d7e63", matchCurrent: "#1f7a66" });
     expect(defsquare.light.edge).toEqual({ contain: "#c7cdd6", ref: "#2a5a98", dangling: "#d97706", hairline: "#f1f1f3", border: "#dfe3e9" });
   });
   it("carries the current dark colors", () => {
     expect(defsquare.dark.surface).toEqual({ canvas: "#161a2c", card: "#1e2335", cardMuted: "#1a1f30" });
     expect(defsquare.dark.ink).toEqual({ primary: "#f0f5fc", muted: "#9bb2d9", subtle: "#6b7794" });
-    expect(defsquare.dark.accent).toEqual({ entity: "#3573c3", selection: "#f65e5e", match: "#3a3323", matchStroke: "#e2ca9e" });
+    expect(defsquare.dark.accent).toEqual({ entity: "#3573c3", selection: "#f65e5e", match: "#3a3323", matchStroke: "#e2ca9e", matchCurrent: "#5fd7bb" });
     expect(defsquare.dark.edge).toEqual({ contain: "#3a4159", ref: "#3573c3", dangling: "#e0932e", hairline: "#272d42", border: "#2c3247" });
   });
   it("carries the current entity palette", () => {
