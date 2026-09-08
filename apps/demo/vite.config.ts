@@ -3,58 +3,57 @@ import { defineConfig } from "vite";
 
 const src = (rel: string): string => fileURLToPath(new URL(rel, import.meta.url));
 
-// En DEV SEULEMENT, les paquets du workspace sont résolus vers leurs SOURCES et
-// non vers leur `dist/`. Sans cela, `pnpm dev` sert le dernier build tsup des
-// paquets — et une modification de `packages/*/src` reste invisible dans la
-// démo tant qu'on n'a pas relancé `pnpm --filter <paquet> build`, ce qui s'est
-// déjà payé en séance de débogage d'un bundle périmé.
+// In DEV ONLY, workspace packages resolve to their SOURCES rather than to their
+// `dist/`. Without this, `pnpm dev` serves the packages' last tsup build — and a
+// change under `packages/*/src` stays invisible in the demo until
+// `pnpm --filter <package> build` is run again, something already paid for in a
+// debugging session spent on a stale bundle.
 //
-// Le build de production N'EST PAS aliasé, volontairement : la démo y consomme
-// les paquets par leurs `exports`, comme le ferait un consommateur externe.
-// C'est ce qui garde honnêtes les mesures qui s'appuient sur ce build — la
-// taille du chunk de la vue graphe citée par les tests de pureté de bundle est
-// celle du code publié, pas celle d'un graphe de modules recollé depuis les
-// sources.
+// The production build is deliberately NOT aliased: there the demo consumes the
+// packages through their `exports`, exactly as an outside consumer would. That
+// is what keeps honest the measurements taken on that build — the graph view
+// chunk size quoted by the bundle purity tests is the size of the published
+// code, not of a module graph stitched back together from sources.
 //
-// À NE PAS confondre avec les e2e : `playwright.config.ts` lance `pnpm dev`,
-// donc les tests Playwright tournent en mode `serve` et exercent TOUJOURS les
-// sources aliasées ci-dessous, jamais le bundle de production ni `vite preview`.
+// NOT to be confused with the e2e run: `playwright.config.ts` starts `pnpm dev`,
+// so the Playwright tests run in `serve` mode and ALWAYS exercise the aliased
+// sources below, never the production bundle nor `vite preview`.
 //
-// L'ordre des entrées compte : l'alias d'un nom de paquet matche aussi ses
-// sous-chemins (`find` nu s'applique à `find/...`), donc `graph-layout` doit
-// précéder le core nu — sinon il se ferait réécrire en `src/index.ts/graph-layout`.
+// Entry order matters: an alias on a package name also matches its subpaths (a
+// bare `find` applies to `find/...`), so `graph-layout` must come before the
+// bare core — otherwise it would be rewritten to `src/index.ts/graph-layout`.
 //
 // ---------------------------------------------------------------------------
-// LE WORKER DE MISE EN PAGE DE LA VUE GRAPHE, ET SES QUATRE MODES
+// THE GRAPH VIEW LAYOUT WORKER, AND ITS FOUR MODES
 //
-// `main.ts` passe `graphLayoutWorkerUrl: new URL("@defsquare/data-graph/graph-layout-worker",
-// import.meta.url)`, exactement comme il le fait déjà pour elk. Vite reconnaît
-// cette forme (`new URL(<littéral>, import.meta.url)`), RÉSOUT le specifier par
-// sa chaîne de plugins — alias compris — et réécrit l'expression. Ce qu'il en
-// fait diffère selon le mode, et les quatre ont été essayés :
+// `main.ts` passes `graphLayoutWorkerUrl: new URL("@defsquare/data-graph/graph-layout-worker",
+// import.meta.url)`, exactly as it already does for elk. Vite recognizes this
+// form (`new URL(<literal>, import.meta.url)`), RESOLVES the specifier through
+// its plugin chain — aliases included — and rewrites the expression. What it
+// then does with it differs per mode, and all four have been exercised:
 //
-//   1. `vite dev` (donc AUSSI les e2e Playwright, cf. la note ci-dessus).
-//      L'alias `@defsquare/data-graph/graph-layout-worker` ci-dessous — placé
-//      AVANT celui du paquet nu, pour la raison d'ordre déjà expliquée — envoie
-//      sur la SOURCE TypeScript du worker. Le serveur de dev la sert transformée
-//      en JS, imports réécrits en URLs de module ; `new Worker(url, { type:
-//      "module" })` la charge telle quelle. C'est ce qui fait que le dev exerce
-//      le vrai worker sur le vrai code source — une modification de
-//      `packages/renderer/src/graph-layout-worker.ts` est visible sans build,
-//      comme pour le reste des sources aliasées.
-//   2. `vite build`. Pas d'alias : le specifier se résout par le champ `exports`
-//      du paquet, donc sur `packages/renderer/dist/graph-layout-worker.js`, et
-//      Vite l'ÉMET COMME ASSET (copie verbatim, pas de re-bundling). C'est
-//      pourquoi cette sortie-là est produite autonome — le cœur du layout bundlé
-//      dedans, aucun specifier nu à résoudre (voir `tsup.config.ts` du
-//      renderer). Le build de la démo demande donc que le renderer soit buildé
-//      avant : `pnpm -r build` le fait dans l'ordre topologique.
-//   3. La coquille Tauri. Elle sert le `dist/` du mode 2 depuis son origine
-//      locale, et la CSP autorise `worker-src 'self'` (`tauri.conf.json`) : le
-//      worker est un fichier de plus à côté des chunks, rien de particulier.
-//   4. vitest / headless. L'option n'est simplement pas passée — les tests du
-//      renderer construisent le contrôleur sans fabrique de worker —, donc le
-//      moteur tourne en processus, comme avant.
+//   1. `vite dev` (so ALSO the Playwright e2e run, cf. the note above). The
+//      `@defsquare/data-graph/graph-layout-worker` alias below — placed BEFORE
+//      the bare package one, for the ordering reason already explained — points
+//      at the worker's TypeScript SOURCE. The dev server serves it transformed
+//      to JS, imports rewritten to module URLs; `new Worker(url, { type:
+//      "module" })` loads it as is. That is what makes dev exercise the real
+//      worker on the real source code — a change to
+//      `packages/renderer/src/graph-layout-worker.ts` is visible without a
+//      build, like the rest of the aliased sources.
+//   2. `vite build`. No alias: the specifier resolves through the package's
+//      `exports` field, so to `packages/renderer/dist/graph-layout-worker.js`,
+//      and Vite EMITS IT AS AN ASSET (verbatim copy, no re-bundling). That is
+//      why that output is produced self-contained — the layout core bundled
+//      into it, no bare specifier left to resolve (see the renderer's
+//      `tsup.config.ts`). The demo build therefore requires the renderer to be
+//      built first: `pnpm -r build` does it in topological order.
+//   3. The Tauri shell. It serves mode 2's `dist/` from its local origin, and
+//      the CSP allows `worker-src 'self'` (`tauri.conf.json`): the worker is one
+//      more file next to the chunks, nothing special.
+//   4. vitest / headless. The option is simply not passed — the renderer tests
+//      build the controller without a worker factory — so the engine runs
+//      in-process, as before.
 // ---------------------------------------------------------------------------
 export default defineConfig(({ command }) => ({
   resolve:
@@ -73,11 +72,11 @@ export default defineConfig(({ command }) => ({
               find: "@defsquare/data-graph/graph-layout-worker",
               replacement: src("../../packages/renderer/src/graph-layout-worker.ts"),
             },
-            // Les tokens, la démo ne les importe pas directement — c'est
-            // `theme.ts` du renderer, lui-même aliasé vers ses sources, qui les
-            // tire. Sans ces deux entrées, ce chemin-là retomberait sur le
-            // `dist/` du paquet et une couleur corrigée dans
-            // `packages/tokens/src` resterait invisible en dev.
+            // The demo does not import the tokens directly — the renderer's
+            // `theme.ts`, itself aliased to its sources, is what pulls them in.
+            // Without these two entries that path would fall back to the
+            // package's `dist/`, and a color fixed in `packages/tokens/src`
+            // would stay invisible in dev.
             {
               find: "@defsquare/data-graph-tokens/css",
               replacement: src("../../packages/tokens/src/css.ts"),
@@ -86,10 +85,10 @@ export default defineConfig(({ command }) => ({
               find: "@defsquare/data-graph-tokens",
               replacement: src("../../packages/tokens/src/index.ts"),
             },
-            // Le chrome partagé. Ses deux entrées doivent précéder celle du
-            // paquet nu ci-dessous pour la raison d'ordre déjà expliquée :
-            // `@defsquare/data-graph` matche aussi le préfixe de
-            // `@defsquare/data-graph-chrome`, qui se ferait réécrire en
+            // The shared chrome. Its two entries must come before the bare
+            // package one below, for the ordering reason already explained:
+            // `@defsquare/data-graph` also matches the prefix of
+            // `@defsquare/data-graph-chrome`, which would be rewritten to
             // `.../renderer/src/index.ts-chrome`.
             {
               find: "@defsquare/data-graph-chrome/chrome.css",
@@ -106,8 +105,8 @@ export default defineConfig(({ command }) => ({
           ],
         }
       : undefined,
-  // main.ts attend `resolveLaunch()` en top-level await : la cible par défaut
-  // de Vite (chrome87) le refuse à la minification. Les WebViews de Tauri
-  // (WKWebView, WebView2) et les navigateurs des e2e sont largement au-delà.
+  // main.ts awaits `resolveLaunch()` at top level: Vite's default target
+  // (chrome87) rejects that at minification time. The Tauri WebViews
+  // (WKWebView, WebView2) and the e2e browsers are well past it.
   build: { target: "es2022" },
 }));

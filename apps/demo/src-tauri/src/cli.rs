@@ -1,12 +1,12 @@
-//! Parsing de la ligne de commande et chargement des fichiers, AVANT toute
-//! fenêtre : les erreurs de lancement doivent arriver là où un utilisateur de
-//! CLI les attend — sur stderr, avec un code de sortie — pas dans une WebView.
+//! Command-line parsing and file loading, BEFORE any window: launch errors must
+//! surface where a CLI user expects them — on stderr, with an exit code — not
+//! inside a WebView.
 //!
-//! Volontairement sans clap : deux arguments ne justifient pas une dépendance.
-//! Messages et aide en anglais (décision de spec) ; seule la validation
-//! SYNTAXIQUE du JSON se fait ici — la validation sémantique de la config
-//! (entités connues, sélecteurs) reste au cœur TypeScript, la dupliquer en
-//! Rust créerait deux vérités.
+//! Deliberately without clap: two arguments do not justify a dependency.
+//! Messages and help text are in English (a spec decision); only SYNTACTIC JSON
+//! validation happens here — semantic validation of the config (known entities,
+//! selectors) stays in the TypeScript core, duplicating it in Rust would create
+//! two truths.
 
 pub const USAGE: &str = "datagraph - explore a JSON document as a graph of records and references
 
@@ -36,8 +36,8 @@ pub struct LaunchPayload {
   pub config: Option<String>,
 }
 
-/// Parse argv (sans le nom du programme). Pur : aucune lecture disque, pour
-/// rester testable sans fixtures.
+/// Parses argv (without the program name). Pure: no disk access, so it stays
+/// testable without fixtures.
 pub fn parse(args: &[String]) -> Result<Cli, String> {
   let mut data_path: Option<String> = None;
   let mut config_path: Option<String> = None;
@@ -59,15 +59,15 @@ pub fn parse(args: &[String]) -> Result<Cli, String> {
       }
     }
   }
-  // `-c` seul n'a pas de sens : la config qualifie un document.
+  // `-c` alone makes no sense: a config qualifies a document.
   if !help && config_path.is_some() && data_path.is_none() {
     return Err("option '-c' requires a data file argument".to_string());
   }
   Ok(Cli { data_path, config_path, help })
 }
 
-/// Lit les fichiers du `Cli` et vérifie que chacun est du JSON syntaxiquement
-/// valide. `Ok(None)` = pas de fichier demandé (mode démo).
+/// Reads the `Cli`'s files and checks each one is syntactically valid JSON.
+/// `Ok(None)` = no file requested (demo mode).
 pub fn load(cli: &Cli) -> Result<Option<LaunchPayload>, String> {
   let Some(data_path) = &cli.data_path else { return Ok(None) };
   let data = read_json(data_path)?;
@@ -78,8 +78,8 @@ pub fn load(cli: &Cli) -> Result<Option<LaunchPayload>, String> {
   Ok(Some(LaunchPayload { data, config }))
 }
 
-/// Le contenu est gardé en `String` brute : c'est le frontend qui parse, il n'y
-/// a aucune raison de désérialiser ici pour re-sérialiser vers la WebView.
+/// The content is kept as a raw `String`: the frontend does the parsing, there
+/// is no reason to deserialize here only to re-serialize towards the WebView.
 fn read_json(path: &str) -> Result<String, String> {
   let text = std::fs::read_to_string(path).map_err(|e| format!("cannot read '{path}': {e}"))?;
   serde_json::from_str::<serde::de::IgnoredAny>(&text)
@@ -112,7 +112,7 @@ mod tests {
   fn dash_c_takes_the_next_value() {
     let cli = parse(&args(&["data.json", "-c", "conf.json"])).unwrap();
     assert_eq!(cli.config_path.as_deref(), Some("conf.json"));
-    // L'ordre inverse marche aussi.
+    // The reverse order works too.
     let cli = parse(&args(&["-c", "conf.json", "data.json"])).unwrap();
     assert_eq!(cli.data_path.as_deref(), Some("data.json"));
     assert_eq!(cli.config_path.as_deref(), Some("conf.json"));
@@ -122,7 +122,7 @@ mod tests {
   fn help_flags_are_recognized() {
     assert!(parse(&args(&["--help"])).unwrap().help);
     assert!(parse(&args(&["-h"])).unwrap().help);
-    // `--help` gagne même accompagné : l'utilisateur demande l'aide, on la donne.
+    // `--help` wins even when accompanied: the user asked for help, they get it.
     assert!(parse(&args(&["data.json", "--help"])).unwrap().help);
   }
 
@@ -150,8 +150,8 @@ mod tests {
     assert!(err.contains("requires a data file"), "{err}");
   }
 
-  // --- load : fixtures écrites dans le dossier temporaire du système, nommées
-  // par PID + nom de test pour que les tests parallèles ne se marchent pas dessus.
+  // --- load: fixtures written to the system temp directory, named by PID + test
+  // name so that parallel tests do not step on each other.
   fn temp_file(name: &str, contents: &str) -> String {
     let path = std::env::temp_dir().join(format!("datagraph-cli-{}-{name}", std::process::id()));
     std::fs::write(&path, contents).unwrap();
@@ -185,13 +185,13 @@ mod tests {
     assert!(err.contains("cannot read '/nonexistent/nope.json'"), "{err}");
   }
 
-  /// Garde-fou de validité des fixtures COMMITTÉES : `fixtures/shop.json` et
-  /// `fixtures/shop.config.json` sont ce que la doc donne à taper derrière
-  /// `datagraph`, et rien d'autre ne les relisait côté Rust. Le chemin part de
-  /// `CARGO_MANIFEST_DIR` (= `src-tauri/`) pour ne pas dépendre du répertoire
-  /// courant du lanceur de tests. Le pendant sémantique — la config est-elle
-  /// valide pour le cœur — vit dans `e2e/file-mode.spec.ts` ; ici on ne prouve
-  /// que ce que `load` promet : les fichiers existent et sont du JSON.
+  /// Validity guard for the COMMITTED fixtures: `fixtures/shop.json` and
+  /// `fixtures/shop.config.json` are what the docs tell you to type after
+  /// `datagraph`, and nothing else re-read them on the Rust side. The path
+  /// starts from `CARGO_MANIFEST_DIR` (= `src-tauri/`) so as not to depend on
+  /// the test runner's working directory. The semantic counterpart — is the
+  /// config valid for the core — lives in `e2e/file-mode.spec.ts`; here we only
+  /// prove what `load` promises: the files exist and are JSON.
   #[test]
   fn load_reads_the_committed_fixtures() {
     let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../fixtures");

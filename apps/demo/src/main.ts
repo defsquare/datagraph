@@ -9,17 +9,16 @@ import { createDetailPanel } from "./detail-panel";
 import { createSearchUi } from "./search-ui";
 import { createChrome } from "./chrome";
 
-// Orchestration seule : ce fichier résout le mode de lancement, crée le graphe
-// et câble entre eux les modules du shell. Aucun d'eux n'est propre à la démo —
-// sauf `demo-mode.ts`, chargé DYNAMIQUEMENT et uniquement quand aucun fichier
-// n'a été fourni.
+// Orchestration only: this file resolves the launch mode, creates the graph and
+// wires the shell modules together. None of them is demo-specific — except
+// `demo-mode.ts`, loaded DYNAMICALLY and only when no file was supplied.
 
 const container = document.getElementById("app");
 if (!container) throw new Error("#app container not found");
 
-// Top-level await (cible es2022, voir vite.config.ts) : tout le reste du
-// module dépend du mode de lancement, l'attendre ici évite d'envelopper le
-// fichier entier dans une fonction.
+// Top-level await (es2022 target, see vite.config.ts): everything else in the
+// module depends on the launch mode, awaiting it here avoids wrapping the whole
+// file in a function.
 const launch = await resolveLaunch();
 
 function showLoadError(error: unknown): void {
@@ -28,10 +27,10 @@ function showLoadError(error: unknown): void {
   document.getElementById("load-error")?.removeAttribute("hidden");
 }
 
-// L'outillage de démo — jeu d'exemple ET son générateur — n'est atteint que par
-// cet import dynamique. En mode fichier le chunk n'est jamais téléchargé, donc
-// `sample-data.ts` n'est jamais évalué : c'est ce qui évite de fabriquer un jeu
-// de démo pour un document que l'utilisateur a fourni lui-même.
+// The demo tooling — sample dataset AND its generator — is reached only through
+// this dynamic import. In file mode the chunk is never downloaded, so
+// `sample-data.ts` is never evaluated: that is what avoids building a demo
+// dataset for a document the user supplied themselves.
 let demo: typeof import("./demo-mode") | null = null;
 let source: { data: unknown; config: DataGraphConfig };
 if (launch.mode === "file") {
@@ -51,22 +50,21 @@ try {
     // rather than failing. The option is still passed end-to-end, so the demo
     // exercises the wiring even where the browser gets no real worker.
     elkWorkerUrl: new URL("elkjs/lib/elk-worker.min.js", import.meta.url),
-    // La mise en page de la vue graphe hors du thread principal. Même forme que
-    // l'URL d'elk juste au-dessus, et la même reconnue par Vite ; ce que chacun
-    // des quatre modes d'exécution en fait est détaillé dans `vite.config.ts`,
-    // qui porte aussi l'alias de dev vers la source du worker.
+    // The graph view layout, off the main thread. Same shape as the elk URL just
+    // above, and the same one Vite recognizes; what each of the four execution
+    // modes does with it is detailed in `vite.config.ts`, which also carries the
+    // dev alias to the worker's source.
     //
-    // Sur l'audit réel (6 251 entités), c'est ce qui sépare une bascule de vue
-    // qui gèle la page ~4,4 s d'une bascule pendant laquelle la vue structure
-    // reste manipulable. Sans cette ligne, tout continue de marcher : le
-    // renderer calcule en processus.
+    // On the real audit dataset (6,251 entities), this is what separates a view
+    // toggle that freezes the page for ~4.4 s from one during which the structure
+    // view stays usable. Without this line everything still works: the renderer
+    // computes in-process.
     graphLayoutWorkerUrl: new URL("@defsquare/data-graph/graph-layout-worker", import.meta.url),
   });
 } catch (error) {
-  // `createDataGraph` valide la config en synchrone : une config
-  // sémantiquement invalide s'arrête ici, en écran d'erreur — pas en fenêtre
-  // blanche. Le `throw` stoppe l'évaluation du module : rien plus bas n'a de
-  // sens sans instance.
+  // `createDataGraph` validates the config synchronously: a semantically invalid
+  // config stops here, on an error screen — not on a blank window. The `throw`
+  // halts module evaluation: nothing below makes sense without an instance.
   showLoadError(error);
   throw error;
 }
@@ -80,32 +78,33 @@ declare global {
 }
 window.__graph = graph;
 
-// L'ORDRE DE CES TROIS LIGNES EST CONTRAINT, et le reste de ce bloc avec.
+// THE ORDER OF THESE THREE LINES IS CONSTRAINED, and so is the rest of this
+// block.
 //
-// `createChrome` ne fait pas que câbler : il CONSTRUIT la barre d'outils, la
-// recherche et le menu depuis les fabriques du paquet de chrome. Tout ce qui lit
-// ce DOM doit donc venir après lui — `createSearchUi` cherche `#search`,
-// `createDetailPanel` cherche `#detail-close`, et le taillage du mode fichier
-// ci-dessous retire des boutons qui n'existent pas encore avant cet appel.
-// (Auparavant ce markup était écrit en dur dans `index.html`, donc présent dès
-// le premier octet : l'ordre n'avait pas d'importance.)
+// `createChrome` does not merely wire things up: it BUILDS the toolbar, the
+// search bar and the menu from the chrome package's factories. Anything that
+// reads that DOM must therefore come after it — `createSearchUi` looks for
+// `#search`, `createDetailPanel` looks for `#detail-close`, and the file-mode
+// trimming below removes buttons that do not exist yet before this call.
+// (This markup used to be hardcoded in `index.html`, hence present from the
+// first byte: order did not matter then.)
 //
-// Le rappel `onSearchOpen` référence `search`, déclaré plus bas : c'est une
-// fermeture, elle n'est appelée qu'au premier clic sur la loupe — bien après
-// l'évaluation de ce module.
+// The `onSearchOpen` callback references `search`, declared further down: it is
+// a closure, only called on the first click on the magnifier — long after this
+// module is evaluated.
 const chrome = createChrome(graph, { onSearchOpen: () => search.focus() });
 
-// Le chrome se taille APRÈS avoir été construit et AVANT que les modules plus
-// bas ne le relisent : un bouton retiré donne `getElementById` → null, et tous
-// les gestionnaires savent déjà vivre sans leur élément.
+// The chrome is trimmed AFTER being built and BEFORE the modules below read it
+// back: a removed button makes `getElementById` return null, and every handler
+// already knows how to live without its element.
 if (launch.mode === "file") {
-  // La bascule petit/grand jeu de données est un outil de démo. Son module
-  // n'est pas chargé ici, mais l'entrée de menu, elle, vient d'être créée :
-  // sans ce retrait le menu offrirait une entrée morte.
+  // The small/large dataset toggle is a demo tool. Its module is not loaded
+  // here, but the menu item has just been created: without this removal the menu
+  // would offer a dead entry.
   document.getElementById("toggle-dataset")?.remove();
-  // `?? {}` : une config du disque peut n'avoir aucune clé `ids`.
+  // `?? {}`: a config read from disk may carry no `ids` key at all.
   if (Object.keys(launch.config.ids ?? {}).length === 0) {
-    // Sans entités la vue graphe n'a rien à montrer : structure seule.
+    // Without entities the graph view has nothing to show: structure only.
     document.getElementById("toggle-view")?.remove();
   }
 }
@@ -122,8 +121,8 @@ graph.on("followRef", (edge) => {
   if (edge.dangling) console.warn(`[demo] dangling ref: ${edge.field} -> ${edge.targetType}#${edge.targetId}`);
 });
 
-// `setData()` réinitialise l'état de recherche et de sélection du renderer ; le
-// shell suit le même chemin de son côté.
+// `setData()` resets the renderer's search and selection state; the shell takes
+// the same path on its side.
 demo?.setupDatasetToggle(graph, () => {
   search.reset();
   detail.clear();
@@ -134,8 +133,8 @@ void (async () => {
   try {
     await graph.ready;
   } catch (error) {
-    // Les échecs asynchrones (GraphTooLargeError, worker) arrivent par
-    // `ready` : même écran que les échecs synchrones.
+    // Async failures (GraphTooLargeError, worker) arrive through `ready`: same
+    // screen as the synchronous ones.
     showLoadError(error);
     return;
   }

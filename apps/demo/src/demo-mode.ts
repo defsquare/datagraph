@@ -1,22 +1,22 @@
 import type { DataGraph, DataGraphConfig } from "@defsquare/data-graph";
 import { shopData, shopConfig, bigShop, bigShopConfig } from "./sample-data";
 
-// Tout ce qui n'existe QU'EN MODE DÉMO — le jeu d'exemple, son générateur et la
-// bascule petit/grand jeu — vit ici, et ce module n'est atteint que par l'import
-// dynamique de `main.ts`. C'est ce qui garantit qu'en mode fichier
-// (`datagraph data.json`) `sample-data.ts` n'est ni téléchargé ni évalué : son
-// générateur y fabriquerait ~4000 nœuds dont personne n'a besoin.
+// Everything that exists ONLY IN DEMO MODE — the sample dataset, its generator
+// and the small/large toggle — lives here, and this module is reached only
+// through `main.ts`'s dynamic import. That is what guarantees that in file mode
+// (`datagraph data.json`) `sample-data.ts` is neither downloaded nor evaluated:
+// its generator would build ~4000 nodes nobody needs.
 
-/** Le jeu du chargement initial de la démo. */
+/** The dataset the demo loads on startup. */
 export const demoDataset: { data: unknown; config: DataGraphConfig } = {
   data: shopData,
   config: shopConfig,
 };
 
-// Le grand jeu est généré À LA DEMANDE, au premier clic, puis mémorisé : le
-// construire au chargement du module coûterait ~4000 nœuds à chaque démarrage,
-// y compris aux visites qui ne toucheront jamais la bascule. `bigShop` est
-// déterministe, donc la mémorisation ne fait qu'éviter un recalcul identique.
+// The large dataset is generated ON DEMAND, on the first click, then memoized:
+// building it at module load would cost ~4000 nodes on every startup, including
+// visits that never touch the toggle. `bigShop` is deterministic, so memoizing
+// only avoids recomputing the very same thing.
 let bigShopData: ReturnType<typeof bigShop> | undefined;
 
 function bigDataset(): ReturnType<typeof bigShop> {
@@ -25,19 +25,19 @@ function bigDataset(): ReturnType<typeof bigShop> {
 }
 
 /**
- * Bascule de jeu de données : exerce `setData()` avec le petit `shopData` face
- * à un `bigShop(4000)` généré (4061 nœuds logiques exactement : 78 clients, 234
- * commandes, 30 produits, 8 catégories — 350 entités).
+ * Dataset toggle: exercises `setData()` with the small `shopData` against a
+ * generated `bigShop(4000)` (4061 logical nodes exactly: 78 customers, 234
+ * orders, 30 products, 8 categories — 350 entities).
  *
- * La config est passée EXPLICITEMENT dans les deux sens : le petit jeu déclare
- * `reviews[*].customerId`, que le grand — sans reviews — ne peut pas
- * satisfaire, et réutiliser la même config afficherait un
- * `unresolved-reference` légitime mais déroutant dans la barre d'état. Le
- * chemin « setData(data) sans config réutilise la config courante » n'est donc
- * plus exercé ici ; il l'est par un test e2e dédié (smoke.spec.ts).
+ * The config is passed EXPLICITLY in both directions: the small dataset declares
+ * `reviews[*].customerId`, which the large one — having no reviews — cannot
+ * satisfy, and reusing the same config would surface a legitimate but confusing
+ * `unresolved-reference` in the status bar. The "setData(data) without a config
+ * reuses the current one" path is therefore no longer exercised here; a
+ * dedicated e2e test covers it (smoke.spec.ts).
  *
- * `onSwapped` remet l'interface hôte (recherche, panneau, barre d'état) en
- * phase avec l'état que `setData()` vient de réinitialiser côté renderer.
+ * `onSwapped` brings the host interface (search, panel, status bar) back in step
+ * with the state `setData()` has just reset on the renderer side.
  */
 export function setupDatasetToggle(graph: DataGraph, onSwapped: () => void): void {
   const toggleDatasetBtn = document.getElementById("toggle-dataset") as HTMLButtonElement | null;

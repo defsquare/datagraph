@@ -2,15 +2,15 @@ pub mod cli;
 
 use cli::LaunchPayload;
 
-/// Seule commande exposée : le payload de lancement lu par `main.rs`. Les
-/// commandes d'application (invoke_handler) ne passent pas par les capabilities
-/// — celles-ci ne gardent que les permissions des plugins et du core.
+/// The only command exposed: the launch payload read by `main.rs`. Application
+/// commands (invoke_handler) do not go through the capabilities — those only
+/// guard plugin and core permissions.
 #[tauri::command]
 fn launch_payload(state: tauri::State<'_, Option<LaunchPayload>>) -> Option<LaunchPayload> {
   state.inner().clone()
 }
 
-/// `payload` est `None` en mode démo (aucun fichier sur la ligne de commande).
+/// `payload` is `None` in demo mode (no file on the command line).
 pub fn run_with(payload: Option<LaunchPayload>) {
   tauri::Builder::default()
     .manage(payload)
@@ -29,7 +29,7 @@ pub fn run_with(payload: Option<LaunchPayload>) {
     .expect("error while running tauri application");
 }
 
-// L'entrée mobile ne porte pas d'argv : elle démarre toujours en mode démo.
+// The mobile entry point carries no argv: it always starts in demo mode.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   run_with(None)

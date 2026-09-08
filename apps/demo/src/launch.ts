@@ -1,30 +1,30 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { DataGraphConfig } from "@defsquare/data-graph";
 
-/** Ce que la ligne de commande a demandé. `"demo"` couvre deux cas que le
- * frontend n'a pas à distinguer : hors Tauri (Vite/e2e) et binaire lancé sans
- * argument. */
+/** What the command line asked for. `"demo"` covers two cases the frontend has
+ * no reason to tell apart: running outside Tauri (Vite/e2e), and the binary
+ * launched with no argument. */
 export type Launch =
   | { mode: "demo" }
   | { mode: "file"; data: unknown; config: DataGraphConfig };
 
-/** Miroir du `LaunchPayload` Rust : contenus BRUTS des fichiers. Rust n'a
- * validé que la syntaxe JSON ; c'est ici que les chaînes deviennent des
- * valeurs, et la validation sémantique de la config reste à `createDataGraph`. */
+/** Mirror of the Rust `LaunchPayload`: RAW file contents. Rust validated JSON
+ * syntax and nothing more; this is where the strings become values, and semantic
+ * validation of the config stays with `createDataGraph`. */
 interface RawPayload {
   data: string;
   config: string | null;
 }
 
 export async function resolveLaunch(): Promise<Launch> {
-  // Détection Tauri : l'objet d'internals n'existe que dans la WebView.
+  // Tauri detection: the internals object only exists inside the WebView.
   if (!("__TAURI_INTERNALS__" in window)) return { mode: "demo" };
   const payload = await invoke<RawPayload | null>("launch_payload");
   if (payload === null) return { mode: "demo" };
   const data: unknown = JSON.parse(payload.data);
-  // Sans `-c` : config vide = vue structure seule. `ids` absent est
-  // impossible côté Rust (il n'envoie que du JSON validé), mais une config
-  // vide reste le contrat du mode structure.
+  // Without `-c`: an empty config means structure view only. A missing `ids` is
+  // impossible on the Rust side (it only sends validated JSON), but an empty
+  // config remains the contract of structure mode.
   const config: DataGraphConfig =
     payload.config === null ? { ids: {} } : (JSON.parse(payload.config) as DataGraphConfig);
   return { mode: "file", data, config };

@@ -1,15 +1,14 @@
 import { test, expect, type Page } from "@playwright/test"
 
 /**
- * La bascule de vue ne peut pas etre couverte par un test unitaire du
- * renderer : aucun test de `packages/renderer` ne monte `createDataGraph`
- * (pas de DOM, pas de jsdom configure), et maquetter Pixi ne prouverait rien.
- * C'est donc ici que vit la preuve durable du comportement de la vue graphe.
+ * The view toggle cannot be covered by a renderer unit test: no test in
+ * `packages/renderer` mounts `createDataGraph` (no DOM, no jsdom configured),
+ * and mocking Pixi would prove nothing. So this is where the durable proof of
+ * the graph view's behavior lives.
  *
- * Meme reveil que `smoke.spec.ts` : on attend la promesse publique `ready`, et
- * pas seulement l'existence de `window.__graph`, qui est assignee
- * synchroniquement au chargement du module bien avant que le graphe soit
- * construit et mis en page.
+ * Same wake-up as `smoke.spec.ts`: we await the public `ready` promise, not
+ * merely the existence of `window.__graph`, which is assigned synchronously at
+ * module load long before the graph is built and laid out.
  */
 async function gotoReady(page: Page): Promise<void> {
   await page.goto("/")
@@ -17,15 +16,15 @@ async function gotoReady(page: Page): Promise<void> {
   await page.evaluate(() => (window as any).__graph.ready)
 }
 
-// La config de la demo declare `groups: ["Customer", "Product"]` (voir
-// `src/sample-data.ts`), mais son jeu par defaut ne compte que 8 entites : les
-// tests ci-dessous injectent par `setData` des jeux calibres pour ce qu'ils
-// prouvent, avec leur PROPRE config a une seule racine — ils portent sur la
-// bascule de vue et les compteurs, pas sur l'arbitrage entre racines, qui est
-// couvert cote coeur (`aggregate.test.ts`). Le dernier test du fichier, lui,
-// travaille sur le jeu etendu reel de la demo et sa vraie config, sans
-// injection. Deux agregats (un par Customer), cinq entites au total, toutes
-// visibles en vue graphe : elle ne plie rien.
+// The demo's config declares `groups: ["Customer", "Product"]` (see
+// `src/sample-data.ts`), but its default dataset holds only 8 entities: the
+// tests below inject via `setData` datasets calibrated for what they prove, with
+// their OWN single-root config — they are about the view toggle and the
+// counters, not about arbitration between roots, which is covered on the core
+// side (`aggregate.test.ts`). The file's last test, for its part, works on the
+// demo's real extended dataset and its real config, with no injection. Two
+// aggregates (one per Customer), five entities in total, all visible in graph
+// view: it folds nothing.
 const data = {
   customers: [
     { id: "c1", name: "Dupont", address: { city: "Paris" } },
@@ -73,7 +72,7 @@ test("setView bascule entre structure et graphe, et revient", async ({ page }) =
 
   await page.evaluate(() => (window as any).__graph.setView("graph"))
   expect(await page.evaluate(() => (window as any).__graph.currentView())).toBe("graph")
-  // La vue graphe ne montre que des entites : 2 clients + 3 commandes.
+  // The graph view shows entities only: 2 customers + 3 orders.
   expect(await visibleCount(page)).toBe(5)
 
   await page.evaluate(() => (window as any).__graph.setView("structure"))
@@ -91,13 +90,12 @@ test("basculer avec un noeud imbrique selectionne ne casse rien", async ({ page 
   await gotoReady(page)
   await loadAggregateData(page)
 
-  // Un objet imbrique sous une entite n'existe pas dans la vue graphe : la
-  // bascule doit reporter la selection sur le Customer qui le contient. Le
-  // RESULTAT de ce report n'est pas observable de l'exterieur (aucun getter de
-  // selection, et `setView` n'emet pas "select"), donc ce test ne couvre que le
-  // fait que ce chemin s'execute sans casser ; la fonction elle-meme est
-  // couverte unitairement par `packages/renderer/test/view.test.ts`
-  // (`nearestEntityAncestor`).
+  // An object nested under an entity does not exist in the graph view: the
+  // toggle must move the selection onto the Customer that contains it. The
+  // RESULT of that move is not observable from outside (no selection getter, and
+  // `setView` does not emit "select"), so this test only covers the fact that
+  // this path runs without breaking; the function itself is covered by a unit
+  // test in `packages/renderer/test/view.test.ts` (`nearestEntityAncestor`).
   await page.evaluate(() => (window as any).__graph.select("/customers/0/address"))
   await expect(page.locator("#selection-path")).toContainText("/customers/0/address")
 
@@ -110,11 +108,10 @@ test("basculer avec un noeud imbrique selectionne ne casse rien", async ({ page 
 test("expand() de la vue structure ne deplace rien en vue graphe", async ({ page }) => {
   await gotoReady(page)
 
-  // Six clients, chacun avec une adresse : dans la mise en page de la vue
-  // STRUCTURE, deplier /customers/0 decale /customers/1 de 19 px vers le bas
-  // (mesure faite sur le moteur ELK). C'est la condition necessaire du defaut
-  // teste ici — avec un jeu plus petit, aucune position ne bouge et le test ne
-  // prouverait rien.
+  // Six customers, each with an address: in the STRUCTURE view's layout,
+  // expanding /customers/0 shifts /customers/1 down by 19 px (measured on the
+  // ELK engine). This is the necessary condition of the defect tested here —
+  // with a smaller dataset no position moves and the test would prove nothing.
   const wide = {
     customers: Array.from({ length: 6 }, (_, i) => ({
       id: `c${i}`,
@@ -130,14 +127,14 @@ test("expand() de la vue structure ne deplace rien en vue graphe", async ({ page
   await page.evaluate(() => (window as any).__graph.setView("graph"))
   expect(await visibleCount(page)).toBe(12)
 
-  // `expand`/`collapse` agissent sur l'arbre de containment. En vue graphe leur
-  // effet doit etre strictement invisible : leur animation de position part de
-  // rects de la vue STRUCTURE et, si elle n'est pas neutralisee, elle teleporte
-  // les cartes vers l'autre repere en laissant enveloppes, aretes et zones de
-  // clic sur place. On compare donc le canvas avant/apres, au pixel pres.
+  // `expand`/`collapse` act on the containment tree. In graph view their effect
+  // must be strictly invisible: their position animation starts from STRUCTURE
+  // view rects and, if not neutralized, teleports the cards towards the other
+  // frame while leaving envelopes, edges and click zones in place. So we compare
+  // the canvas before/after, to the pixel.
   const before = await page.locator("canvas").screenshot()
   await page.evaluate(() => (window as any).__graph.expand("/customers/0"))
-  // Plus long que TRANSITION_MS (200 ms) : une animation parasite aurait fini.
+  // Longer than TRANSITION_MS (200 ms): a stray animation would have finished.
   await page.waitForTimeout(600)
   const after = await page.locator("canvas").screenshot()
 
@@ -152,10 +149,9 @@ test("un setData concurrent d'un setView laisse des compteurs coherents", async 
   await gotoReady(page)
   await loadAggregateData(page)
 
-  // `setView("graph")` dure un import dynamique plus une passe de force : un
-  // `setData` peut atterrir pendant. Quel que soit celui qui gagne, l'etat
-  // publie doit decrire le MEME graphe — le defaut corrige ici publiait une
-  // mise en page calculee sur l'ancien.
+  // `setView("graph")` lasts a dynamic import plus a force pass: a `setData` can
+  // land during it. Whichever wins, the published state must describe the SAME
+  // graph — the defect fixed here published a layout computed on the old one.
   const other = {
     customers: Array.from({ length: 5 }, (_, i) => ({ id: `k${i}` })),
     orders: Array.from({ length: 5 }, (_, i) => ({ id: `p${i}`, customerId: `k${i}` })),
@@ -172,11 +168,11 @@ test("un setData concurrent d'un setView laisse des compteurs coherents", async 
   )
 
   expect(out.stats.logicalNodeCount).toBe(28)
-  // 11 CARTES en vue structure : la racine plus 10 entites. Les deux tableaux
-  // `customers` et `orders` sont elides — ils sont deux LIGNES de la carte
-  // racine, pas deux cartes — et `stats()` compte ce qui est dessine.
-  // `logicalNodeCount` ne bouge pas, lui : le nœud tableau existe toujours.
-  // 10 entites en vue graphe. Avant correction : 5, herites du graphe precedent.
+  // 11 CARDS in structure view: the root plus 10 entities. The two arrays
+  // `customers` and `orders` are elided — they are two ROWS of the root card,
+  // not two cards — and `stats()` counts what is drawn. `logicalNodeCount`, for
+  // its part, does not move: the array node still exists. 10 entities in graph
+  // view. Before the fix: 5, inherited from the previous graph.
   expect(out.stats.visibleNodeCount).toBe(out.view === "graph" ? 10 : 11)
   expect(errors).toEqual([])
 })
@@ -190,28 +186,27 @@ test("la vue graphe tient sur le jeu de donnees etendu de la demo", async ({ pag
 
   await gotoReady(page)
 
-  // Les autres tests de ce fichier injectent des jeux minuscules (5 et 12
-  // entites) : aucun ne met la vue graphe sous charge. C'est pourtant le jeu
-  // etendu qui motive toute cette vue — c'est son rapport de bbox de 1:21 en
-  // vue structure qu'elle existe pour corriger — et c'est le seul endroit ou la
-  // passe de separation, le recouvrement des enveloppes et le temps de mise en
-  // page travaillent pour de vrai. La config de la demo declare deja
-  // `groups: ["Customer", "Product"]`, donc il suffit du bouton de bascule
-  // de jeu — desormais range dans le menu ⋮ de la grappe flottante.
+  // The other tests in this file inject tiny datasets (5 and 12 entities): none
+  // puts the graph view under load. Yet it is the extended dataset that motivates
+  // this whole view — its 1:21 bbox ratio in structure view is what the view
+  // exists to fix — and it is the only place where the separation pass, envelope
+  // overlap and layout time really work. The demo's config already declares
+  // `groups: ["Customer", "Product"]`, so the dataset toggle button suffices —
+  // now tucked into the ⋮ menu of the floating cluster.
   await page.click("#menu-toggle")
   await page.click("#toggle-dataset")
-  // Le clic ne fait que lancer un gestionnaire async. On attend le compteur
-  // plutot que le libelle du bouton : c'est la preuve que `setData` a fini de
-  // construire ET de mettre en page le nouveau jeu, et ca ne depend d'aucune
-  // chaine d'interface.
+  // The click only starts an async handler. We wait on the counter rather than
+  // on the button's label: it is the proof that `setData` has finished both
+  // building AND laying out the new dataset, and it depends on no interface
+  // string.
   await expect
     .poll(() => page.evaluate(() => (window as any).__graph.stats().logicalNodeCount), {
       timeout: 30_000,
     })
-    // `bigShop(4000)` produit EXACTEMENT 4061 noeuds logiques : 5 pour le
-    // squelette (racine + 4 tableaux), 8 categories a 3, 30 produits a 7, 78
-    // clients a 10 et 234 commandes a 13. Un chiffre exact plutot qu'un seuil,
-    // pour que toute derive du generateur se voie ici.
+    // `bigShop(4000)` produces EXACTLY 4061 logical nodes: 5 for the skeleton
+    // (root + 4 arrays), 8 categories at 3, 30 products at 7, 78 customers at 10
+    // and 234 orders at 13. An exact figure rather than a threshold, so that any
+    // drift of the generator shows here.
     .toBe(4061)
   const logical = await page.evaluate(() => (window as any).__graph.stats().logicalNodeCount)
 
@@ -223,33 +218,32 @@ test("la vue graphe tient sur le jeu de donnees etendu de la demo", async ({ pag
 
   expect(await page.evaluate(() => (window as any).__graph.currentView())).toBe("graph")
 
-  // `bigShop(4000)` de la demo produit 78 clients, 234 commandes, 30 produits
-  // et 8 categories : 350 entites, toutes visibles puisque la vue graphe ne
-  // plie rien. Elle ne montre QUE des entites, donc c'est exactement le compte
-  // attendu — un chiffre exact plutot qu'une borne, pour que toute derive du
-  // fixture se voie.
+  // The demo's `bigShop(4000)` produces 78 customers, 234 orders, 30 products
+  // and 8 categories: 350 entities, all visible since the graph view folds
+  // nothing. It shows ONLY entities, so this is exactly the expected count — an
+  // exact figure rather than a bound, so that any drift of the fixture shows.
   expect(await visibleCount(page)).toBe(350)
 
-  // Recadrage et rendu sous charge : le canvas doit rester peint, et rien ne
-  // doit avoir ete jete dans la console.
+  // Reframing and rendering under load: the canvas must stay painted, and
+  // nothing must have been thrown into the console.
   await expect(page.locator("canvas")).toBeVisible()
   expect(errors).toEqual([])
 
-  // Temps mesure au passage : import dynamique du chunk, mise en page a deux
-  // niveaux (packing intra-agregat + simulation sur les disques) et rendu.
+  // Time measured along the way: dynamic import of the chunk, two-level layout
+  // (intra-aggregate packing + simulation over the discs) and rendering.
   //
-  // Pas d'assertion serree, et le plafond ne bouge pas : la machine de CI n'est
-  // pas celle du developpeur, et ce plafond large n'est la que pour attraper un
-  // effondrement franc. Ce qu'il vaut a change, en revanche, et c'est mesure ici
-  // meme, dans ce test, sur cette machine, en runs isoles (3 chacun) :
-  // l'ancien moteur (fcose + separateOverlaps + separateClusters) sortait a
-  // 4310-4484 ms, le moteur a deux niveaux sort a 220-252 ms — environ x19. Le
-  // plafond de 30 s couvrait l'ancien avec un facteur 7 ; il en couvre
-  // largement plus aujourd'hui, donc il reste utile sans etre a re-serrer.
+  // No tight assertion, and the ceiling does not move: the CI machine is not the
+  // developer's, and this wide ceiling is only there to catch an outright
+  // collapse. What it is worth has changed, though, and that is measured right
+  // here, in this test, on this machine, in isolated runs (3 each): the old
+  // engine (fcose + separateOverlaps + separateClusters) came out at
+  // 4310-4484 ms, the two-level engine comes out at 220-252 ms — roughly x19.
+  // The 30 s ceiling covered the old one with a factor of 7; it covers far more
+  // today, so it stays useful without needing to be tightened again.
   expect(ms).toBeLessThan(30_000)
   console.log(`[e2e] setView("graph") sur ${logical} noeuds logiques / 350 entites : ${ms.toFixed(0)} ms`)
 
-  // Retour en vue structure : la bascule doit rester reversible a cette echelle.
+  // Back to structure view: the toggle must stay reversible at this scale.
   await page.evaluate(() => (window as any).__graph.setView("structure"))
   expect(await page.evaluate(() => (window as any).__graph.currentView())).toBe("structure")
   expect(errors).toEqual([])

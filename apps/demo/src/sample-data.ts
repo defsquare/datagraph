@@ -1,20 +1,19 @@
 import type { DataGraphConfig } from "@defsquare/data-graph";
 
-// Jeu de démonstration e-commerce. Volontairement dupliqué de
-// `packages/core/test/fixtures.ts` : la démo est un consommateur des paquets
-// publiés et n'a pas le droit d'importer les fichiers de test du cœur. Les deux
-// fixtures ont divergé depuis longtemps — celle du cœur est figée par les
-// comptes exacts de `build.test.ts` et `search.test.ts`, celle-ci suit les
-// besoins de la démo. Ne pas les resynchroniser.
+// E-commerce demo dataset. Deliberately duplicated from
+// `packages/core/test/fixtures.ts`: the demo is a consumer of the published
+// packages and is not allowed to import the core's test files. The two fixtures
+// diverged long ago — the core's is pinned by the exact counts in
+// `build.test.ts` and `search.test.ts`, this one follows the demo's needs. Do
+// not resynchronize them.
 //
-// AUCUN ALÉA ici : toutes les valeurs sortent de petites tables combinées par
-// index. La mise en page de la vue graphe est déterministe au pixel près et les
-// tests e2e épinglent des comptes exacts ; un seul `Math.random()` ferait
-// tomber les deux.
+// NO RANDOMNESS here: every value comes out of small tables combined by index.
+// The graph view layout is deterministic to the pixel and the e2e tests pin
+// exact counts; a single `Math.random()` would take down both.
 
-/** Table des accents à plat : juste ce qu'il faut pour dériver une adresse
- * e-mail d'un nom français. Pas de `normalize("NFD")` — la table est plus
- * lisible et couvre exactement les caractères des tables ci-dessous. */
+/** Flat accent table: just enough to derive an e-mail address from a French
+ * name. No `normalize("NFD")` — the table is more readable and covers exactly
+ * the characters of the tables below. */
 const ACCENTS: Record<string, string> = {
   à: "a", â: "a", ä: "a", ç: "c", é: "e", è: "e", ê: "e", ë: "e",
   î: "i", ï: "i", ô: "o", ö: "o", ù: "u", û: "u", ü: "u",
@@ -40,7 +39,7 @@ const LAST_NAMES = [
   "Vincent", "Fournier", "Morel", "Girard", "Chevalier",
 ];
 
-/** Vingt villes réelles, avec un code postal plausible pour chacune. */
+/** Twenty real cities, each with a plausible postcode. */
 const CITIES: { city: string; postcode: string }[] = [
   { city: "Paris", postcode: "75011" },
   { city: "Marseille", postcode: "13006" },
@@ -75,14 +74,14 @@ const SEGMENTS = ["nouveau", "fidèle", "VIP"];
 const STATUSES = ["en attente", "payée", "expédiée", "livrée", "retournée"];
 const PAYMENTS = ["carte bancaire", "PayPal", "virement", "chèque"];
 
-/** Huit catégories, dont le préfixe sert aussi de préfixe de référence
- * produit. `Category` est une entité mais PAS une racine d'agrégat, et elle
- * n'appartient à AUCUN agrégat : l'appartenance remonte les références vers la
- * racine, or un produit pointe VERS sa catégorie, jamais l'inverse. Les huit
- * catégories sont donc dessinées seules, sans enveloppe — c'est le cas
- * « entité hors de tout agrégat » que la démo exerce en vrai. (Le commentaire
- * précédent disait qu'elles étaient tirées dans l'agrégat des produits qui les
- * référencent : c'était faux, et dans le mauvais sens.) */
+/** Eight categories, whose prefix doubles as the product reference prefix.
+ * `Category` is an entity but NOT an aggregate root, and it belongs to NO
+ * aggregate: membership walks references up towards the root, and a product
+ * points TO its category, never the other way round. The eight categories are
+ * therefore drawn alone, without an envelope — this is the "entity outside every
+ * aggregate" case the demo exercises for real. (The previous comment claimed
+ * they were pulled into the aggregate of the products referencing them: that was
+ * wrong, and backwards.) */
 const CATEGORIES = [
   { name: "Informatique", prefix: "INF" },
   { name: "Mobilier", prefix: "MOB" },
@@ -94,9 +93,9 @@ const CATEGORIES = [
   { name: "Luminaire", prefix: "LUM" },
 ];
 
-/** Catalogue écrit à la main : c'est la table qui porte le plus de
- * crédibilité, donc elle n'est pas combinée mais énumérée. `cat` indexe
- * `CATEGORIES`, `price` est en euros. */
+/** Hand-written catalogue: this is the table that carries the most credibility,
+ * so it is enumerated rather than combined. `cat` indexes `CATEGORIES`, `price`
+ * is in euros. */
 const CATALOG: { name: string; cat: number; price: number }[] = [
   { name: "Clavier mécanique", cat: 0, price: 89.9 },
   { name: "Souris ergonomique", cat: 0, price: 45.5 },
@@ -134,9 +133,9 @@ function pad2(n: number): string {
   return String(n).padStart(2, "0");
 }
 
-/** Deux décimales, en centimes entiers : `129.9 * 3` vaut 389.70000000000005
- * en flottant, et un total qui traîne dix décimales trahit la génération
- * aussi sûrement qu'un total incohérent. */
+/** Two decimals, through whole cents: `129.9 * 3` is 389.70000000000005 in
+ * floating point, and a total trailing ten decimals gives the generation away as
+ * surely as an inconsistent one. */
 function euros(value: number): number {
   return Math.round(value * 100) / 100;
 }
@@ -148,15 +147,14 @@ interface Address {
 }
 
 function addressOf(seed: number): Address {
-  // La ville N'EST PAS `seed % 20`. Le prénom du client est lui aussi tiré
-  // modulo 20 (`FIRST_NAMES` en compte autant), et deux index modulo la même
-  // taille se verrouillent l'un à l'autre : chaque Camille habiterait Paris,
-  // chaque Julien Marseille, sur des cartes qui affichent les deux champs. Et
-  // aucun simple facteur ne le décroise, puisque le résultat ne dépendrait
-  // toujours que de `seed % 20`. Il faut casser la période : le pas de 7
-  // balaie la table, le `+ seed / 20` la décale d'un cran à chaque tour
-  // complet des prénoms, donc un même prénom voit quatre villes différentes
-  // sur les 78 clients.
+  // The city is NOT `seed % 20`. The customer's first name is also drawn modulo
+  // 20 (`FIRST_NAMES` holds exactly that many), and two indices modulo the same
+  // size lock onto each other: every Camille would live in Paris, every Julien
+  // in Marseille, on cards that display both fields. And no mere factor
+  // uncrosses them, since the result would still depend only on `seed % 20`. The
+  // period has to be broken: a step of 7 sweeps the table, and the `+ seed / 20`
+  // shifts it by one on every full pass over the first names, so a given first
+  // name is seen with four different cities across the 78 customers.
   const place = CITIES[(seed * 7 + Math.floor(seed / CITIES.length)) % CITIES.length]!;
   return {
     street: `${1 + ((seed * 7) % 180)} ${STREETS[(seed * 5) % STREETS.length]!}`,
@@ -165,23 +163,22 @@ function addressOf(seed: number): Address {
   };
 }
 
-// --- Petit jeu, celui du chargement initial de la démo. Quatre types
-// d'entités, une référence de chaque sorte, et UNE référence cassée
-// (`o2.customerId` pointe sur un client qui n'existe pas) : c'est le seul
-// diagnostic du jeu, et un test e2e compte dessus.
+// --- Small dataset, the one the demo loads on startup. Four entity types, one
+// reference of each kind, and ONE broken reference (`o2.customerId` points at a
+// customer that does not exist): it is the dataset's only diagnostic, and an e2e
+// test counts on it.
 //
-// Il exerce aussi les DEUX formes de tableau, qu'aucune donnée du petit jeu ne
-// produisait jusqu'ici : `p1.tags` (scalaires) pour la forme « items rendus en
-// lignes indexées de la carte du tableau, donc pas de pastille », et
-// `p16.reviews` (objets) pour la forme « un item = une carte enfant, et la
-// pastille compte les enfants ». Les deux ne sont visibles qu'en vue
-// structure, la vue graphe ne montrant que des entités.
+// It also exercises BOTH array shapes, which no data in the small dataset used
+// to produce: `p1.tags` (scalars) for the "items rendered as indexed rows of the
+// array card, hence no badge" shape, and `p16.reviews` (objects) for the "one
+// item = one child card, and the badge counts children" shape. Both are only
+// visible in structure view, the graph view showing entities only.
 //
-// `reviews[*].customerId` est LA référence portée par un value object du jeu :
-// déclarée par chemin relatif sur `Product`, résolue sur les cartes
-// `reviews[0]`/`reviews[1]`, hissée sur `#p16` quand le tableau est replié ou
-// en vue graphe. Elle RÉSOUT (c1 et c2 existent), donc le compte de
-// diagnostics reste à 1 — `author` reste du texte libre, lui.
+// `reviews[*].customerId` is THE reference carried by a value object in this
+// dataset: declared by relative path on `Product`, resolved on the
+// `reviews[0]`/`reviews[1]` cards, hoisted onto `#p16` when the array is
+// collapsed or in graph view. It RESOLVES (c1 and c2 exist), so the diagnostic
+// count stays at 1 — `author`, for its part, remains free text.
 export const shopData = {
   categories: [
     { id: "cat1", name: "Informatique" },
@@ -279,12 +276,11 @@ export const shopConfig: DataGraphConfig = {
   groups: ["Customer", "Product"],
 };
 
-// Le grand jeu n'a PAS de reviews : garder la déclaration
-// `reviews[*].customerId` sur lui déclencherait un `unresolved-reference`
-// parfaitement légitime — aucune instance de Product ne porte la ligne — mais
-// la barre d'état de la démo afficherait alors un diagnostic qui se lirait
-// comme un bug. D'où une config propre au grand jeu, identique à un
-// retranchement près.
+// The large dataset has NO reviews: keeping the `reviews[*].customerId`
+// declaration on it would raise a perfectly legitimate `unresolved-reference` —
+// no Product instance carries that row — but the demo's status bar would then
+// display a diagnostic that reads as a bug. Hence a config of its own for the
+// large dataset, identical bar one removal.
 export const bigShopConfig: DataGraphConfig = {
   ...shopConfig,
   refs: [
@@ -294,13 +290,13 @@ export const bigShopConfig: DataGraphConfig = {
   ],
 };
 
-// Coût en nœuds logiques d'une entité, tel que les compte `buildGraph` : le
-// nœud lui-même, plus une unité par ligne scalaire, plus les objets imbriqués
-// et leurs lignes. Un client vaut 10 (1 + 5 lignes + 1 objet adresse + 3
-// lignes), une commande 13 (1 + 8 lignes + 1 objet adresse + 3 lignes), un
-// produit 7 et une catégorie 3. Le squelette — racine plus quatre tableaux —
-// en vaut 5. Ces chiffres pilotent la boucle ci-dessous ; s'ils dérivent des
-// champs réels, `bigShop(n)` ne rend plus ~`n` nœuds.
+// An entity's cost in logical nodes, as `buildGraph` counts them: the node
+// itself, plus one per scalar row, plus nested objects and their rows. A
+// customer is worth 10 (1 + 5 rows + 1 address object + 3 rows), an order 13
+// (1 + 8 rows + 1 address object + 3 rows), a product 7 and a category 3. The
+// skeleton — root plus four arrays — is worth 5. These figures drive the loop
+// below; should they drift from the real fields, `bigShop(n)` no longer returns
+// ~`n` nodes.
 const COST_CUSTOMER = 10;
 const COST_ORDER = 13;
 const COST_PRODUCT = 7;
@@ -308,33 +304,32 @@ const COST_CATEGORY = 3;
 const COST_SKELETON = 5;
 
 /**
- * Génère ~`n` nœuds logiques d'un jeu e-commerce : catalogue fixe (8
- * catégories, 30 produits), puis autant de clients qu'il en faut, avec 2 à 4
- * commandes chacun pour que le regroupement par agrégat soit visible.
+ * Generates ~`n` logical nodes of an e-commerce dataset: a fixed catalogue (8
+ * categories, 30 products), then as many customers as needed, with 2 to 4 orders
+ * each so that aggregate grouping is visible.
  *
- * Les valeurs sont tirées de tables combinées par index, avec des pas premiers
- * avec la taille de la table qu'ils parcourent : deux cartes voisines ne
- * partagent ni prénom, ni nom, ni ville, ni date d'inscription, ni produit
- * commandé. Et le `total` d'une commande vaut EXACTEMENT le prix du produit
- * référencé fois la quantité — un total incohérent est ce qui trahit le plus
- * vite une donnée fabriquée.
+ * Values are drawn from tables combined by index, with steps coprime to the size
+ * of the table they walk: two neighbouring cards share neither first name, nor
+ * last name, nor city, nor signup date, nor ordered product. And an order's
+ * `total` is EXACTLY the referenced product's price times the quantity — an
+ * inconsistent total is what gives fabricated data away fastest.
  *
- * Deux pièges de périodicité, tous deux tombés une fois dans ce fichier et
- * corrigés, à ne pas réintroduire :
+ * Two periodicity traps, both fallen into once in this file and fixed, not to be
+ * reintroduced:
  *
- * 1. **Un pas non premier avec la taille de la table** n'en parcourt qu'une
- *    partie. `(i * 5) % 30` sur le catalogue ne servait que 24 produits sur 30
- *    et donnait au client `i` et au client `i+6` le même panier ; `(i * 7) % 28`
- *    sur le jour du mois n'a jamais rendu que le 1er, le 8, le 15 et le 22.
- * 2. **Deux champs tirés modulo la MÊME taille se verrouillent l'un à
- *    l'autre**, même avec des pas différents : prénom et ville, tous deux
- *    modulo 20, donnaient une ville par prénom. Il faut casser la période, pas
- *    seulement changer le facteur (voir `addressOf`).
+ * 1. **A step not coprime to the table size** only walks part of it. `(i * 5) %
+ *    30` over the catalogue served only 24 products out of 30 and gave customer
+ *    `i` and customer `i+6` the same basket; `(i * 7) % 28` over the day of the
+ *    month only ever returned the 1st, the 8th, the 15th and the 22nd.
+ * 2. **Two fields drawn modulo the SAME size lock onto each other**, even with
+ *    different steps: first name and city, both modulo 20, gave one city per
+ *    first name. The period has to be broken, not merely the factor changed (see
+ *    `addressOf`).
  *
- * Mesuré sur les 78 clients produits : 78 noms distincts, 78 e-mails distincts,
- * 78 dates d'inscription distinctes, 78 rues distinctes, 78 couples
- * (prénom, ville) distincts, chaque prénom vu avec 3 ou 4 villes, et 0 total
- * incohérent sur les 234 commandes.
+ * Measured over the 78 customers produced: 78 distinct names, 78 distinct
+ * e-mails, 78 distinct signup dates, 78 distinct streets, 78 distinct
+ * (first name, city) pairs, every first name seen with 3 or 4 cities, and 0
+ * inconsistent totals across the 234 orders.
  */
 export function bigShop(n: number) {
   const categories = CATEGORIES.map((c, i) => ({ id: `cat${i + 1}`, name: c.name }));
@@ -376,9 +371,10 @@ export function bigShop(n: number) {
     fixed + customers.length * COST_CUSTOMER + orders.length * COST_ORDER < n;
     i++
   ) {
-    // Le couple (prénom, nom) est unique tant que i < 400 : le prénom avance
-    // d'un cran par client, le nom de sept — premier avec 20, donc il balaie
-    // toute la table — et d'un cran de plus à chaque tour complet des prénoms.
+    // The (first name, last name) pair is unique as long as i < 400: the first
+    // name advances by one per customer, the last name by seven — coprime with
+    // 20, so it sweeps the whole table — plus one more on every full pass over
+    // the first names.
     const first = FIRST_NAMES[i % FIRST_NAMES.length]!;
     const last =
       LAST_NAMES[(i * 7 + Math.floor(i / FIRST_NAMES.length)) % LAST_NAMES.length]!;
@@ -389,22 +385,22 @@ export function bigShop(n: number) {
       email: `${slug(first)}.${slug(last)}@example.fr`,
       address,
       segment: SEGMENTS[i % SEGMENTS.length]!,
-      // Jour de pas 11, PREMIER avec 28. Le pas de 7 écrit ici d'abord ne
-      // rendait que {0, 7, 14, 21} — tous les clients inscrits un 1er, 8, 15
-      // ou 22 — et, croisé au mois de période 12, ne laissait que
-      // ppcm(12, 4) = 12 dates distinctes pour 78 clients. Avec 11 : période
-      // ppcm(12, 28) = 84, donc 78 dates toutes différentes.
+      // Day with a step of 11, COPRIME with 28. The step of 7 written here at
+      // first only ever returned {0, 7, 14, 21} — every customer signed up on a
+      // 1st, 8th, 15th or 22nd — and, crossed with a month of period 12, left
+      // only lcm(12, 4) = 12 distinct dates for 78 customers. With 11: period
+      // lcm(12, 28) = 84, hence 78 all-different dates.
       signupDate: `2023-${pad2(1 + (i % 12))}-${pad2(1 + ((i * 11) % 28))}`,
     });
 
     const count = 2 + (i % 3);
     for (let k = 0; k < count; k++) {
-      // 7 et 11 sont premiers avec la taille du catalogue (30) : le panier
-      // balaie tout le catalogue quand `i` avance, et deux clients voisins
-      // n'achètent pas les mêmes produits. Un pas non premier avec 30 — le
-      // premier écrit ici était 5 — découpe le catalogue en classes
-      // résiduelles : le client `i` et le client `i+6` commandaient alors
-      // exactement le même panier, et six produits n'étaient jamais vendus.
+      // 7 and 11 are coprime with the catalogue size (30): the basket sweeps the
+      // whole catalogue as `i` advances, and two neighbouring customers do not
+      // buy the same products. A step not coprime with 30 — the first one
+      // written here was 5 — cuts the catalogue into residue classes: customer
+      // `i` and customer `i+6` then ordered exactly the same basket, and six
+      // products were never sold.
       const product = products[(i * 7 + k * 11) % products.length]!;
       const quantity = 1 + ((i + k) % 3);
       orders.push({
@@ -415,13 +411,13 @@ export function bigShop(n: number) {
         total: euros(product.price * quantity),
         status: STATUSES[(i + k * 2) % STATUSES.length]!,
         payment: PAYMENTS[(i * 3 + k) % PAYMENTS.length]!,
-        // Toutes les commandes tombent en 2024, toutes les inscriptions en
-        // 2023 : une commande est toujours postérieure à l'inscription du
-        // client qui la passe, sans avoir à comparer des dates.
+        // Every order falls in 2024, every signup in 2023: an order is always
+        // later than the signup of the customer placing it, with no date
+        // comparison needed.
         date: `2024-${pad2(1 + ((i + k) % 12))}-${pad2(1 + ((i * 5 + k * 3) % 28))}`,
-        // Livraison chez le client, sauf une commande sur sept expédiée
-        // ailleurs — assez pour que la colonne ne soit pas une copie de
-        // l'adresse du client sur toutes les cartes.
+        // Delivery to the customer, except for one order in seven shipped
+        // elsewhere — enough for the column not to be a copy of the customer's
+        // address on every card.
         shippingAddress: (i + k) % 7 === 0 ? addressOf(i + 13) : address,
       });
     }
@@ -429,8 +425,8 @@ export function bigShop(n: number) {
   return { categories, products, customers, orders };
 }
 
-// PAS de `export const bigShopData = bigShop(4000)` ici : un appel au
-// top-level s'exécute au chargement du module, donc à chaque démarrage de la
-// démo — et, tant que ce fichier était importé statiquement par `main.ts`,
-// jusque dans le mode fichier de la CLI qui n'a que faire d'un jeu d'exemple.
-// La génération est déclenchée à la demande par `demo-mode.ts`.
+// NO `export const bigShopData = bigShop(4000)` here: a top-level call runs at
+// module load, hence on every demo startup — and, as long as this file was
+// statically imported by `main.ts`, all the way into the CLI's file mode, which
+// has no use for a sample dataset. Generation is triggered on demand by
+// `demo-mode.ts`.

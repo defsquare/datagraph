@@ -1,13 +1,13 @@
 import { test, expect, type Page } from "@playwright/test"
 
 /**
- * Un tableau n'est plus une carte : c'est une LIGNE de la carte de son parent,
- * dont la valeur est un jeton `[ n items ]` qui plie et deplie ses elements.
+ * An array is no longer a card: it is a ROW of its parent's card, whose value is
+ * a `[ n items ]` token that collapses and expands its items.
  *
- * Ces cas vivent en e2e et non en test unitaire parce qu'ils traversent tout ce
- * que le renderer assemble — routage du clic par `rowIndexAt`, `CollapseState`,
- * mise en page incrementale, redessin — et qu'aucun test de `packages/renderer`
- * ne monte `createDataGraph` (ni DOM, ni jsdom configure).
+ * These cases live in e2e rather than in a unit test because they cross
+ * everything the renderer assembles — click routing through `rowIndexAt`,
+ * `CollapseState`, incremental layout, redraw — and because no test in
+ * `packages/renderer` mounts `createDataGraph` (no DOM, no jsdom configured).
  */
 async function gotoReady(page: Page): Promise<void> {
   await page.goto("/")
@@ -22,15 +22,15 @@ function visibleCount(page: Page): Promise<number> {
 }
 
 /**
- * Amene le jeton de `arrayId` au centre du viewport, puis clique dessus.
+ * Brings `arrayId`'s token to the centre of the viewport, then clicks it.
  *
- * `focus()` sur un tableau centre la BANDE DE SA LIGNE — un tableau elide n'a
- * pas de rect a lui — donc le centre du canvas tombe sur le jeton. C'est ce qui
- * rend ce clic robuste sans coordonnee en dur : aucune capture d'ecran n'a servi
- * a le calibrer, et une carte qui changerait de hauteur ne le casserait pas.
+ * `focus()` on an array centres ITS ROW BAND — an elided array has no rect of
+ * its own — so the canvas centre lands on the token. That is what makes this
+ * click robust with no hardcoded coordinate: no screenshot was used to calibrate
+ * it, and a card changing height would not break it.
  *
- * L'abscisse n'a d'ailleurs pas d'importance pour le routage : `rowIndexAt` ne
- * lit que l'ordonnee. La centrer garantit seulement qu'on reste dans la carte.
+ * The x coordinate is in fact irrelevant to routing: `rowIndexAt` only reads the
+ * y. Centring it merely guarantees we stay within the card.
  */
 async function clickToken(page: Page, arrayId: string): Promise<void> {
   await page.evaluate((id) => (window as any).__graph.focus(id), arrayId)
@@ -51,9 +51,9 @@ test("le jeton d'un tableau deplie une carte par element, puis les replie", asyn
   const before = await visibleCount(page)
 
   await clickToken(page, TAGS)
-  // `tags` compte trois elements SCALAIRES : c'est le cas qui ne rendait qu'une
-  // seule carte avant cette refonte, les scalaires y etant des lignes du
-  // tableau et non des nœuds.
+  // `tags` holds three SCALAR items: this is the case that used to render a
+  // single card before this rework, scalars being rows of the array rather than
+  // nodes.
   expect(await visibleCount(page)).toBe(before + 3)
 
   await clickToken(page, TAGS)
@@ -64,34 +64,34 @@ test("le jeton d'un tableau deplie une carte par element, puis les replie", asyn
 test("un tableau elide ne compte pas comme une carte", async ({ page }) => {
   await gotoReady(page)
 
-  // Les quatre collections racine sont elidees et DEPLIEES d'entree : la racine
-  // plus les huit entites font neuf cartes. Les quatre nœuds tableau sont bien
-  // visibles — leurs lignes le sont — mais ils ne sont pas dessines, et
-  // `stats()` compte ce qui est a l'ecran.
+  // The four root collections are elided and EXPANDED from the start: the root
+  // plus the eight entities make nine cards. The four array nodes are indeed
+  // visible — their rows are — but they are not drawn, and `stats()` counts what
+  // is on screen.
   expect(await visibleCount(page)).toBe(9)
 
   const counts = await page.evaluate(() => {
     const g = (window as any).__graph
     return { logical: g.stats().logicalNodeCount }
   })
-  // `logicalNodeCount` ne bouge pas avec l'elision, lui : le nœud tableau
-  // existe toujours, et un element scalaire coute exactement ce que coutait la
-  // ligne qu'il remplace. 78 = les 76 d'origine + les deux lignes `customerId`
-  // ajoutees aux reviews pour l'exemple de reference portee par un value object.
+  // `logicalNodeCount`, for its part, does not move with elision: the array node
+  // still exists, and a scalar item costs exactly what the row it replaces cost.
+  // 78 = the original 76 + the two `customerId` rows added to the reviews for the
+  // value-object-borne reference example.
   expect(counts.logical).toBe(78)
 })
 
 /**
- * Une ENTITE imbriquee dans un tableau elide reste pleinement presente en vue
- * graphe, sans qu'aucun depliage soit necessaire.
+ * An ENTITY nested inside an elided array stays fully present in graph view,
+ * with no expansion needed.
  *
- * C'est l'invariant qui rend l'elision sans danger, et il n'a rien d'evident :
- * on pourrait croire qu'un tableau sans carte cache ce qu'il contient. Il n'en
- * cache rien, parce que la vue graphe ne trouve pas ses entites en descendant
- * l'arbre de containment — `entityIdsOf` balaie tous les nœuds — et parce
- * qu'une reference ne naît que d'une entite (`buildGraph` ignore les autres
- * nœuds). Un objet ordinaire imbrique ne peut donc pas cacher de reference, et
- * une entite imbriquee n'est jamais cachee.
+ * This is the invariant that makes elision safe, and it is not obvious at all:
+ * one could believe that an array without a card hides what it contains. It
+ * hides nothing, because the graph view does not find its entities by walking
+ * down the containment tree — `entityIdsOf` sweeps every node — and because a
+ * reference only ever originates from an entity (`buildGraph` ignores the other
+ * nodes). A nested plain object therefore cannot hide a reference, and a nested
+ * entity is never hidden.
  */
 const nestedData = {
   customers: [{ id: "c1", name: "Dubois" }],
@@ -129,7 +129,7 @@ test("une entite imbriquee dans un tableau elide garde sa reference en vue graph
     [nestedData, nestedConfig],
   )
 
-  // La reference existe bien sur l'entite imbriquee, et elle resout.
+  // The reference does exist on the nested entity, and it resolves.
   const line = await page.evaluate(() => (window as any).__graph.refEdges("/orders/0/lines/0"))
   expect(line).toHaveLength(1)
   expect(line[0].to).toBe("/customers/0")
@@ -139,8 +139,8 @@ test("une entite imbriquee dans un tableau elide garde sa reference en vue graph
     .poll(() => page.evaluate(() => (window as any).__graph.currentView()))
     .toBe("graph")
 
-  // Quatre entites : c1, o1, l1, l2. Les deux `Line` sont dans un tableau sans
-  // carte, et elles sont pourtant la — c'est tout l'enjeu de ce test.
+  // Four entities: c1, o1, l1, l2. The two `Line`s sit in an array with no card,
+  // and they are there all the same — that is the whole point of this test.
   expect(await visibleCount(page)).toBe(4)
   expect(errors).toEqual([])
 })

@@ -33,9 +33,9 @@ test("select event reaches the host detail panel", async ({ page }) => {
 })
 
 /**
- * La recherche et les bascules ne sont plus dans un bandeau permanent : elles
- * vivent derriere la loupe et le menu de la grappe d'icones flottante. Les
- * tests doivent donc deplier avant d'interagir, comme un utilisateur.
+ * Search and the toggles no longer live in a permanent bar: they sit behind the
+ * magnifier and the menu of the floating icon cluster. Tests must therefore
+ * unfold before interacting, just like a user.
  */
 async function openSearch(page: Page): Promise<void> {
   await page.click("#search-toggle")
@@ -59,7 +59,7 @@ test("search navigates and auto-expands to a hidden match", async ({ page }) => 
 test("expand/collapse via API changes visible node count", async ({ page }) => {
   await gotoReady(page)
   await page.evaluate(() => (window as any).__graph.expand("/orders/0"))
-  // pas d'assertion pixel : on vérifie l'absence d'erreur console
+  // no pixel assertion: we check that the console stays clean
   const errors: string[] = []
   page.on("pageerror", e => errors.push(String(e)))
   await page.evaluate(() => (window as any).__graph.collapse("/orders/0"))
@@ -79,7 +79,7 @@ test("le bouton de theme bascule clair et sombre", async ({ page }) => {
   await page.click("#toggle-theme")
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark")
   await expect(page.locator("#logo")).toHaveAttribute("src", "/defsquare-short-white-red.svg")
-  // Choisir une entree referme le menu : il faut le rouvrir pour revenir.
+  // Choosing an item closes the menu: it has to be reopened to switch back.
   await expect(page.locator("#menu")).toBeHidden()
   const errors: string[] = []
   page.on("pageerror", e => errors.push(String(e)))
@@ -104,18 +104,18 @@ test("le panneau de detail montre le type et permet de suivre une reference", as
 })
 
 test("setData sans config reutilise la config courante", async ({ page }) => {
-  // Ce chemin etait exerce par le bouton de bascule de jeu, jusqu'a ce que les
-  // deux jeux cessent de partager leur config (le petit declare
-  // `reviews[*].customerId`, que le grand ne peut pas satisfaire). Il n'a plus
-  // que ce test : si `setData(data)` cessait de reutiliser la config, le graphe
-  // reconstruit ici perdrait ses entites et ses references.
+  // This path used to be exercised by the dataset toggle, until the two datasets
+  // stopped sharing a config (the small one declares `reviews[*].customerId`,
+  // which the large one cannot satisfy). This test is all it has left: if
+  // `setData(data)` stopped reusing the config, the graph rebuilt here would
+  // lose its entities and its references.
   const errors: string[] = []
   page.on("pageerror", e => errors.push(String(e)))
 
   await gotoReady(page)
   const before = await page.evaluate(() => (window as any).__graph.stats())
-  // Un jeu minimal de la MEME forme que shopData : ce que ce test observe est
-  // que la config initiale (entites, references) s'applique encore a lui.
+  // A minimal dataset of the SAME shape as shopData: what this test observes is
+  // that the initial config (entities, references) still applies to it.
   await page.evaluate(async () => {
     const g = (window as any).__graph
     await g.setData({
@@ -126,8 +126,8 @@ test("setData sans config reutilise la config courante", async ({ page }) => {
     })
   })
   const after = await page.evaluate(() => (window as any).__graph.stats())
-  // La config a ete REUTILISEE : les entites existent toujours (sinon zero
-  // arete, zero entite, et un logicalNodeCount de squelette nu).
+  // The config was REUSED: the entities still exist (otherwise zero edges, zero
+  // entities, and a bare-skeleton logicalNodeCount).
   const refs = await page.evaluate(() => (window as any).__graph.refEdges("/orders/0"))
   expect(refs.length).toBe(2)
   expect(before.logicalNodeCount).toBeGreaterThan(after.logicalNodeCount)
@@ -156,9 +156,9 @@ test("le bouton de bascule declenche un vrai setView et son libelle suit", async
 
   await page.getByRole("button", { name: "Vue graphe" }).click()
 
-  // Le clic ne fait que declencher le gestionnaire async : attendre que le
-  // bouton ait bascule son libelle est ce qui garantit que setView() a fini,
-  // avant de lire currentView() (sinon la lecture court-circuite l'attente).
+  // The click only fires the async handler: waiting for the button to have
+  // swapped its label is what guarantees setView() has finished, before reading
+  // currentView() (otherwise the read short-circuits the wait).
   await expect(page.getByRole("button", { name: "Vue structure" })).toBeVisible()
 
   const view = await page.evaluate(() => (window as any).__graph.currentView())
@@ -170,16 +170,16 @@ test("les methodes publiques sont inoffensives apres destroy()", async ({ page }
   const errors: string[] = []
   page.on("pageerror", e => errors.push(String(e)))
 
-  // Le terme doit EXISTER dans le jeu par defaut, sinon `search: 0` apres
-  // destroy() passerait que destroy() neutralise la recherche ou non. On le
-  // prouve ici, avant de demonter. C'est precisement ce qui s'etait perdu : le
-  // test cherchait "Dupont", un nom du fixture d'origine, et le jeu e-commerce
-  // ne l'a jamais contenu — l'assertion tenait toute seule.
+  // The term must EXIST in the default dataset, otherwise `search: 0` after
+  // destroy() would pass whether or not destroy() neutralizes search. We prove
+  // it here, before tearing down. That is precisely what had been lost: the test
+  // searched for "Dupont", a name from the original fixture that the e-commerce
+  // dataset never contained — the assertion held on its own.
   const before = await page.evaluate(() => (window as any).__graph.search("Dubois").length)
   expect(before).toBeGreaterThan(0)
 
-  // Un hote qui demonte son composant ne peut pas annuler un callback deja
-  // planifie : chaque methode doit devenir un no-op sur, pas lever.
+  // A host tearing its component down cannot cancel an already scheduled
+  // callback: every method must become a safe no-op, not throw.
   const returned = await page.evaluate(() => {
     const g = (window as any).__graph
     g.destroy()

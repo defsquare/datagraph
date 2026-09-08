@@ -4,49 +4,47 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>data-graph — defsquare</title>
-    <!-- Les polices sont embarquées (`src/fonts.css`, importé par style.css) :
-         aucune requête sortante au lancement, et la typographie est la même
-         hors ligne. -->
+    <!-- Fonts are embedded (`src/fonts.css`, imported by style.css): no outgoing
+         request at startup, and the same typography offline. -->
     <link rel="stylesheet" href="/src/style.css" />
     <link rel="icon" type="image/svg+xml" href="/defsquare-short-dark-red.svg" />
   </head>
   <body>
-    <!-- Le canvas occupe tout le viewport ; tout le chrome ci-dessous flotte
-         au-dessus de lui en `position: fixed`.
+    <!-- The canvas fills the whole viewport; all the chrome below floats above
+         it in `position: fixed`.
 
-         Ce fichier ne porte plus que la MISE EN PLACE — les conteneurs
-         positionnés — et le contenu d'ASSEMBLAGE propre à la démo. Les
-         primitives (boutons d'icône, recherche, menu, pastille, lien de statut)
-         sont construites par les fabriques de @defsquare/data-graph-chrome,
-         seule source partagée avec le catalogue du design system : les écrire
-         ici en dur les rendrait inaccessibles à tout autre consommateur, ce qui
-         est exactement ce qui avait fini par en faire recopier une copie. -->
+         This file now carries only the LAYOUT — the positioned containers — and
+         the ASSEMBLY content specific to the demo. The primitives (icon buttons,
+         search, menu, badge, status link) are built by the factories of
+         @defsquare/data-graph-chrome, the single source shared with the design
+         system catalogue: writing them inline here would put them out of reach
+         of any other consumer, which is exactly what ended up getting a copy of
+         them made. -->
     <div id="app"></div>
 
-    <!-- Rempli par `chrome.ts` : grappe d'icônes, recherche dépliante, menu ⋮. -->
+    <!-- Filled by `chrome.ts`: icon cluster, unfolding search bar, ⋮ menu. -->
     <div id="toolbar"></div>
 
     <aside id="detail" hidden>
       <div class="detail-head">
         <h2>Détail du nœud</h2>
-        <!-- La croix (`#detail-close`) est ajoutée ici par `chrome.ts`. -->
+        <!-- The close button (`#detail-close`) is appended here by `chrome.ts`. -->
       </div>
       <p id="selection-empty">Sélectionnez un nœud pour voir son détail.</p>
-      <!-- La pastille de type (`#selection-type`) est insérée ici par
-           `detail-panel.ts`, juste après le message d'état vide. -->
+      <!-- The type badge (`#selection-type`) is inserted here by
+           `detail-panel.ts`, right after the empty-state message. -->
       <p id="selection-label" hidden></p>
       <p id="selection-path" hidden></p>
       <dl id="selection-rows"></dl>
     </aside>
 
-    <!-- Écran d'erreur de chargement (mode fichier) : la validation sémantique
-         de la config n'a lieu qu'ici, côté TS — Rust n'a vérifié que la syntaxe
-         JSON. Le message brut (anglais, ConfigError du cœur) est cité tel quel :
-         c'est la déclaration que l'auteur de la config doit relire.
+    <!-- Load error screen (file mode): semantic validation of the config only
+         happens here, on the TS side — Rust checked JSON syntax and nothing
+         else. The raw message (English, the core's ConfigError) is quoted
+         verbatim: it names the declaration the config author has to revisit.
 
-         `.float` est appliquée directement : c'est une classe qu'on POSE sur une
-         surface, pas un composant qu'on construit — la partager par la feuille
-         suffit. -->
+         `.float` is applied directly: it is a class you PUT on a surface, not a
+         component you build — sharing it through the stylesheet is enough. -->
     <div id="load-error" class="float" hidden>
       <h2>Impossible d'ouvrir le document</h2>
       <pre id="load-error-message"></pre>
@@ -55,7 +53,7 @@
     <div id="statusbar">
       <span><strong id="stat-nodes">0</strong> nœuds</span>
       <span><strong id="stat-visible">0</strong> visibles</span>
-      <!-- Le lien de diagnostics (`#stat-diagnostics`) est ajouté ici par
+      <!-- The diagnostics link (`#stat-diagnostics`) is appended here by
            `chrome.ts`. -->
     </div>
 

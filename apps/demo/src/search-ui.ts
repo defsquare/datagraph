@@ -1,19 +1,19 @@
 import type { DataGraph } from "@defsquare/data-graph";
 
-// Recherche : saisie débouncée, navigation Entrée/Maj+Entrée, boutons ↑/↓ et
-// compteur « N/total ». `graph.search`/`nextMatch`/`prevMatch` n'exposent pas
-// l'index courant, donc le compteur refait localement l'arithmétique du curseur
-// circulaire du renderer (voir `doStepMatch` dans create.ts) — les deux partent
-// synchronisés (remis à -1 par chaque `search()`) et ne bougent que par les
-// mêmes appels next/prev, ils ne peuvent donc pas diverger.
+// Search: debounced input, Enter/Shift+Enter navigation, ↑/↓ buttons and an
+// "N/total" counter. `graph.search`/`nextMatch`/`prevMatch` do not expose the
+// current index, so the counter redoes locally the arithmetic of the renderer's
+// circular cursor (see `doStepMatch` in create.ts) — both start in sync (reset
+// to -1 by every `search()`) and only move through the same next/prev calls, so
+// they cannot diverge.
 
 const SEARCH_DEBOUNCE_MS = 150;
 
 export interface SearchUi {
-  /** Remet champ, compteur et curseur à zéro — ce que `setData()` fait de son
-   * côté sur l'état de recherche du renderer. */
+  /** Resets input, counter and cursor — what `setData()` does on its side to the
+   * renderer's search state. */
   reset(): void;
-  /** Donne le focus au champ et sélectionne son contenu, au dépliage. */
+  /** Focuses the input and selects its content, on unfolding. */
   focus(): void;
 }
 
@@ -39,9 +39,9 @@ export function createSearchUi(graph: DataGraph): SearchUi {
     updateMatchCounter();
   }
 
-  /** Exécute immédiatement une recherche débouncée en attente — pour qu'Entrée
-   * (ou un bouton de navigation) juste après une frappe ne navigue pas sur des
-   * résultats périmés d'avant la dernière touche. */
+  /** Runs a pending debounced search right away — so that Enter (or a navigation
+   * button) pressed just after a keystroke does not navigate stale results from
+   * before the last key. */
   function flushPendingSearch(): void {
     if (debounceHandle === undefined) return;
     clearTimeout(debounceHandle);

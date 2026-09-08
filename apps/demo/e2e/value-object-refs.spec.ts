@@ -1,15 +1,15 @@
 import { test, expect, type Page } from "@playwright/test"
 
 /**
- * Une reference portee par un VALUE OBJECT : `CartLine` n'a pas d'identite —
- * ce n'est pas une entite, elle n'a ni `id` ni carte en vue graphe — et elle
- * porte pourtant le `productRef`. Le cas etait inexprimable : le declarer sur
- * `Cart` avec un chemin (`lines[*].productRef`) est ce qui le rend exprimable.
+ * A reference carried by a VALUE OBJECT: `CartLine` has no identity — it is not
+ * an entity, it has neither `id` nor card in graph view — and yet it carries
+ * `productRef`. The case used to be inexpressible: declaring it on `Cart` with a
+ * path (`lines[*].productRef`) is what makes it expressible.
  *
- * Ces cas vivent en e2e parce qu'ils traversent tout l'assemblage : resolution
- * a la construction, hissage du trace jusqu'a un ancetre visible, appartenance
- * d'agregat au niveau entite, et le panneau de detail de l'hote qui suit la
- * reference depuis la carte du value object.
+ * These cases live in e2e because they cross the whole assembly: resolution at
+ * build time, hoisting of the drawn line up to a visible ancestor, aggregate
+ * membership at the entity level, and the host's detail panel following the
+ * reference from the value object's card.
  */
 async function gotoReady(page: Page): Promise<void> {
   await page.goto("/")
@@ -46,8 +46,8 @@ async function loadCart(page: Page): Promise<void> {
 test("la reference d'un value object resout et porte son entite declarante", async ({ page }) => {
   await loadCart(page)
 
-  // `refEdges(from)` reste indexe par le nœud QUI PORTE la ligne : c'est ce qui
-  // laisse le panneau de detail poser son bouton sur la bonne ligne.
+  // `refEdges(from)` stays indexed by the node THAT CARRIES the row: that is
+  // what lets the detail panel put its button on the right row.
   const edges = await page.evaluate(() =>
     (window as any).__graph.refEdges("/carts/0/lines/0"),
   )
@@ -56,7 +56,7 @@ test("la reference d'un value object resout et porte son entite declarante", asy
   expect(edges[0].fromEntity).toBe("/carts/0")
   expect(edges[0].field).toBe("productRef")
 
-  // Aucun diagnostic : la declaration est satisfaite et la cible existe.
+  // No diagnostic: the declaration is satisfied and the target exists.
   const diagnostics = await page.evaluate(() => (window as any).__graph.diagnostics())
   expect(diagnostics).toEqual([])
 })
@@ -76,15 +76,15 @@ test("en vue graphe l'arete est tracee sans erreur et les compteurs restent cohe
     .poll(() => page.evaluate(() => (window as any).__graph.currentView()))
     .toBe("graph")
 
-  // Deux cartes, et deux seulement : la ligne de panier n'a pas d'identite,
-  // donc pas de carte. Son arete part de la carte du panier, hissee — c'est
-  // exactement ce que la vue graphe doit montrer.
+  // Two cards, and two only: the cart line has no identity, hence no card. Its
+  // edge starts from the cart's card, hoisted — exactly what the graph view has
+  // to show.
   expect(await visibleCount(page)).toBe(2)
 
-  // L'appartenance d'agregat n'a pas d'API publique : ce qu'on peut en observer
-  // ici, c'est que le calcul du niveau entite (agregats, packing radial, tirage
-  // inter-clusters) traverse une arete dont la source n'est PAS une entite sans
-  // rien casser. Le contenu de l'agregat, lui, est verifie en test de cœur.
+  // Aggregate membership has no public API: what can be observed here is that
+  // the entity-level computation (aggregates, radial packing, inter-cluster
+  // pull) crosses an edge whose source is NOT an entity without breaking
+  // anything. The aggregate's content is checked in a core test.
   expect(errors).toEqual([])
 })
 
@@ -97,8 +97,8 @@ test("en vue structure, deplier le jeton rend la carte de la ligne et son bouton
   await loadCart(page)
   const before = await visibleCount(page)
 
-  // Le tableau `lines` est elide : il vit comme une LIGNE a jeton sur la carte
-  // du panier, et c'est ce jeton qui deplie la carte de la ligne de panier.
+  // The `lines` array is elided: it lives as a token ROW on the cart's card, and
+  // it is that token which expands the cart line's card.
   await page.evaluate(() => (window as any).__graph.expand("/carts/0/lines"))
   await expect.poll(() => visibleCount(page)).toBe(before + 1)
 
@@ -108,9 +108,9 @@ test("en vue structure, deplier le jeton rend la carte de la ligne et son bouton
   expect(edges).toHaveLength(1)
   expect(edges[0].to).toBe("/products/0")
 
-  // Le panneau de detail de l'hote n'a rien de special a savoir : la ligne
-  // `productRef` est une ligne comme une autre du nœud selectionne, et son
-  // bouton suit la reference jusqu'au produit.
+  // The host's detail panel has nothing special to know: the `productRef` row is
+  // a row like any other of the selected node, and its button follows the
+  // reference through to the product.
   await page.evaluate(() => (window as any).__graph.select("/carts/0/lines/0"))
   await expect(page.locator("#selection-path")).toContainText("/carts/0/lines/0")
   await page.click("#selection-rows .ref-btn:not([disabled])")
@@ -120,11 +120,11 @@ test("en vue structure, deplier le jeton rend la carte de la ligne et son bouton
 })
 
 test("cliquer le trait d'une reference hissee navigue vers sa cible", async ({ page }) => {
-  // Le comportement est le meme que pour toute reference — un seul geste, un
-  // seul sens — mais il repose sur un maillon discret : la zone de clic de
-  // l'arete HISSE son depart comme le trace (`nearestCardRectFor`). Avant
-  // cette repose, le trait d'un value object cache etait visible mais inerte,
-  // et rien d'autre que ce test ne couvre le clic de bout en bout.
+  // The behavior is the same as for any reference — one gesture, one direction —
+  // but it rests on a discreet link: the edge's click zone HOISTS its start just
+  // as the drawn line does (`nearestCardRectFor`). Before that fix, the line of a
+  // hidden value object was visible but inert, and nothing other than this test
+  // covers the click end to end.
   const errors: string[] = []
   page.on("pageerror", e => errors.push(String(e)))
 
@@ -143,14 +143,14 @@ test("cliquer le trait d'une reference hissee navigue vers sa cible", async ({ p
   await page.evaluate(() => (window as any).__graph.focus("/customers/1"))
   await page.waitForTimeout(700)
 
-  // Aucune API publique n'expose la geometrie des aretes : on BALAIE une
-  // petite grille la ou la mise en page — deterministe — pose le trait
-  // p16 → c2, et on s'arrete au premier clic qui le touche. Les clics rates
-  // selectionnent au pire une carte ou une enveloppe, sans bouger la camera.
+  // No public API exposes edge geometry: we SWEEP a small grid where the layout
+  // — deterministic — puts the p16 → c2 line, and stop at the first click that
+  // touches it. Missed clicks select at worst a card or an envelope, without
+  // moving the camera.
   //
-  // La fenetre est recalibree depuis que le canvas prend tout le viewport
-  // (plus de bandeau ni d'aside qui le retrecissaient) : `focus` centre c2 sur
-  // un canvas 1280x800, donc le trait est repousse vers la droite et le bas.
+  // The window has been recalibrated since the canvas took the whole viewport
+  // (no more top bar or aside shrinking it): `focus` centres c2 on a 1280x800
+  // canvas, so the line is pushed towards the right and the bottom.
   const box = (await page.locator("canvas").boundingBox())!
   let followed: any = null
   outer: for (let y = 220; y <= 350; y += 7) {
@@ -161,14 +161,14 @@ test("cliquer le trait d'une reference hissee navigue vers sa cible", async ({ p
     }
   }
 
-  // L'evenement porte l'arete COMPLETE : l'hote sait de quelle ligne du
-  // tableau elle vient, pas seulement ou elle va.
+  // The event carries the COMPLETE edge: the host knows which row of the array
+  // it comes from, not merely where it goes.
   expect(followed).not.toBeNull()
   expect(followed.fromEntity).toBe("/products/1")
   expect(followed.from).toMatch(/^\/products\/1\/reviews\//)
   expect(followed.field).toBe("customerId")
 
-  // Et le clic a navigue : la cible est selectionnee.
+  // And the click navigated: the target is selected.
   await expect(page.locator("#selection-label")).toContainText("Customer #c")
   expect(errors).toEqual([])
 })

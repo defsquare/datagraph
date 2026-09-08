@@ -1,17 +1,17 @@
-/* Polices embarquées — aucune requête vers fonts.googleapis.com / fonts.gstatic.com.
-   Le binaire `datagraph` lit des fichiers locaux : il ne doit pas dépendre du
-   réseau pour s'afficher correctement, et la CSP du shell Tauri interdit
-   désormais tout hôte externe (`font-src 'self'`).
+/* Embedded fonts — no request to fonts.googleapis.com / fonts.gstatic.com.
+   The `datagraph` binary reads local files: it must not depend on the network to
+   display correctly, and the Tauri shell's CSP now forbids every external host
+   (`font-src 'self'`).
 
-   Fichiers repris tels quels de Google Fonts (woff2, sous-ensembles `latin` et
-   `latin-ext`), sous licence OFL — voir `public/fonts/OFL.txt`. Les NOMS de
-   familles sont ceux que `theme.ts` et `style.css` référencent : ils ne
-   doivent pas changer, le renderer mesure les polices par ce nom.
+   Files taken verbatim from Google Fonts (woff2, `latin` and `latin-ext`
+   subsets), under the OFL licence — see `public/fonts/OFL.txt`. The family NAMES
+   are the ones `theme.ts` and `style.css` reference: they must not change, the
+   renderer measures fonts by that name.
 
-   `unicode-range` est ce qui rend `latin-ext` gratuit : le navigateur ne
-   télécharge un fichier que si un glyphe de sa plage est réellement demandé.
-   EB Garamond et Fira Code sont livrés par Google en fichier VARIABLE unique
-   couvrant les graisses demandées, d'où le `font-weight` en plage. */
+   `unicode-range` is what makes `latin-ext` free: the browser only downloads a
+   file if a glyph in its range is actually requested. Google ships EB Garamond
+   and Fira Code as a single VARIABLE file covering the requested weights, hence
+   the ranged `font-weight`. */
 
 @font-face {
   font-family: "EB Garamond";

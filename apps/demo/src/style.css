@@ -1,21 +1,20 @@
-/* Les @font-face doivent précéder toute autre règle : `@import` n'est valide
-   qu'en tête de feuille. */
+/* The @font-face rules must come before any other rule: `@import` is only valid
+   at the top of a stylesheet. */
 @import "./fonts.css";
 @import "./tokens.css";
 @import "@defsquare/data-graph-chrome/chrome.css";
 
-/* Shell defsquare pour la démo data-graph.
-   Les tokens (`--ds-*`, `--float-*`, échelles, polices) sont générés depuis
-   @defsquare/data-graph-tokens dans ./tokens.css — ne pas les redéclarer ici.
-   Les PRIMITIVES du chrome (surface flottante, bouton d'icône, recherche, menu,
-   pastille, lien de statut) viennent de @defsquare/data-graph-chrome, seule
-   source partagée avec le catalogue du design system — ne pas les redéclarer
-   ici non plus. Cette feuille ne garde que la MISE EN PLACE et les ASSEMBLAGES
-   propres à la démo.
-   Le canvas n'est plus « le héros au milieu du chrome » : il EST la page, et
-   tout le reste (grappe d'icônes, recherche, menu, détail, état, logo) flotte
-   au-dessus en `position: fixed`, sur des surfaces translucides qui laissent
-   voir le graphe passer dessous. */
+/* defsquare shell for the data-graph demo.
+   The tokens (`--ds-*`, `--float-*`, scales, fonts) are generated from
+   @defsquare/data-graph-tokens into ./tokens.css — do not redeclare them here.
+   The chrome PRIMITIVES (floating surface, icon button, search, menu, badge,
+   status link) come from @defsquare/data-graph-chrome, the single source shared
+   with the design system catalogue — do not redeclare those here either. This
+   stylesheet keeps only the PLACEMENT and the ASSEMBLIES specific to the demo.
+   The canvas is no longer "the hero in the middle of the chrome": it IS the
+   page, and everything else (icon cluster, search, menu, detail, status, logo)
+   floats above it in `position: fixed`, on translucent surfaces that let the
+   graph show through. */
 
 * { box-sizing: border-box; }
 
@@ -37,18 +36,17 @@ html, body {
   background: var(--ds-canvas);
 }
 
-/* ---------- Socle commun des éléments flottants ---------- */
+/* ---------- Common base for the floating elements ---------- */
 
-/* Le panneau de détail reste dans le DOM, masqué par `hidden`. Une règle
-   d'auteur qui pose `display` l'emporte sur le `[hidden] { display: none }` de
-   la feuille UA, quelle que soit sa spécificité : il faut donc le redire ici.
-   (Les panneaux du chrome — recherche, menu — le redisent de leur côté, dans
-   `chrome.css`.) */
+/* The detail panel stays in the DOM, hidden through `hidden`. An author rule
+   that sets `display` beats the UA stylesheet's `[hidden] { display: none }`
+   whatever its specificity: it therefore has to be restated here. (The chrome
+   panels — search, menu — restate it on their side, in `chrome.css`.) */
 #detail[hidden] {
   display: none;
 }
 
-/* ---------- Grappe d'icônes (haut gauche) ---------- */
+/* ---------- Icon cluster (top left) ---------- */
 
 #toolbar {
   position: fixed;
@@ -60,22 +58,22 @@ html, body {
   gap: var(--space-2);
 }
 
-/* L'ancrage du menu ⋮ : sous son bouton, dans la barre d'outils. C'est de la
-   mise en place — le panneau lui-même (largeur, marge, ouverture) vient de
-   `chrome.css`, qui n'a pas à savoir où la démo le pose. */
+/* Anchoring of the ⋮ menu: under its button, inside the toolbar. This is
+   placement — the panel itself (width, padding, opening) comes from
+   `chrome.css`, which has no business knowing where the demo puts it. */
 #menu {
   position: absolute;
   top: 44px;
   left: 0;
 }
 
-/* L'icône affichée est celle de la vue CIBLE, portée par `data-target`. Les deux
-   icônes sont posées dans le bouton par `createIconButton`, qui les classe ;
-   laquelle se voit est une décision de la démo, donc cette règle reste ici. */
+/* The icon shown is the TARGET view's, carried by `data-target`. Both icons are
+   put in the button by `createIconButton`, which classes them; which one is
+   visible is a demo decision, so this rule stays here. */
 #toggle-view[data-target="graph"] .icon-structure,
 #toggle-view[data-target="structure"] .icon-graph { display: none; }
 
-/* ---------- Panneau de détail flottant (droite) ---------- */
+/* ---------- Floating detail panel (right) ---------- */
 
 #detail {
   position: fixed;
@@ -163,10 +161,10 @@ html, body {
   word-break: break-all;
 }
 
-/* ---------- État (bas gauche) ---------- */
+/* ---------- Status (bottom left) ---------- */
 
-/* Texte nu sur le canvas : le halo de la couleur de fond le décolle d'une
-   carte qui passerait dessous, sans réintroduire de bandeau. */
+/* Bare text over the canvas: a halo in the background color lifts it off any
+   card passing underneath, without reintroducing a bar. */
 #statusbar {
   position: fixed;
   left: 18px;
@@ -188,9 +186,9 @@ html, body {
   color: var(--ds-ink);
 }
 
-/* ---------- Logo (bas droite) ---------- */
+/* ---------- Logo (bottom right) ---------- */
 
-/* Décoratif : inerte au pointeur pour ne pas manger les gestes du canvas. */
+/* Decorative: inert to the pointer so it does not eat the canvas gestures. */
 #logo {
   position: fixed;
   right: 18px;
@@ -208,7 +206,7 @@ html, body {
   .findbar, .menu, #detail { animation: none; }
 }
 
-/* ---------- Écran d'erreur de chargement (mode fichier) ---------- */
+/* ---------- Load error screen (file mode) ---------- */
 
 #load-error {
   position: fixed;

@@ -15,35 +15,33 @@ declare global {
   }
 }
 
-/** Le chrome du viewer : surfaces flottantes (recherche dépliable, menu ⋮),
- * barre d'état, thème et bascule de vue. Tout ce qui est ici existe quel que
- * soit le mode de lancement — l'outillage propre à la démo vit dans
- * `demo-mode.ts`. */
+/** The viewer chrome: floating surfaces (unfolding search bar, ⋮ menu), status
+ * bar, theme and view toggle. Everything here exists whatever the launch mode —
+ * the demo-only tooling lives in `demo-mode.ts`. */
 export interface Chrome {
-  /** Recalcule les compteurs et le lien de diagnostics de la barre d'état. */
+  /** Recomputes the status bar counters and diagnostics link. */
   updateStatus(): void;
   applyTheme(): void;
-  /** Aligne le bouton de bascule sur la vue RÉELLEMENT active. */
+  /** Aligns the toggle button on the view that is ACTUALLY active. */
   syncViewButton(): void;
 }
 
 export interface ChromeHooks {
-  /** Appelé quand la barre de recherche se déplie : le chrome ne connaît pas le
-   * champ, c'est `search-ui.ts` qui lui donne le focus. */
+  /** Called when the search bar unfolds: the chrome does not know the input,
+   * `search-ui.ts` is what gives it focus. */
   onSearchOpen(): void;
 }
 
 export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
-  // --- Construction du chrome.
+  // --- Building the chrome.
   //
-  // Les primitives viennent des fabriques du paquet de chrome ; ce fichier
-  // décide seulement QUELS boutons existent, dans quel ordre, et ce qu'ils
-  // font — c'est-à-dire l'assemblage, qui est un choix produit et reste ici.
+  // The primitives come from the chrome package's factories; this file only
+  // decides WHICH buttons exist, in what order, and what they do — that is, the
+  // assembly, which is a product decision and stays here.
   //
-  // Les ids sont posés explicitement : le câblage ci-dessous s'en passe (il
-  // tient les références directement), mais les tests de bout en bout, eux,
-  // désignent ces éléments par id. Les laisser tomber casserait la suite e2e
-  // sans que rien d'autre ne le signale.
+  // The ids are set explicitly: the wiring below does without them (it holds the
+  // references directly), but the end-to-end tests designate these elements by
+  // id. Dropping them would break the e2e suite with nothing else reporting it.
   const searchToggleBtn = createIconButton({
     id: "search-toggle",
     icon: "search",
@@ -52,13 +50,13 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
     expanded: false,
   });
   const fitBtn = createIconButton({ id: "fit", icon: "fit", label: "Ajuster à la vue" });
-  // « Ranger » : une remise en page globale à la demande, qui répare la dérive
-  // accumulée par les dépliages et révélations successifs. Sans effet en vue
-  // graphe, par contrat de `tidy()`.
+  // "Ranger" (tidy): a global re-layout on demand, which repairs the drift
+  // accumulated by successive expansions and reveals. No effect in graph view,
+  // per `tidy()`'s contract.
   const tidyBtn = createIconButton({ id: "tidy", icon: "tidy", label: "Ranger" });
-  // `data-target` porte la vue que le clic ACTIVERAIT : l'icône affichée est
-  // donc celle de la vue cible. `syncViewButton()` la pose depuis
-  // `graph.currentView()` réel, jamais depuis la demande.
+  // `data-target` carries the view a click WOULD activate: the icon shown is
+  // therefore the target view's. `syncViewButton()` sets it from the real
+  // `graph.currentView()`, never from what was requested.
   const toggleViewBtn = createIconButton({
     id: "toggle-view",
     icon: ["graph", "structure"],
@@ -83,8 +81,8 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
   });
   const findbarEl = findbar.root;
 
-  // Les entrées du menu n'ont que du texte : leur `textContent` est réécrit pour
-  // refléter l'état courant, ce qu'une icône enfant ne survivrait pas.
+  // Menu items carry text only: their `textContent` is rewritten to reflect the
+  // current state, which a child icon would not survive.
   const datasetItem = createMenuItem({
     id: "toggle-dataset",
     label: "Jeu de données étendu (4000)",
@@ -118,10 +116,10 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
       }),
     );
 
-  // --- Chrome flottant : dépliage de la recherche, menu ⋮.
-  // Aucune de ces bascules ne touche à l'état du graphe — la recherche garde sa
-  // requête et ses résultats quand on la replie, la sélection survit à la
-  // fermeture du panneau. Ce n'est que de l'affichage.
+  // --- Floating chrome: search unfolding, ⋮ menu.
+  // None of these toggles touches graph state — the search keeps its query and
+  // its results when collapsed, the selection survives closing the panel. This
+  // is display only.
 
   function setExpanded(panel: HTMLElement | null, trigger: HTMLElement | null, open: boolean): void {
     if (open) panel?.removeAttribute("hidden");
@@ -135,7 +133,7 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
 
   function openSearch(): void {
     setExpanded(findbarEl, searchToggleBtn, true);
-    // Déplier sans donner le focus obligerait à un second clic pour taper.
+    // Unfolding without giving focus would force a second click before typing.
     hooks.onSearchOpen();
   }
 
@@ -156,15 +154,15 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
     setExpanded(menuEl, menuToggleBtn, !isOpen(menuEl));
   });
 
-  // Une entrée choisie referme le menu : c'est l'attente sur un menu déroulant,
-  // et le libellé mis à jour par le gestionnaire de l'entrée reste correct pour
-  // la prochaine ouverture.
+  // Choosing an item closes the menu: that is what a dropdown is expected to do,
+  // and the label updated by the item's handler stays correct for the next
+  // opening.
   menuEl?.addEventListener("click", (event) => {
     if ((event.target as HTMLElement | null)?.closest(".menu-item")) closeMenu();
   });
 
-  // Capture : un clic sur le canvas est consommé par Pixi, il ne remonterait pas
-  // jusqu'ici en phase de bouillonnement.
+  // Capture phase: a click on the canvas is consumed by Pixi, it would never
+  // reach here while bubbling.
   document.addEventListener(
     "pointerdown",
     (event) => {
@@ -178,22 +176,22 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
 
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
-    // Un seul niveau se ferme par Échap, le plus récent d'abord.
+    // Escape closes one level at a time, the most recent one first.
     if (isOpen(menuEl)) {
       closeMenu();
       menuToggleBtn?.focus();
     } else if (isOpen(findbarEl)) {
-      // Échap dans un `input[type=search]` en vide nativement la valeur, SANS
-      // émettre d'`input` : la requête du graphe et le compteur resteraient sur
-      // l'ancien terme pendant que le champ, lui, paraîtrait vierge. Replier ne
-      // doit rien annuler, donc on retient ce vidage.
+      // Escape inside an `input[type=search]` natively clears its value WITHOUT
+      // emitting an `input` event: the graph query and the counter would stay on
+      // the old term while the field looked empty. Collapsing must cancel
+      // nothing, so that clearing is held back.
       event.preventDefault();
       closeSearch();
       searchToggleBtn?.focus();
     }
   });
 
-  // --- Barre d'état : compteurs et diagnostics.
+  // --- Status bar: counters and diagnostics.
   const statNodesEl = document.getElementById("stat-nodes");
   const statVisibleEl = document.getElementById("stat-visible");
   const statDiagEl = createStatusLink({ id: "stat-diagnostics" });
@@ -217,7 +215,7 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
     for (const d of graph.diagnostics()) console.warn(`[data-graph] ${d.code} @ ${d.path}: ${d.message}`);
   });
 
-  // --- Thème : la lib et le shell DOM basculent ensemble.
+  // --- Theme: the library and the DOM shell switch together.
   const logoEl = document.getElementById("logo") as HTMLImageElement | null;
   let dark = false;
 
@@ -226,7 +224,7 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
     if (logoEl) {
       logoEl.src = dark ? "/defsquare-short-white-red.svg" : "/defsquare-short-dark-red.svg";
     }
-    // L'entrée de menu nomme le thème qu'elle ACTIVERAIT, pas celui en place.
+    // The menu item names the theme it WOULD activate, not the current one.
     themeBtn.textContent = dark ? "Thème clair" : "Thème sombre";
     graph.setTheme(dark ? defsquareDark : defsquareLight);
     window.__theme = dark ? "dark" : "light";
@@ -237,11 +235,11 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
     applyTheme();
   });
 
-  // --- Bascule Structure / Graphe.
+  // --- Structure / Graph toggle.
 
-  /** Aligne icône et libellé accessible du bouton sur la vue que le prochain clic
-   * activerait. Lit la vue RÉELLEMENT active, jamais celle qu'on a demandée
-   * (voir le commentaire du gestionnaire). */
+  /** Aligns the button's icon and accessible label on the view the next click
+   * would activate. Reads the view that is ACTUALLY active, never the one that
+   * was requested (see the handler's comment). */
   function syncViewButton(): void {
     const target = graph.currentView() === "graph" ? "structure" : "graph";
     const label = target === "graph" ? "Vue graphe" : "Vue structure";
@@ -251,19 +249,18 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
   }
 
   /**
-   * Marque le bouton de bascule comme OCCUPÉ pendant le calcul de la vue.
+   * Marks the toggle button as BUSY while the view is being computed.
    *
-   * Il y a désormais quelque chose à signaler : la mise en page de la vue graphe
-   * est partie dans un Web Worker, donc la page reste vivante pendant les
-   * secondes que dure le calcul sur un gros jeu — on peut continuer à déplacer
-   * et zoomer la vue structure. C'est exactement ce qui rend l'indication
-   * nécessaire : sans elle, une interface parfaitement réactive qui ne bascule
-   * pas se lit comme un clic perdu.
+   * There is now something to signal: the graph view layout has moved into a Web
+   * Worker, so the page stays alive during the seconds the computation takes on
+   * a large dataset — the structure view can still be panned and zoomed. That is
+   * exactly what makes the indication necessary: without it, a perfectly
+   * responsive interface that does not switch reads as a lost click.
    *
-   * `aria-busy` porte l'information et la classe porte le style : l'attribut est
-   * ce que lit une technologie d'assistance, et il sert de sélecteur CSS, donc
-   * les deux ne peuvent pas se désynchroniser. `disabled` reste posé par
-   * ailleurs — deux bascules simultanées n'auraient aucun sens.
+   * `aria-busy` carries the information and the class carries the style: the
+   * attribute is what assistive technology reads, and it doubles as the CSS
+   * selector, so the two cannot fall out of sync. `disabled` is still set
+   * elsewhere — two simultaneous toggles would make no sense.
    */
   function setViewBusy(busy: boolean): void {
     if (busy) toggleViewBtn.setAttribute("aria-busy", "true");
@@ -273,23 +270,24 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
   toggleViewBtn.addEventListener("click", () => {
     void (async () => {
       toggleViewBtn.disabled = true;
-      // Dans le `try`/`finally` avec `disabled` : les deux se lèvent dans TOUS
-      // les chemins — bascule réussie, échec avalé par `setView`, ou abandon
-      // parce qu'un `setData` concurrent a pris la main.
+      // Inside the `try`/`finally` alongside `disabled`: both are lifted on ALL
+      // paths — successful toggle, failure swallowed by `setView`, or bail-out
+      // because a concurrent `setData` took over.
       setViewBusy(true);
       try {
         const next = graph.currentView() === "graph" ? "structure" : "graph";
         await graph.setView(next);
-        // L'icône et le libellé sont dérivés de la vue RÉELLEMENT active, jamais de celle
-        // qu'on a demandée : `setView` avale deux échecs sans rejeter — l'import
-        // dynamique du moteur de la vue graphe qui échoue (réseau, chunk absent)
-        // et le cas où un `setData` concurrent a déjà pris la main. Dans les deux
-        // cas la promesse se résout alors que la vue n'a pas bougé, et une icône
-        // posée depuis `next` annoncerait une vue qui n'est pas à l'écran.
+        // Icon and label are derived from the view that is ACTUALLY active, never
+        // from the one requested: `setView` swallows two failures without
+        // rejecting — the dynamic import of the graph view engine failing
+        // (network, missing chunk), and the case where a concurrent `setData`
+        // already took over. In both the promise resolves while the view has not
+        // moved, and an icon set from `next` would announce a view that is not on
+        // screen.
         syncViewButton();
-        // La bascule change le nombre de nœuds affichés (l'arbre entier d'un
-        // côté, les seules entités de l'autre) : sans ce rafraîchissement, le
-        // compteur de la barre d'état reste sur la valeur de l'autre vue.
+        // Toggling changes the number of nodes displayed (the whole tree on one
+        // side, entities only on the other): without this refresh the status bar
+        // counter would stay on the other view's value.
         updateStatus();
       } finally {
         setViewBusy(false);
@@ -300,9 +298,9 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
 
   fitBtn.addEventListener("click", () => graph.fit());
 
-  // `tidy()` est asynchrone (il refait la mise en page complète) mais rien ici
-  // n'a à attendre son résultat : la promesse est explicitement jetée, et
-  // l'instance se garde elle-même contre les opérations concurrentes.
+  // `tidy()` is async (it redoes the full layout) but nothing here has to await
+  // its result: the promise is explicitly discarded, and the instance guards
+  // itself against concurrent operations.
   tidyBtn.addEventListener("click", () => void graph.tidy());
 
   return { updateStatus, applyTheme, syncViewButton };

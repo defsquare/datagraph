@@ -2,46 +2,46 @@ import { test, expect, type Page } from "@playwright/test"
 import { readFileSync } from "node:fs"
 
 /**
- * Le MODE FICHIER — `datagraph <data.json> [-c <config.json>]` — n'avait
- * jusqu'ici aucune preuve côté TypeScript : `cargo test` couvre le parseur argv
- * et la lecture disque, mais le chemin Rust → `invoke("launch_payload")` →
- * `resolveLaunch` → `createDataGraph` s'arrêtait à la frontière du binaire.
+ * FILE MODE — `datagraph <data.json> [-c <config.json>]` — had until now no
+ * proof on the TypeScript side: `cargo test` covers the argv parser and the disk
+ * reads, but the Rust → `invoke("launch_payload")` → `resolveLaunch` →
+ * `createDataGraph` path stopped at the binary's edge.
  *
- * Deux choses se jouent donc ici.
+ * Two things are therefore at stake here.
  *
- * 1. LE SEAM TAURI. `src/launch.ts` ne teste que `"__TAURI_INTERNALS__" in
- *    window` puis appelle `invoke` de `@tauri-apps/api/core`, dont toute
- *    l'implémentation tient en `window.__TAURI_INTERNALS__.invoke(cmd, args,
- *    options)` (vérifié dans le paquet installé, `core.js` v2.11.1). Poser cet
- *    objet AVANT le chargement des modules — d'où `addInitScript` — suffit
- *    donc à faire croire à la page qu'elle tourne dans la WebView. Rien
- *    d'autre du bundle n'atteint les internals : `core.js` ne les touche qu'à
- *    l'appel, pas au chargement.
+ * 1. THE TAURI SEAM. `src/launch.ts` only tests `"__TAURI_INTERNALS__" in
+ *    window`, then calls `invoke` from `@tauri-apps/api/core`, whose entire
+ *    implementation amounts to `window.__TAURI_INTERNALS__.invoke(cmd, args,
+ *    options)` (verified in the installed package, `core.js` v2.11.1). Setting
+ *    that object BEFORE the modules load — hence `addInitScript` — is therefore
+ *    enough to convince the page it runs inside the WebView. Nothing else in the
+ *    bundle reaches the internals: `core.js` only touches them at call time, not
+ *    at load time.
  *
- * 2. LES FIXTURES COMMITTÉES. Le payload injecté est le CONTENU RÉEL de
- *    `fixtures/shop.json` et `fixtures/shop.config.json`, lu ici sur le disque
- *    et non recopié. C'est ce qui les fait enfin travailler : `cargo test`
- *    prouve qu'elles sont du JSON, ce fichier prouve que leur config est
- *    valide pour le cœur et que leurs `ids`/`refs`/`groups` décrivent bien la
- *    donnée. Si les fixtures dérivent du contrat, ces tests cassent — et c'est
- *    le seul endroit où cela peut se voir.
+ * 2. THE COMMITTED FIXTURES. The injected payload is the REAL CONTENT of
+ *    `fixtures/shop.json` and `fixtures/shop.config.json`, read here from disk
+ *    rather than copied. That is what finally puts them to work: `cargo test`
+ *    proves they are JSON, this file proves their config is valid for the core
+ *    and that their `ids`/`refs`/`groups` actually describe the data. Should the
+ *    fixtures drift from the contract, these tests break — and this is the only
+ *    place where that can show.
  */
 
 const shopData = readFileSync(new URL("../fixtures/shop.json", import.meta.url), "utf8")
 const shopConfig = readFileSync(new URL("../fixtures/shop.config.json", import.meta.url), "utf8")
 
-/** Miroir du `LaunchPayload` Rust : les deux fichiers en chaînes BRUTES, le
- * parsing restant au frontend. */
+/** Mirror of the Rust `LaunchPayload`: both files as RAW strings, parsing left
+ * to the frontend. */
 interface RawPayload {
   data: string
   config: string | null
 }
 
 /**
- * Installe le faux `__TAURI_INTERNALS__` puis charge la page. Le shim ne
- * répond qu'à `launch_payload` — toute autre commande devient une erreur
- * bruyante plutôt qu'un `undefined` silencieux qui ferait passer un test pour
- * de mauvaises raisons.
+ * Installs the fake `__TAURI_INTERNALS__` then loads the page. The shim answers
+ * `launch_payload` and nothing else — any other command becomes a loud error
+ * rather than a silent `undefined` that would make a test pass for the wrong
+ * reasons.
  */
 async function gotoFileMode(page: Page, payload: RawPayload): Promise<void> {
   await page.addInitScript((p: RawPayload) => {
@@ -57,8 +57,8 @@ async function gotoFileMode(page: Page, payload: RawPayload): Promise<void> {
   await page.goto("/")
 }
 
-/** Même réveil que les autres specs : `window.__graph` est posé
- * synchroniquement bien avant que le graphe soit construit et mis en page. */
+/** Same wake-up as the other specs: `window.__graph` is set synchronously, long
+ * before the graph is built and laid out. */
 async function waitReady(page: Page): Promise<void> {
   await page.waitForFunction(() => (window as any).__graph !== undefined)
   await page.evaluate(() => (window as any).__graph.ready)
@@ -71,20 +71,20 @@ test("mode fichier : la fixture et sa config se chargent, le chrome de démo dis
   await waitReady(page)
 
   await expect(page.locator("canvas")).toBeVisible()
-  // Le bouton « jeu de données » n'a plus de sens quand l'utilisateur a fourni
-  // le sien : `main.ts` le retire du DOM, pas seulement de la vue.
+  // The dataset button makes no sense once the user supplied their own data:
+  // `main.ts` removes it from the DOM, not merely from view.
   await expect(page.locator("#toggle-dataset")).toHaveCount(0)
-  // La config déclare des `ids`, donc la vue graphe reste offerte.
+  // The config declares `ids`, so the graph view stays on offer.
   await expect(page.locator("#toggle-view")).toHaveCount(1)
 
-  // Les entités de la fixture sont bien là, avec le type et l'id que la config
-  // en déduit : c'est `ids` qui est prouvé ici, pas seulement le chargement.
+  // The fixture's entities are indeed there, with the type and id the config
+  // derives: what is proven here is `ids`, not merely that loading worked.
   await page.evaluate(() => (window as any).__graph.select("/customers/0"))
   await expect(page.locator("#selection-label")).toContainText("Customer #c1")
   await page.evaluate(() => (window as any).__graph.select("/orders/1"))
   await expect(page.locator("#selection-label")).toContainText("Order #o2")
 
-  // Et `refs` : la commande o1 pointe vers le client c1 par `customerId`.
+  // And `refs`: order o1 points at customer c1 through `customerId`.
   const refs = await page.evaluate(() =>
     (window as any).__graph
       .refEdges("/orders/0")
@@ -92,8 +92,8 @@ test("mode fichier : la fixture et sa config se chargent, le chrome de démo dis
   )
   expect(refs).toEqual([{ field: "customerId", to: "/customers/0", dangling: false }])
 
-  // Une fixture qui dériverait du contrat laisserait des diagnostics derrière
-  // elle (référence pendante, id manquant) : ils doivent rester vides.
+  // A fixture drifting from the contract would leave diagnostics behind
+  // (dangling reference, missing id): they must stay empty.
   const diagnostics = await page.evaluate(() => (window as any).__graph.diagnostics())
   expect(diagnostics).toEqual([])
 })
@@ -104,26 +104,26 @@ test("mode fichier sans config : vue structure seule", async ({ page }) => {
 
   await expect(page.locator("canvas")).toBeVisible()
   await expect(page.locator("#toggle-dataset")).toHaveCount(0)
-  // Sans `ids`, aucune entité, donc aucun agrégat : la vue graphe n'aurait rien
-  // à montrer et `main.ts` retire son bouton.
+  // Without `ids`, no entity, hence no aggregate: the graph view would have
+  // nothing to show and `main.ts` removes its button.
   await expect(page.locator("#toggle-view")).toHaveCount(0)
   expect(await page.evaluate(() => (window as any).__graph.currentView())).toBe("structure")
 
-  // Le document est tout de même exploré, en objets et tableaux nus.
+  // The document is explored all the same, as bare objects and arrays.
   expect(await page.evaluate(() => (window as any).__graph.stats().logicalNodeCount)).toBeGreaterThan(
     0,
   )
 })
 
 test("mode fichier : une config sémantiquement invalide s'affiche à l'écran", async ({ page }) => {
-  // `groups` ne peut nommer que des `ids` déclarés — la faute est SÉMANTIQUE :
-  // Rust la laisse passer (c'est du JSON valide), seul `validateConfig` la voit.
+  // `groups` may only name declared `ids` — the fault is SEMANTIC: Rust lets it
+  // through (it is valid JSON), only `validateConfig` sees it.
   const broken = JSON.stringify({ ...JSON.parse(shopConfig), groups: ["Ghost"] })
   await gotoFileMode(page, { data: shopData, config: broken })
 
-  // `createDataGraph` échoue de façon synchrone, donc `main.ts` relance après
-  // avoir peint l'écran d'erreur : `window.__graph` ne sera jamais posé et
-  // attendre `ready` bloquerait. C'est l'écran qu'on attend.
+  // `createDataGraph` fails synchronously, so `main.ts` rethrows after painting
+  // the error screen: `window.__graph` will never be set and awaiting `ready`
+  // would hang. The screen is what we wait for.
   await expect(page.locator("#load-error")).toBeVisible()
   await expect(page.locator("#load-error-message")).toContainText("Ghost")
 })

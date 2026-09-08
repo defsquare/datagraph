@@ -1,31 +1,30 @@
 import { test, expect, type Page } from "@playwright/test"
 
 /**
- * LA PREUVE QUE LE WORKER DE MISE EN PAGE EST RÉELLEMENT EXERCÉ.
+ * THE PROOF THAT THE LAYOUT WORKER IS REALLY EXERCISED.
  *
- * Les tests du renderer couvrent le PROTOCOLE avec un faux worker : appariement
- * des générations, repli, destruction. Ce qu'ils ne peuvent pas couvrir, et qui
- * est justement la partie fragile, c'est la RÉSOLUTION D'URL — que
- * `graphLayoutWorkerUrl` désigne un fichier qu'un vrai `new Worker(url, { type:
- * "module" })` sait charger. Cette résolution passe par Vite et diffère selon le
- * mode ; les e2e tournent en `vite dev`, donc sur la SOURCE aliasée du worker
- * (voir le pavé du `vite.config.ts`). C'est le mode le plus exigeant des quatre
- * — le script servi est transformé à la volée et garde ses imports — et c'est
- * celui qui casserait en premier.
+ * The renderer tests cover the PROTOCOL with a fake worker: generation matching,
+ * fallback, teardown. What they cannot cover, and what is precisely the fragile
+ * part, is URL RESOLUTION — that `graphLayoutWorkerUrl` designates a file a real
+ * `new Worker(url, { type: "module" })` knows how to load. That resolution goes
+ * through Vite and differs per mode; the e2e run in `vite dev`, hence on the
+ * worker's aliased SOURCE (see the block in `vite.config.ts`). It is the most
+ * demanding of the four modes — the served script is transformed on the fly and
+ * keeps its imports — and the one that would break first.
  *
- * La preuve est faite de deux façons qui ne se recouvrent pas :
- *  - un `Worker` a bien été construit sur l'URL du worker de layout ;
- *  - AUCUN avertissement de repli n'a été émis. Sans ce second point le premier
- *    ne prouverait rien : le renderer se replie silencieusement (à un
- *    `console.warn` près) sur le moteur en processus dès que le worker échoue,
- *    donc la vue graphe s'afficherait quand même et un test qui ne regarderait
- *    que le résultat resterait vert sur un worker mort.
+ * The proof is made in two ways that do not overlap:
+ *  - a `Worker` really was constructed on the layout worker's URL;
+ *  - NO fallback warning was emitted. Without this second point the first would
+ *    prove nothing: the renderer falls back silently (bar a `console.warn`) to
+ *    the in-process engine as soon as the worker fails, so the graph view would
+ *    show up anyway and a test looking only at the result would stay green on a
+ *    dead worker.
  */
 
 /**
- * Instrumente `Worker` AVANT le chargement des modules, et récolte les
- * avertissements de la console. La sous-classe laisse le vrai `Worker` faire son
- * travail : on observe, on ne simule pas.
+ * Instruments `Worker` BEFORE the modules load, and collects console warnings.
+ * The subclass lets the real `Worker` do its job: we observe, we do not
+ * simulate.
  */
 async function gotoInstrumented(page: Page): Promise<string[]> {
   const warnings: string[] = []
@@ -55,21 +54,21 @@ test("la vue graphe se met en page dans un vrai Web Worker, sans repli", async (
   await expect(page.locator("#toggle-view")).toHaveAttribute("data-target", "structure")
   expect(await page.evaluate(() => (window as any).__graph.currentView())).toBe("graph")
 
-  // Le worker a bien été construit, sur l'URL que `main.ts` a passée.
+  // The worker really was constructed, on the URL `main.ts` passed.
   const urls: string[] = await page.evaluate(() => (window as any).__workerUrls)
   expect(urls.some((u) => u.includes("graph-layout-worker"))).toBe(true)
 
-  // Et il a répondu : aucun repli. Le message est celui de `retireWorker`.
+  // And it answered: no fallback. The message is `retireWorker`'s.
   expect(warnings.filter((w) => w.includes("falling back to in-process layout"))).toEqual([])
 
-  // La vue est réellement peinte : des agrégats, donc une mise en page arrivée
-  // jusqu'au bout. La config de la démo déclare `groups`, donc il y en a.
+  // The view is really painted: aggregates, hence a layout that ran to
+  // completion. The demo's config declares `groups`, so there are some.
   expect(await page.evaluate(() => (window as any).__graph.stats().visibleNodeCount)).toBeGreaterThan(
     0,
   )
 
-  // Aller-retour : le worker est réutilisé, pas rouvert, et le retour en vue
-  // structure marche toujours.
+  // Round trip: the worker is reused, not reopened, and going back to structure
+  // view still works.
   await page.locator("#toggle-view").click()
   expect(await page.evaluate(() => (window as any).__graph.currentView())).toBe("structure")
   await page.locator("#toggle-view").click()
@@ -81,11 +80,11 @@ test("la vue graphe se met en page dans un vrai Web Worker, sans repli", async (
 test("le bouton de bascule passe en état occupé, puis en sort", async ({ page }) => {
   await gotoInstrumented(page)
 
-  // Un OBSERVATEUR posé avant le clic, et pas une assertion après : sur le jeu
-  // par défaut de la démo le calcul dure quelques millisecondes, et guetter
-  // l'attribut depuis le harnais serait une course perdue d'avance. Ce qu'on
-  // veut prouver n'est de toute façon pas la DURÉE de l'état mais sa présence et
-  // sa levée — il tient aussi longtemps que `setView`, par construction.
+  // An OBSERVER set up before the click, not an assertion after it: on the
+  // demo's default dataset the computation lasts a few milliseconds, and
+  // watching the attribute from the harness would be a race lost in advance.
+  // What we want to prove is not the state's DURATION anyway but its appearance
+  // and its lifting — it holds exactly as long as `setView`, by construction.
   await page.evaluate(() => {
     const button = document.getElementById("toggle-view")!
     ;(window as any).__busyLog = [] as boolean[]
@@ -98,20 +97,20 @@ test("le bouton de bascule passe en état occupé, puis en sort", async ({ page 
   await expect(page.locator("#toggle-view")).toHaveAttribute("data-target", "structure")
 
   const log: boolean[] = await page.evaluate(() => (window as any).__busyLog)
-  // Posé puis retiré, dans cet ordre.
+  // Set then removed, in that order.
   expect(log).toEqual([true, false])
   await expect(page.locator("#toggle-view")).not.toHaveAttribute("aria-busy", "true")
-  // Et le bouton est bien réutilisable.
+  // And the button is usable again.
   await expect(page.locator("#toggle-view")).toBeEnabled()
 })
 
 test("la vue structure reste interactive pendant le calcul de la vue graphe", async ({ page }) => {
   await gotoInstrumented(page)
 
-  // Le bénéfice du worker, mis à l'épreuve : on lance la bascule SANS l'attendre
-  // et on déplace la caméra pendant ce temps. Si le calcul tenait le thread
-  // principal, aucune de ces images ne serait produite — c'est exactement le
-  // symptôme des ~4,4 s de gel sur le jeu réel.
+  // The worker's benefit, put to the test: the toggle is started WITHOUT
+  // awaiting it and the camera moves meanwhile. If the computation held the main
+  // thread, none of these frames would be produced — exactly the symptom of the
+  // ~4.4 s freeze on the real dataset.
   const framesDuringLayout = await page.evaluate(async () => {
     const graph = (window as any).__graph
     const switching = graph.setView("graph")
@@ -130,8 +129,8 @@ test("la vue structure reste interactive pendant le calcul de la vue graphe", as
     return frames
   })
 
-  // Plus d'une image : le thread principal a rendu la main au moins une fois
-  // entre le départ du calcul et son retour.
+  // More than one frame: the main thread yielded at least once between the start
+  // of the computation and its return.
   expect(framesDuringLayout).toBeGreaterThan(1)
   expect(await page.evaluate(() => (window as any).__graph.currentView())).toBe("graph")
 })

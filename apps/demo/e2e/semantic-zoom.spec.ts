@@ -1,22 +1,22 @@
 import { test, expect, type Page } from "@playwright/test"
 
 /**
- * Le ZOOM SÉMANTIQUE de la vue graphe : sous le seuil du LOD 2, les cartes
- * disparaissent et les agrégats sont peints comme des nœuds — un disque nommé
- * par agrégat, relié aux autres par les références repliées sur les paires.
+ * The graph view's SEMANTIC ZOOM: below the LOD 2 threshold, cards disappear and
+ * aggregates are painted as nodes — one named disc per aggregate, linked to the
+ * others by the references folded onto the pairs.
  *
- * Ce que ce fichier prouve et que rien d'autre ne peut prouver : aucun test du
- * renderer ne monte `createDataGraph`, donc la BASCULE elle-même — quelles
- * cartes existent, ce que le pointeur atteint, ce que le retour au zoom rend —
- * n'a pas d'autre lieu de vérification. Les pièces pures (l'agrégation des
- * arêtes, les trois fonctions de dessin, les lectures du contrôleur) sont
- * couvertes sans navigateur par `packages/renderer/test/semantic.test.ts`.
+ * What this file proves and nothing else can: no renderer test mounts
+ * `createDataGraph`, so the SWITCH itself — which cards exist, what the pointer
+ * reaches, what zooming back gives — has no other place of verification. The
+ * pure pieces (edge aggregation, the three drawing functions, the controller's
+ * reads) are covered without a browser by
+ * `packages/renderer/test/semantic.test.ts`.
  *
- * L'observable est le POINTEUR, comme dans `culling.spec.ts` : un container Pixi
- * absent ne répond pas au hit-test. Un clic au centre du canevas — c'est-à-dire
- * exactement au centre de la carte que `focus` vient d'y cadrer — émet `select`
- * si et seulement si cette carte est dessinée. C'est la même sonde des deux
- * côtés du seuil, ce qui rend les deux moitiés du test comparables.
+ * The observable is the POINTER, as in `culling.spec.ts`: a missing Pixi
+ * container does not answer the hit-test. A click at the canvas centre — that
+ * is, exactly at the centre of the card `focus` has just framed there — emits
+ * `select` if and only if that card is drawn. It is the same probe on both sides
+ * of the threshold, which makes the two halves of the test comparable.
  */
 
 async function gotoReady(page: Page): Promise<void> {
@@ -25,10 +25,10 @@ async function gotoReady(page: Page): Promise<void> {
   await page.evaluate(() => (window as any).__graph.ready)
 }
 
-/** Le jeu ÉTENDU de la démo, celui qui a des agrégats en nombre : 350 entités,
- * `groups: ["Customer", "Product"]`. Le clic ne fait que lancer un gestionnaire
- * async, donc on attend le compteur — la preuve que `setData` a fini de
- * construire ET de mettre en page. Même réveil que `view.spec.ts`. */
+/** The demo's EXTENDED dataset, the one with aggregates in numbers: 350
+ * entities, `groups: ["Customer", "Product"]`. The click only starts an async
+ * handler, so we wait on the counter — the proof that `setData` has finished
+ * both building AND laying out. Same wake-up as `view.spec.ts`. */
 async function loadExtendedDataset(page: Page): Promise<void> {
   await page.click("#menu-toggle")
   await page.click("#toggle-dataset")
@@ -39,8 +39,8 @@ async function loadExtendedDataset(page: Page): Promise<void> {
     .toBe(4061)
 }
 
-/** L'entité sonde : un Customer, donc la RACINE de son propre agrégat — elle est
- * membre d'un disque à coup sûr, ce qui est la condition du test. */
+/** The probe entity: a Customer, hence the ROOT of its own aggregate — it is
+ * certain to be a member of a disc, which is the test's precondition. */
 const PROBE = "/customers/0"
 
 test("sous le seuil, les agrégats remplacent les cartes ; au-dessus, les cartes reviennent", async ({
@@ -59,10 +59,10 @@ test("sous le seuil, les agrégats remplacent les cartes ; au-dessus, les cartes
     .poll(() => page.evaluate(() => (window as any).__graph.currentView()))
     .toBe("graph")
 
-  // On enregistre les sélections PAR L'ÉVÉNEMENT PUBLIC : c'est lui qui prouve
-  // qu'un vrai container a reçu le tap, et non un état interne exposé pour le
-  // test. Un agrégat, lui, n'émet rien — c'est justement ce qui distingue les
-  // deux régimes ici.
+  // Selections are recorded THROUGH THE PUBLIC EVENT: it is what proves a real
+  // container received the tap, rather than some internal state exposed for the
+  // test. An aggregate, for its part, emits nothing — which is precisely what
+  // tells the two regimes apart here.
   await page.evaluate(() => {
     ;(window as any).__selected = []
     ;(window as any).__graph.on("select", (n: any) => (window as any).__selected.push(n.id))
@@ -77,27 +77,27 @@ test("sous le seuil, les agrégats remplacent les cartes ; au-dessus, les cartes
   const cx = box!.x + box!.width / 2
   const cy = box!.y + box!.height / 2
 
-  // --- 1. Au-dessus du seuil : la carte est là et répond ---------------------
-  // `focus` cadre la sonde à l'échelle 1, donc au LOD 0 : le centre du canevas
-  // EST le centre de sa carte.
+  // --- 1. Above the threshold: the card is there and answers -----------------
+  // `focus` frames the probe at scale 1, hence at LOD 0: the canvas centre IS
+  // the centre of its card.
   await page.evaluate(id => (window as any).__graph.focus(id), PROBE)
   await page.waitForTimeout(200)
   await page.mouse.click(cx, cy)
   await expect.poll(lastSelected).toBe(PROBE)
 
-  // --- 2. Sous le seuil : plus de carte, mais un disque -----------------------
-  // On repart d'une sélection vide, sinon l'anneau de la carte sélectionnée
-  // resterait peint et brouillerait la comparaison d'images ci-dessous.
+  // --- 2. Below the threshold: no more card, but a disc -----------------------
+  // We start again from an empty selection, otherwise the selected card's ring
+  // would stay painted and blur the image comparison below.
   await page.keyboard.press("Escape")
   await page.evaluate(id => (window as any).__graph.focus(id), PROBE)
   await page.waitForTimeout(200)
 
-  // Le zoom est ancré sur le POINTEUR : en dézoomant depuis le centre, la sonde
-  // y reste, et le disque de son agrégat — qui la contient par construction —
-  // couvre donc toujours ce point. 14 crans font passer l'échelle de 1 à ~0,07,
-  // franchement sous le seuil du LOD 2 (0,15). Ctrl est indispensable : la
-  // molette nue déplace la toile, le zoom exige un modificateur explicite
-  // (`classifyWheel`), seul signal qu'un balayage trackpad ne produit jamais.
+  // Zoom is anchored on the POINTER: zooming out from the centre keeps the probe
+  // there, and its aggregate's disc — which contains it by construction —
+  // therefore still covers that point. 14 notches take the scale from 1 to
+  // ~0.07, well below the LOD 2 threshold (0.15). Ctrl is indispensable: a bare
+  // wheel pans the canvas, zooming demands an explicit modifier
+  // (`classifyWheel`), the only signal a trackpad swipe never produces.
   await page.mouse.move(cx, cy)
   await page.keyboard.down("Control")
   for (let i = 0; i < 14; i++) {
@@ -105,12 +105,12 @@ test("sous le seuil, les agrégats remplacent les cartes ; au-dessus, les cartes
     await page.waitForTimeout(40)
   }
   await page.keyboard.up("Control")
-  // Un cran de souris pour réveiller le survol. Pixi ne teste sa scène qu'aux
-  // événements de pointeur : le disque est arrivé SOUS un curseur immobile, donc
-  // aucun `pointerover` n'a encore été émis. Sans ce réveil, l'image de
-  // référence serait prise sans survol et celle d'après le clic AVEC — la
-  // comparaison mesurerait la montée du survol au lieu de l'effet de la
-  // sélection. Le survol est animé : on le laisse ensuite se poser.
+  // A nudge of the mouse to wake hover up. Pixi only hit-tests its scene on
+  // pointer events: the disc arrived UNDER a motionless cursor, so no
+  // `pointerover` has been emitted yet. Without this wake-up the reference image
+  // would be taken without hover and the post-click one WITH — the comparison
+  // would measure hover ramping up instead of the selection's effect. Hover is
+  // animated: it is then left to settle.
   await page.mouse.move(cx + 2, cy + 2)
   await page.mouse.move(cx, cy)
   await page.waitForTimeout(1200)
@@ -120,28 +120,29 @@ test("sous le seuil, les agrégats remplacent les cartes ; au-dessus, les cartes
   await page.mouse.click(cx, cy)
   await page.waitForTimeout(400)
 
-  // La carte de la sonde n'est plus dessinée : rien n'a reçu le tap côté
-  // cartes. C'est l'invariant « jamais de cartes ET de disques ensemble »,
-  // observé par le seul canal qui ne mente pas.
+  // The probe's card is no longer drawn: nothing received the tap on the card
+  // side. This is the "never cards AND discs together" invariant, observed
+  // through the only channel that does not lie.
   expect(await selectedCount()).toBe(marker)
 
-  // …mais quelque chose a bien été désigné : la sélection d'agrégat allume son
-  // disque et fait reculer tout ce qui ne lui parle pas, donc la scène change.
+  // …but something really was designated: selecting an aggregate lights its disc
+  // up and pushes back everything that does not talk to it, so the scene
+  // changes.
   const afterClick = await page.locator("canvas").screenshot()
   expect(afterClick.equals(before)).toBe(false)
 
-  // Et elle se défait : Échap rend exactement l'image d'avant le clic. Sans le
-  // régime sémantique, ce clic serait tombé sur une carte et cette égalité ne
-  // tiendrait pas.
+  // And it comes undone: Escape gives back exactly the pre-click image. Without
+  // the semantic regime that click would have landed on a card and this equality
+  // would not hold.
   await page.keyboard.press("Escape")
   await page.waitForTimeout(400)
   const afterEscape = await page.locator("canvas").screenshot()
   expect(afterEscape.equals(before)).toBe(true)
 
-  // --- 3. Retour au-dessus du seuil : les cartes reviennent ------------------
-  // `focus` depuis le régime sémantique doit refaire toute la chaîne : caméra à
-  // l'échelle 1, changement de LOD, reconstruction, matérialisation de la carte
-  // visée. C'est le chemin qu'emprunte aussi la recherche.
+  // --- 3. Back above the threshold: the cards return -------------------------
+  // `focus` from the semantic regime must redo the whole chain: camera to scale
+  // 1, LOD change, rebuild, materialization of the targeted card. It is the path
+  // search takes as well.
   await page.evaluate(id => (window as any).__graph.focus(id), PROBE)
   await page.waitForTimeout(200)
   await page.mouse.click(cx, cy)

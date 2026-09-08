@@ -6,9 +6,8 @@ import {
 } from "@defsquare/data-graph";
 import { createBadge, createRefButton } from "@defsquare/data-graph-chrome";
 
-/** Preuve que l'événement public « select » du renderer suffit à construire un
- * panneau de détail entièrement hors de la bibliothèque : du DOM nu, aucun
- * interne de la lib. */
+/** Proof that the renderer's public "select" event is enough to build a detail
+ * panel entirely outside the library: plain DOM, no library internals. */
 export interface DetailPanel {
   render(node: GraphNode): void;
   clear(): void;
@@ -17,18 +16,18 @@ export interface DetailPanel {
 export function createDetailPanel(graph: DataGraph): DetailPanel {
   const detailEl = document.getElementById("detail");
   const emptyEl = document.getElementById("selection-empty");
-  // La pastille est une primitive partagée : elle est construite ici et insérée
-  // à sa place plutôt qu'écrite dans `index.html`, où elle serait inaccessible
-  // au catalogue du design system.
+  // The badge is a shared primitive: it is built here and inserted in place
+  // rather than written into `index.html`, where it would be out of reach of the
+  // design system catalogue.
   const typeEl = createBadge({ id: "selection-type" });
   emptyEl?.after(typeEl);
   const labelEl = document.getElementById("selection-label");
   const pathEl = document.getElementById("selection-path");
   const rowsEl = document.getElementById("selection-rows");
 
-  /** Les arêtes de référence sortantes du nœud, indexées par champ source —
-   * c'est ce qui permet au panneau d'afficher un bouton « suivre » sur les
-   * bonnes lignes, sans connaître les internes de la lib. */
+  /** The node's outgoing reference edges, indexed by source field — this is what
+   * lets the panel put a "follow" button on the right rows, without knowing any
+   * library internals. */
   function outgoingRefs(nodeId: string): Map<string, RefEdge> {
     const map = new Map<string, RefEdge>();
     for (const edge of graph.refEdges(nodeId)) map.set(edge.field, edge);
@@ -36,8 +35,8 @@ export function createDetailPanel(graph: DataGraph): DetailPanel {
   }
 
   function clear(): void {
-    // Le panneau est en surimpression du canvas : sans sélection il n'a rien à
-    // dire et disparaît entièrement plutôt que d'occuper le coin avec un vide.
+    // The panel sits on top of the canvas: with no selection it has nothing to
+    // say and disappears entirely rather than occupying the corner with a void.
     detailEl?.setAttribute("hidden", "");
     emptyEl?.removeAttribute("hidden");
     for (const el of [typeEl, labelEl, pathEl]) el?.setAttribute("hidden", "");
@@ -68,9 +67,9 @@ export function createDetailPanel(graph: DataGraph): DetailPanel {
         const dt = document.createElement("dt");
         dt.textContent = row.key;
         const dd = document.createElement("dd");
-        // Une ligne-tableau porte un NOMBRE D'ÉLÉMENTS, pas une valeur du
-        // document : l'afficher tel quel donnerait « tags 3 », qu'on lirait comme
-        // la valeur du champ. Le panneau reprend donc la formulation de la carte.
+        // An array row carries an ITEM COUNT, not a value from the document:
+        // printing it as is would give "tags 3", which reads as the field's
+        // value. The panel therefore reuses the card's wording.
         dd.textContent =
           row.valueType === "array" ? `[ ${arrayTokenTextFor(row.value)} ]` : String(row.value);
         wrapper.append(dt, dd);
@@ -97,8 +96,8 @@ export function createDetailPanel(graph: DataGraph): DetailPanel {
     );
   }
 
-  // La croix ne masque QUE le panneau : la sélection reste celle du graphe, et
-  // resélectionner le même nœud le rouvre.
+  // The close button hides ONLY the panel: the graph's selection stands, and
+  // reselecting the same node reopens it.
   document.getElementById("detail-close")?.addEventListener("click", () => {
     detailEl?.setAttribute("hidden", "");
   });
