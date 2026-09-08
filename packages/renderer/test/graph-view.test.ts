@@ -56,8 +56,8 @@ async function published(hooks: Partial<GraphViewHooks> = {}): Promise<GraphView
   return controller;
 }
 
-describe("graph view controller — cycle de vie", () => {
-  it("ne publie rien avant le premier calcul", () => {
+describe("graph view controller — lifecycle", () => {
+  it("publishes nothing before the first computation", () => {
     const controller = controllerFor();
     expect(controller.positions()).toBeUndefined();
     expect(controller.clusters()).toEqual([]);
@@ -67,7 +67,7 @@ describe("graph view controller — cycle de vie", () => {
     expect(controller.entityIds(shopGraph).size).toBe(4);
   });
 
-  it("publie index et mise en page d'un bloc : les deux décrivent le même graphe", async () => {
+  it("publishes index and layout in one go: both describe the same graph", async () => {
     const controller = await published();
 
     const positions = controller.positions();
@@ -88,7 +88,7 @@ describe("graph view controller — cycle de vie", () => {
     }
   });
 
-  it("invalide index et mise en page d'un bloc", async () => {
+  it("invalidates index and layout in one go", async () => {
     const controller = await published();
     controller.invalidate();
 
@@ -99,8 +99,8 @@ describe("graph view controller — cycle de vie", () => {
   });
 });
 
-describe("graph view controller — compute ne publie jamais", () => {
-  it("laisse l'état vide après un calcul réussi non publié", async () => {
+describe("graph view controller — compute never publishes", () => {
+  it("leaves the state empty after a successful unpublished computation", async () => {
     const controller = controllerFor();
     const state = await controller.compute(shopGraph, graphConfig, false);
 
@@ -112,7 +112,7 @@ describe("graph view controller — compute ne publie jamais", () => {
     expect(controller.aggregateOf("Customer#c1")).toBeUndefined();
   });
 
-  it("garde l'état PUBLIÉ, et pas celui du dernier calcul terminé", async () => {
+  it("keeps the PUBLISHED state, not that of the last finished computation", async () => {
     const controller = controllerFor();
     // Two interleaved computations on two different graphs, exactly the race the
     // compute/publish split exists to make survivable.
@@ -134,11 +134,11 @@ describe("graph view controller — compute ne publie jamais", () => {
 });
 
 describe("graph view controller — hullPadding", () => {
-  it("vaut 0 tant que le moteur n'a pas été chargé", () => {
+  it("is 0 as long as the engine has not been loaded", () => {
     expect(controllerFor().hullPadding()).toBe(0);
   });
 
-  it("prend la valeur du MOTEUR dès le premier calcul, publié ou non", async () => {
+  it("takes the ENGINE's value from the first computation on, published or not", async () => {
     const controller = controllerFor();
     await controller.compute(shopGraph, graphConfig, false);
     // Loading the engine is enough: the padding serves to recompute a disc during
@@ -146,7 +146,7 @@ describe("graph view controller — hullPadding", () => {
     expect(controller.hullPadding()).toBe(TWO_LEVEL_LAYOUT_DEFAULTS.hullPadding);
   });
 
-  it("suit les options passées au moteur", async () => {
+  it("follows the options passed to the engine", async () => {
     const controller = controllerFor({ layoutOptions: { hullPadding: 42 } });
     expect(controller.hullPadding()).toBe(0);
     await controller.compute(shopGraph, graphConfig, false);
@@ -155,7 +155,7 @@ describe("graph view controller — hullPadding", () => {
 });
 
 describe("graph view controller — memberIdsContaining", () => {
-  it("retrouve l'enveloppe et les membres de l'agrégat d'une carte", async () => {
+  it("finds the envelope and the members of a card's aggregate", async () => {
     const controller = await published();
     // `o1` is not its aggregate's root: what is being looked up really is
     // membership, not the root's identity.
@@ -167,7 +167,7 @@ describe("graph view controller — memberIdsContaining", () => {
     expect(controller.clusters()).toContain(owner!.cluster);
   });
 
-  it("ne trouve rien pour une carte hors agrégat", async () => {
+  it("finds nothing for a card outside any aggregate", async () => {
     const controller = await published();
     // `o2` references a customer that does not exist: it reaches no root.
     expect(controller.memberIdsContaining("/orders/1")).toBeUndefined();
@@ -176,7 +176,7 @@ describe("graph view controller — memberIdsContaining", () => {
 });
 
 describe("graph view controller — extendBoundsToClusters", () => {
-  it("unit les boîtes englobantes des disques aux bornes reçues", async () => {
+  it("unions the discs' bounding boxes into the bounds it is given", async () => {
     const controller = await published();
     // Deliberately tiny, centered bounds: every disc must push them out in all
     // four directions.
@@ -191,7 +191,7 @@ describe("graph view controller — extendBoundsToClusters", () => {
     }
   });
 
-  it("ne touche à rien tant que rien n'est publié", () => {
+  it("changes nothing as long as nothing is published", () => {
     const bounds: Rect = { x: 3, y: 4, width: 5, height: 6 };
     controllerFor().extendBoundsToClusters(bounds);
     expect(bounds).toEqual({ x: 3, y: 4, width: 5, height: 6 });
@@ -220,18 +220,18 @@ describe("graph view controller — clustersFor", () => {
     return new Map(paints.map((paint, i) => [ids[i]!, paint]));
   }
 
-  it("rend un tableau vide tant que rien n'est publié", () => {
+  it("returns an empty array as long as nothing is published", () => {
     expect(controllerFor().clustersFor(args())).toEqual([]);
   });
 
-  it("n'estompe RIEN quand il n'y a pas de sélection", async () => {
+  it("dims NOTHING when there is no selection", async () => {
     const controller = await published();
     const paints = controller.clustersFor(args({ keep: null }));
     expect(paints).toHaveLength(2);
     expect(paints.every((p) => p.dim === false)).toBe(true);
   });
 
-  it("estompe la seule enveloppe dont aucun membre n'est à garder", async () => {
+  it("dims the one envelope none of whose members is to be kept", async () => {
     const controller = await published();
     // Selection on `c2`: its aggregate stays full, the other recedes.
     const paints = byId(controller.clustersFor(args({ keep: new Set(["/customers/1"]) })), controller);
@@ -239,7 +239,7 @@ describe("graph view controller — clustersFor", () => {
     expect(paints.get("Customer#c1")!.dim).toBe(true);
   });
 
-  it("garde pleine une enveloppe dès qu'UN membre est à garder", async () => {
+  it("keeps an envelope full as soon as ONE member is to be kept", async () => {
     const controller = await published();
     // `o1` is not the root: any member at all is enough.
     const paints = byId(controller.clustersFor(args({ keep: new Set(["/orders/0"]) })), controller);
@@ -247,7 +247,7 @@ describe("graph view controller — clustersFor", () => {
     expect(paints.get("Customer#c2")!.dim).toBe(true);
   });
 
-  it("laisse PLEINE une enveloppe dont l'agrégat manque à l'index", async () => {
+  it("leaves FULL an envelope whose aggregate is missing from the index", async () => {
     const controller = controllerFor();
     const state = await controller.compute(shopGraph, graphConfig, false);
     // A truncated index under an intact layout: we no longer know anything about
@@ -266,7 +266,7 @@ describe("graph view controller — clustersFor", () => {
     expect(paints.every((p) => p.dim === false)).toBe(true);
   });
 
-  it("peint l'enveloppe sélectionnée à l'intensité de survol PLEINE", async () => {
+  it("paints the selected envelope at FULL hover intensity", async () => {
     const controller = await published();
     const paints = byId(
       controller.clustersFor(args({ selectedAggregateId: "Customer#c1", hoverOf: () => 0.3 })),
@@ -278,7 +278,7 @@ describe("graph view controller — clustersFor", () => {
     expect(paints.get("Customer#c2")!.hover).toBe(0.3);
   });
 
-  it("relaie le survol de chaque enveloppe sans sélection", async () => {
+  it("relays each envelope's hover when there is no selection", async () => {
     const controller = await published();
     const paints = byId(
       controller.clustersFor(args({ hoverOf: (id) => (id === "Customer#c2" ? 0.7 : 0) })),
@@ -288,7 +288,7 @@ describe("graph view controller — clustersFor", () => {
     expect(paints.get("Customer#c2")!.hover).toBe(0.7);
   });
 
-  it("colore par l'accent de la racine, et retombe sur la couleur de repli sans elle", async () => {
+  it("colors by the root's accent, and falls back to the fallback color without it", async () => {
     const controller = await published();
     // The graph passed here is the caller's: a root no longer in it (a graph
     // replaced under a layout still standing) has no accent.
@@ -300,7 +300,7 @@ describe("graph view controller — clustersFor", () => {
     expect(paints.get("Customer#c2")!.color).toBe("accent:/customers/1");
   });
 
-  it("recopie le disque plutôt que de le relayer", async () => {
+  it("copies the disc rather than passing it through", async () => {
     const controller = await published();
     const paint = controller.clustersFor(args())[0]!;
     const cluster = controller.clusters()[0]!;
@@ -320,13 +320,13 @@ describe("graph view controller — tryCompute", () => {
     },
   };
 
-  it("propage l'échec sur `compute`", async () => {
+  it("propagates the failure on `compute`", async () => {
     await expect(controllerFor(failing).compute(shopGraph, graphConfig, false)).rejects.toThrow(
       "metrics unavailable",
     );
   });
 
-  it("rend null et avertit, sans rien publier", async () => {
+  it("returns null and warns, without publishing anything", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       const controller = controllerFor(failing);
@@ -342,7 +342,7 @@ describe("graph view controller — tryCompute", () => {
     }
   });
 
-  it("rend l'état calculé quand tout va bien, toujours sans publier", async () => {
+  it("returns the computed state when all goes well, still without publishing", async () => {
     const controller = controllerFor();
     const state = await controller.tryCompute(shopGraph, graphConfig, false, "contexte de test");
     expect(state?.layout.clusters).toHaveLength(2);

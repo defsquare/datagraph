@@ -10,8 +10,8 @@ const data = {
 };
 const config = { ids: { Customer: "$.customers[*].id" } };
 
-describe("accord mesure / troncature", () => {
-  it("aucune ligne tronquee ne depasse la largeur calculee par measureNode", () => {
+describe("measurement / truncation agreement", () => {
+  it("no truncated line exceeds the width measureNode computed", () => {
     const graph = buildGraph(data, config);
     const m = DEFAULT_METRICS;
 
@@ -36,7 +36,7 @@ describe("accord mesure / troncature", () => {
     }
   });
 
-  it("tronque avec une ellipse et ne renvoie jamais plus long que l'entree", () => {
+  it("truncates with an ellipsis and never returns anything longer than the input", () => {
     expect(truncateToWidth("abcdefghij", 30, 6)).toBe("abcd…");
     expect(truncateToWidth("abc", 300, 6)).toBe("abc");
     expect(truncateToWidth("abc", 0, 6)).toBe("");
@@ -50,7 +50,7 @@ describe("accord mesure / troncature", () => {
   // (draw.ts, the row loop): the key is first truncated to a budget capped at
   // `inner - gapKeyValue - <width of one value character>`, before
   // `valueBudget` is derived from the width of the TRUNCATED key.
-  it("une cle tres longue (~60 caracteres) ne fait pas disparaitre la valeur", () => {
+  it("a very long key (~60 characters) does not make the value disappear", () => {
     const m = DEFAULT_METRICS;
     const inner = m.maxWidth - m.railWidth - 2 * m.paddingX;
 

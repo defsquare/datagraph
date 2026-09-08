@@ -134,7 +134,7 @@ async function revealByToken(page: Page, anchorId: string): Promise<boolean> {
   return false
 }
 
-test("un gros document s'ouvre borne et se pagine au clic sur un jeton", async ({ page }) => {
+test("a large document opens bounded and paginates on clicking a token", async ({ page }) => {
   const errors: string[] = []
   page.on("pageerror", e => errors.push(String(e)))
   page.on("console", m => {
@@ -164,7 +164,7 @@ test("un gros document s'ouvre borne et se pagine au clic sur un jeton", async (
   expect(errors).toEqual([])
 })
 
-test("la recherche revele une page profonde et centre la cible", async ({ page }) => {
+test("search reveals a deep page and centers the target", async ({ page }) => {
   const errors: string[] = []
   page.on("pageerror", e => errors.push(String(e)))
   page.on("console", m => {
@@ -208,7 +208,7 @@ test("la recherche revele une page profonde et centre la cible", async ({ page }
   expect(errors).toEqual([])
 })
 
-test("Ranger garde une vue coherente apres des revelations", async ({ page }) => {
+test("tidy keeps a consistent view after reveals", async ({ page }) => {
   const errors: string[] = []
   page.on("pageerror", e => errors.push(String(e)))
   page.on("console", m => {

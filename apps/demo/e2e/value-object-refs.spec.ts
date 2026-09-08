@@ -43,7 +43,7 @@ async function loadCart(page: Page): Promise<void> {
   )
 }
 
-test("la reference d'un value object resout et porte son entite declarante", async ({ page }) => {
+test("a value object reference resolves and carries its declaring entity", async ({ page }) => {
   await loadCart(page)
 
   // `refEdges(from)` stays indexed by the node THAT CARRIES the row: that is
@@ -61,7 +61,7 @@ test("la reference d'un value object resout et porte son entite declarante", asy
   expect(diagnostics).toEqual([])
 })
 
-test("en vue graphe l'arete est tracee sans erreur et les compteurs restent coherents", async ({
+test("in graph view the edge is drawn without error and the counters stay consistent", async ({
   page,
 }) => {
   const errors: string[] = []
@@ -88,7 +88,7 @@ test("en vue graphe l'arete est tracee sans erreur et les compteurs restent cohe
   expect(errors).toEqual([])
 })
 
-test("en vue structure, deplier le jeton rend la carte de la ligne et son bouton de reference", async ({
+test("in structure view, expanding the token renders the line card and its reference button", async ({
   page,
 }) => {
   const errors: string[] = []
@@ -119,7 +119,7 @@ test("en vue structure, deplier le jeton rend la carte de la ligne et son bouton
   expect(errors).toEqual([])
 })
 
-test("cliquer le trait d'une reference hissee navigue vers sa cible", async ({ page }) => {
+test("clicking the line of a hoisted reference navigates to its target", async ({ page }) => {
   // The behavior is the same as for any reference — one gesture, one direction —
   // but it rests on a discreet link: the edge's click zone HOISTS its start just
   // as the drawn line does (`nearestCardRectFor`). Before that fix, the line of a

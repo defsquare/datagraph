@@ -43,7 +43,7 @@ async function loadExtendedDataset(page: Page): Promise<void> {
  * certain to be a member of a disc, which is the test's precondition. */
 const PROBE = "/customers/0"
 
-test("sous le seuil, les agrégats remplacent les cartes ; au-dessus, les cartes reviennent", async ({
+test("below the threshold, aggregates replace the cards; above it, the cards come back", async ({
   page,
 }) => {
   const errors: string[] = []

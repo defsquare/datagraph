@@ -138,7 +138,7 @@ describe("createTwoLevelLayoutEngine", () => {
     expect(result.positions.size).toBe(visible.size)
   })
 
-  it("normalise la bbox à l'origine", async () => {
+  it("normalizes the bbox to the origin", async () => {
     const { result } = await atScale()
     let minX = Infinity
     let minY = Infinity
@@ -151,13 +151,13 @@ describe("createTwoLevelLayoutEngine", () => {
   })
 })
 
-describe("déterminisme", () => {
+describe("determinism", () => {
   // Down to the BIT, not to the pixel: the engine has no source of randomness
   // (FNV-1a seeding on the ids, iterations in sorted order), so two runs walk
   // exactly the same sequence of floating-point operations. An approximate
   // equality would hide the introduction of a `Math.random` or of an iteration
   // depending on a Map's insertion order.
-  it("rend des positions identiques au bit près sur la même entrée", async () => {
+  it("returns bit-identical positions on the same input", async () => {
     const { graph, aggregates, visible } = setup()
     const a = await createTwoLevelLayoutEngine().layout(graph, aggregates, visible)
     const b = await createTwoLevelLayoutEngine().layout(graph, aggregates, visible)
@@ -165,7 +165,7 @@ describe("déterminisme", () => {
     expect(a.clusters).toEqual(b.clusters)
   })
 
-  it("reste déterministe quand la simulation travaille pour de vrai", async () => {
+  it("stays deterministic when the simulation really works", async () => {
     // shopData counts only three discs: the simulation has almost nothing to do
     // there and determinism comes too easily. Here, several dozen discs go
     // through 400 iterations of springs, gravity and collisions before the hard
@@ -177,7 +177,7 @@ describe("déterminisme", () => {
     expect(first.clusters).toEqual(second.clusters)
   })
 
-  it("ne dépend pas de l'ordre d'itération de `visible`", async () => {
+  it("does not depend on the iteration order of `visible`", async () => {
     // `visible` is a Set: its iteration order follows insertion. Sorting the ids
     // in the engine is what makes that detail inconsequential — removing the
     // sort would let the two tests above pass (they rebuild the Set identically)
@@ -190,9 +190,9 @@ describe("déterminisme", () => {
   })
 })
 
-describe("garanties de séparation, à l'échelle", () => {
+describe("separation guarantees, at scale", () => {
   it(
-    "ne laisse aucune paire de cartes en recouvrement",
+    "leaves no pair of cards overlapping",
     async () => {
       const { result } = await atScale()
       const rects = [...result.positions.values()]
@@ -214,7 +214,7 @@ describe("garanties de séparation, à l'échelle", () => {
   )
 
   it(
-    "laisse au moins cardGap entre deux cartes d'un même agrégat",
+    "leaves at least cardGap between two cards of the same aggregate",
     async () => {
       // The tolerance is 1e-9 and not 0: the margin is exact in the packing's
       // LOCAL frame, then each card takes on its disc's translation and the
@@ -273,7 +273,7 @@ describe("garanties de séparation, à l'échelle", () => {
   )
 
   it(
-    "ne laisse aucune paire de disques en recouvrement, et ouvre clusterGap entre chacune",
+    "leaves no pair of discs overlapping, and opens clusterGap between each pair",
     async () => {
       // 167 aggregates of 2 cards, no inter-aggregate reference: this is the
       // fixture where the simulation has ONLY gravity and collisions to work
@@ -312,7 +312,7 @@ describe("garanties de séparation, à l'échelle", () => {
   )
 
   it(
-    "enferme la racine et chaque membre dans l'enveloppe de son agrégat",
+    "encloses the root and every member in its aggregate's envelope",
     async () => {
       const { result, aggregates } = await atScale()
       let checked = 0
@@ -346,7 +346,7 @@ describe("garanties de séparation, à l'échelle", () => {
   )
 
   it(
-    "émet l'enveloppe des seuls vrais agrégats, et c'est le cercle réellement écarté",
+    "emits an envelope for real aggregates only, and it is the circle actually separated",
     async () => {
       const { result, aggregates } = await atScale()
       // A `single:` leaking into `clusters` would have an envelope painted
@@ -382,7 +382,7 @@ describe("garanties de séparation, à l'échelle", () => {
 })
 
 describe("options", () => {
-  it("laisse exactement hullPadding entre le coin le plus éloigné et le bord de l'enveloppe", async () => {
+  it("leaves exactly hullPadding between the farthest corner and the envelope's edge", async () => {
     // "At least" would not do: the circle is MINIMAL, so the farthest corner
     // sits on the unpadded circle, exactly `hullPadding` from the edge.
     const { graph, aggregates, visible } = setup()
@@ -404,7 +404,7 @@ describe("options", () => {
     }
   })
 
-  it("ouvre le clusterGap demandé, pas celui par défaut", async () => {
+  it("opens the requested clusterGap, not the default one", async () => {
     const { graph, aggregates, visible } = setupOn(bigShop(600))
     const result = await createTwoLevelLayoutEngine({ clusterGap: 400 }).layout(
       graph,
@@ -419,7 +419,7 @@ describe("options", () => {
     expect(worst).toBeGreaterThanOrEqual(400 - 1e-6)
   })
 
-  it("inclut le cardGap demandé dans le packing en étagères, EXACTEMENT", async () => {
+  it("includes the requested cardGap in the shelf packing, EXACTLY", async () => {
     // SHELF path: `bigShop` has nothing but flat aggregates. Customer#c0 holds
     // two cards there, the root and its order, laid one under the other and
     // separated by exactly `cardGap`.
@@ -438,7 +438,7 @@ describe("options", () => {
     expect(Math.max(-px, -py)).toBeCloseTo(64, 6)
   })
 
-  it("inclut le cardGap demandé dans le placement radial, ADDITIVEMENT", async () => {
+  it("includes the requested cardGap in the radial placement, ADDITIVELY", async () => {
     // RADIAL path, the one that CANNOT reach exact equality: its guarantee is
     // written on the cards' enclosing discs, a sufficient and not necessary
     // condition, which adds a geometric overhead.
@@ -487,7 +487,7 @@ describe("options", () => {
   })
 })
 
-describe("placement radial intra-agrégat", () => {
+describe("intra-aggregate radial placement", () => {
   /**
    * Reference distance to the root, RECOMPUTED HERE from the graph.
    *
@@ -533,7 +533,7 @@ describe("placement radial intra-agrégat", () => {
     return { graph, aggregates, visible, result, aggregate, shape, dist, radiusOf }
   }
 
-  it("le fixture produit bien un gros agrégat profond", async () => {
+  it("the fixture really does produce a large deep aggregate", async () => {
     // Anti-hollow-test guard: were `deepAggregate` to stop producing depth,
     // every radial assertion below would pass without exercising anything — a
     // flat aggregate satisfies them trivially.
@@ -544,7 +544,7 @@ describe("placement radial intra-agrégat", () => {
     expect(perRing).toEqual([1, 4, 12, 24])
   })
 
-  it("la racine est la carte la plus proche du centre de son enveloppe", async () => {
+  it("the root is the card closest to its envelope's centre", async () => {
     // This is the flaw radial placement fixes, and it was spectacular: under
     // shelf packing the root came out **40th of 41**, 597.7 px from the centre
     // of its own disc, because sorting by id put it at the head of the first
@@ -559,7 +559,7 @@ describe("placement radial intra-agrégat", () => {
     expect(ranked[0]!.r).toBeLessThan(ranked[1]!.r / 2)
   })
 
-  it("la distance au centre croît avec la distance de référence", async () => {
+  it("the distance to the centre grows with the reference distance", async () => {
     // The property that defines radial placement. Asserted on the per-ring MEAN
     // and not card by card: the enclosing circle's centre is not exactly the
     // root's centre (it is computed on the corners of every card), so two cards
@@ -587,7 +587,7 @@ describe("placement radial intra-agrégat", () => {
     }
   })
 
-  it("tient ses garanties sur le gros agrégat, y compris à 66 cartes", async () => {
+  it("holds its guarantees on the large aggregate, at 66 cards included", async () => {
     // The repo-scale guarantees are checked on `bigShop`, EVERY aggregate of
     // which holds 2 cards: radial placement never lays more than a single ring
     // of a single card there. None of that exercises the circumference
@@ -623,7 +623,7 @@ describe("placement radial intra-agrégat", () => {
     }
   }, 30_000)
 
-  it("reste déterministe au bit près sur un agrégat profond", async () => {
+  it("stays bit-deterministic on a deep aggregate", async () => {
     // Radial placement adds a BFS, a sort by parent angle and trigonometry whose
     // order of operations must be reproducible. The determinism asserted
     // elsewhere on `bigShop` exercises none of that: a one-card ring has neither
@@ -641,7 +641,7 @@ describe("placement radial intra-agrégat", () => {
     expect(a.clusters).toEqual(b.clusters)
   })
 
-  it("choisit le mode par la PROFONDEUR, pas par le nombre de cartes", async () => {
+  it("picks the mode by DEPTH, not by card count", async () => {
     // The criterion: radial if and only if some member sits at reference
     // distance ≥ 2 from the root. The two cases below have the SAME number of
     // cards (5) and different depths — which is why a test on cardinality could
@@ -682,7 +682,7 @@ describe("placement radial intra-agrégat", () => {
     expect(deep.r).toBeGreaterThan(flat.r * 1.5)
   })
 
-  it("un orphelin ne fait pas basculer un agrégat plat en radial", async () => {
+  it("an orphan does not tip a flat aggregate into radial mode", async () => {
     // A member the local BFS never reaches — here because the intermediate link
     // is HIDDEN — is given, in radial mode, a synthetic ring beyond the last
     // one. That ring translates no reference depth, only an absence of
@@ -726,7 +726,7 @@ describe("placement radial intra-agrégat", () => {
     }
   })
 
-  it("raccourcit les références intra-agrégat", async () => {
+  it("shortens intra-aggregate references", async () => {
     // The whole point of the change. Figures measured under shelf packing, on
     // this same fixture: mean 591.4 px, max 976.3 px. Under radial: 363.0 and
     // 488.1. The bounds below sit halfway, loose enough not to break over a
@@ -755,7 +755,7 @@ describe("placement radial intra-agrégat", () => {
   })
 })
 
-describe("graphe inter-cluster dense", () => {
+describe("dense inter-cluster graph", () => {
   /**
    * The engine probe's caveat #5: "the final hard pass can undo a spring; a very
    * dense inter-aggregate graph could degrade — not probed". It is probed here.
@@ -779,7 +779,7 @@ describe("graphe inter-cluster dense", () => {
     return dense
   }
 
-  it("le fixture est bien dense", async () => {
+  it("the fixture really is dense", async () => {
     // Anti-hollow-test guard: without it, a regression in the generator would
     // make the assertions below true on any graph whatsoever.
     const { result, aggregates } = await atDensity()
@@ -797,7 +797,7 @@ describe("graphe inter-cluster dense", () => {
   })
 
   it(
-    "tient toutes ses garanties sous forte densité de références",
+    "holds all its guarantees under high reference density",
     async () => {
       const { result, aggregates } = await atDensity()
 
@@ -828,7 +828,7 @@ describe("graphe inter-cluster dense", () => {
     60_000,
   )
 
-  it("reste déterministe au bit près sous forte densité", async () => {
+  it("stays bit-deterministic under high density", async () => {
     const data = denseRefs()
     const a = setupOn(data, denseRefsConfig)
     const b = setupOn(data, denseRefsConfig)
@@ -838,7 +838,7 @@ describe("graphe inter-cluster dense", () => {
     expect(first.clusters).toEqual(second.clusters)
   })
 
-  it("tient aussi quand les références se concentrent sur des hubs", async () => {
+  it("holds too when the references concentrate on hubs", async () => {
     // The other half of the caveat: `denseRefs(40, 8)` funnels the 480
     // references onto 8 products only — max degree 40 instead of 12. A hub is
     // pulled in all directions at once, which is the case where the hard pass
@@ -866,7 +866,7 @@ describe("graphe inter-cluster dense", () => {
   }, 60_000)
 })
 
-describe("jitter — bruit déterministe contre la régularité du pavage", () => {
+describe("jitter — deterministic noise against the regularity of the tiling", () => {
   /**
    * Standard deviation of the edge-to-edge NEAREST-NEIGHBOUR gap, over every
    * disc. This is the metric that makes "the tiling is regular" objective: in a
@@ -896,7 +896,7 @@ describe("jitter — bruit déterministe contre la régularité du pavage", () =
   const flatSetup = () => setupOn(bigShop(3000))
 
   it(
-    "sans jitter, tous les voisins sont exactement à clusterGap — le réseau",
+    "without jitter, every neighbour sits exactly at clusterGap — the lattice",
     async () => {
       const { graph, aggregates, visible } = flatSetup()
       const result = await createTwoLevelLayoutEngine({ jitter: 0 }).layout(
@@ -912,7 +912,7 @@ describe("jitter — bruit déterministe contre la régularité du pavage", () =
   )
 
   it(
-    "le jitter par défaut casse ce réseau, et l'amplitude gradue l'effet",
+    "the default jitter breaks that lattice, and the amplitude grades the effect",
     async () => {
       const { graph, aggregates, visible } = flatSetup()
       const sdOf = async (jitter: number) => {
@@ -943,7 +943,7 @@ describe("jitter — bruit déterministe contre la régularité du pavage", () =
   )
 
   it(
-    "le jitter ne touche NI les garanties NI les formes peintes",
+    "the jitter touches NEITHER the guarantees NOR the painted shapes",
     async () => {
       // The two invariants this mechanism must never dent, and the reason it is
       // safe to make it a default.
@@ -979,7 +979,7 @@ describe("jitter — bruit déterministe contre la régularité du pavage", () =
     60_000,
   )
 
-  it("reste déterministe au bit près avec le jitter actif", async () => {
+  it("stays bit-deterministic with the jitter on", async () => {
     // The jitter is the engine's only source of "randomness", and it derives
     // entirely from the hash of the ids. Two runs must therefore stay identical
     // down to the bit — that is what sets this mechanism apart from a
@@ -991,7 +991,7 @@ describe("jitter — bruit déterministe contre la régularité du pavage", () =
     expect(a.clusters).toEqual(b.clusters)
   })
 
-  it("deux amplitudes différentes donnent deux mises en page différentes", async () => {
+  it("two different amplitudes give two different layouts", async () => {
     const { graph, aggregates, visible } = setupOn(bigShop(600))
     const a = await createTwoLevelLayoutEngine({ jitter: 16 }).layout(graph, aggregates, visible)
     const b = await createTwoLevelLayoutEngine({ jitter: 48 }).layout(graph, aggregates, visible)
@@ -999,8 +999,8 @@ describe("jitter — bruit déterministe contre la régularité du pavage", () =
   })
 })
 
-describe("entrées dégénérées", () => {
-  it("un graphe sans entité rend un résultat vide", async () => {
+describe("degenerate inputs", () => {
+  it("a graph with no entity returns an empty result", async () => {
     const graph = buildGraph({}, config)
     const aggregates = buildAggregates(graph, validateConfig(config))
     const entities = [...graph.nodes.values()].filter((n) => n.kind === "entity")
@@ -1011,7 +1011,7 @@ describe("entrées dégénérées", () => {
     expect(result.clusters).toEqual([])
   })
 
-  it("aucune entité visible : rien n'est posé, et la normalisation ne divague pas", async () => {
+  it("no visible entity: nothing is laid down, and the normalization does not drift", async () => {
     // `minX` is then `Infinity`: the normalization must be short-circuited,
     // otherwise it would propagate `NaN`s — there is nothing to observe here, so
     // it is the absence of a throw and the empty result that pin the guard.
@@ -1021,7 +1021,7 @@ describe("entrées dégénérées", () => {
     expect(result.clusters).toEqual([])
   })
 
-  it("une entité hors agrégat devient un disque singleton, écarté comme les autres", async () => {
+  it("an entity outside any aggregate becomes a singleton disc, separated like the others", async () => {
     // /orders/1 references the GHOST customer: the edge is dangling, so no root
     // reaches it and it belongs to no aggregate. Without the singleton disc it
     // would stay placed INSIDE a neighbour's envelope, which does not contain it
@@ -1049,7 +1049,7 @@ describe("entrées dégénérées", () => {
     }
   })
 
-  it("un agrégat d'une seule carte a une enveloppe, et c'est le cercle circonscrit de cette carte", async () => {
+  it("a single-card aggregate has an envelope, and it is that card's circumscribed circle", async () => {
     // Customer#c2 (/customers/1) has no valid order: its aggregate reduces to
     // its root. Packing a single rect must give that rect's circumscribed
     // circle, padding included — not a degenerate circle of zero radius, nor an
@@ -1065,7 +1065,7 @@ describe("entrées dégénérées", () => {
     expect(single.cy).toBeCloseTo(rect.y + rect.height / 2, 6)
   })
 
-  it("une config sans `aggregates` : chaque entité est son propre disque, zéro enveloppe", async () => {
+  it("a config with no `aggregates`: every entity is its own disc, zero envelopes", async () => {
     // Bare `shopConfig` declares no root, so `buildAggregates` returns an empty
     // index. The engine must then paint nothing — and above all keep pushing
     // apart the four cards, which are four singleton discs.
@@ -1085,7 +1085,7 @@ describe("entrées dégénérées", () => {
     }
   })
 
-  it("une entité arbitrée ne tombe que dans UNE enveloppe", async () => {
+  it("an arbitrated entity falls into ONE envelope only", async () => {
     // /orders/0 is one hop from Customer#c1 and from Product#p9; `Customer`
     // being declared first, it wins (partition rule, `aggregate.ts`).
     // Geometrically, the card must be OUTSIDE Product#p9's disc — which disc

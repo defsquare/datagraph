@@ -69,14 +69,14 @@ afterEach(() => {
  * interpolation would give 0.5 and would pass every bounds assertion. */
 const EASED_HALF = 0.75;
 
-describe("attachHover — montée", () => {
-  it("ne fait rien tant que le pointeur n'est pas entré", () => {
+describe("attachHover — ramp up", () => {
+  it("does nothing until the pointer has entered", () => {
     const { tk, frames } = mount();
     expect(tk.size).toBe(0);
     expect(frames).toEqual([]);
   });
 
-  it("monte de 0 à 1 sur la durée de l'animation", () => {
+  it("climbs from 0 to 1 over the animation's duration", () => {
     const { target, tk, frames, time } = mount();
 
     target.emit("pointerover", EVENT);
@@ -96,7 +96,7 @@ describe("attachHover — montée", () => {
     expect(frames.at(-1)).toBe(1);
   });
 
-  it("se retire du ticker une fois arrivé à 1", () => {
+  it("removes itself from the ticker once it reaches 1", () => {
     // Without this self-removal, every card never left would cost one callback
     // per frame forever.
     const { target, tk, time } = mount();
@@ -108,7 +108,7 @@ describe("attachHover — montée", () => {
     expect(tk.size).toBe(0);
   });
 
-  it("ne s'inscrit qu'une fois même si l'entrée se répète", () => {
+  it("registers only once even if the enter repeats", () => {
     const { target, tk } = mount();
 
     target.emit("pointerover", EVENT);
@@ -117,7 +117,7 @@ describe("attachHover — montée", () => {
     expect(tk.size).toBe(1);
   });
 
-  it("passe la cible en static", () => {
+  it("switches the target to static", () => {
     // Without `eventMode`, Pixi emits no `pointerover` at all: the module sets up
     // what it depends on itself, rather than counting on `attachTap` or
     // `drawClusterHitAreas` having done it first.
@@ -126,8 +126,8 @@ describe("attachHover — montée", () => {
   });
 });
 
-describe("attachHover — descente", () => {
-  it("redescend à 0 à la sortie du pointeur", () => {
+describe("attachHover — ramp down", () => {
+  it("falls back to 0 when the pointer leaves", () => {
     const { target, tk, frames, time } = mount();
 
     target.emit("pointerover", EVENT);
@@ -146,7 +146,7 @@ describe("attachHover — descente", () => {
     expect(tk.size).toBe(0);
   });
 
-  it("repart de la valeur courante quand la montée n'était pas finie", () => {
+  it("restarts from the current value when the ramp up was not finished", () => {
     // The grazing hover, the most frequent case: leaving mid-ramp must come back
     // down from there. Restarting from 1 would jolt — the card would suddenly
     // grow at the very moment the pointer leaves it.
@@ -169,7 +169,7 @@ describe("attachHover — descente", () => {
     expect(frames.at(-1)).toBeGreaterThan(0);
   });
 
-  it("repart de la valeur courante quand le pointeur revient pendant la descente", () => {
+  it("restarts from the current value when the pointer comes back during the ramp down", () => {
     const { target, tk, frames, time } = mount();
 
     target.emit("pointerover", EVENT);
@@ -188,7 +188,7 @@ describe("attachHover — descente", () => {
     expect(frames.at(-1)).toBe(1);
   });
 
-  it("ne relance rien sur une sortie alors que l'intensité est déjà nulle", () => {
+  it("restarts nothing on a leave while the intensity is already zero", () => {
     // A `pointerout` with no preceding `pointerover` really does happen: entry
     // inhibited by a drag, then release outside the card. Animating a descent
     // from 0 to 0 would cost nothing but a useless ticker subscription.
@@ -202,7 +202,7 @@ describe("attachHover — descente", () => {
 });
 
 describe("attachHover — inhibition", () => {
-  it("ne démarre pas quand isBlocked est vrai", () => {
+  it("does not start when isBlocked is true", () => {
     // Hover during a move: the grabbed card follows the pointer, and growing it
     // at the same time would make it come off the cursor.
     let blocked = true;
@@ -220,8 +220,8 @@ describe("attachHover — inhibition", () => {
   });
 });
 
-describe("attachHover — cible détruite", () => {
-  it("s'auto-retire du ticker plutôt que de lancer", () => {
+describe("attachHover — destroyed target", () => {
+  it("removes itself from the ticker rather than throwing", () => {
     // A `rebuild()` destroys every card container without any `pointerout` ever
     // being delivered. Without this guard, the callback would throw every frame —
     // and forever, since the exception lands before its own removal.
@@ -243,7 +243,7 @@ describe("attachHover — cible détruite", () => {
 });
 
 describe("attachHover — cancel", () => {
-  it("ramène l'intensité à 0, publie ce retour au repos et coupe l'animation", () => {
+  it("brings the intensity back to 0, publishes that return to rest and stops the animation", () => {
     // This is what the start of a drag calls: the card must recover its exact
     // scale and position BEFORE the gesture starts moving it, and one single path
     // back to rest is worth more than two.
@@ -267,7 +267,7 @@ describe("attachHover — cancel", () => {
     expect(frames.length).toBe(after);
   });
 
-  it("ne publie rien si l'intensité était déjà nulle", () => {
+  it("publishes nothing if the intensity was already zero", () => {
     // The drag's `onStart` calls `cancel()` without knowing whether the card was
     // hovered. Repainting rest onto a card already at rest would be useless at
     // best, and at worst a position overwrite in the middle of a gesture.
@@ -276,7 +276,7 @@ describe("attachHover — cancel", () => {
     expect(frames).toEqual([]);
   });
 
-  it("laisse un survol ultérieur repartir de zéro", () => {
+  it("lets a later hover start again from zero", () => {
     const { target, tk, frames, handle, time } = mount();
 
     target.emit("pointerover", EVENT);

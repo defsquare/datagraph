@@ -56,7 +56,7 @@ function byNodeOf(pairs: [NodeId, string][]): Map<NodeId, string[]> {
 }
 
 describe("aggregateRefEdges", () => {
-  it("replie les références sur les paires d'agrégats, avec leur poids", () => {
+  it("folds the references onto aggregate pairs, with their weight", () => {
     const byNode = byNodeOf([
       ["a1", "A"],
       ["a2", "A"],
@@ -67,7 +67,7 @@ describe("aggregateRefEdges", () => {
     expect(edges).toEqual([{ a: "A", b: "B", weight: 3 }]);
   });
 
-  it("ignore les références INTRA-agrégat", () => {
+  it("ignores INTRA-aggregate references", () => {
     // The disc itself already says them; drawing them would put a self-loop in
     // place.
     const byNode = byNodeOf([
@@ -79,7 +79,7 @@ describe("aggregateRefEdges", () => {
     expect(edges).toEqual([{ a: "A", b: "B", weight: 1 }]);
   });
 
-  it("ignore une référence dont un bout est HORS agrégat", () => {
+  it("ignores a reference with one end OUTSIDE any aggregate", () => {
     // An entity with no aggregate keeps its card under the semantic regime: it has
     // no disc, hence no end to link.
     const byNode = byNodeOf([
@@ -93,7 +93,7 @@ describe("aggregateRefEdges", () => {
     expect(edges).toEqual([{ a: "A", b: "B", weight: 1 }]);
   });
 
-  it("ignore une référence cassée ou sans cible", () => {
+  it("ignores a dangling or targetless reference", () => {
     const byNode = byNodeOf([
       ["a1", "A"],
       ["b1", "B"],
@@ -102,7 +102,7 @@ describe("aggregateRefEdges", () => {
     expect(aggregateRefEdges([broken, ref("a1", null)], byNode)).toEqual([]);
   });
 
-  it("compte par l'ENTITÉ déclarante, pas par le nœud porteur de la ligne", () => {
+  it("counts by the declaring ENTITY, not by the node carrying the row", () => {
     // A reference carried by a value object is its entity's: that is the only
     // level `byNode` answers at. Without `fromEntity`, this edge would vanish —
     // the value object is in no aggregate.
@@ -115,7 +115,7 @@ describe("aggregateRefEdges", () => {
     ]);
   });
 
-  it("dédoublonne les deux SENS dans la même paire", () => {
+  it("folds both DIRECTIONS into the same pair", () => {
     // The edge is undirected: at this scale no arrow head is legible, and what the
     // view shows is the coupling.
     const byNode = byNodeOf([
@@ -127,7 +127,7 @@ describe("aggregateRefEdges", () => {
     ]);
   });
 
-  it("normalise la paire : `a` est toujours le plus petit id", () => {
+  it("normalizes the pair: `a` is always the smaller id", () => {
     const byNode = byNodeOf([
       ["z1", "Z"],
       ["a1", "A"],
@@ -138,7 +138,7 @@ describe("aggregateRefEdges", () => {
     ]);
   });
 
-  it("rend les paires dans l'ordre de PREMIÈRE RENCONTRE, de façon déterministe", () => {
+  it("returns the pairs in FIRST-ENCOUNTER order, deterministically", () => {
     const byNode = byNodeOf([
       ["a1", "A"],
       ["b1", "B"],
@@ -154,7 +154,7 @@ describe("aggregateRefEdges", () => {
     expect(aggregateRefEdges(edges, byNode)).toEqual(first);
   });
 
-  it("ne confond pas deux paires dont les ids se recollent", () => {
+  it("does not conflate two pairs whose ids glue back together", () => {
     // Aggregate ids are `${type}#${entityId}`, and an entity id may contain any
     // printable character: a pair key built on a printable separator would
     // conflate these two pairs.
@@ -169,7 +169,7 @@ describe("aggregateRefEdges", () => {
     expect(edges.every((e) => e.weight === 1)).toBe(true);
   });
 
-  it("rend un tableau vide sans agrégat", () => {
+  it("returns an empty array when there is no aggregate", () => {
     expect(aggregateRefEdges([ref("a1", "b1")], new Map())).toEqual([]);
   });
 });
@@ -180,7 +180,7 @@ describe("aggregateRefEdges", () => {
 // --------------------------------------------------------------------------
 
 describe("dominantSegmentPrefix", () => {
-  it("rend le plus long préfixe par SEGMENTS, terminé par son point", () => {
+  it("returns the longest prefix by SEGMENTS, ending on its dot", () => {
     // The real dataset's case: ~1,300 packages of a single application, all under
     // the same root. The tail of the path is what distinguishes.
     expect(
@@ -192,7 +192,7 @@ describe("dominantSegmentPrefix", () => {
     ).toBe("com.bnpparibas.bddf.fipro.");
   });
 
-  it("coupe aux SEGMENTS et jamais au milieu de l'un d'eux", () => {
+  it("cuts at SEGMENTS and never in the middle of one", () => {
     // `credit` and `creditcard` share four characters, not a segment: stripping
     // `com.exemple.credit` would leave `card…`, which is no longer a path.
     expect(dominantSegmentPrefix(["com.exemple.credit.a", "com.exemple.creditcard.b"])).toBe(
@@ -200,7 +200,7 @@ describe("dominantSegmentPrefix", () => {
     );
   });
 
-  it("tient malgré une minorité de noms d'une AUTRE famille", () => {
+  it("holds despite a minority of names from ANOTHER family", () => {
     // The real dataset exactly: packages under a single root, plus a few foreign
     // modules and packages. Demanding unanimity would strip nothing at all — this
     // is the case that motivated the threshold.
@@ -214,7 +214,7 @@ describe("dominantSegmentPrefix", () => {
     );
   });
 
-  it("ne retire rien quand aucun préfixe n'atteint la majorité", () => {
+  it("strips nothing when no prefix reaches the majority", () => {
     // Two families in equal shares: neither is the other's noise.
     expect(
       dominantSegmentPrefix([
@@ -226,40 +226,40 @@ describe("dominantSegmentPrefix", () => {
     ).toBe("");
   });
 
-  it("ne retire rien d'un SEUL libellé", () => {
+  it("strips nothing from a SINGLE label", () => {
     // There is then no repetition on screen: the single disc would lose its full
     // name with nothing given back to the reading.
     expect(dominantSegmentPrefix(["com.exemple.credit.domain"])).toBe("");
     expect(dominantSegmentPrefix([])).toBe("");
   });
 
-  it("ne retire rien quand le préfixe commun tient en MOINS de deux segments", () => {
+  it("strips nothing when the common prefix holds FEWER than two segments", () => {
     // Stripping `com.` gives back almost no room and costs the path's root.
     expect(dominantSegmentPrefix(["com.alpha.x", "com.beta.y"])).toBe("");
   });
 
-  it("rend la chaîne vide quand les libellés n'ont rien en commun", () => {
+  it("returns the empty string when the labels have nothing in common", () => {
     expect(dominantSegmentPrefix(["com.alpha.x", "org.beta.y"])).toBe("");
     // Labels with no dot at all: the case of small datasets, where the label is a
     // short id rather than a path.
     expect(dominantSegmentPrefix(["k1", "p1"])).toBe("");
   });
 
-  it("laisse toujours UN segment, même quand un libellé est le préfixe des autres", () => {
+  it("always leaves ONE segment, even when a label is the prefix of the others", () => {
     // `a.b.c` is entirely common, but stripping it would leave the first disc
     // anonymous: the prefix is capped at one segment fewer than the shortest
     // label.
     expect(dominantSegmentPrefix(["a.b.c", "a.b.c.d"])).toBe("a.b.");
   });
 
-  it("laisse un segment même quand TOUS les libellés sont identiques", () => {
+  it("leaves one segment even when ALL the labels are identical", () => {
     // Nothing can tell them apart anyway; what matters is that none becomes empty.
     const prefix = dominantSegmentPrefix(["a.b.c.d", "a.b.c.d"]);
     expect(prefix).toBe("a.b.c.");
     expect("a.b.c.d".slice(prefix.length)).toBe("d");
   });
 
-  it("garantit un reste non vide sur un jeu hétérogène", () => {
+  it("guarantees a non-empty remainder on a heterogeneous set", () => {
     // The property that lets the caller cut with a plain `slice`: whatever the
     // dataset, no label becomes empty.
     const labels = [
@@ -369,26 +369,26 @@ const shape = (aggregateId: string, cx: number, cy: number, r: number): ClusterS
   r,
 });
 
-describe("graph view controller — régime sémantique", () => {
-  it("publie les arêtes agrégées avec le reste de l'état", async () => {
+describe("graph view controller — semantic regime", () => {
+  it("publishes the aggregated edges along with the rest of the state", async () => {
     const controller = await published();
     // One cart, one product, one reference between them: a pair of weight 1.
     expect(controller.semanticEdges(null)).toHaveLength(1);
   });
 
-  it("perd les arêtes agrégées à l'invalidation, avec le reste", async () => {
+  it("loses the aggregated edges on invalidation, along with the rest", async () => {
     const controller = await published();
     controller.invalidate();
     expect(controller.semanticEdges(null)).toEqual([]);
   });
 
-  it("résout l'appartenance d'une entité, et rend `undefined` hors agrégat", async () => {
+  it("resolves an entity's membership, and returns `undefined` outside any aggregate", async () => {
     const controller = await published();
     expect(controller.aggregateIdOf("/carts/0")).toBe("Cart#k1");
     expect(controller.aggregateIdOf("/carts/0/lines/0")).toBeUndefined();
   });
 
-  it("étiquette chaque disque par l'id d'ENTITÉ de sa racine, et compte ses membres", async () => {
+  it("labels each disc by its root's ENTITY id, and counts its members", async () => {
     const controller = await published();
     const nodes = new Map(controller.semanticNodesFor(args()).map((n) => [n.id, n]));
     expect(nodes.get("Cart#k1")!.label).toBe("k1");
@@ -396,7 +396,7 @@ describe("graph view controller — régime sémantique", () => {
     expect(nodes.get("Cart#k1")!.count).toBe(1);
   });
 
-  it("retire le préfixe commun des libellés PEINTS, en gardant l'id complet", async () => {
+  it("strips the common prefix from the PAINTED labels, keeping the full id", async () => {
     // The real dataset in miniature: a single package tree, hence a prefix every
     // disc would repeat. The id, for its part, does not move — selection, the
     // detail panel and search all go through it.
@@ -413,7 +413,7 @@ describe("graph view controller — régime sémantique", () => {
     expect(nodes.get("Package#autre.chose.ici")!.label).toBe("autre.chose.ici");
   });
 
-  it("perd les libellés à l'invalidation, avec le reste", async () => {
+  it("loses the labels on invalidation, along with the rest", async () => {
     // The stripped prefix is THIS set of aggregates': kept under another graph, it
     // would name discs with the shorthand of a dataset that is gone.
     const controller = controllerFor();
@@ -426,7 +426,7 @@ describe("graph view controller — régime sémantique", () => {
     );
   });
 
-  it("résout couleur, estompage et survol EXACTEMENT comme les enveloppes", async () => {
+  it("resolves color, dimming and hover EXACTLY like the envelopes", async () => {
     const controller = await published();
     const selected = args({ selectedAggregateId: "Cart#k1", keep: new Set(["/carts/0"]) });
     const hulls = new Map(controller.clustersFor(selected).map((p, i) => [i, p]));
@@ -444,7 +444,7 @@ describe("graph view controller — régime sémantique", () => {
     expect(discs.some((d) => d.hover === 1)).toBe(true);
   });
 
-  it("rogne le segment aux bords des deux disques", () => {
+  it("trims the segment at both discs' edges", () => {
     const controller = controllerFor();
     publishSynthetic(
       controller,
@@ -456,7 +456,7 @@ describe("graph view controller — régime sémantique", () => {
     ]);
   });
 
-  it("omet une paire dont les disques se touchent ou se recouvrent", () => {
+  it("omits a pair whose discs touch or overlap", () => {
     // No segment is left: a stroke of zero or negative length would be a stroke
     // turned inside out.
     const controller = controllerFor();
@@ -468,13 +468,13 @@ describe("graph view controller — régime sémantique", () => {
     expect(controller.semanticEdges(null)).toEqual([]);
   });
 
-  it("omet une paire dont un disque manque à la mise en page", () => {
+  it("omits a pair whose disc is missing from the layout", () => {
     const controller = controllerFor();
     publishSynthetic(controller, [shape("A", 0, 0, 10)], [{ a: "A", b: "B", weight: 1 }]);
     expect(controller.semanticEdges(null)).toEqual([]);
   });
 
-  it("garde PLEINE toute arête qui touche l'agrégat sélectionné", () => {
+  it("keeps FULL every edge touching the selected aggregate", () => {
     const controller = controllerFor();
     publishSynthetic(
       controller,
@@ -492,7 +492,7 @@ describe("graph view controller — régime sémantique", () => {
     expect(controller.semanticEdges(null).every((e) => e.dim === false)).toBe(true);
   });
 
-  it("suit les disques déplacés, qui sont mutés EN PLACE", () => {
+  it("follows the moved discs, which are mutated IN PLACE", () => {
     const controller = controllerFor();
     const a = shape("A", 0, 0, 10);
     publishSynthetic(controller, [a, shape("B", 100, 0, 10)], [{ a: "A", b: "B", weight: 1 }]);
@@ -508,43 +508,43 @@ describe("graph view controller — régime sémantique", () => {
 // --------------------------------------------------------------------------
 
 describe("truncateMiddle", () => {
-  it("laisse un texte qui tient", () => {
+  it("leaves a text that fits untouched", () => {
     expect(truncateMiddle("abcd", 100, 10)).toBe("abcd");
   });
 
-  it("mange le MILIEU et garde la fin, qui est ce qui distingue", () => {
+  it("eats the MIDDLE and keeps the end, which is what distinguishes", () => {
     // Truncating from the end would give "com.exemp…" for the whole dataset.
     expect(truncateMiddle("com.exemple.credit.domain", 110, 10)).toBe("com.e…omain");
   });
 
-  it("donne le caractère en trop à la TÊTE quand le budget est impair", () => {
+  it("gives the extra character to the HEAD when the budget is odd", () => {
     expect(truncateMiddle("abcdefgh", 40, 10)).toBe("ab…h");
   });
 
-  it("retombe sur l'ellipse seule quand il ne reste qu'un caractère", () => {
+  it("falls back to the ellipsis alone when only one character is left", () => {
     expect(truncateMiddle("abcdef", 10, 10)).toBe("…");
   });
 
-  it("rend la chaîne vide sans place", () => {
+  it("returns the empty string when there is no room", () => {
     expect(truncateMiddle("abc", 0, 10)).toBe("");
     expect(truncateMiddle("abc", -5, 10)).toBe("");
   });
 });
 
 describe("bucketOf", () => {
-  it("répartit les poids en quatre paliers", () => {
+  it("spreads the weights over four buckets", () => {
     expect(bucketOf(1)).toBe(0);
     expect(bucketOf(2)).toBe(1);
     expect(bucketOf(4)).toBe(2);
     expect(bucketOf(6)).toBe(3);
   });
 
-  it("plafonne : au-delà du poids plein, tout est au palier maximal", () => {
+  it("caps: beyond the full weight, everything lands in the top bucket", () => {
     expect(bucketOf(8)).toBe(3);
     expect(bucketOf(800)).toBe(3);
   });
 
-  it("borne un poids absurde par le bas", () => {
+  it("clamps an absurd weight from below", () => {
     expect(bucketOf(0)).toBe(0);
     expect(bucketOf(-3)).toBe(0);
   });
@@ -554,18 +554,18 @@ describe("blendOver", () => {
   const black = "#000000";
   const white = "#ffffff";
 
-  it("rend la base à intensité nulle et la surcouche à intensité pleine", () => {
+  it("returns the base at zero intensity and the overlay at full intensity", () => {
     expect(blendOver(black, white, 0)).toBe(0x000000);
     expect(blendOver(black, white, 1)).toBe(0xffffff);
   });
 
-  it("mélange linéairement, et rend une couleur OPAQUE", () => {
+  it("blends linearly, and returns an OPAQUE color", () => {
     // That is the point: the pixel is computed once here rather than by a second
     // translucent fill on every frame.
     expect(blendOver(black, white, 0.5)).toBe(0x808080);
   });
 
-  it("borne une intensité hors de [0,1]", () => {
+  it("clamps an intensity outside [0,1]", () => {
     expect(blendOver(black, white, 2)).toBe(0xffffff);
     expect(blendOver(black, white, -1)).toBe(0x000000);
   });
@@ -595,12 +595,12 @@ function styles(g: { context: { instructions: unknown[] } }) {
 }
 
 describe("drawSemanticDiscs", () => {
-  it("émet un remplissage et un contour par disque", () => {
+  it("emits one fill and one stroke per disc", () => {
     const g = drawSemanticDiscs([node(), node({ id: "B", circle: { cx: 300, cy: 0, r: 50 } })], theme);
     expect(g.context.instructions.length).toBe(4);
   });
 
-  it("peint OPAQUE : la couleur est pré-mélangée, pas posée en alpha", () => {
+  it("paints OPAQUE: the color is pre-blended, not laid on in alpha", () => {
     // This is what hides the aggregated edges passing underneath — and what avoids
     // the second fill that used to double the painted surface.
     const [fill, stroke] = styles(drawSemanticDiscs([node()], theme));
@@ -610,20 +610,20 @@ describe("drawSemanticDiscs", () => {
     expect(stroke!.color).toBe(blendOver(theme.surface.canvas, "#ff0000", 0.75));
   });
 
-  it("renforce accent et contour au survol", () => {
+  it("strengthens accent and stroke on hover", () => {
     const [fill, stroke] = styles(drawSemanticDiscs([node({ hover: 1 })], theme));
     expect(fill!.color).toBe(blendOver(theme.surface.canvas, "#ff0000", 0.5));
     expect(stroke!.color).toBe(blendOver(theme.surface.canvas, "#ff0000", 1));
   });
 
-  it("borne une intensité hors de [0,1]", () => {
+  it("clamps an intensity outside [0,1]", () => {
     const over = styles(drawSemanticDiscs([node({ hover: 4 })], theme));
     const under = styles(drawSemanticDiscs([node({ hover: -2 })], theme));
     expect(over[0]!.color).toBe(blendOver(theme.surface.canvas, "#ff0000", 0.5));
     expect(under[0]!.color).toBe(blendOver(theme.surface.canvas, "#ff0000", 0.3));
   });
 
-  it("estompe en ramenant le disque VERS le canevas, sans le rendre transparent", () => {
+  it("dims by pulling the disc TOWARDS the canvas, without making it transparent", () => {
     // A dimmed disc recedes, but keeps hiding the edges passing underneath:
     // otherwise the drawing's background would come back up through the very
     // blocks we just pushed out of sight.
@@ -632,7 +632,7 @@ describe("drawSemanticDiscs", () => {
     expect(fill!.color).toBe(blendOver(theme.surface.canvas, "#ff0000", 0.3 * DIM_ALPHA));
   });
 
-  it("garde l'épaisseur du contour PROPORTIONNELLE au rayon", () => {
+  it("keeps the stroke width PROPORTIONAL to the radius", () => {
     // This is the condition for semantic zoom: the disc grows with the camera, so
     // its outline must grow with it.
     const [, stroke] = styles(drawSemanticDiscs([node()], theme));
@@ -641,17 +641,17 @@ describe("drawSemanticDiscs", () => {
     expect(hovered!.width).toBeCloseTo(100 * 0.05, 6);
   });
 
-  it("laisse l'épaisseur intacte en estompant", () => {
+  it("leaves the width intact while dimming", () => {
     const [, stroke] = styles(drawSemanticDiscs([node({ dim: true })], theme));
     expect(stroke!.width).toBeCloseTo(100 * 0.03, 6);
   });
 
-  it("ignore un rayon non positif et continue", () => {
+  it("ignores a non-positive radius and carries on", () => {
     const g = drawSemanticDiscs([node({ circle: { cx: 0, cy: 0, r: 0 } }), node()], theme);
     expect(g.context.instructions.length).toBe(2);
   });
 
-  it("ne peint rien sans disque", () => {
+  it("paints nothing when there is no disc", () => {
     expect(drawSemanticDiscs([], theme).context.instructions.length).toBe(0);
   });
 });
@@ -673,7 +673,7 @@ function partsOf(
 }
 
 describe("drawSemanticLabels", () => {
-  it("groupe le libellé et sa pastille dans un conteneur étiqueté par l'agrégat", () => {
+  it("groups the label and its badge in a container tagged by the aggregate", () => {
     // This is what lets `dragCluster` move only the label concerned.
     const layer = drawSemanticLabels([node({ id: "Package#alpha" })], theme, false);
     expect(layer.children).toHaveLength(1);
@@ -681,11 +681,11 @@ describe("drawSemanticLabels", () => {
     expect(partsOf(layer)).toHaveLength(2);
   });
 
-  it("n'intercepte jamais le pointeur : le disque en dessous porte le geste", () => {
+  it("never intercepts the pointer: the disc underneath carries the gesture", () => {
     expect(drawSemanticLabels([node()], theme, false).eventMode).toBe("none");
   });
 
-  it("donne le MÊME budget de caractères à tous les disques, quelle que soit leur taille", () => {
+  it("gives the SAME character budget to every disc, whatever its size", () => {
     // The radius cancels out between the usable width and the font size: that is
     // what makes a disc's size read as a quantity of members and not as a quantity
     // of text.
@@ -698,7 +698,7 @@ describe("drawSemanticLabels", () => {
     expect(textOf(small)).toContain("…");
   });
 
-  it("met à l'échelle plutôt que de changer de taille de police", () => {
+  it("scales rather than changing the font size", () => {
     // Creating 1,300 texts at 1,300 sizes would demand as many atlases; scaling
     // lets the labels share the cards' one.
     const layer = drawSemanticLabels([node({ circle: { cx: 0, cy: 0, r: 100 } })], theme, false);
@@ -706,14 +706,14 @@ describe("drawSemanticLabels", () => {
     expect(label.scale.x).toBeCloseTo((100 * 0.2) / theme.typography.header.size, 6);
   });
 
-  it("écrit le compte de membres sous le libellé", () => {
+  it("writes the member count under the label", () => {
     const layer = drawSemanticLabels([node({ count: 42 })], theme, false);
     const [label, badge] = partsOf(layer);
     expect(badge!.text).toBe("42");
     expect(badge!.y).toBeGreaterThan(label!.y);
   });
 
-  it("ignore un rayon non positif", () => {
+  it("ignores a non-positive radius", () => {
     expect(
       drawSemanticLabels([node({ circle: { cx: 0, cy: 0, r: 0 } })], theme, false).children,
     ).toHaveLength(0);
@@ -723,12 +723,12 @@ describe("drawSemanticLabels", () => {
 describe("drawSemanticEdges", () => {
   const edge = (weight: number, dim = false) => ({ x1: 0, y1: 0, x2: 100, y2: 0, weight, dim });
 
-  it("ne peint rien sans arête, ni sans unité d'épaisseur", () => {
+  it("paints nothing with no edge, nor with no width unit", () => {
     expect(drawSemanticEdges([], theme, 100).context.instructions.length).toBe(0);
     expect(drawSemanticEdges([edge(1)], theme, 0).context.instructions.length).toBe(0);
   });
 
-  it("émet UN tracé par palier occupé, et non un par arête", () => {
+  it("emits ONE stroke per occupied bucket, not one per edge", () => {
     // A `stroke()` carries a single style: one width per edge would mean thousands
     // of drawing calls.
     const same = drawSemanticEdges([edge(1), edge(1), edge(1)], theme, 100);
@@ -737,19 +737,19 @@ describe("drawSemanticEdges", () => {
     expect(spread.context.instructions.length).toBe(4);
   });
 
-  it("gradue épaisseur ET alpha du palier le plus faible au plus fort", () => {
+  it("grades width AND alpha from the lowest bucket to the highest", () => {
     const s = styles(drawSemanticEdges([edge(1), edge(7)], theme, 100));
     expect(s[0]!.width!).toBeLessThan(s[1]!.width!);
     expect(s[0]!.alpha).toBeLessThan(s[1]!.alpha);
   });
 
-  it("met l'épaisseur en fraction de l'unité reçue", () => {
+  it("sets the width as a fraction of the unit it is given", () => {
     const small = styles(drawSemanticEdges([edge(1)], theme, 100));
     const large = styles(drawSemanticEdges([edge(1)], theme, 200));
     expect(large[0]!.width!).toBeCloseTo(small[0]!.width! * 2, 6);
   });
 
-  it("peint les estompées AVANT les pleines, donc en dessous", () => {
+  it("paints the dimmed ones BEFORE the full ones, hence underneath", () => {
     // Inside a single Graphics, only emission order settles the overlap: the
     // selection must go over the rest.
     const s = styles(drawSemanticEdges([edge(1), edge(1, true)], theme, 100));

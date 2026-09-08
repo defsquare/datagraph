@@ -66,13 +66,13 @@ test("expand/collapse via API changes visible node count", async ({ page }) => {
   expect(errors).toEqual([])
 })
 
-test("la barre d'etat affiche des compteurs non nuls", async ({ page }) => {
+test("the status bar shows non-zero counters", async ({ page }) => {
   await gotoReady(page)
   await expect(page.locator("#stat-nodes")).not.toHaveText("0")
   await expect(page.locator("#stat-visible")).not.toHaveText("0")
 })
 
-test("le bouton de theme bascule clair et sombre", async ({ page }) => {
+test("the theme button toggles light and dark", async ({ page }) => {
   await gotoReady(page)
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light")
   await openMenu(page)
@@ -89,7 +89,7 @@ test("le bouton de theme bascule clair et sombre", async ({ page }) => {
   expect(errors).toEqual([])
 })
 
-test("le panneau de detail montre le type et permet de suivre une reference", async ({ page }) => {
+test("the detail panel shows the type and lets a reference be followed", async ({ page }) => {
   await gotoReady(page)
   // Regression guard: #selection-type must stay display:none while [hidden]
   // (an id rule in style.css previously outranked the UA's [hidden] rule and
@@ -103,7 +103,7 @@ test("le panneau de detail montre le type et permet de suivre une reference", as
   await expect(page.locator("#selection-label")).toContainText("Customer #c1")
 })
 
-test("setData sans config reutilise la config courante", async ({ page }) => {
+test("setData without a config reuses the current config", async ({ page }) => {
   // This path used to be exercised by the dataset toggle, until the two datasets
   // stopped sharing a config (the small one declares `reviews[*].customerId`,
   // which the large one cannot satisfy). This test is all it has left: if
@@ -134,13 +134,13 @@ test("setData sans config reutilise la config courante", async ({ page }) => {
   expect(errors).toEqual([])
 })
 
-test("une reference cassee est signalee dans la barre d'etat", async ({ page }) => {
+test("a broken reference is reported in the status bar", async ({ page }) => {
   await gotoReady(page)
   await expect(page.locator("#stat-diagnostics")).toBeVisible()
   await expect(page.locator("#stat-diagnostics")).toContainText("1")
 })
 
-test("setTheme accepte une surcharge partielle de palette sans planter", async ({ page }) => {
+test("setTheme accepts a partial palette override without crashing", async ({ page }) => {
   await gotoReady(page)
   const errors: string[] = []
   page.on("pageerror", e => errors.push(String(e)))
@@ -151,7 +151,7 @@ test("setTheme accepte une surcharge partielle de palette sans planter", async (
   await expect(page.locator("#selection-label")).toContainText("Customer #c1")
 })
 
-test("le bouton de bascule declenche un vrai setView et son libelle suit", async ({ page }) => {
+test("the toggle button triggers a real setView and its label follows", async ({ page }) => {
   await gotoReady(page)
 
   await page.getByRole("button", { name: "Vue graphe" }).click()
@@ -165,7 +165,7 @@ test("le bouton de bascule declenche un vrai setView et son libelle suit", async
   expect(view).toBe("graph")
 })
 
-test("les methodes publiques sont inoffensives apres destroy()", async ({ page }) => {
+test("the public methods are harmless after destroy()", async ({ page }) => {
   await gotoReady(page)
   const errors: string[] = []
   page.on("pageerror", e => errors.push(String(e)))

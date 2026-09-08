@@ -51,9 +51,9 @@ function makePairs(): Array<readonly [string, string]> {
 
 const OPTIONS = { clusterGap: CLUSTER_GAP, simIterations: 300, jitter: 32 }
 
-describe("layoutDiscs à l'échelle du jeu réel", () => {
+describe("layoutDiscs at real-world scale", () => {
   it(
-    "tient l'invariant de séparation sur 1 500 disques, en secondes",
+    "holds the separation invariant on 1,500 discs, in seconds",
     () => {
       const discs = makeDiscs()
       const t0 = Date.now()
@@ -90,7 +90,7 @@ describe("layoutDiscs à l'échelle du jeu réel", () => {
   )
 
   it(
-    "reste déterministe au bit près à cette échelle",
+    "stays bit-deterministic at this scale",
     () => {
       // The grid must borrow nothing from the iteration order of a Map or a Set:
       // its traversal derives from the array indices and the positions alone.
@@ -106,9 +106,9 @@ describe("layoutDiscs à l'échelle du jeu réel", () => {
   )
 })
 
-describe("convergence en chaîne", () => {
+describe("chain convergence", () => {
   it(
-    "sépare une chaîne de 200 disques dont chaque séparation en déclenche une autre",
+    "separates a chain of 200 discs where each separation triggers another",
     () => {
       // `hardSeparation`'s worst case is not density but PROPAGATION: a chain
       // where pushing i away from i+1 runs into i+2, whose separation runs into
@@ -157,7 +157,7 @@ describe("convergence en chaîne", () => {
     30_000,
   )
 
-  it("la cascade reste déterministe au bit près", () => {
+  it("the cascade stays bit-deterministic", () => {
     // A chain runs thousands of passes over the same buffers: this is the regime
     // where leftover state between passes would show up fastest, and it would
     // show up in the last bits.
@@ -173,7 +173,7 @@ describe("convergence en chaîne", () => {
     expect(a.map((c) => [c.x, c.y])).toEqual(b.map((c) => [c.x, c.y]))
   })
 
-  it("deux mises en page successives ne se marchent pas dessus par les tampons", () => {
+  it("two successive layouts do not tread on each other through the buffers", () => {
     // The grid's buffers persist at module scope. A LARGE set followed by a
     // SMALL one therefore re-reads oversized arrays whose tail carries the
     // previous run's leftovers: if a reset were missing (`starts`, the cell
@@ -196,8 +196,8 @@ describe("convergence en chaîne", () => {
   })
 })
 
-describe("entrées dégénérées", () => {
-  it("zéro ou un disque ne fait rien exploser", () => {
+describe("degenerate inputs", () => {
+  it("zero or one disc blows nothing up", () => {
     const none: Disc[] = []
     layoutDiscs(none, [], OPTIONS)
     expect(none).toEqual([])
@@ -208,7 +208,7 @@ describe("entrées dégénérées", () => {
     expect(Number.isFinite(one[0]!.y)).toBe(true)
   })
 
-  it("des rayons nuls et un gap nul ne demandent aucune séparation", () => {
+  it("zero radii and a zero gap require no separation", () => {
     // The grid's edge case: cell size derives from the max diameter and the gap,
     // so it is 0 here. No pair can violate anything (`min` is 0, `d ≥ 0`); the
     // pass must see that and return 0.
@@ -225,7 +225,7 @@ describe("entrées dégénérées", () => {
     }
   })
 
-  it("sépare des disques empilés exactement au même point", () => {
+  it("separates discs stacked at exactly the same point", () => {
     // Coincident centres: the push direction comes from the hash of the ids. The
     // grid puts them all in the SAME cell, which is the worst case for density,
     // and the invariant must hold all the same.
@@ -248,7 +248,7 @@ describe("entrées dégénérées", () => {
     }
   })
 
-  it("un disque géant parmi des petits reste séparé de tous", () => {
+  it("a giant disc among small ones stays separated from all of them", () => {
     // The search window must cover `r_i + r_max + gap` for EVERY disc, small
     // ones included: otherwise no small disc would ever see the giant, and the
     // invariant would break on exactly those pairs.
@@ -267,7 +267,7 @@ describe("entrées dégénérées", () => {
   })
 
   it(
-    "les petits trouvent le géant alors que l'élagage par cellule coupe leur fenêtre",
+    "the small discs find the giant even though per-cell pruning trims their window",
     () => {
       // THE case that discriminates per-cell pruning, sized so that the grid
       // really exercises it — the previous test does not: with 120 small discs

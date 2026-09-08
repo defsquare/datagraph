@@ -60,7 +60,7 @@ async function gotoGraphView(page: Page): Promise<void> {
   })
 }
 
-test("focus sur une carte hors fenêtre la trouve dessinée à l'arrivée", async ({ page }) => {
+test("focus on an off-screen card finds it drawn on arrival", async ({ page }) => {
   await gotoGraphView(page)
 
   const box = await page.locator("canvas").first().boundingBox()
@@ -88,7 +88,7 @@ test("focus sur une carte hors fenêtre la trouve dessinée à l'arrivée", asyn
   }
 })
 
-test("select sur une carte hors fenêtre ne perd pas la sélection", async ({ page }) => {
+test("select on an off-screen card does not lose the selection", async ({ page }) => {
   await gotoGraphView(page)
 
   const box = await page.locator("canvas").first().boundingBox()

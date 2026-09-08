@@ -67,8 +67,8 @@ function tokenOf(view: Container): Container | null {
   return view.getChildByLabel(`array-token:${TAGS_ROW}`) as Container | null;
 }
 
-describe("jeton d'une ligne-tableau", () => {
-  it("rend le compte d'elements, pas la valeur brute", () => {
+describe("array-row token", () => {
+  it("renders the element count, not the raw value", () => {
     const view = drawNode(product, rect, theme, 0, false, "#000", metrics, false, false);
     expect(textsOf(view)).toContain(arrayTokenTextFor(3));
     // A bare "3" is what we would get by treating the row as an ordinary scalar
@@ -76,20 +76,20 @@ describe("jeton d'une ligne-tableau", () => {
     expect(textsOf(view)).not.toContain("3");
   });
 
-  it("monte le jeton dans un conteneur repere par label", () => {
+  it("mounts the token in a container tagged by label", () => {
     // This label is what lets `create.ts` animate hover without redrawing the
     // card or recomputing its geometry.
     const view = drawNode(product, rect, theme, 0, false, "#000", metrics, false, false);
     expect(tokenOf(view)).not.toBeNull();
   });
 
-  it("prepare un trace de survol CACHE plutot qu'une couleur recalculee", () => {
+  it("prepares a HIDDEN hover shape rather than a recomputed color", () => {
     const view = drawNode(product, rect, theme, 0, false, "#000", metrics, false, false);
     const hover = tokenOf(view)!.getChildByLabel("hover")!;
     expect(hover.visible).toBe(false);
   });
 
-  it("oriente le chevron selon l'etat de pli du TABLEAU, pas de la carte", () => {
+  it("orients the chevron by the ARRAY's collapse state, not the card's", () => {
     const collapsed = drawNode(
       product, rect, theme, 0, false, "#000", metrics, false, false, undefined, undefined,
       new Set<string>(),
@@ -117,7 +117,7 @@ describe("jeton d'une ligne-tableau", () => {
     expect(e.w).toBeGreaterThan(e.h);
   });
 
-  it("n'affiche aucun chevron quand la vue ne plie rien", () => {
+  it("shows no chevron when the view collapses nothing", () => {
     // `null` is what `create.ts` passes in graph view: the token stays readable
     // but no longer advertises a gesture that would do nothing.
     const view = drawNode(
@@ -128,8 +128,8 @@ describe("jeton d'une ligne-tableau", () => {
   });
 });
 
-describe("ligne a valeur seule", () => {
-  it("dessine la valeur sans sa cle", () => {
+describe("value-only row", () => {
+  it("draws the value without its key", () => {
     // An array's scalar element carries `tags[0]` as its header: repeating
     // `$value` as the key would teach nothing, so `measureNode` reserves no key
     // width for it.

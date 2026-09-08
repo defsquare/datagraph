@@ -19,7 +19,7 @@ function channels(hex: string): [number, number, number] {
   const m = HEX.exec(hex.trim());
   // An error rather than a silent fallback: an off-format token is a bug in the
   // source, and a ratio computed on a default black would hide it.
-  if (!m) throw new Error(`contrastRatio attend une couleur #rrggbb, reçu « ${hex} »`);
+  if (!m) throw new Error(`contrastRatio expects a #rrggbb color, received "${hex}"`);
   const n = Number.parseInt(m[1]!, 16);
   return [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff];
 }

@@ -82,14 +82,14 @@ describe("drawEdgeLabels", () => {
   const PRODUCT = { x: 600, y: 0, width: 160, height: 60 };
   const LINE = { x: 300, y: 200, width: 180, height: 100 };
 
-  it("nomme le chemin complet depuis l'entité pour une référence directe", () => {
+  it("names the full path from the entity for a direct reference", () => {
     // The label slides with the viewport and is often read near the TARGET, with
     // the source off-frame: `customerId` alone would not identify which order.
     const view = labelsOf(shop, shopPositions, "/orders/0");
     expect(textsOf(view)).toEqual(["Order#o1.customerId"]);
   });
 
-  it("nomme le CHEMIN INSTANCIÉ quand c'est l'entité déclarante qui est sélectionnée", () => {
+  it("names the INSTANTIATED PATH when the declaring entity is the one selected", () => {
     // Graph view: `/carts/0/lines/0` has no card, the selection is the cart. The
     // index `[0]` designates the exact element, which the config's `lines[*]`
     // would not.
@@ -98,7 +98,7 @@ describe("drawEdgeLabels", () => {
     expect(textsOf(view)).toEqual(["Cart#k1.lines[0].productRef"]);
   });
 
-  it("garde le chemin complet même quand c'est la carte du value object qui est sélectionnée", () => {
+  it("keeps the full path even when the value object's card is the one selected", () => {
     // The text is UNIFORM whatever node is selected: the label is read far from
     // the selection (it may have slid all the way to the target), and the reader
     // must not have to remember what they selected to understand it.
@@ -111,19 +111,19 @@ describe("drawEdgeLabels", () => {
     expect(textsOf(view)).toEqual(["Cart#k1.lines[0].productRef"]);
   });
 
-  it("n'étiquette rien à la sélection de la CIBLE", () => {
+  it("labels nothing when the TARGET is selected", () => {
     // An incoming edge does not read from a field of the selected card: there is
     // no path to name on that side.
     const view = labelsOf(shop, shopPositions, "/customers/0");
     expect(view.children).toHaveLength(0);
   });
 
-  it("n'étiquette rien sans sélection", () => {
+  it("labels nothing without a selection", () => {
     const view = labelsOf(shop, shopPositions, null);
     expect(view.children).toHaveLength(0);
   });
 
-  it("n'étiquette rien pour une référence CASSÉE", () => {
+  it("labels nothing for a DANGLING reference", () => {
     // `/orders/1` points at a customer that does not exist: no stroke is drawn,
     // and a label floating without a stroke would designate nothing.
     expect(shop.refEdges.find((e) => e.from === "/orders/1")?.dangling).toBe(true);
@@ -131,13 +131,13 @@ describe("drawEdgeLabels", () => {
     expect(view.children).toHaveLength(0);
   });
 
-  it("n'étiquette rien quand la CIBLE est hors de l'écran", () => {
+  it("labels nothing when the TARGET is off screen", () => {
     // Same rule as the drawing: no stroke, no label.
     const view = labelsOf(shop, new Map([["/orders/0", ORDER]]), "/orders/0");
     expect(view.children).toHaveLength(0);
   });
 
-  it("pose l'étiquette sur le premier tiers du lien, dans une pilule", () => {
+  it("places the label on the first third of the link, inside a pill", () => {
     // As a FRACTION of the link rather than at a fixed distance from the start:
     // a few pixels from the card, neighboring edges have not spread apart yet
     // and their labels overlapped. Still on the source side — past the halfway
@@ -157,7 +157,7 @@ describe("drawEdgeLabels", () => {
     expect(toStart).toBeLessThan(toEnd); // but still on the source side
   });
 
-  it("étage les étiquettes d'une même source le long de leurs liens", () => {
+  it("staggers the labels of a single source along their links", () => {
     // Two near-parallel edges keep separate labels: the fraction grows by one
     // step per label. Three references leave the same cart towards three stacked
     // products — near-parallel links, the case that stacked the labels on top of
@@ -197,7 +197,7 @@ describe("labelParamInView", () => {
   const BASE = 0.38;
   const MARGIN = 48;
 
-  it("ne bouge RIEN quand toute l'arête est visible", () => {
+  it("moves NOTHING when the whole edge is visible", () => {
     // This is the invariant that makes the sliding invisible at rest: as long as
     // the link fits on screen, the label stays at its base fraction. Not even the
     // margin is allowed to move it.
@@ -205,7 +205,7 @@ describe("labelParamInView", () => {
     expect(labelParamInView(START, END, BASE, view, MARGIN)).toBe(BASE);
   });
 
-  it("suit le viewport quand il est serré sur la CIBLE", () => {
+  it("follows the viewport when it is tight on the TARGET", () => {
     // The case that motivates the whole feature: zoomed on the target, a stroke
     // arrives without saying which one. The label comes onto the visible stretch.
     const view = { x: 800, y: -50, width: 200, height: 100 };
@@ -214,7 +214,7 @@ describe("labelParamInView", () => {
     expect(t).toBeLessThanOrEqual(1);
   });
 
-  it("reste en deçà du bord quand le viewport est serré sur la SOURCE", () => {
+  it("stays back from the edge when the viewport is tight on the SOURCE", () => {
     // Symmetric: the visible stretch stops at t1, and the label must stay one
     // margin away from the edge, otherwise the pill spills half out of frame.
     const view = { x: -50, y: -50, width: 350, height: 100 };
@@ -223,20 +223,20 @@ describe("labelParamInView", () => {
     expect(t).toBeCloseTo(0.3 - MARGIN / 1000, 6);
   });
 
-  it("rend la fraction de base quand le lien ne croise PAS le cadre", () => {
+  it("returns the base fraction when the link does NOT cross the frame", () => {
     // Nothing visible to annotate: the resting position is the only choice that
     // does not tell a story.
     const view = { x: 0, y: 500, width: 200, height: 100 };
     expect(labelParamInView(START, END, BASE, view, MARGIN)).toBe(BASE);
   });
 
-  it("rend la fraction de base pour un segment de longueur nulle", () => {
+  it("returns the base fraction for a zero-length segment", () => {
     // Two cards on the same spot: there is no parametrization to clip.
     const view = { x: -100, y: -100, width: 200, height: 200 };
     expect(labelParamInView(START, START, BASE, view, MARGIN)).toBe(BASE);
   });
 
-  it("se pose au MILIEU quand le tronçon visible est plus court que deux marges", () => {
+  it("settles in the MIDDLE when the visible stretch is shorter than two margins", () => {
     // No position honors both margins at once; the middle is the least bad
     // compromise, and above all it stays INSIDE the visible stretch.
     const view = { x: 500, y: -50, width: 60, height: 100 };
@@ -244,7 +244,7 @@ describe("labelParamInView", () => {
     expect(t).toBeCloseTo(0.53, 6); // middle of [0.5, 0.56]
   });
 
-  it("place l'étiquette sur le lien, du bon côté du trait", () => {
+  it("places the label on the link, on the right side of the stroke", () => {
     // `edgeLabelPosition` is the bridge from fraction to point: what `create.ts`
     // reuses to reposition without recreating a single `Text`.
     const at = edgeLabelPosition(START, END, 0.5);

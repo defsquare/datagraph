@@ -64,7 +64,7 @@ async function waitReady(page: Page): Promise<void> {
   await page.evaluate(() => (window as any).__graph.ready)
 }
 
-test("mode fichier : la fixture et sa config se chargent, le chrome de démo disparaît", async ({
+test("file mode: the fixture and its config load, the demo chrome disappears", async ({
   page,
 }) => {
   await gotoFileMode(page, { data: shopData, config: shopConfig })
@@ -98,7 +98,7 @@ test("mode fichier : la fixture et sa config se chargent, le chrome de démo dis
   expect(diagnostics).toEqual([])
 })
 
-test("mode fichier sans config : vue structure seule", async ({ page }) => {
+test("file mode without a config: structure view only", async ({ page }) => {
   await gotoFileMode(page, { data: shopData, config: null })
   await waitReady(page)
 
@@ -115,7 +115,7 @@ test("mode fichier sans config : vue structure seule", async ({ page }) => {
   )
 })
 
-test("mode fichier : une config sémantiquement invalide s'affiche à l'écran", async ({ page }) => {
+test("file mode: a semantically invalid config is shown on screen", async ({ page }) => {
   // `groups` may only name declared `ids` — the fault is SEMANTIC: Rust lets it
   // through (it is valid JSON), only `validateConfig` sees it.
   const broken = JSON.stringify({ ...JSON.parse(shopConfig), groups: ["Ghost"] })

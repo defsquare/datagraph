@@ -165,14 +165,14 @@ describe("bundle purity (renderer sources)", () => {
  *    The examination is syntactic and coarse, but it catches the real mistake we
  *    fear — a piece of renderer code copied into the worker.
  */
-describe("bundle purity (worker de mise en page)", () => {
+describe("bundle purity (layout worker)", () => {
   const srcDir = fileURLToPath(new URL("../src", import.meta.url));
   const sources = readdirSync(srcDir)
     .filter((name) => name.endsWith(".ts"))
     .map((name) => ({ name, code: stripComments(readFileSync(join(srcDir, name), "utf8")) }));
   const worker = sources.find((s) => s.name === WORKER_ENTRY)!;
 
-  it("est importé par PERSONNE : c'est une entrée de build, pas un module du paquet", () => {
+  it("is imported by NOBODY: it is a build entry point, not a package module", () => {
     const importers = sources
       .filter((s) => s.name !== WORKER_ENTRY)
       .filter(({ code }) => /["']\.\/graph-layout-worker(\.js)?["']/.test(code))
@@ -180,14 +180,14 @@ describe("bundle purity (worker de mise en page)", () => {
     expect(importers).toEqual([]);
   });
 
-  it("importe bien le moteur, et statiquement", () => {
+  it("does import the engine, and statically", () => {
     // Counter-guard: without it, emptying the file would make all the rest pass.
     expect(worker.code).toMatch(
       /^[ \t]*import\s+\{[^}]*layoutFromInput[^}]*\}\s+from\s+["']@defsquare\/data-graph-core\/graph-layout["']/m,
     );
   });
 
-  it("n'importe ni Pixi ni quoi que ce soit du rendu", () => {
+  it("imports neither Pixi nor anything from the rendering", () => {
     expect(worker.code).not.toMatch(/from\s+["']pixi\.js["']/);
     // The only renderer import allowed is the PROTOCOL's, and it must be an
     // `import type` — the worker must drag no code out of here.
@@ -200,7 +200,7 @@ describe("bundle purity (worker de mise en page)", () => {
     }
   });
 
-  it("ne touche à aucune API de document", () => {
+  it("touches no document API", () => {
     // `self` is legitimate (it is the worker's scope); `document` and `window`
     // are not.
     expect(worker.code).not.toMatch(/\bdocument\b/);

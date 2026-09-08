@@ -4,7 +4,7 @@ import { measureFontMetrics } from "../src/font-metrics.js";
 import { defsquareLight } from "../src/theme.js";
 
 describe("measureFontMetrics", () => {
-  it("retombe sur les metriques de base quand aucun contexte 2D n'existe", () => {
+  it("falls back to the baseline metrics when no 2D context exists", () => {
     expect(measureFontMetrics(defsquareLight, DEFAULT_METRICS)).toEqual(DEFAULT_METRICS);
   });
 });

@@ -4,24 +4,24 @@ import { measureNode, badgeTextFor, DEFAULT_METRICS } from "../src/measure.js"
 import { shopData, shopConfig } from "./fixtures.js"
 
 describe("badgeTextFor", () => {
-  it("renvoie le type en capitales pour une entité", () => {
+  it("returns the type in capitals for an entity", () => {
     const g = buildGraph(shopData, shopConfig)
     expect(badgeTextFor(g.nodes.get("/customers/0")!)).toBe("CUSTOMER")
   })
 
-  it("renvoie le nombre d'enfants pour un conteneur qui en a", () => {
+  it("returns the child count for a container that has children", () => {
     const g = buildGraph(shopData, shopConfig)
     expect(badgeTextFor(g.nodes.get("/customers")!)).toBe("2")
   })
 
-  it("renvoie la chaine vide pour un noeud sans enfant ni type", () => {
+  it("returns the empty string for a node with neither children nor type", () => {
     const g = buildGraph(shopData, shopConfig)
     expect(badgeTextFor(g.nodes.get("/customers/0/address")!)).toBe("")
   })
 })
 
 describe("measureNode", () => {
-  it("budgete la valeur mono a son avance propre, pas a celle du body", () => {
+  it("budgets the mono value with its own advance, not the body's", () => {
     // A long mono value must widen the card more than a body key of the same
     // length: that is exactly the bug that made "dupont@example.com" overflow
     // its card.
@@ -43,7 +43,7 @@ describe("measureNode", () => {
     expect(measureNode(node).width).toBeGreaterThan(measureNode(swapped).width)
   })
 
-  it("respecte minWidth et maxWidth", () => {
+  it("respects minWidth and maxWidth", () => {
     const tiny = {
       kind: "object" as const,
       id: "/t", path: ["t"], label: "t", parentId: null, childIds: [], rows: [],
@@ -57,7 +57,7 @@ describe("measureNode", () => {
     expect(measureNode(huge).width).toBe(DEFAULT_METRICS.maxWidth)
   })
 
-  it("ajoute paddingBottom seulement quand il y a des lignes", () => {
+  it("adds paddingBottom only when there are rows", () => {
     const noRows = {
       kind: "object" as const,
       id: "/n", path: ["n"], label: "n", parentId: null, childIds: [], rows: [],
@@ -73,7 +73,7 @@ describe("measureNode", () => {
     )
   })
 
-  it("reserve la largeur du chevron uniquement pour un noeud a enfants", () => {
+  it("reserves the chevron's width only for a node with children", () => {
     const leaf = {
       kind: "object" as const,
       id: "/l", path: ["l"], label: "l".repeat(30), parentId: null, childIds: [], rows: [],
@@ -83,7 +83,7 @@ describe("measureNode", () => {
     expect(measureNode(parent).width).toBeGreaterThan(measureNode(leaf).width)
   })
 
-  it("est deterministe", () => {
+  it("is deterministic", () => {
     const g = buildGraph(shopData, shopConfig)
     const c1 = g.nodes.get("/customers/0")!
     expect(measureNode(c1)).toEqual(measureNode(c1))

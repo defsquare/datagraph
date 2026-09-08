@@ -160,7 +160,7 @@ function render(): void {
   try {
     unmount?.();
   } catch (error: unknown) {
-    console.error("Le démontage de la vue a échoué, on remonte quand même :", error);
+    console.error("View unmount failed, remounting anyway:", error);
   }
   unmount = null;
   content.replaceChildren();

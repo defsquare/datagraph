@@ -87,8 +87,8 @@ function controllerFor(hooks: Partial<GraphViewHooks> = {}): GraphViewController
   });
 }
 
-describe("worker de mise en page — le chemin nominal", () => {
-  it("extrait sur le thread principal et envoie une entrée CLONABLE", async () => {
+describe("layout worker — the nominal path", () => {
+  it("extracts on the main thread and posts a CLONEABLE input", async () => {
     const worker = fakeWorker();
     const controller = controllerFor({ spawnLayoutWorker: worker.spawn });
     const pending = controller.compute(shopGraph, graphConfig, false);
@@ -115,7 +115,7 @@ describe("worker de mise en page — le chemin nominal", () => {
     ]);
   });
 
-  it("rend EXACTEMENT la mise en page du moteur en processus", async () => {
+  it("returns EXACTLY the layout of the in-process engine", async () => {
     const worker = fakeWorker();
     const viaWorker = controllerFor({ spawnLayoutWorker: worker.spawn });
     const pending = viaWorker.compute(shopGraph, graphConfig, false);
@@ -133,7 +133,7 @@ describe("worker de mise en page — le chemin nominal", () => {
     expect(workerState.layout.clusters).toEqual(inProcessState.layout.clusters);
   });
 
-  it("rend des enveloppes et des rects MUTABLES : le déplacement les mute en place", async () => {
+  it("returns MUTABLE envelopes and rects: dragging mutates them in place", async () => {
     const worker = fakeWorker();
     const controller = controllerFor({ spawnLayoutWorker: worker.spawn });
     const pending = controller.compute(shopGraph, graphConfig, false);
@@ -151,7 +151,7 @@ describe("worker de mise en page — le chemin nominal", () => {
     expect(controller.positions()!.get("/customers/0")!.x).toBe(rect.x);
   });
 
-  it("n'ouvre qu'UN worker, réutilisé d'un calcul à l'autre", async () => {
+  it("opens only ONE worker, reused from one computation to the next", async () => {
     const worker = fakeWorker();
     const controller = controllerFor({ spawnLayoutWorker: worker.spawn });
 
@@ -170,15 +170,15 @@ describe("worker de mise en page — le chemin nominal", () => {
     expect(worker.requests.map((r) => r.gen)).toEqual([1, 2]);
   });
 
-  it("n'ouvre AUCUN worker tant qu'on ne met rien en page", () => {
+  it("opens NO worker as long as nothing is laid out", () => {
     const worker = fakeWorker();
     controllerFor({ spawnLayoutWorker: worker.spawn });
     expect(worker.spawns()).toBe(0);
   });
 });
 
-describe("worker de mise en page — générations", () => {
-  it("JETTE une réponse dont la génération ne correspond à aucune requête", async () => {
+describe("layout worker — generations", () => {
+  it("DISCARDS a response whose generation matches no request", async () => {
     const worker = fakeWorker();
     const controller = controllerFor({ spawnLayoutWorker: worker.spawn });
     const pending = controller.compute(shopGraph, graphConfig, false);
@@ -199,7 +199,7 @@ describe("worker de mise en page — générations", () => {
     await expect(pending).resolves.toBeDefined();
   });
 
-  it("apparie chaque réponse à SA requête, même arrivées dans le désordre", async () => {
+  it("pairs each response with ITS request, even when they arrive out of order", async () => {
     const worker = fakeWorker();
     const controller = controllerFor({ spawnLayoutWorker: worker.spawn });
 
@@ -220,14 +220,14 @@ describe("worker de mise en page — générations", () => {
   });
 });
 
-describe("worker de mise en page — repli définitif", () => {
+describe("layout worker — permanent fallback", () => {
   /** The controller warns on `console.warn`; we silence it and read it. */
   function withWarn<T>(run: (warn: ReturnType<typeof vi.spyOn>) => Promise<T>): Promise<T> {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     return run(warn).finally(() => warn.mockRestore());
   }
 
-  it("se replie en processus quand le worker répond une erreur, et n'avertit qu'une fois", async () => {
+  it("falls back in process when the worker answers with an error, and warns only once", async () => {
     const worker = fakeWorker();
     await withWarn(async (warn) => {
       const controller = controllerFor({ spawnLayoutWorker: worker.spawn });
@@ -254,7 +254,7 @@ describe("worker de mise en page — repli définitif", () => {
     });
   });
 
-  it("se replie quand la CONSTRUCTION du worker lève", async () => {
+  it("falls back when CONSTRUCTING the worker throws", async () => {
     await withWarn(async (warn) => {
       const controller = controllerFor({
         spawnLayoutWorker: () => {
@@ -267,7 +267,7 @@ describe("worker de mise en page — repli définitif", () => {
     });
   });
 
-  it("se replie sur une erreur du worker LUI-MÊME (script injouable)", async () => {
+  it("falls back on an error from the worker ITSELF (unrunnable script)", async () => {
     const worker = fakeWorker();
     await withWarn(async (warn) => {
       const controller = controllerFor({ spawnLayoutWorker: worker.spawn });
@@ -283,7 +283,7 @@ describe("worker de mise en page — repli définitif", () => {
     });
   });
 
-  it("ne passe par AUCUN worker quand l'hôte n'en fournit pas", async () => {
+  it("goes through NO worker when the host provides none", async () => {
     // The regime of vitest, of headless, and of any consumer that did not pass
     // `graphLayoutWorkerUrl`: nothing changes, no warning.
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -297,8 +297,8 @@ describe("worker de mise en page — repli définitif", () => {
   });
 });
 
-describe("worker de mise en page — destruction", () => {
-  it("termine le worker et solde les calculs en vol SANS les rejouer en processus", async () => {
+describe("layout worker — destruction", () => {
+  it("terminates the worker and settles the in-flight computations WITHOUT replaying them in process", async () => {
     const worker = fakeWorker();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
@@ -324,7 +324,7 @@ describe("worker de mise en page — destruction", () => {
     }
   });
 
-  it("est idempotent", () => {
+  it("is idempotent", () => {
     const worker = fakeWorker();
     const controller = controllerFor({ spawnLayoutWorker: worker.spawn });
     controller.destroy();
@@ -333,8 +333,8 @@ describe("worker de mise en page — destruction", () => {
   });
 });
 
-describe("worker de mise en page — l'entrée que le worker reçoit", () => {
-  it("porte les options du contrôleur, résolues", async () => {
+describe("layout worker — the input the worker receives", () => {
+  it("carries the controller's options, resolved", async () => {
     const worker = fakeWorker();
     const controller = controllerFor({
       spawnLayoutWorker: worker.spawn,

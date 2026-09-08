@@ -76,7 +76,7 @@ describe("relatedIds", () => {
     expect(relatedIds([], "a", null, ["c"])).toEqual(new Set(["a", "c"]));
   });
 
-  it("lit le bout source d'une référence sur son ENTITÉ, pas sur le value object", () => {
+  it("reads a reference's source end on its ENTITY, not on the value object", () => {
     // The reference is carried by `a/lines/0`, but it is declared by `a`: in
     // graph view `a/lines/0` has no card, and selecting `a` must keep at full
     // opacity the card its own line references.
@@ -126,7 +126,7 @@ describe("clusterRelatedIds", () => {
     expect(clusterRelatedIds(edges, new Set(["m1"]))).toEqual(new Set(["m1", "out"]));
   });
 
-  it("compte une référence hissée pour son entité membre", () => {
+  it("counts a hoisted reference for its member entity", () => {
     // The aggregate's member is `m1`; the line `m1/lines/0` is not one and could
     // never be — membership only knows entities.
     const keep = clusterRelatedIds([ref("m1/lines/0", "out", false, "m1")], new Set(["m1"]));
@@ -151,23 +151,23 @@ describe("clusterRelatedIds", () => {
 });
 
 describe("clusterDimmed", () => {
-  it("n'estompe rien sans sélection", () => {
+  it("dims nothing without a selection", () => {
     // Same reading of `null` as everywhere else: "no focus", hence "dim nothing"
     // — and most definitely not "nobody is related".
     expect(clusterDimmed(null, ["m1", "m2"])).toBe(false);
   });
 
-  it("garde pleine une enveloppe dont un membre est lié à la sélection", () => {
+  it("keeps an envelope full when one of its members is related to the selection", () => {
     // ONE related member is enough: the envelope is then the only thing showing
     // where that member lives.
     expect(clusterDimmed(new Set(["m2"]), ["m1", "m2", "m3"])).toBe(false);
   });
 
-  it("estompe une enveloppe dont aucun membre n'est lié", () => {
+  it("dims an envelope none of whose members is related", () => {
     expect(clusterDimmed(new Set(["x", "y"]), ["m1", "m2"])).toBe(true);
   });
 
-  it("garde pleine l'enveloppe SÉLECTIONNÉE sans cas particulier", () => {
+  it("keeps the SELECTED envelope full without a special case", () => {
     // `clusterRelatedIds` starts from the members: they are therefore all in the
     // keep set, and the general rule is enough to leave the designated aggregate
     // undimmed.
@@ -176,7 +176,7 @@ describe("clusterDimmed", () => {
     expect(clusterDimmed(keep, members)).toBe(false);
   });
 
-  it("estompe une enveloppe sans aucun membre quand une sélection est active", () => {
+  it("dims an envelope with no members at all when a selection is active", () => {
     // Nothing in there to keep full: the empty set never meets the keep set. The
     // case should not exist (an aggregate has at least its root), but it must not
     // read as "no selection".
@@ -184,7 +184,7 @@ describe("clusterDimmed", () => {
     expect(clusterDimmed(null, [])).toBe(false);
   });
 
-  it("accepte un Set de membres aussi bien qu'un tableau", () => {
+  it("accepts a Set of members as well as an array", () => {
     // The real caller passes `Aggregate.memberIds`, which is a Set; the tests
     // above pass arrays. Both must decide the same way.
     expect(clusterDimmed(new Set(["m1"]), new Set(["m1"]))).toBe(false);

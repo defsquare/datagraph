@@ -55,18 +55,18 @@ function restRect(token: Container): { x: number; y: number; w: number; h: numbe
   return { x: data[0]!, y: data[1]!, w: data[2]!, h: data[3]! };
 }
 
-describe("jeton de reliquat", () => {
-  it("porte un label repere, celui par lequel `create.ts` retrouve ses jetons", () => {
+describe("remainder token", () => {
+  it("carries the marker label `create.ts` uses to find its tokens again", () => {
     const token = drawRemainderToken({ count: 47300, width: 260, theme, metrics });
     expect(token.label).toBe("remainder-token");
   });
 
-  it("annonce le nombre d'enfants caches, pas le numero de page", () => {
+  it("announces the number of hidden children, not the page number", () => {
     const token = drawRemainderToken({ count: 47300, width: 260, theme, metrics });
     expect(textsOf(token)).toContain("+ 47300");
   });
 
-  it("prend la largeur qu'on lui donne — celle de la carte voisine qui l'ancre", () => {
+  it("takes the width it is given — that of the neighboring card anchoring it", () => {
     // A token narrower or wider than the card column would read as an object of
     // a different nature, when it in fact stands in for the missing cards.
     const rect = restRect(drawRemainderToken({ count: 12, width: 187, theme, metrics }));
@@ -74,7 +74,7 @@ describe("jeton de reliquat", () => {
     expect(rect.h).toBe(REMAINDER_TOKEN_HEIGHT);
   });
 
-  it("tient dans la bande qui separe deux cartes empilees", () => {
+  it("fits in the band separating two stacked cards", () => {
     // Layout reserves no room at all for the token: past `NODE_GAP` (24 px,
     // `packages/core/src/structure-layout.ts`) it covers the neighboring card
     // AND steals its clicks, its layer being on top. The gap `create.ts` adds
@@ -85,7 +85,7 @@ describe("jeton de reliquat", () => {
     expect(REMAINDER_TOKEN_GAP + REMAINDER_TOKEN_HEIGHT).toBeLessThan(24);
   });
 
-  it("se dessine en (0,0) dans son espace local, comme une carte", () => {
+  it("draws itself at (0,0) in its local space, like a card", () => {
     // The caller is the one placing it: `create.ts` computes the anchor from the
     // positions, and an internal offset would shift it twice.
     const rect = restRect(drawRemainderToken({ count: 12, width: 187, theme, metrics }));
@@ -93,7 +93,7 @@ describe("jeton de reliquat", () => {
     expect(rect.y).toBe(0);
   });
 
-  it("tronque le libelle plutot que de deborder d'un jeton etroit", () => {
+  it("truncates the label rather than overflowing a narrow token", () => {
     // The width comes from the neighboring card, not from the text: on a narrow
     // column, an untruncated label would spill out of the pill.
     const token = drawRemainderToken({ count: 1234567, width: 24, theme, metrics });

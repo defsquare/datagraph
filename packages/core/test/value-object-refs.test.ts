@@ -47,10 +47,10 @@ const cartConfig: DataGraphConfig = {
   ],
 }
 
-describe("références portées par un value object", () => {
+describe("references carried by a value object", () => {
   const g = buildGraph(cartData, cartConfig)
 
-  it("résout un chemin à un segment exactement comme avant", () => {
+  it("resolves a single-segment path exactly as before", () => {
     // The degenerate case must stay bit for bit what it was, `fromEntity` aside:
     // that is what makes migrating existing configs a no-op.
     const flat = buildGraph(
@@ -78,7 +78,7 @@ describe("références portées par un value object", () => {
     expect(flat.diagnostics).toEqual([])
   })
 
-  it("résout `lines[*].productRef` depuis chaque ligne du panier", () => {
+  it("resolves `lines[*].productRef` from every line of the cart", () => {
     const edges = g.refEdges.filter((e) => e.targetType === "Product")
     expect(edges.map((e) => [e.from, e.to])).toEqual([
       ["/carts/0/lines/0", "/products/0"],
@@ -93,7 +93,7 @@ describe("références portées par un value object", () => {
     expect(holder.rows.some((r) => r.key === "productRef")).toBe(true)
   })
 
-  it("résout un chemin profond à travers deux value objects", () => {
+  it("resolves a deep path across two value objects", () => {
     const edges = g.refEdges.filter((e) => e.targetType === "Coupon")
     expect(edges).toHaveLength(1)
     expect(edges[0]).toMatchObject({
@@ -105,13 +105,13 @@ describe("références portées par un value object", () => {
     })
   })
 
-  it("reste silencieux quand le champ manque sur certaines instances seulement", () => {
+  it("stays silent when the field is missing on some instances only", () => {
     // `/carts/0/lines/1` and `/carts/1/lines/0` have no `discount`, and
     // `/carts/1` has no coupon at all: an optional field is not a mistake.
     expect(g.diagnostics.filter((d) => d.code === "unresolved-reference")).toEqual([])
   })
 
-  it("porte `fromEntity` sur l'entité déclarante, pas sur le porteur de la ligne", () => {
+  it("carries `fromEntity` on the declaring entity, not on the line's holder", () => {
     const edge = g.refEdges.find((e) => e.from === "/carts/0/lines/0")!
     expect(edge.fromEntity).toBe("/carts/0")
     // And `fromEntity === from` as soon as there is nothing to hoist.
@@ -121,7 +121,7 @@ describe("références portées par un value object", () => {
     }
   })
 
-  it("pointe le diagnostic `dangling-ref` sur le nœud value object", () => {
+  it("points the `dangling-ref` diagnostic at the value object node", () => {
     // The offending node is the cart LINE, not the cart: that is where the cross
     // must land, against the value that fails to resolve.
     expect(g.diagnostics).toContainEqual(
@@ -130,7 +130,7 @@ describe("références portées par un value object", () => {
     expect(g.diagnostics.some((d) => d.path === "/carts/1")).toBe(false)
   })
 
-  it("signale par `unresolved-reference` une déclaration que rien ne satisfait", () => {
+  it("reports a declaration that nothing satisfies as `unresolved-reference`", () => {
     const typo = buildGraph(cartData, {
       ...cartConfig,
       refs: [{ from: "$.carts[*].lines[*].produtcRef", to: "$.products[*].id" }],
@@ -145,7 +145,7 @@ describe("références portées par un value object", () => {
     expect(diag[0]!.message).toContain("Cart")
   })
 
-  it("se tait quand le type déclarant n'a aucune instance", () => {
+  it("stays silent when the declaring type has no instance", () => {
     // With no instance, nothing proves the declaration is wrong — that was the
     // behaviour before, and it must not turn noisy.
     const empty = buildGraph(
@@ -155,7 +155,7 @@ describe("références portées par un value object", () => {
     expect(empty.diagnostics).toEqual([])
   })
 
-  it("se tait aussi quand la ligne existe mais ne produit aucune arête", () => {
+  it("stays silent too when the line exists but produces no edge", () => {
     // A null value is not a typo: the declaration did find its row, it simply
     // has nothing to resolve.
     const nullRef = buildGraph(
@@ -166,7 +166,7 @@ describe("références portées par un value object", () => {
     expect(nullRef.diagnostics).toEqual([])
   })
 
-  it("ancre le chemin sur l'INSTANCE et ne traverse pas les paniers voisins", () => {
+  it("anchors the path on the INSTANCE and does not cross into neighbouring carts", () => {
     // `lines[*]` of `/carts/1` must see only the line of `/carts/1`. Filtering
     // the whole graph by `matchesPath` would cross the instances.
     const edges = g.refEdges.filter((e) => e.fromEntity === "/carts/1")
@@ -174,8 +174,8 @@ describe("références portées par un value object", () => {
   })
 })
 
-describe("appartenance d'agrégat via une arête hissée", () => {
-  it("fait rejoindre au panier l'agrégat du produit que sa LIGNE référence", () => {
+describe("aggregate membership through a hoisted edge", () => {
+  it("makes the cart join the aggregate of the product its LINE references", () => {
     const config = { ...cartConfig, groups: ["Product"] }
     const idx = buildAggregates(buildGraph(cartData, config), validateConfig(config))
     // The BFS source is `fromEntity`: without hoisting, `/carts/0/lines/0` — a
@@ -195,12 +195,12 @@ describe("nearestCardRectFor", () => {
   const CART: Rect = { x: 0, y: 0, width: 200, height: 120 }
   const LINE: Rect = { x: 400, y: 40, width: 180, height: 100 }
 
-  it("rend la carte du nœud quand elle est à l'écran", () => {
+  it("returns the node's card when it is on screen", () => {
     const positions = new Map([["/carts/0", CART], ["/carts/0/lines/0", LINE]])
     expect(nearestCardRectFor(g, positions, "/carts/0/lines/0")).toEqual(LINE)
   })
 
-  it("remonte jusqu'à la carte de l'entité hôte quand la sienne est cachée", () => {
+  it("climbs to the host entity's card when its own is hidden", () => {
     // `/carts/0/lines/0` is not positioned (collapsed array), and its parent
     // `/carts/0/lines` is ELIDED: two levels of walking up are needed, which a
     // single-level resolution would get wrong.
@@ -220,7 +220,7 @@ describe("nearestCardRectFor", () => {
     expect(anchorRectFor(g, positions, "/carts/0/lines/0")).toBeUndefined()
   })
 
-  it("rend undefined quand rien de la lignée n'est à l'écran", () => {
+  it("returns undefined when nothing in the lineage is on screen", () => {
     expect(nearestCardRectFor(g, new Map(), "/carts/0/lines/0")).toBeUndefined()
   })
 })

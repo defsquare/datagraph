@@ -57,7 +57,7 @@ function visibleCount(page: Page): Promise<number> {
   return page.evaluate(() => (window as any).__graph.stats().visibleNodeCount)
 }
 
-test("setView bascule entre structure et graphe, et revient", async ({ page }) => {
+test("setView switches between structure and graph, and back", async ({ page }) => {
   const errors: string[] = []
   page.on("pageerror", e => errors.push(String(e)))
   page.on("console", m => {
@@ -83,7 +83,7 @@ test("setView bascule entre structure et graphe, et revient", async ({ page }) =
   await expect(page.locator("canvas")).toBeVisible()
 })
 
-test("basculer avec un noeud imbrique selectionne ne casse rien", async ({ page }) => {
+test("switching with a nested node selected breaks nothing", async ({ page }) => {
   const errors: string[] = []
   page.on("pageerror", e => errors.push(String(e)))
 
@@ -105,7 +105,7 @@ test("basculer avec un noeud imbrique selectionne ne casse rien", async ({ page 
   expect(errors).toEqual([])
 })
 
-test("expand() de la vue structure ne deplace rien en vue graphe", async ({ page }) => {
+test("expand() from the structure view moves nothing in graph view", async ({ page }) => {
   await gotoReady(page)
 
   // Six customers, each with an address: in the STRUCTURE view's layout,
@@ -142,7 +142,7 @@ test("expand() de la vue structure ne deplace rien en vue graphe", async ({ page
   expect(await visibleCount(page)).toBe(12)
 })
 
-test("un setData concurrent d'un setView laisse des compteurs coherents", async ({ page }) => {
+test("a setData concurrent with a setView leaves consistent counters", async ({ page }) => {
   const errors: string[] = []
   page.on("pageerror", e => errors.push(String(e)))
 
@@ -177,7 +177,7 @@ test("un setData concurrent d'un setView laisse des compteurs coherents", async 
   expect(errors).toEqual([])
 })
 
-test("la vue graphe tient sur le jeu de donnees etendu de la demo", async ({ page }) => {
+test("the graph view holds up on the demo's extended dataset", async ({ page }) => {
   const errors: string[] = []
   page.on("pageerror", e => errors.push(String(e)))
   page.on("console", m => {
@@ -241,7 +241,7 @@ test("la vue graphe tient sur le jeu de donnees etendu de la demo", async ({ pag
   // The 30 s ceiling covered the old one with a factor of 7; it covers far more
   // today, so it stays useful without needing to be tightened again.
   expect(ms).toBeLessThan(30_000)
-  console.log(`[e2e] setView("graph") sur ${logical} noeuds logiques / 350 entites : ${ms.toFixed(0)} ms`)
+  console.log(`[e2e] setView("graph") over ${logical} logical nodes / 350 entities: ${ms.toFixed(0)} ms`)
 
   // Back to structure view: the toggle must stay reversible at this scale.
   await page.evaluate(() => (window as any).__graph.setView("structure"))

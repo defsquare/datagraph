@@ -40,7 +40,7 @@ async function clickToken(page: Page, arrayId: string): Promise<void> {
   await page.waitForTimeout(600)
 }
 
-test("le jeton d'un tableau deplie une carte par element, puis les replie", async ({ page }) => {
+test("an array token expands one card per element, then collapses them", async ({ page }) => {
   const errors: string[] = []
   page.on("pageerror", e => errors.push(String(e)))
   page.on("console", m => {
@@ -61,7 +61,7 @@ test("le jeton d'un tableau deplie une carte par element, puis les replie", asyn
   expect(errors).toEqual([])
 })
 
-test("un tableau elide ne compte pas comme une carte", async ({ page }) => {
+test("an elided array does not count as a card", async ({ page }) => {
   await gotoReady(page)
 
   // The four root collections are elided and EXPANDED from the start: the root
@@ -117,7 +117,7 @@ const nestedConfig = {
   groups: ["Customer"],
 }
 
-test("une entite imbriquee dans un tableau elide garde sa reference en vue graphe", async ({
+test("an entity nested in an elided array keeps its reference in graph view", async ({
   page,
 }) => {
   const errors: string[] = []

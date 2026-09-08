@@ -38,8 +38,8 @@ function manyItems(n: number): unknown {
 // BFS: its 250 object elements ARE real cards — hence paginated.
 const noConfig: DataGraphConfig = { ids: {} }
 
-describe("CollapseState — pages révélées", () => {
-  it("un nœud déplié ne montre que la première page de ses enfants-cartes", () => {
+describe("CollapseState — revealed pages", () => {
+  it("an expanded node shows only the first page of its card children", () => {
     const g = buildGraph(manyItems(250), noConfig)
     const cs = new CollapseState(g)
     const visible = cs.visibleNodeIds()
@@ -49,7 +49,7 @@ describe("CollapseState — pages révélées", () => {
     expect(visible.has("/items/249")).toBe(false)
   })
 
-  it("revealPage ajoute une page ; les cartes révélées arrivent repliées", () => {
+  it("revealPage adds a page; the revealed cards arrive collapsed", () => {
     const g = buildGraph(manyItems(250), noConfig)
     const cs = new CollapseState(g)
     cs.revealPage("/items", 2)
@@ -67,7 +67,7 @@ describe("CollapseState — pages révélées", () => {
     expect(visible.has("/items/100")).toBe(false) // page 1 stays hidden
   })
 
-  it("unrevealPage retire une page, y compris la page 0", () => {
+  it("unrevealPage removes a page, page 0 included", () => {
     const g = buildGraph(manyItems(250), noConfig)
     const cs = new CollapseState(g)
     cs.revealPage("/items", 2)
@@ -77,7 +77,7 @@ describe("CollapseState — pages révélées", () => {
     expect(cs.visibleNodeIds().has("/items/0")).toBe(false)
   })
 
-  it("revealedPages vaut {0} par défaut et suit les révélations", () => {
+  it("revealedPages is {0} by default and tracks the reveals", () => {
     const g = buildGraph(manyItems(250), noConfig)
     const cs = new CollapseState(g)
     expect([...cs.revealedPages("/items")]).toEqual([0])
@@ -87,7 +87,7 @@ describe("CollapseState — pages révélées", () => {
     expect([...cs.revealedPages("/items")]).toEqual([2])
   })
 
-  it("hiddenGaps décrit les trous en ordre d'indices, avec la page à révéler", () => {
+  it("hiddenGaps describes the gaps in index order, with the page to reveal", () => {
     const g = buildGraph(manyItems(250), noConfig)
     const cs = new CollapseState(g)
     cs.revealPage("/items", 2) // revealed: pages {0, 2} out of 3 (250 cards)
@@ -100,7 +100,7 @@ describe("CollapseState — pages révélées", () => {
     ])
   })
 
-  it("hiddenGaps borne le dernier trou sur le nombre réel de cartes", () => {
+  it("hiddenGaps bounds the last gap by the real card count", () => {
     const g = buildGraph(manyItems(250), noConfig)
     const cs = new CollapseState(g)
     // Only page 0 is revealed: the gap covers pages 1 and 2, the last of which
@@ -110,14 +110,14 @@ describe("CollapseState — pages révélées", () => {
     ])
   })
 
-  it("hiddenGaps est vide sous PAGE_SIZE enfants et pour un nœud inconnu", () => {
+  it("hiddenGaps is empty below PAGE_SIZE children and for an unknown node", () => {
     const g = buildGraph(manyItems(50), noConfig)
     const cs = new CollapseState(g)
     expect(cs.hiddenGaps("/items")).toEqual([])
     expect(cs.hiddenGaps("/nope")).toEqual([])
   })
 
-  it("cardIndexOf compte parmi les enfants-cartes ; élidé et absent rendent -1", () => {
+  it("cardIndexOf counts among the card children; elided and absent both return -1", () => {
     const g = buildGraph(manyItems(250), noConfig)
     const cs = new CollapseState(g)
     expect(cs.cardIndexOf("/items", "/items/0")).toBe(0)
@@ -127,7 +127,7 @@ describe("CollapseState — pages révélées", () => {
     expect(cs.cardIndexOf("/", "/items")).toBe(-1)
   })
 
-  it("expandPathTo révèle la page de chaque maillon du chemin, pas tout le préfixe", () => {
+  it("expandPathTo reveals the page of every link in the path, not the whole prefix", () => {
     const g = buildGraph(manyItems(250), noConfig)
     const cs = new CollapseState(g)
     cs.collapse("/items") // start over from a collapsed array
@@ -139,7 +139,7 @@ describe("CollapseState — pages révélées", () => {
     expect(cs.expandPathTo("/items/213/w")).toEqual([]) // idempotent
   })
 
-  it("pageOf aligne sur PAGE_SIZE", () => {
+  it("pageOf aligns on PAGE_SIZE", () => {
     expect(PAGE_SIZE).toBe(100)
     expect(pageOf(0)).toBe(0)
     expect(pageOf(99)).toBe(0)
@@ -147,7 +147,7 @@ describe("CollapseState — pages révélées", () => {
   })
 })
 
-describe("CollapseState — budget initial", () => {
+describe("CollapseState — initial budget", () => {
   // Three tiers: root -> a,b (objects) -> 10 object children each.
   function tiers(): unknown {
     const child = () => Object.fromEntries(
@@ -156,7 +156,7 @@ describe("CollapseState — budget initial", () => {
     return { a: child(), b: child() }
   }
 
-  it("cesse de déplier une fois le budget de cartes atteint, niveaux hauts d'abord", () => {
+  it("stops expanding once the card budget is reached, top levels first", () => {
     const g = buildGraph(tiers(), noConfig)
     const cs = new CollapseState(g, { initialCardBudget: 5 })
     const visible = cs.visibleNodeIds()
@@ -168,21 +168,21 @@ describe("CollapseState — budget initial", () => {
     expect(visible.has("/a/k0")).toBe(false)
   })
 
-  it("la racine est toujours dépliée, même sous un budget de 0", () => {
+  it("the root is always expanded, even under a budget of 0", () => {
     const g = buildGraph(tiers(), noConfig)
     const cs = new CollapseState(g, { initialCardBudget: 0 })
     expect(cs.isExpanded(g.rootId)).toBe(true)
     expect(cs.visibleNodeIds().has("/a")).toBe(true) // root children = visible collapsed cards
   })
 
-  it("un document sous le budget est intégralement déplié, comme avant", () => {
+  it("a document below the budget is expanded in full, as before", () => {
     const g = buildGraph(tiers(), noConfig)
     const cs = new CollapseState(g) // default 300 >> ~23 cards
     expect(cs.isExpanded("/a")).toBe(true)
     expect(cs.visibleNodeIds().has("/a/k0")).toBe(true)
   })
 
-  it("la frontière d'entité reste prioritaire : une entité n'est jamais dépliée par le BFS", () => {
+  it("the entity boundary keeps priority: an entity is never expanded by the BFS", () => {
     const g = buildGraph(
       { customers: [{ id: "c1", extra: { x: 1 } }] },
       { ids: { Customer: "$.customers[*].id" } },
@@ -192,7 +192,7 @@ describe("CollapseState — budget initial", () => {
     expect(cs.isExpanded(entity.id)).toBe(false)
   })
 
-  it("un nœud marqué déplié ne révèle que sa première page (interaction budget × pages)", () => {
+  it("a node marked expanded reveals only its first page (budget × pages interaction)", () => {
     const g = buildGraph(manyItems(250), noConfig)
     const cs = new CollapseState(g) // 250 cards > 100 but budget 300: marked expanded
     expect(cs.visibleNodeIds().has("/items/100")).toBe(false)

@@ -51,7 +51,7 @@ describe("incremental layout", () => {
     for (const [id, r] of before) expect(back.positions.get(id)!.y).toBeCloseTo(r.y, 5)
   })
 
-  it("replier un tableau elide annule le decalage de son depliage", async () => {
+  it("collapsing an elided array undoes the shift from its expansion", async () => {
     // `/orders/0/lines` is an array, hence ELIDED: it has no card, it is the
     // token of a row of `/orders/0`. It is the one that carries the fold of its
     // elements, and therefore the one — not the order that contains it — that
@@ -73,7 +73,7 @@ describe("incremental layout", () => {
     for (const [id, r] of before) expect(back.positions.get(id)!.y).toBeCloseTo(r.y, 5)
   })
 
-  it("replier la carte hote ne retracte pas ce que le jeton a deplie", async () => {
+  it("collapsing the host card does not retract what the token expanded", async () => {
     // The header chevron and the `[ n items ]` token are two INDEPENDENT
     // controls: the first governs the child cards, the second its array.
     // Collapsing `/orders/0` leaves its card — and hence its `lines` row, still
@@ -94,7 +94,7 @@ describe("incremental layout", () => {
     expect(back.positions.has("/orders/0/lines/0")).toBe(true)
   })
 
-  it("layout() global purge la memoire de deltas : un collapse ulterieur n'annule rien", async () => {
+  it("a global layout() clears the delta memory: a later collapse undoes nothing", async () => {
     const { g, cs, engine, initial } = await setup()
 
     // `/orders/0/lines` is the fixture's expansion that actually shifts cards:
@@ -135,7 +135,7 @@ function manyItems(n: number): unknown {
 const noConfig: DataGraphConfig = { ids: {} }
 
 describe("layoutAfterReveal", () => {
-  it("insere le nouveau bloc sous le bloc precedent et decale le dessous", async () => {
+  it("inserts the new block under the previous block and shifts what lies below", async () => {
     const g = buildGraph(manyItems(250), noConfig)
     const cs = new CollapseState(g)
     const engine = createStructureLayoutEngine()
@@ -157,7 +157,7 @@ describe("layoutAfterReveal", () => {
     }
   })
 
-  it("un bloc disjoint sans precedent se pose au-dessus du bloc suivant", async () => {
+  it("a disjoint block with no predecessor lands above the following block", async () => {
     const g = buildGraph(manyItems(250), noConfig)
     const cs = new CollapseState(g)
     cs.unrevealPage("/items", 0)
@@ -182,7 +182,7 @@ describe("layoutAfterReveal", () => {
     )
   })
 
-  it("sans aucune fratrie posee, le bloc retombe sur la pose laterale de l'ancre", async () => {
+  it("with no sibling laid down, the block falls back on the anchor's lateral placement", async () => {
     const g = buildGraph(manyItems(250), noConfig)
     const cs = new CollapseState(g)
     const engine = createStructureLayoutEngine()
@@ -202,7 +202,7 @@ describe("layoutAfterReveal", () => {
     expect(after.positions.get("/")!.y).toBeCloseTo(root.y, 5)
   })
 
-  it("un reveal sans nouveau visible rend une copie intacte", async () => {
+  it("a reveal with nothing newly visible returns an untouched copy", async () => {
     const g = buildGraph(manyItems(250), noConfig)
     const cs = new CollapseState(g)
     const engine = createStructureLayoutEngine()
@@ -216,7 +216,7 @@ describe("layoutAfterReveal", () => {
     expect(after.positions).not.toBe(before.positions)
   })
 
-  it("deux reveals cumulent leur delta : le repli les annule TOUS", async () => {
+  it("two reveals accumulate their delta: the collapse undoes them ALL", async () => {
     const g = buildGraph(manyItems(250), noConfig)
     const cs = new CollapseState(g)
     const engine = createStructureLayoutEngine()

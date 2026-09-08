@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { renderTokensCss } from "../src/css.js";
 
 describe("renderTokensCss", () => {
-  it("reproduit exactement les blocs de tokens historiques de style.css", () => {
+  it("reproduces exactly the historical token blocks of style.css", () => {
     const css = renderTokensCss();
     // A few anchors: the full byte-for-byte check is the freshness test's job.
     expect(css).toContain("--ds-canvas: #eef0f3;");
@@ -16,7 +16,7 @@ describe("renderTokensCss", () => {
     expect(css).toContain("--space-6: 24px;");
   });
 
-  it("est à jour dans apps/demo (fraîcheur du fichier généré)", () => {
+  it("is up to date in apps/demo (freshness of the generated file)", () => {
     // `import.meta.url` rather than `__dirname`: the package is pure ESM, and
     // this path must stay valid outside vitest's transform (Node scripts).
     const committed = readFileSync(

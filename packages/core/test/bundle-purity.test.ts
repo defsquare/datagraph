@@ -48,7 +48,7 @@ describe("bundle purity", () => {
 
   it("keeps the graph-view engine out of the main entry point's transitive closure", () => {
     if (!existsSync(entry)) {
-      throw new Error("dist/index.js absent — lancer `pnpm --filter @defsquare/data-graph-core build` avant ce test")
+      throw new Error("dist/index.js is missing — run `pnpm --filter @defsquare/data-graph-core build` before this test")
     }
 
     // Breadth-first walk over the relative specifiers, with a `visited` set that
@@ -63,7 +63,7 @@ describe("bundle purity", () => {
       const source = readFileSync(file, "utf8")
       // The factory's name, not the module's: tsup renames and moves files, but
       // the exported symbol survives bundling.
-      expect(source, `${file} atteint le moteur de la vue graphe`).not.toMatch(
+      expect(source, `${file} reaches the graph-view engine`).not.toMatch(
         /createTwoLevelLayoutEngine/,
       )
 
@@ -80,7 +80,7 @@ describe("bundle purity", () => {
     // pass too.
     const graphEntry = join(distDir, "graph-layout.js")
     if (!existsSync(graphEntry)) {
-      throw new Error("dist/graph-layout.js absent — lancer le build avant ce test")
+      throw new Error("dist/graph-layout.js is missing — run the build before this test")
     }
     const visited = new Set<string>()
     const queue = [graphEntry]

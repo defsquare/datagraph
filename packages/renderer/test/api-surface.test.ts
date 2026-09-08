@@ -22,7 +22,7 @@ import * as index from "../src/index.js";
  * file `package.json` publishes.
  */
 describe("api surface", () => {
-  it("le point d'entrée `.` exporte exactement ces symboles d'exécution", () => {
+  it("the `.` entry point exports exactly these runtime symbols", () => {
     expect(Object.keys(index).sort()).toEqual([
       "arrayTokenTextFor",
       "createDataGraph",

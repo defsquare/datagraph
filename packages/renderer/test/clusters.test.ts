@@ -41,7 +41,7 @@ describe("drawClusters", () => {
     });
   }
 
-  it("peint au repos quand aucune intensite de survol n'est donnee", () => {
+  it("paints at rest when no hover intensity is given", () => {
     // The field is optional: any caller ignoring it must get exactly the
     // rendering from before hover existed.
     const [fill, stroke] = styles(
@@ -52,7 +52,7 @@ describe("drawClusters", () => {
     expect(stroke!.width).toBeCloseTo(1.5, 6);
   });
 
-  it("renforce fond, contour et trait a l'intensite maximale", () => {
+  it("strengthens fill, stroke and line width at maximum intensity", () => {
     const [fill, stroke] = styles(
       drawClusters([{ circle: { cx: 0, cy: 0, r: 10 }, color: "#ff0000", hover: 1 }], theme),
     );
@@ -61,7 +61,7 @@ describe("drawClusters", () => {
     expect(stroke!.width).toBeCloseTo(2, 6);
   });
 
-  it("interpole lineairement entre les deux etats", () => {
+  it("interpolates linearly between the two states", () => {
     // The intensity arrives already eased by `attachHover`: interpolating a
     // second time along a curve here would double the easing and make the ramp
     // limp at the start.
@@ -73,7 +73,7 @@ describe("drawClusters", () => {
     expect(stroke!.width).toBeCloseTo(1.75, 6);
   });
 
-  it("borne une intensite hors de [0,1]", () => {
+  it("clamps an intensity outside [0,1]", () => {
     // No source should ever produce one, but an alpha above 1 or negative would
     // be an invalid render, not merely an ugly one.
     const over = styles(
@@ -86,7 +86,7 @@ describe("drawClusters", () => {
     expect(under[0]!.alpha).toBeCloseTo(0.08, 6);
   });
 
-  it("n'applique l'intensite qu'a l'enveloppe qui la porte", () => {
+  it("applies the intensity only to the envelope carrying it", () => {
     // Rendering is per envelope: hovering one must not light up its neighbor,
     // which stays painted at rest in the same Graphics.
     const s = styles(
@@ -102,7 +102,7 @@ describe("drawClusters", () => {
     expect(s[2]!.alpha).toBeCloseTo(0.08, 6);
   });
 
-  it("peint pleinement quand aucun estompage n'est demande", () => {
+  it("paints at full strength when no dimming is asked for", () => {
     // The field is optional, like `hover`: a caller ignoring it gets exactly the
     // rendering from before dimming existed. It is also the "no selection" case,
     // which `clustersFor` turns into `dim: false` everywhere.
@@ -113,7 +113,7 @@ describe("drawClusters", () => {
     expect(stroke!.alpha).toBeCloseTo(0.35, 6);
   });
 
-  it("estompe fond et contour d'une enveloppe sans lien avec la selection", () => {
+  it("dims the fill and stroke of an envelope unrelated to the selection", () => {
     const [fill, stroke] = styles(
       drawClusters([{ circle: { cx: 0, cy: 0, r: 10 }, color: "#f00", dim: true }], theme),
     );
@@ -121,7 +121,7 @@ describe("drawClusters", () => {
     expect(stroke!.alpha).toBeCloseTo(0.35 * DIM_ALPHA, 6);
   });
 
-  it("laisse l'epaisseur du trait intacte en estompant", () => {
+  it("leaves the line width intact while dimming", () => {
     // Width states the object's size, not its importance: thinning it on top of
     // paling it would push the envelope into the sub-pixel.
     const [, stroke] = styles(
@@ -130,7 +130,7 @@ describe("drawClusters", () => {
     expect(stroke!.width).toBeCloseTo(1.5, 6);
   });
 
-  it("multiplie l'estompage par l'intensite de survol au lieu de s'y substituer", () => {
+  it("multiplies the dimming by the hover intensity instead of replacing it", () => {
     // A dimmed envelope the pointer crosses still responds, while staying in the
     // background: the two pieces of information do not cancel each other out.
     const [fill, stroke] = styles(
@@ -140,7 +140,7 @@ describe("drawClusters", () => {
     expect(stroke!.alpha).toBeCloseTo(0.6 * DIM_ALPHA, 6);
   });
 
-  it("n'estompe que l'enveloppe qui le demande", () => {
+  it("dims only the envelope that asks for it", () => {
     // Rendering is per envelope: dimming one must not push its neighbor back,
     // painted as it is in the same Graphics.
     const s = styles(
@@ -177,7 +177,7 @@ describe("drawClusters", () => {
 });
 
 describe("drawClusterHitAreas", () => {
-  it("rend un container par enveloppe, centre sur elle", () => {
+  it("returns one container per envelope, centered on it", () => {
     // The container is POSITIONED on the center and its `hitArea` is centered on
     // the local origin: moving the cluster then comes down to moving its
     // position, exactly like a card. A `hitArea` in world coordinates would force
@@ -195,20 +195,20 @@ describe("drawClusterHitAreas", () => {
     expect(area.radius).toBe(30);
   });
 
-  it("rend l'objet d'entree tel quel, sans copie", () => {
+  it("returns the input object as is, without copying", () => {
     // This is what lets the caller mutate the layout's `ClusterShape` during the
     // drag and see the effect on the next repaint.
     const cluster = { cx: 0, cy: 0, r: 10 };
     expect(drawClusterHitAreas([cluster])[0]!.cluster).toBe(cluster);
   });
 
-  it("est saisissable et affiche une main ouverte", () => {
+  it("is grabbable and shows an open hand", () => {
     const hit = drawClusterHitAreas([{ cx: 0, cy: 0, r: 10 }])[0]!.container;
     expect(hit.eventMode).toBe("static");
     expect(hit.cursor).toBe("grab");
   });
 
-  it("ne cable aucun comportement : la cible est nue", () => {
+  it("wires no behavior: the hit target is bare", () => {
     // A tap on an envelope does select its aggregate, but `create.ts` is what
     // wires that — like the drag and the hover. THIS function returns nothing but
     // a pointer-sensitive geometry, otherwise it could no longer be tested
@@ -218,7 +218,7 @@ describe("drawClusterHitAreas", () => {
     expect(hit.listenerCount("pointerdown")).toBe(0);
   });
 
-  it("ignore un rayon non positif", () => {
+  it("ignores a non-positive radius", () => {
     // Same guard as `drawClusters`: a disc of zero radius is not a surface, and a
     // `hitArea` of zero radius would be ungrabbable anyway.
     expect(drawClusterHitAreas([{ cx: 10, cy: 10, r: 0 }])).toEqual([]);

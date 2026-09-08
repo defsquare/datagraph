@@ -47,7 +47,7 @@ async function gotoInstrumented(page: Page): Promise<string[]> {
   return warnings
 }
 
-test("la vue graphe se met en page dans un vrai Web Worker, sans repli", async ({ page }) => {
+test("the graph view lays out in a real Web Worker, with no fallback", async ({ page }) => {
   const warnings = await gotoInstrumented(page)
 
   await page.locator("#toggle-view").click()
@@ -77,7 +77,7 @@ test("la vue graphe se met en page dans un vrai Web Worker, sans repli", async (
   expect(after.filter((u) => u.includes("graph-layout-worker"))).toHaveLength(1)
 })
 
-test("le bouton de bascule passe en état occupé, puis en sort", async ({ page }) => {
+test("the toggle button enters the busy state, then leaves it", async ({ page }) => {
   await gotoInstrumented(page)
 
   // An OBSERVER set up before the click, not an assertion after it: on the
@@ -104,7 +104,7 @@ test("le bouton de bascule passe en état occupé, puis en sort", async ({ page 
   await expect(page.locator("#toggle-view")).toBeEnabled()
 })
 
-test("la vue structure reste interactive pendant le calcul de la vue graphe", async ({ page }) => {
+test("the structure view stays interactive while the graph view computes", async ({ page }) => {
   await gotoInstrumented(page)
 
   // The worker's benefit, put to the test: the toggle is started WITHOUT

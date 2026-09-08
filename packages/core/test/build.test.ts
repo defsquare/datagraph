@@ -35,7 +35,7 @@ describe("buildGraph", () => {
   it("throws GraphTooLargeError above maxNodes", () => {
     expect(() => buildGraph(bigShop(2000), { ...shopConfig, maxNodes: 100 })).toThrow(GraphTooLargeError)
   })
-  it("GraphTooLargeError dit comment relever le plafond", () => {
+  it("GraphTooLargeError says how to raise the cap", () => {
     // The cap is a memory guard, deliberately raisable: the message must name
     // the lever (`maxNodes` in the config), otherwise a blocked user has no way
     // out.

@@ -14,27 +14,27 @@ function wheel(partial: Partial<WheelSignal> = {}): WheelSignal {
 }
 
 describe("normalizeWheelDelta", () => {
-  it("laisse le mode pixel inchange", () => {
+  it("leaves pixel mode unchanged", () => {
     expect(normalizeWheelDelta(120, 0)).toBe(120);
   });
 
-  it("convertit le mode ligne en pixels", () => {
+  it("converts line mode to pixels", () => {
     // Firefox reports wheel notches in lines (deltaY = 3). Without this
     // conversion, one notch was worth 0.3% of zoom: the wheel was dead there.
     expect(normalizeWheelDelta(3, 1)).toBe(48);
   });
 
-  it("convertit le mode page en pixels", () => {
+  it("converts page mode to pixels", () => {
     expect(normalizeWheelDelta(1, 2)).toBe(400);
   });
 
-  it("preserve le signe", () => {
+  it("preserves the sign", () => {
     expect(normalizeWheelDelta(-3, 1)).toBe(-48);
   });
 });
 
 describe("classifyWheel", () => {
-  it("ctrlKey est un zoom, quel que soit le reste", () => {
+  it("ctrlKey is a zoom, whatever else is set", () => {
     // macOS synthesizes a wheel + ctrlKey for the trackpad pinch, and Ctrl+wheel
     // is the universal browser convention.
     expect(classifyWheel(wheel({ ctrlKey: true, deltaY: 2 }))).toBe("zoom");
@@ -42,12 +42,12 @@ describe("classifyWheel", () => {
     expect(classifyWheel(wheel({ ctrlKey: true, deltaY: 100 }))).toBe("zoom");
   });
 
-  it("metaKey est un zoom : Cmd+molette sur macOS", () => {
+  it("metaKey is a zoom: Cmd+wheel on macOS", () => {
     expect(classifyWheel(wheel({ metaKey: true, deltaY: 100 }))).toBe("zoom");
     expect(classifyWheel(wheel({ metaKey: true, deltaY: 4, deltaX: 2 }))).toBe("zoom");
   });
 
-  it("sans modificateur, un balayage trackpad se deplace TOUJOURS", () => {
+  it("without a modifier, a trackpad swipe ALWAYS pans", () => {
     // The heart of the regression: a fast vertical two-finger swipe arrives with
     // deltaX quantized to 0 and a whole-number deltaY on the order of a wheel
     // notch. Any heuristic reading those three fields takes it for a wheel and
@@ -60,41 +60,41 @@ describe("classifyWheel", () => {
     expect(classifyWheel(wheel({ deltaY: 100, deltaX: 4 }))).toBe("pan");
   });
 
-  it("sans modificateur, une vraie molette se deplace aussi, deltaMode compris", () => {
+  it("without a modifier, a real wheel pans too, deltaMode included", () => {
     // Firefox reports notches in lines. It really is a wheel, but a bare wheel
     // pans: zoom demands an explicit modifier.
     expect(classifyWheel(wheel({ deltaY: 3, deltaMode: 1 }))).toBe("pan");
     expect(classifyWheel(wheel({ deltaY: 1, deltaMode: 2 }))).toBe("pan");
   });
 
-  it("un evenement nul ne zoome pas", () => {
+  it("a null event does not zoom", () => {
     expect(classifyWheel(wheel())).toBe("pan");
   });
 });
 
 describe("zoomFactorFor", () => {
-  it("est fin sur les petits deltas du pincement", () => {
+  it("stays fine-grained on the small deltas of a pinch", () => {
     // ~6% per frame: decisive at pinch cadence, without being twitchy.
     expect(zoomFactorFor(-5)).toBeCloseTo(Math.exp(0.06), 6);
   });
 
-  it("plafonne un cran de molette a 1.22x, comme l'ancien gain dedie", () => {
+  it("caps a wheel notch at 1.22x, like the old dedicated gain", () => {
     // The cap exists so that no code has to recognize the wheel: a 100px notch
     // runs into it and gets back exactly its former feel.
     expect(zoomFactorFor(-100)).toBeCloseTo(1.2214, 4);
     expect(zoomFactorFor(-100)).toBeCloseTo(Math.exp(100 * 0.002), 6);
   });
 
-  it("plafonne symetriquement dans les deux sens", () => {
+  it("caps symmetrically in both directions", () => {
     expect(zoomFactorFor(100) * zoomFactorFor(-100)).toBeCloseTo(1, 6);
   });
 
-  it("plafonne aussi un cran Firefox converti en pixels", () => {
+  it("caps a Firefox notch converted to pixels too", () => {
     // Line deltaMode: 3 lines -> 48px, already well past the cap.
     expect(zoomFactorFor(-normalizeWheelDelta(3, 1))).toBeCloseTo(1.2214, 4);
   });
 
-  it("ne change rien pour un delta nul", () => {
+  it("changes nothing for a null delta", () => {
     expect(zoomFactorFor(0)).toBe(1);
   });
 });
@@ -126,12 +126,12 @@ function mountCamera(isBlocked: () => boolean = () => false) {
   };
 }
 
-describe("Camera — inhibition du pan", () => {
+describe("Camera — pan inhibition", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it("deplace la toile quand rien ne bloque", () => {
+  it("pans the canvas when nothing blocks it", () => {
     const { stage, down, move } = mountCamera(() => false);
     down(100, 100);
     move(150, 120);
@@ -139,7 +139,7 @@ describe("Camera — inhibition du pan", () => {
     expect(stage.position.y).toBe(20);
   });
 
-  it("ne deplace rien pendant qu'une carte est deplacee", () => {
+  it("pans nothing while a card is being dragged", () => {
     // The same gesture, with a card drag under way: the canvas must stay still,
     // otherwise the card would flee under the cursor at twice the pointer's
     // speed.
@@ -153,7 +153,7 @@ describe("Camera — inhibition du pan", () => {
     expect(stage.position.x).toBe(50);
   });
 
-  it("ne rattrape pas le chemin parcouru pendant l'inhibition", () => {
+  it("does not catch up on the distance covered while inhibited", () => {
     // The guard is at MOVE, not at DOWN: pan therefore resumes mid-gesture, and
     // it must restart from the LAST position seen, not from the one before the
     // inhibition — otherwise the canvas jumps when the card is released.
@@ -179,7 +179,7 @@ describe("Camera — worldViewport", () => {
 
   const VIEWPORT = { width: 800, height: 600 };
 
-  it("est l'inverse exact de centerOn : le rect vise y est centre", () => {
+  it("is the exact inverse of centerOn: the target rect ends up centered", () => {
     const { camera } = mountCamera();
     const rect = { x: 1000, y: 500, width: 200, height: 100 };
     camera.centerOn(rect, VIEWPORT, 2);
@@ -198,7 +198,7 @@ describe("Camera — worldViewport", () => {
     expect(world.height).toBeCloseTo(VIEWPORT.height / 2, 6);
   });
 
-  it("suit le pan : deplacer la toile deplace le monde vu en sens inverse", () => {
+  it("follows the pan: moving the canvas moves the viewed world the other way", () => {
     const { camera, down, move } = mountCamera();
     camera.centerOn({ x: 0, y: 0, width: 0, height: 0 }, VIEWPORT, 1);
     const before = camera.worldViewport(VIEWPORT);

@@ -20,7 +20,7 @@ import * as graphLayout from "../src/graph-layout.js"
  * it is indeed the same file `package.json` publishes.
  */
 describe("api surface", () => {
-  it("le point d'entrée `.` exporte exactement ces symboles d'exécution", () => {
+  it("the `.` entry point exports exactly these runtime symbols", () => {
     expect(Object.keys(index).sort()).toEqual([
       "CollapseState",
       "ConfigError",
@@ -66,7 +66,7 @@ describe("api surface", () => {
    * path and the worker's fallback — the three live together and are maintained
    * together.
    */
-  it("le point d'entrée `./graph-layout` exporte exactement ces symboles d'exécution", () => {
+  it("the `./graph-layout` entry point exports exactly these runtime symbols", () => {
     expect(Object.keys(graphLayout).sort()).toEqual([
       "TWO_LEVEL_LAYOUT_DEFAULTS",
       "createTwoLevelLayoutEngine",

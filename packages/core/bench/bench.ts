@@ -77,8 +77,8 @@ function mb(bytes: number): string {
 // Redo those three isolated runs before touching the default: the grouped
 // sweep's numbers are not comparable to them.
 async function scaleSweep(): Promise<void> {
-  console.log("\n--- échelle mémoire buildGraph + buildSearchIndex ---")
-  console.log("    (balayage groupé = majorant bruité par le GC ; le défaut maxNodes est calé sur des runs isolés, cf. commentaire de scaleSweep)")
+  console.log("\n--- memory scale buildGraph + buildSearchIndex ---")
+  console.log("    (grouped sweep = upper bound noised by the GC; the maxNodes default is calibrated on isolated runs, cf. scaleSweep's comment)")
   // MAX_SAFE_INTEGER: without it the measurement would be blocked by the
   // default in force, which is precisely what we are trying to calibrate.
   const unbounded: DataGraphConfig = { ...bigShopConfig, maxNodes: Number.MAX_SAFE_INTEGER }
@@ -108,12 +108,12 @@ async function scaleSweep(): Promise<void> {
         // Both deltas can come out NEGATIVE: they are `heapUsed` differences
         // between two instants, and a GC occurring between the bounds frees
         // more than was allocated. Only the absolute `heap` is authoritative.
-        ` | heap ${mb(peak)} (deltas GC-bruités, parfois négatifs — source ${mb(afterData - before)}, graphe+index ${mb(peak - afterData)})` +
-        ` | ${graph.logicalNodeCount} nœuds logiques`,
+        ` | heap ${mb(peak)} (GC-noised deltas, sometimes negative — source ${mb(afterData - before)}, graph+index ${mb(peak - afterData)})` +
+        ` | ${graph.logicalNodeCount} logical nodes`,
       )
     } catch (err: unknown) {
       // An OOM/failure at a tier IS a measurement: print it and carry on.
-      console.log(`n=${n}: ÉCHEC — ${err instanceof Error ? err.message : String(err)}`)
+      console.log(`n=${n}: FAILED — ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 }
@@ -143,7 +143,7 @@ async function main(): Promise<void> {
   const engine = createStructureLayoutEngine()
   const t3 = performance.now()
   await engine.layout(graph, visible)
-  report("layout initial (default-visible set)", performance.now() - t3, null)
+  report("initial layout (default-visible set)", performance.now() - t3, null)
   console.log(`  -> ${visible.size} nodes visible by default`)
 
   await scaleSweep()

@@ -15,13 +15,13 @@ function harness() {
 }
 
 describe("specKey", () => {
-  it("distingue deux themes qui ne different que par le tracking", () => {
+  it("distinguishes two themes that differ only by their tracking", () => {
     const a = fontSpecFor(defsquareLight, "badge");
     const b = fontSpecFor(resolveTheme({ typography: { badge: { tracking: 0.2 } } }), "badge");
     expect(specKey(a)).not.toBe(specKey(b));
   });
 
-  it("est stable pour deux themes identiques", () => {
+  it("is stable for two identical themes", () => {
     const a = fontSpecFor(defsquareLight, "header");
     const b = fontSpecFor(resolveTheme(), "header");
     expect(specKey(a)).toBe(specKey(b));
@@ -29,14 +29,14 @@ describe("specKey", () => {
 });
 
 describe("FontRegistry", () => {
-  it("installe un atlas par role a la premiere synchronisation", () => {
+  it("installs one atlas per role on the first sync", () => {
     const { registry, installs } = harness();
     registry.lease().sync(defsquareLight);
     expect(installs).toHaveLength(4);
     expect(new Set(installs).size).toBe(4); // four distinct names
   });
 
-  it("ne reinstalle rien quand on resynchronise le meme theme", () => {
+  it("reinstalls nothing when the same theme is synced again", () => {
     const { registry, installs } = harness();
     const lease = registry.lease();
     lease.sync(defsquareLight);
@@ -45,14 +45,14 @@ describe("FontRegistry", () => {
     expect(installs).toHaveLength(4);
   });
 
-  it("deux instances partagent les atlas d'un meme theme sans reinstaller", () => {
+  it("two instances share the atlases of one theme without reinstalling", () => {
     const { registry, installs } = harness();
     registry.lease().sync(defsquareLight);
     registry.lease().sync(defsquareLight);
     expect(installs).toHaveLength(4);
   });
 
-  it("deux instances aux typographies differentes coexistent au lieu de se pietiner", () => {
+  it("two instances with different typography coexist instead of trampling each other", () => {
     // This was the bug: one fixed atlas name per role meant the second instance
     // overwrote the first one's atlases on every rebuild.
     const { registry, installs, uninstalls } = harness();
@@ -63,7 +63,7 @@ describe("FontRegistry", () => {
     expect(installs).toHaveLength(5); // 4 + the one role that differs
   });
 
-  it("ne desinstalle un atlas que quand son dernier porteur le libere", () => {
+  it("uninstalls an atlas only when its last holder releases it", () => {
     const { registry, uninstalls } = harness();
     const a = registry.lease();
     const b = registry.lease();
@@ -75,7 +75,7 @@ describe("FontRegistry", () => {
     expect(uninstalls).toHaveLength(4);
   });
 
-  it("libere l'ancien atlas quand un bail change de theme", () => {
+  it("releases the old atlas when a lease changes theme", () => {
     const { registry, installs, uninstalls } = harness();
     const lease = registry.lease();
     lease.sync(defsquareLight);
@@ -84,7 +84,7 @@ describe("FontRegistry", () => {
     expect(uninstalls).toHaveLength(1); // the old `key` atlas, no longer held by anyone
   });
 
-  it("dispose() est idempotent", () => {
+  it("dispose() is idempotent", () => {
     const { registry, uninstalls } = harness();
     const lease = registry.lease();
     lease.sync(defsquareLight);
@@ -93,7 +93,7 @@ describe("FontRegistry", () => {
     expect(uninstalls).toHaveLength(4);
   });
 
-  it("sync() apres dispose() reinstalle plutot que de laisser un bail mort", () => {
+  it("sync() after dispose() reinstalls rather than leaving a dead lease", () => {
     const { registry, installs } = harness();
     const lease = registry.lease();
     lease.sync(defsquareLight);
@@ -102,7 +102,7 @@ describe("FontRegistry", () => {
     expect(installs).toHaveLength(8);
   });
 
-  it("installe exactement les noms que fontNameFor derive du theme", () => {
+  it("installs exactly the names fontNameFor derives from the theme", () => {
     // This is the invariant that lets drawNode find the atlas without receiving
     // anything from the lease: the name is a pure function of theme and role.
     const { registry, installs } = harness();
@@ -115,16 +115,16 @@ describe("FontRegistry", () => {
 });
 
 describe("fontNameFor", () => {
-  it("est deterministe pour un meme theme", () => {
+  it("is deterministic for a given theme", () => {
     expect(fontNameFor(defsquareLight, "header")).toBe(fontNameFor(resolveTheme(), "header"));
   });
 
-  it("differe quand la typographie differe", () => {
+  it("differs when the typography differs", () => {
     const other = resolveTheme({ typography: { header: { size: 20 } } });
     expect(fontNameFor(defsquareLight, "header")).not.toBe(fontNameFor(other, "header"));
   });
 
-  it("differe entre deux roles d'un meme theme", () => {
+  it("differs between two roles of the same theme", () => {
     expect(fontNameFor(defsquareLight, "header")).not.toBe(fontNameFor(defsquareLight, "key"));
   });
 });

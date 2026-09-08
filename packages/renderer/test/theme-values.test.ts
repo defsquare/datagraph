@@ -31,7 +31,7 @@ const RADII = { card: 6 };
 
 const STROKES = { border: 1, edge: 1.5, selection: 2.5, match: 2, matchCurrent: 3 };
 
-describe("gel des valeurs des themes livres", () => {
+describe("frozen values of the shipped themes", () => {
   it("defsquareLight", () => {
     expect(defsquareLight).toEqual({
       fonts: DEFSQUARE_FONTS,

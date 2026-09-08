@@ -3,23 +3,23 @@ import { buildGraph } from "../src/build.js"
 import { shopData, shopConfig } from "./fixtures.js"
 
 describe("rootLabel", () => {
-  it("vaut $ par defaut, le symbole racine de la syntaxe de selecteur", () => {
+  it("defaults to $, the root symbol of the selector syntax", () => {
     const g = buildGraph(shopData, shopConfig)
     expect(g.nodes.get(g.rootId)!.label).toBe("$")
   })
 
-  it("est remplacable par la config", () => {
+  it("can be overridden by the config", () => {
     const g = buildGraph(shopData, { ...shopConfig, rootLabel: "Boutique" })
     expect(g.nodes.get(g.rootId)!.label).toBe("Boutique")
   })
 
-  it("ne touche qu'a la racine", () => {
+  it("affects the root only", () => {
     const g = buildGraph(shopData, { ...shopConfig, rootLabel: "Boutique" })
     expect(g.nodes.get("/customers")!.label).toBe("customers")
     expect(g.nodes.get("/customers/0")!.label).toBe("Customer #c1")
   })
 
-  it("accepte la chaine vide sans retomber sur le defaut", () => {
+  it("accepts the empty string without falling back to the default", () => {
     const g = buildGraph(shopData, { ...shopConfig, rootLabel: "" })
     expect(g.nodes.get(g.rootId)!.label).toBe("")
   })

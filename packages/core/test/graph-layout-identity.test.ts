@@ -92,34 +92,34 @@ function digestOf(result: GraphLayoutResult): string {
 
 const CASES: { name: string; data: unknown; config: DataGraphConfig; digest: string }[] = [
   {
-    name: "bigShop(3000) — étagères, aucun ressort",
+    name: "bigShop(3000) — shelves, no spring",
     data: bigShop(3000),
     config: shopGroupsConfig,
     digest: "9b47dfc74e2e8e61d6ed7268c0e21df4579a543ca8704e2ec1d7a35b08dc5113",
   },
   {
-    name: "deepAggregate() — packing radial",
+    name: "deepAggregate() — radial packing",
     data: deepAggregate(),
     config: deepAggregateConfig,
     digest: "a893d3ba3c05f653ddb2fcd56ba4d9f3c5afeac756ce36712dd511d69af72894",
   },
   {
-    name: "denseRefs() — ressorts inter-agrégats",
+    name: "denseRefs() — inter-aggregate springs",
     data: denseRefs(),
     config: denseRefsConfig,
     digest: "d583f911ddf5f29f5f8a918f9d3e3fe66e7b2f73a471c1406c1b20d91aa738b1",
   },
 ]
 
-describe("scission extraction / cœur pur — identité bit-près", () => {
+describe("extraction / pure core split — bit-level identity", () => {
   for (const { name, data, config, digest } of CASES) {
-    it(`${name} : le moteur rend exactement la sortie d'avant la scission`, async () => {
+    it(`${name}: the engine returns exactly the output from before the split`, async () => {
       const { graph, aggregates, visible } = setupOn(data, config)
       const result = await createTwoLevelLayoutEngine().layout(graph, aggregates, visible)
       expect(digestOf(result)).toBe(digest)
     })
 
-    it(`${name} : extraction puis cœur pur rendent la MÊME chose que le moteur`, async () => {
+    it(`${name}: extraction then pure core return the SAME thing as the engine`, async () => {
       const { graph, aggregates, visible } = setupOn(data, config)
       const viaEngine = await createTwoLevelLayoutEngine().layout(graph, aggregates, visible)
       const viaInput = layoutFromInput(extractGraphLayoutInput(graph, aggregates, visible))
@@ -134,10 +134,10 @@ describe("scission extraction / cœur pur — identité bit-près", () => {
   }
 })
 
-describe("extractGraphLayoutInput — ce qui traverse, et rien d'autre", () => {
+describe("extractGraphLayoutInput — what crosses over, and nothing else", () => {
   const { graph, aggregates, visible } = setupOn(bigShop(600), shopGroupsConfig)
 
-  it("ne retient des entités que leur id et la taille de leur carte", () => {
+  it("keeps of entities only their id and their card's size", () => {
     const input = extractGraphLayoutInput(graph, aggregates, visible)
 
     // One entity per VISIBLE node of entity kind, and nothing else: no root, no
@@ -154,7 +154,7 @@ describe("extractGraphLayoutInput — ce qui traverse, et rien d'autre", () => {
     }
   })
 
-  it("ne retient des références que les paires (source, cible) qui relient deux entités placées", () => {
+  it("keeps of references only the (source, target) pairs linking two placed entities", () => {
     const input = extractGraphLayoutInput(graph, aggregates, visible)
     const placed = new Set(input.entities.map((e) => e.id))
 
@@ -169,7 +169,7 @@ describe("extractGraphLayoutInput — ce qui traverse, et rien d'autre", () => {
     expect(input.refs.length).toBeGreaterThan(0)
   })
 
-  it("ne retient des agrégats que leur id, leur racine et leurs membres visibles", () => {
+  it("keeps of aggregates only their id, their root and their visible members", () => {
     const input = extractGraphLayoutInput(graph, aggregates, visible)
     for (const agg of input.aggregates) {
       expect(Object.keys(agg).sort()).toEqual(["id", "memberIds", "rootId"])
@@ -181,7 +181,7 @@ describe("extractGraphLayoutInput — ce qui traverse, et rien d'autre", () => {
     expect(input.aggregates.length).toBeGreaterThan(0)
   })
 
-  it("ne laisse fuir AUCUNE référence au graphe : l'entrée survit à un structured clone", () => {
+  it("leaks NO reference to the graph: the input survives a structured clone", () => {
     const input = extractGraphLayoutInput(graph, aggregates, visible)
     // The real property sought, and the only one that matters for the worker:
     // the object survives structured cloning. A leaked `Graph`, `GraphNode` or
@@ -194,7 +194,7 @@ describe("extractGraphLayoutInput — ce qui traverse, et rien d'autre", () => {
     expect(layoutFromInput(clone).positions.size).toBe(input.entities.length)
   })
 
-  it("porte les options RÉSOLUES, défauts compris", () => {
+  it("carries the RESOLVED options, defaults included", () => {
     const withDefaults = extractGraphLayoutInput(graph, aggregates, visible)
     expect(withDefaults.options.hullPadding).toBe(18)
     expect(withDefaults.options.clusterGap).toBe(160)
