@@ -852,6 +852,12 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   let currentLod: Lod = 0;
   let selection: Selection | null = null;
   let destroyed = false;
+  // The media query watching the device pixel ratio, and its handler. Both are
+  // rebuilt on each change (the threshold depends on the current ratio) and both
+  // must be released by `destroy()` — they are the only listeners the async
+  // initialization installs.
+  let dprQuery: MediaQueryList | null = null;
+  let onDprChange: () => void = () => {};
   // Bumped by every mutating operation (doExpand/doCollapse/doFocus's expand
   // cascade) before it awaits a layout; after each await the operation
   // compares its captured value against the current counter and bails if
@@ -2642,6 +2648,40 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       return;
     }
 
+    // `resolution` is decided once, at init — and `devicePixelRatio` is not a
+    // constant: a browser zoom, or a window dragged onto a screen of a different
+    // density, changes it under a canvas that keeps rendering at the old one.
+    // The result is a permanently soft render that nothing in the app explains.
+    //
+    // `matchMedia` on `resolution` and not a `resize` listener: the query fires
+    // exactly on the transition we care about, and it re-arms itself because the
+    // threshold is rebuilt from the NEW ratio each time.
+    const watchDpr = (): void => {
+      if (destroyed || !app.renderer) return;
+      const dpr = globalThis.devicePixelRatio ?? 1;
+      const query = globalThis.matchMedia?.(`(resolution: ${dpr}dppx)`);
+      if (!query) return;
+      dprQuery?.removeEventListener("change", onDprChange);
+      dprQuery = query;
+      dprQuery.addEventListener("change", onDprChange, { once: true });
+    };
+    onDprChange = (): void => {
+      if (destroyed || !app.renderer) return;
+      app.renderer.resolution = Math.min(globalThis.devicePixelRatio ?? 1, 2);
+      // Pixi's `resolution` setter already cascades into a full backing-store
+      // resize (ViewSystem's setter calls into CanvasSource.resize with the
+      // CURRENT screen size, which rewrites canvas.width/height at the NEW
+      // resolution — traced through pixi.js's ViewSystem/CanvasSource/
+      // TextureSource). This call is belt-and-suspenders: it re-asserts the
+      // current screen size explicitly, so the backing store keeps following
+      // even if a future Pixi release stops cascading it from a bare
+      // `resolution` assignment.
+      app.renderer.resize(app.renderer.screen.width, app.renderer.screen.height);
+      rebuild();
+      watchDpr();
+    };
+    watchDpr();
+
     // `setTheme` may have run while `app.init()` was in flight: at that moment
     // `app.renderer` did not exist yet, so its background assignment was skipped (it
     // is guarded by `if (app.renderer)`). Re-applying here honors a theme installed
@@ -3027,6 +3067,8 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       // The only global listener carried neither by the camera nor by the stage
       // (which `app.destroy` takes away): it has to be removed by hand.
       window.removeEventListener("keydown", handleKeyDown);
+      dprQuery?.removeEventListener("change", onDprChange);
+      dprQuery = null;
       // Graph view's worker does not die with the canvas: it would outlive the
       // instance and keep grinding through seconds of layout for nobody.
       // `graphView.destroy()` terminates it and settles the computations in flight.
