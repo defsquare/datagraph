@@ -12,10 +12,10 @@ import { resolveTheme } from "../src/theme.js";
 import { shopData, shopConfig, cartData, cartConfig } from "./fixtures.js";
 
 /**
- * Même substitution d'adaptateur DOM que `array-token.test.ts` : Pixi mesure la
- * hauteur des libellés via un canvas 2D absent du runtime Node, et ce que ces
- * tests observent — le TEXTE de chaque étiquette et le fait qu'il y en ait une —
- * ne dépend pas de la fidélité de cette mesure.
+ * Same DOM adapter substitution as `array-token.test.ts`: Pixi measures label
+ * height through a 2D canvas the Node runtime does not have, and what these tests
+ * observe — each label's TEXT and the fact that there is one — does not depend on
+ * that measurement being faithful.
  */
 class FakeCanvasContext {
   font = "";
@@ -39,9 +39,9 @@ DOMAdapter.set({
 const theme = resolveTheme(undefined);
 
 /**
- * Les textes portés par le conteneur. Une étiquette est un SOUS-CONTENEUR
- * (pilule + texte autour de son origine locale), ce qui permet à `create.ts` de
- * la reposer sans rien recréer : la lecture descend donc d'un niveau.
+ * The texts the container carries. A label is a SUB-CONTAINER (pill + text around
+ * its local origin), which lets `create.ts` reposition it without recreating
+ * anything: the read therefore goes one level down.
  */
 function textsOf(view: Container): string[] {
   const out: string[] = [];
@@ -53,7 +53,7 @@ function textsOf(view: Container): string[] {
   return out;
 }
 
-/** Le chemin complet, tel que `create.ts` l'enchaîne : placements purs, puis rendu. */
+/** The full path, chained as `create.ts` chains it: pure placements, then draw. */
 function labelsOf(
   graph: Parameters<typeof edgeLabelPlacements>[0],
   positions: Parameters<typeof edgeLabelPlacements>[1],
@@ -63,9 +63,9 @@ function labelsOf(
 }
 
 /**
- * L'étiquette est la moitié « divulgation progressive » du tracé : le départ
- * d'une arête de référence est toujours une carte, ce qui ne dit pas de quelle
- * LIGNE elle part. Sélectionner la source fait apparaître le chemin instancié.
+ * The label is the "progressive disclosure" half of the drawing: a reference
+ * edge always starts at a card, which does not say which ROW it leaves from.
+ * Selecting the source brings out the instantiated path.
  */
 describe("drawEdgeLabels", () => {
   const shop = buildGraph(shopData, shopConfig);
@@ -83,25 +83,25 @@ describe("drawEdgeLabels", () => {
   const LINE = { x: 300, y: 200, width: 180, height: 100 };
 
   it("nomme le chemin complet depuis l'entité pour une référence directe", () => {
-    // L'étiquette glisse avec le viewport et se lit souvent près de la CIBLE,
-    // source hors cadre : `customerId` seul n'identifierait pas quelle commande.
+    // The label slides with the viewport and is often read near the TARGET, with
+    // the source off-frame: `customerId` alone would not identify which order.
     const view = labelsOf(shop, shopPositions, "/orders/0");
     expect(textsOf(view)).toEqual(["Order#o1.customerId"]);
   });
 
   it("nomme le CHEMIN INSTANCIÉ quand c'est l'entité déclarante qui est sélectionnée", () => {
-    // Vue graphe : `/carts/0/lines/0` n'a pas de carte, la sélection est le
-    // panier. L'indice `[0]` désigne l'élément exact, ce que `lines[*]` de la
-    // config ne ferait pas.
+    // Graph view: `/carts/0/lines/0` has no card, the selection is the cart. The
+    // index `[0]` designates the exact element, which the config's `lines[*]`
+    // would not.
     const positions = new Map([["/carts/0", CART], ["/products/0", PRODUCT]]);
     const view = labelsOf(cart, positions, "/carts/0");
     expect(textsOf(view)).toEqual(["Cart#k1.lines[0].productRef"]);
   });
 
   it("garde le chemin complet même quand c'est la carte du value object qui est sélectionnée", () => {
-    // Le texte est UNIFORME quel que soit le nœud sélectionné : l'étiquette se
-    // lit loin de la sélection (elle a pu glisser jusqu'à la cible), et le
-    // lecteur n'a pas à se rappeler ce qu'il a sélectionné pour la comprendre.
+    // The text is UNIFORM whatever node is selected: the label is read far from
+    // the selection (it may have slid all the way to the target), and the reader
+    // must not have to remember what they selected to understand it.
     const positions = new Map([
       ["/carts/0", CART],
       ["/carts/0/lines/0", LINE],
@@ -112,8 +112,8 @@ describe("drawEdgeLabels", () => {
   });
 
   it("n'étiquette rien à la sélection de la CIBLE", () => {
-    // Une arête entrante ne se lit pas depuis un champ de la carte sélectionnée :
-    // il n'y a aucun chemin à nommer de ce côté-là.
+    // An incoming edge does not read from a field of the selected card: there is
+    // no path to name on that side.
     const view = labelsOf(shop, shopPositions, "/customers/0");
     expect(view.children).toHaveLength(0);
   });
@@ -124,28 +124,28 @@ describe("drawEdgeLabels", () => {
   });
 
   it("n'étiquette rien pour une référence CASSÉE", () => {
-    // `/orders/1` pointe sur un client inexistant : aucun trait n'est tracé, et
-    // une étiquette flottant sans trait ne désignerait rien.
+    // `/orders/1` points at a customer that does not exist: no stroke is drawn,
+    // and a label floating without a stroke would designate nothing.
     expect(shop.refEdges.find((e) => e.from === "/orders/1")?.dangling).toBe(true);
     const view = labelsOf(shop, shopPositions, "/orders/1");
     expect(view.children).toHaveLength(0);
   });
 
   it("n'étiquette rien quand la CIBLE est hors de l'écran", () => {
-    // Même règle que le tracé : pas de trait, pas d'étiquette.
+    // Same rule as the drawing: no stroke, no label.
     const view = labelsOf(shop, new Map([["/orders/0", ORDER]]), "/orders/0");
     expect(view.children).toHaveLength(0);
   });
 
   it("pose l'étiquette sur le premier tiers du lien, dans une pilule", () => {
-    // En FRACTION du lien et non à distance fixe du départ : à quelques pixels
-    // de la carte, des arêtes voisines ne se sont pas encore écartées et leurs
-    // étiquettes se recouvraient. Côté source toujours — au-delà de la moitié,
-    // l'étiquette se lirait comme désignant la cible.
+    // As a FRACTION of the link rather than at a fixed distance from the start:
+    // a few pixels from the card, neighboring edges have not spread apart yet
+    // and their labels overlapped. Still on the source side — past the halfway
+    // point, the label would read as designating the target.
     const view = labelsOf(shop, shopPositions, "/orders/0");
     const item = view.children[0] as Container;
-    // La pilule et le texte sont dessinés autour de l'origine LOCALE du
-    // sous-conteneur ; c'est lui qui porte la position sur le lien.
+    // The pill and the text are drawn around the sub-container's LOCAL origin;
+    // the sub-container is what carries the position along the link.
     expect(item.children.find((c) => c instanceof Graphics)).toBeDefined();
     expect(item.children.find((c) => c instanceof Text)).toBeDefined();
     const start = anchorOnRect(ORDER, CUSTOMER.x + CUSTOMER.width / 2, CUSTOMER.y + CUSTOMER.height / 2);
@@ -153,15 +153,15 @@ describe("drawEdgeLabels", () => {
     const len = Math.hypot(end.x - start.x, end.y - start.y);
     const toStart = Math.hypot(item.position.x - start.x, item.position.y - start.y);
     const toEnd = Math.hypot(item.position.x - end.x, item.position.y - end.y);
-    expect(toStart).toBeGreaterThan(len * 0.2); // plus collée au départ
-    expect(toStart).toBeLessThan(toEnd); // mais toujours côté source
+    expect(toStart).toBeGreaterThan(len * 0.2); // no longer glued to the start
+    expect(toStart).toBeLessThan(toEnd); // but still on the source side
   });
 
   it("étage les étiquettes d'une même source le long de leurs liens", () => {
-    // Deux arêtes quasi parallèles gardent des étiquettes séparées : la
-    // fraction croît d'un cran par étiquette. Trois références sortent du même
-    // panier vers trois produits empilés — des liens presque parallèles, le cas
-    // qui superposait les étiquettes à distance fixe du départ.
+    // Two near-parallel edges keep separate labels: the fraction grows by one
+    // step per label. Three references leave the same cart towards three stacked
+    // products — near-parallel links, the case that stacked the labels on top of
+    // each other back when they sat at a fixed distance from the start.
     const g = buildGraph(
       {
         carts: [{ id: "k1", lines: [{ productRef: "a" }, { productRef: "b" }, { productRef: "c" }] }],
@@ -178,18 +178,18 @@ describe("drawEdgeLabels", () => {
     const view = labelsOf(g, positions, "/carts/0");
     expect(view.children).toHaveLength(3);
     const xs = view.children.map((c) => c.position.x).sort((a, b) => a - b);
-    // Trois fractions distinctes sur des liens de longueurs comparables : les
-    // abscisses doivent s'écarter nettement, pas se recouvrir.
+    // Three distinct fractions on links of comparable length: the x coordinates
+    // must clearly spread apart, not overlap.
     expect(xs[1]! - xs[0]!).toBeGreaterThan(30);
     expect(xs[2]! - xs[1]!).toBeGreaterThan(30);
   });
 });
 
 /**
- * Les étiquettes GLISSENT le long de leur lien pour rester dans le cadre, comme
- * le nom d'une route sur une carte : on sélectionne la source, on suit le lien,
- * on zoome près de la CIBLE, et l'étiquette a suivi — elle dit de quelle
- * référence il s'agit sans qu'on ait à remonter jusqu'à la source.
+ * Labels SLIDE along their link to stay in frame, like a road name on a map: you
+ * select the source, you follow the link, you zoom near the TARGET, and the label
+ * has followed — it says which reference this is without your having to travel
+ * back to the source.
  */
 describe("labelParamInView", () => {
   const START = { x: 0, y: 0 };
@@ -198,16 +198,16 @@ describe("labelParamInView", () => {
   const MARGIN = 48;
 
   it("ne bouge RIEN quand toute l'arête est visible", () => {
-    // C'est l'invariant qui rend le glissement invisible au repos : tant que le
-    // lien tient à l'écran, l'étiquette reste à sa fraction de base. La marge
-    // elle-même n'a pas le droit de la déplacer.
+    // This is the invariant that makes the sliding invisible at rest: as long as
+    // the link fits on screen, the label stays at its base fraction. Not even the
+    // margin is allowed to move it.
     const view = { x: -100, y: -100, width: 1200, height: 200 };
     expect(labelParamInView(START, END, BASE, view, MARGIN)).toBe(BASE);
   });
 
   it("suit le viewport quand il est serré sur la CIBLE", () => {
-    // Le cas qui motive toute la fonctionnalité : zoomé sur la cible, un trait
-    // arrive sans dire lequel. L'étiquette vient sur le tronçon visible.
+    // The case that motivates the whole feature: zoomed on the target, a stroke
+    // arrives without saying which one. The label comes onto the visible stretch.
     const view = { x: 800, y: -50, width: 200, height: 100 };
     const t = labelParamInView(START, END, BASE, view, MARGIN);
     expect(t).toBeGreaterThan(0.8);
@@ -215,40 +215,40 @@ describe("labelParamInView", () => {
   });
 
   it("reste en deçà du bord quand le viewport est serré sur la SOURCE", () => {
-    // Symétrique : le tronçon visible s'arrête à t1, et l'étiquette doit rester
-    // à une marge du bord, sinon la pilule sort à moitié du cadre.
+    // Symmetric: the visible stretch stops at t1, and the label must stay one
+    // margin away from the edge, otherwise the pill spills half out of frame.
     const view = { x: -50, y: -50, width: 350, height: 100 };
     const t = labelParamInView(START, END, BASE, view, MARGIN);
-    // Visible sur [0, 0.3] : l'étiquette recule jusqu'à 0.3 − 48/1000.
+    // Visible over [0, 0.3]: the label backs off to 0.3 − 48/1000.
     expect(t).toBeCloseTo(0.3 - MARGIN / 1000, 6);
   });
 
   it("rend la fraction de base quand le lien ne croise PAS le cadre", () => {
-    // Rien de visible à annoter : la position de repos est le seul choix qui
-    // ne raconte pas d'histoire.
+    // Nothing visible to annotate: the resting position is the only choice that
+    // does not tell a story.
     const view = { x: 0, y: 500, width: 200, height: 100 };
     expect(labelParamInView(START, END, BASE, view, MARGIN)).toBe(BASE);
   });
 
   it("rend la fraction de base pour un segment de longueur nulle", () => {
-    // Deux cartes confondues : il n'y a pas de paramétrage à couper.
+    // Two cards on the same spot: there is no parametrization to clip.
     const view = { x: -100, y: -100, width: 200, height: 200 };
     expect(labelParamInView(START, START, BASE, view, MARGIN)).toBe(BASE);
   });
 
   it("se pose au MILIEU quand le tronçon visible est plus court que deux marges", () => {
-    // Aucune position n'honore les deux marges à la fois ; le milieu est le
-    // moins mauvais compromis, et surtout il reste DANS le tronçon visible.
+    // No position honors both margins at once; the middle is the least bad
+    // compromise, and above all it stays INSIDE the visible stretch.
     const view = { x: 500, y: -50, width: 60, height: 100 };
     const t = labelParamInView(START, END, BASE, view, MARGIN);
-    expect(t).toBeCloseTo(0.53, 6); // milieu de [0.5, 0.56]
+    expect(t).toBeCloseTo(0.53, 6); // middle of [0.5, 0.56]
   });
 
   it("place l'étiquette sur le lien, du bon côté du trait", () => {
-    // `edgeLabelPosition` est le pont entre la fraction et le point : ce que
-    // `create.ts` réutilise pour reposer sans recréer un seul `Text`.
+    // `edgeLabelPosition` is the bridge from fraction to point: what `create.ts`
+    // reuses to reposition without recreating a single `Text`.
     const at = edgeLabelPosition(START, END, 0.5);
     expect(at.x).toBeCloseTo(500, 6);
-    expect(at.y).toBeCloseTo(10, 6); // le décalage perpendiculaire, constant
+    expect(at.y).toBeCloseTo(10, 6); // the perpendicular offset, a constant
   });
 });

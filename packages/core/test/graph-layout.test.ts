@@ -20,13 +20,13 @@ import {
 } from "./fixtures.js"
 import type { Graph } from "../src/model.js"
 
-/** La config de `fixtures.ts` ne déclare pas de groupes ; le bench de la sonde
- * lui ajoute `groups: ["Customer"]`, et c'est cette config-là qui a produit
- * les mesures du doc. On la reprend telle quelle. */
+/** The config in `fixtures.ts` declares no groups; the probe's bench adds
+ * `groups: ["Customer"]` to it, and that is the config that produced the doc's
+ * measurements. We take it as is. */
 const config = { ...shopConfig, groups: ["Customer"] }
 
-/** Les trois défauts de `createTwoLevelLayoutEngine`, redits ici : un test qui
- * lirait les constantes du moteur ne vérifierait plus rien. */
+/** The three defaults of `createTwoLevelLayoutEngine`, restated here: a test
+ * that read the engine's constants would no longer check anything. */
 const PADDING = 18
 const CARD_GAP = 16
 const CLUSTER_GAP = 160
@@ -45,14 +45,14 @@ const setup = () => setupOn(shopData)
 type Disk = { id: string; cx: number; cy: number; r: number }
 
 /**
- * TOUS les disques du niveau 2, pas seulement les enveloppes peintes : les
- * agrégats, plus un disque singleton par entité hors agrégat.
+ * ALL of level 2's discs, not only the painted envelopes: the aggregates, plus
+ * one singleton disc per entity outside any aggregate.
  *
- * C'est la seule façon de tester la vraie garantie. Le moteur écarte des
- * disques dont seuls certains ressortent en `clusters` — un singleton est un
- * disque à part entière pendant la simulation (sans quoi il atterrirait dans
- * l'enveloppe d'un voisin) mais n'a rien à peindre. N'asserter que sur
- * `result.clusters` laisserait donc la moitié de l'invariant hors du test.
+ * This is the only way to test the real guarantee. The engine pushes apart discs
+ * of which only some come back out in `clusters` — a singleton is a disc in its
+ * own right during the simulation (otherwise it would land inside a neighbour's
+ * envelope) but has nothing to paint. Asserting only on `result.clusters` would
+ * therefore leave half the invariant out of the test.
  */
 function disksOf(result: GraphLayoutResult, aggregates: AggregateIndex, padding = PADDING): Disk[] {
   const disks: Disk[] = result.clusters.map((c) => ({
@@ -70,8 +70,8 @@ function disksOf(result: GraphLayoutResult, aggregates: AggregateIndex, padding 
   return disks
 }
 
-/** Écart bord à bord entre deux disques : négatif s'ils se recouvrent. Prend
- * n'importe quelle forme circulaire, `ClusterShape` comprise. */
+/** Edge-to-edge gap between two discs: negative if they overlap. Takes any
+ * circular shape, `ClusterShape` included. */
 function diskGap(a: { cx: number; cy: number; r: number }, b: { cx: number; cy: number; r: number }): number {
   return Math.hypot(a.cx - b.cx, a.cy - b.cy) - a.r - b.r
 }
@@ -85,8 +85,8 @@ function cornersOf(r: Rect) {
   ]
 }
 
-/** Pénétrations d'une paire de rects sur chaque axe. Négatives quand les rects
- * sont disjoints selon cet axe : `-px` est alors l'écart horizontal. */
+/** Penetrations of a pair of rects on each axis. Negative when the rects are
+ * disjoint along that axis: `-px` is then the horizontal gap. */
 function penetrations(a: Rect, b: Rect) {
   return {
     px: Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x),
@@ -95,11 +95,11 @@ function penetrations(a: Rect, b: Rect) {
 }
 
 /**
- * Le layout à l'échelle, calculé UNE fois pour les six assertions qui
- * l'exercent. 334 cartes, 167 agrégats — le fixture du calibrage de
- * `clusterGap` et celui du tableau A de la sonde. Le moteur y coûte ~143 ms
- * mesurés, donc ce partage est du confort, pas une nécessité de budget ; il
- * évite surtout que six tests mesurent six fois la même chose.
+ * The layout at scale, computed ONCE for the six assertions that exercise it.
+ * 334 cards, 167 aggregates — the fixture behind `clusterGap`'s calibration and
+ * behind the probe's table A. The engine costs ~143 ms on it, measured, so this
+ * sharing is a convenience rather than a budget necessity; above all it keeps
+ * six tests from measuring the same thing six times.
  */
 let atScaleCache: Promise<{ result: GraphLayoutResult; aggregates: AggregateIndex }> | null = null
 function atScale() {
@@ -116,9 +116,9 @@ function atScale() {
 describe("createTwoLevelLayoutEngine", () => {
   it("positions entities only — no root, no array, no object node", async () => {
     const { graph, aggregates, visible } = setup()
-    // Racine et nœud tableau ajoutés à `visible` pour que le filtre
-    // `kind !== "entity"` soit réellement exercé : sans eux, `visible` ne
-    // contient que des entités et le filtre ne rejette jamais rien.
+    // Root and array node added to `visible` so that the `kind !== "entity"`
+    // filter is really exercised: without them, `visible` holds nothing but
+    // entities and the filter never rejects anything.
     const visibleWithStructural = new Set([...visible, graph.rootId, "/customers"])
     const result = await createTwoLevelLayoutEngine().layout(
       graph,
@@ -152,11 +152,11 @@ describe("createTwoLevelLayoutEngine", () => {
 })
 
 describe("déterminisme", () => {
-  // Au BIT près, pas au pixel : le moteur n'a aucune source d'aléa (amorçage
-  // FNV-1a sur les ids, itérations en ordre trié), donc deux exécutions
-  // parcourent exactement la même suite d'opérations flottantes. Une égalité
-  // approchée masquerait l'introduction d'un `Math.random` ou d'une itération
-  // dépendante de l'ordre d'insertion d'une Map.
+  // Down to the BIT, not to the pixel: the engine has no source of randomness
+  // (FNV-1a seeding on the ids, iterations in sorted order), so two runs walk
+  // exactly the same sequence of floating-point operations. An approximate
+  // equality would hide the introduction of a `Math.random` or of an iteration
+  // depending on a Map's insertion order.
   it("rend des positions identiques au bit près sur la même entrée", async () => {
     const { graph, aggregates, visible } = setup()
     const a = await createTwoLevelLayoutEngine().layout(graph, aggregates, visible)
@@ -166,10 +166,10 @@ describe("déterminisme", () => {
   })
 
   it("reste déterministe quand la simulation travaille pour de vrai", async () => {
-    // shopData ne compte que trois disques : la simulation n'y a presque rien
-    // à faire et le déterminisme y est trop facile. Ici, plusieurs dizaines de
-    // disques passent par 400 itérations de ressorts, de gravité et de
-    // collisions avant la passe dure.
+    // shopData counts only three discs: the simulation has almost nothing to do
+    // there and determinism comes too easily. Here, several dozen discs go
+    // through 400 iterations of springs, gravity and collisions before the hard
+    // pass.
     const { graph, aggregates, visible } = setupOn(bigShop(600))
     const first = await createTwoLevelLayoutEngine().layout(graph, aggregates, visible)
     const second = await createTwoLevelLayoutEngine().layout(graph, aggregates, visible)
@@ -178,10 +178,10 @@ describe("déterminisme", () => {
   })
 
   it("ne dépend pas de l'ordre d'itération de `visible`", async () => {
-    // `visible` est un Set : son ordre d'itération suit l'insertion. Le tri des
-    // ids dans le moteur est ce qui rend ce détail sans effet — le retirer
-    // ferait passer les deux tests ci-dessus (qui reconstruisent le Set à
-    // l'identique) mais casserait celui-ci.
+    // `visible` is a Set: its iteration order follows insertion. Sorting the ids
+    // in the engine is what makes that detail inconsequential — removing the
+    // sort would let the two tests above pass (they rebuild the Set identically)
+    // but would break this one.
     const { graph, aggregates, visible } = setup()
     const reversed = new Set([...visible].reverse())
     const a = await createTwoLevelLayoutEngine().layout(graph, aggregates, visible)
@@ -198,9 +198,9 @@ describe("garanties de séparation, à l'échelle", () => {
       const rects = [...result.positions.values()]
       expect(rects.length).toBeGreaterThan(300)
 
-      // Comptage plutôt qu'un `expect` par paire : 334 cartes font 55 611
-      // paires, et un échec doit dire COMBIEN de paires fautent, pas seulement
-      // la première.
+      // A count rather than one `expect` per pair: 334 cards make 55,611 pairs,
+      // and a failure must say HOW MANY pairs are at fault, not just the first
+      // one.
       let overlapping = 0
       for (let i = 0; i < rects.length; i++) {
         for (let j = i + 1; j < rects.length; j++) {
@@ -216,19 +216,18 @@ describe("garanties de séparation, à l'échelle", () => {
   it(
     "laisse au moins cardGap entre deux cartes d'un même agrégat",
     async () => {
-      // La tolérance est 1e-9 et pas 0 : la marge est exacte dans le repère
-      // LOCAL du packing, puis chaque carte encaisse la translation de son
-      // disque et la normalisation de la bbox. `(x₁ + d) − (x₂ + d)` ne redonne
-      // pas exactement `x₁ − x₂` — la sonde a mesuré des paires à
-      // 16 px − 10⁻¹² sur le jeu de la démo, trois ordres de grandeur sous
-      // cette tolérance. C'est le même contrat qu'`expectRigid` dans
-      // `separateClusters`, retiré avec la passe, pour la même raison.
+      // The tolerance is 1e-9 and not 0: the margin is exact in the packing's
+      // LOCAL frame, then each card takes on its disc's translation and the
+      // bbox's normalization. `(x₁ + d) − (x₂ + d)` does not give back exactly
+      // `x₁ − x₂` — the probe measured pairs at 16 px − 10⁻¹² on the demo's
+      // dataset, three orders of magnitude below this tolerance. It is the same
+      // contract as `expectRigid` in `separateClusters`, removed along with the
+      // pass, for the same reason.
       //
-      // L'assertion porte sur TOUTES les paires, pas seulement les
-      // intra-agrégat : deux cartes d'agrégats différents sont séparées par
-      // `clusterGap` bord à bord de disque (160 px), donc a fortiori par
-      // `cardGap`. Une régression du packing comme une régression de la
-      // séparation des disques tombent ici.
+      // The assertion covers ALL pairs, not only the intra-aggregate ones: two
+      // cards of different aggregates are separated by `clusterGap` edge to edge
+      // of disc (160 px), hence a fortiori by `cardGap`. A packing regression as
+      // much as a disc-separation regression falls out here.
       const { result, aggregates } = await atScale()
       const entries = [...result.positions.entries()]
 
@@ -253,21 +252,21 @@ describe("garanties de séparation, à l'échelle", () => {
       expect(intraTooClose).toBe(0)
       expect(tooClose).toBe(0)
 
-      // Le minimum est atteint, et à `cardGap` EXACTEMENT : le packing pose la
-      // marge, il ne la dépasse pas « par sécurité ».
+      // The minimum is reached, and at `cardGap` EXACTLY: the packing lays down
+      // the margin, it does not exceed it "to be safe".
       //
-      // Cette assertion a fait un aller-retour qui vaut d'être consigné. Le
-      // placement radial l'avait cassée — sa garantie s'écrit sur les disques
-      // englobants, une condition suffisante et non nécessaire, qui ajoute un
-      // surcoût constant de 28,62 px —, et elle avait été remplacée par une
-      // borne plus le chiffre mesuré (44,62 px). L'aiguillage par profondeur la
-      // rétablit dans sa forme d'origine : tous les agrégats de `bigShop` sont
-      // PLATS (profondeur 1), donc packés en étagères, où la marge est posée
-      // sur un axe entre deux rectangles alignés et vaut exactement `cardGap`.
+      // This assertion made a round trip worth recording. Radial placement had
+      // broken it — its guarantee is written on the enclosing discs, a
+      // sufficient and not necessary condition, which adds a constant overhead
+      // of 28.62 px — and it had been replaced by a bound plus the measured
+      // figure (44.62 px). The switch on depth restores it to its original form:
+      // every `bigShop` aggregate is FLAT (depth 1), hence packed in shelves,
+      // where the margin is laid on one axis between two aligned rectangles and
+      // equals `cardGap` exactly.
       //
-      // La version « borne + surcoût » n'est pas perdue : elle a déménagé sur
-      // le chemin qui l'exerce, dans « inclut le cardGap demandé », qui tourne
-      // désormais sur un agrégat profond.
+      // The "bound + overhead" version is not lost: it moved to the path that
+      // exercises it, in "includes the requested cardGap", which now runs on a
+      // deep aggregate.
       expect(worst).toBeCloseTo(CARD_GAP, 6)
     },
     30_000,
@@ -276,9 +275,9 @@ describe("garanties de séparation, à l'échelle", () => {
   it(
     "ne laisse aucune paire de disques en recouvrement, et ouvre clusterGap entre chacune",
     async () => {
-      // 167 agrégats de 2 cartes, aucune référence inter-agrégat : c'est le
-      // fixture où la simulation n'a QUE la gravité et les collisions pour
-      // travailler, donc celui qui exerce le plus la passe dure finale.
+      // 167 aggregates of 2 cards, no inter-aggregate reference: this is the
+      // fixture where the simulation has ONLY gravity and collisions to work
+      // with, hence the one that exercises the final hard pass the most.
       const { result, aggregates } = await atScale()
       expect(result.clusters.length).toBeGreaterThan(150)
 
@@ -295,17 +294,17 @@ describe("garanties de séparation, à l'échelle", () => {
         }
       }
       expect(overlapping).toBe(0)
-      // L'écart n'est pas seulement « non négatif » : c'est bien `clusterGap`
-      // qui est un invariant de sortie, garanti par la passe dure finale et non
-      // par la convergence de la simulation.
+      // The gap is not merely "non-negative": it is `clusterGap` itself that is
+      // an exit invariant, guaranteed by the final hard pass and not by the
+      // simulation's convergence.
       //
-      // 1e-6 est le seuil de la garde de collision, donc le contrat exact du
-      // moteur — et cette assertion est ce qui a forcé le resserrement du
-      // critère de sortie de cette passe : avec celui de la sonde (`< 1e-3`),
-      // 176 des 13 861 paires tombaient ici, résidu maximal 9,301e-4. Ce
-      // n'était pas du bruit flottant mais le seuil lui-même. Voir la
-      // documentation de la passe dans `graph-layout.ts`. Résidu maximal
-      // mesuré après resserrement sur ce fixture : 9,987e-7.
+      // 1e-6 is the collision guard's threshold, hence the engine's exact
+      // contract — and this assertion is what forced the tightening of that
+      // pass's exit criterion: with the probe's (`< 1e-3`), 176 of the 13,861
+      // pairs fell out here, maximum residual 9.301e-4. That was not
+      // floating-point noise but the threshold itself. See the pass's
+      // documentation in `graph-layout.ts`. Maximum residual measured after
+      // tightening, on this fixture: 9.987e-7.
       expect(tooClose).toBe(0)
       expect(worst).toBeGreaterThanOrEqual(CLUSTER_GAP - 1e-6)
     },
@@ -319,10 +318,10 @@ describe("garanties de séparation, à l'échelle", () => {
       let checked = 0
       for (const cluster of result.clusters) {
         const aggregate = aggregates.aggregates.get(cluster.aggregateId)!
-        // La racine est un membre à part entière (voir `Aggregate.memberIds`),
-        // mais c'est elle que le packing pose en PREMIER : si l'ordre de
-        // packing et l'ordre de calcul du cercle divergeaient un jour, c'est
-        // elle qui sortirait la première.
+        // The root is a member in its own right (see `Aggregate.memberIds`), but
+        // it is the one the packing lays down FIRST: should the packing order
+        // and the circle-computation order ever diverge, it is the one that
+        // would escape first.
         expect(aggregate.memberIds.has(cluster.rootId)).toBe(true)
         const rootRect = result.positions.get(cluster.rootId)!
         for (const corner of cornersOf(rootRect)) {
@@ -350,9 +349,9 @@ describe("garanties de séparation, à l'échelle", () => {
     "émet l'enveloppe des seuls vrais agrégats, et c'est le cercle réellement écarté",
     async () => {
       const { result, aggregates } = await atScale()
-      // Un `single:` qui fuirait en `clusters` ferait peindre une enveloppe
-      // autour d'une carte isolée — le pendant du `__agg:` que
-      // le test du moteur retiré interdisait dans `positions`.
+      // A `single:` leaking into `clusters` would have an envelope painted
+      // around an isolated card — the counterpart of the `__agg:` that the
+      // removed engine's test forbade in `positions`.
       for (const cluster of result.clusters) {
         expect(cluster.aggregateId.startsWith("single:")).toBe(false)
         expect(aggregates.aggregates.has(cluster.aggregateId)).toBe(true)
@@ -361,11 +360,11 @@ describe("garanties de séparation, à l'échelle", () => {
         [...aggregates.aggregates.keys()].sort(),
       )
 
-      // Le disque émis n'est pas recalculé après coup à partir des positions :
-      // c'est celui que la simulation a écarté, translaté avec ses cartes. Il
-      // doit donc coïncider avec le cercle englobant minimal de ces cartes — si
-      // les deux divergeaient, le renderer peindrait une forme différente de
-      // celle qui a été séparée.
+      // The emitted disc is not recomputed after the fact from the positions: it
+      // is the one the simulation pushed apart, translated along with its cards.
+      // It must therefore coincide with the minimal enclosing circle of those
+      // cards — were the two to diverge, the renderer would paint a shape other
+      // than the one that was separated.
       for (const cluster of result.clusters) {
         const rects: Rect[] = []
         for (const memberId of aggregates.aggregates.get(cluster.aggregateId)!.memberIds) {
@@ -384,9 +383,8 @@ describe("garanties de séparation, à l'échelle", () => {
 
 describe("options", () => {
   it("laisse exactement hullPadding entre le coin le plus éloigné et le bord de l'enveloppe", async () => {
-    // « Au moins » ne suffirait pas : le cercle est MINIMAL, donc le coin le
-    // plus éloigné est sur le cercle non matelassé, à `hullPadding` exactement
-    // du bord.
+    // "At least" would not do: the circle is MINIMAL, so the farthest corner
+    // sits on the unpadded circle, exactly `hullPadding` from the edge.
     const { graph, aggregates, visible } = setup()
     const result = await createTwoLevelLayoutEngine({ hullPadding: 40 }).layout(
       graph,
@@ -422,9 +420,9 @@ describe("options", () => {
   })
 
   it("inclut le cardGap demandé dans le packing en étagères, EXACTEMENT", async () => {
-    // Chemin ÉTAGÈRES : `bigShop` n'a que des agrégats plats. Customer#c0 y
-    // tient deux cartes, la racine et sa commande, posées l'une sous l'autre et
-    // séparées d'exactement `cardGap`.
+    // SHELF path: `bigShop` has nothing but flat aggregates. Customer#c0 holds
+    // two cards there, the root and its order, laid one under the other and
+    // separated by exactly `cardGap`.
     const { graph, aggregates, visible } = setupOn(bigShop(600))
     const result = await createTwoLevelLayoutEngine({ cardGap: 64 }).layout(
       graph,
@@ -441,22 +439,22 @@ describe("options", () => {
   })
 
   it("inclut le cardGap demandé dans le placement radial, ADDITIVEMENT", async () => {
-    // Chemin RADIAL, celui qui ne peut PAS atteindre l'égalité exacte : sa
-    // garantie s'écrit sur les disques englobants des cartes, une condition
-    // suffisante et non nécessaire, qui ajoute un surcoût géométrique.
+    // RADIAL path, the one that CANNOT reach exact equality: its guarantee is
+    // written on the cards' enclosing discs, a sufficient and not necessary
+    // condition, which adds a geometric overhead.
     //
-    // La propriété qui compte reste testable, et sous une forme plus forte que
-    // l'égalité : `cardGap` entre ADDITIVEMENT dans le placement. Augmenter la
-    // marge demandée de 48 px déplace l'écart obtenu d'exactement 48 px — le
-    // surcoût ne se met pas à l'échelle avec elle. Un moteur qui n'utiliserait
-    // `cardGap` qu'à moitié, ou qui le multiplierait par un facteur, échouerait
-    // ici alors qu'il passerait une simple borne inférieure.
+    // The property that matters stays testable, and in a stronger form than
+    // equality: `cardGap` enters the placement ADDITIVELY. Raising the requested
+    // margin by 48 px moves the obtained gap by exactly 48 px — the overhead
+    // does not scale with it. An engine that used only half of `cardGap`, or
+    // multiplied it by a factor, would fail here while passing a plain lower
+    // bound.
     //
-    // Le fixture doit être PROFOND pour emprunter ce chemin — c'est tout
-    // l'objet de l'aiguillage. `deepAggregate(1, 1, 0)` donne la plus petite
-    // forme profonde possible : racine ← commande ← ligne, une carte par
-    // anneau, donc une géométrie où l'écart minimal est celui de deux anneaux
-    // consécutifs, exactement `ρ₁ + ρ₂ + cardGap` par construction.
+    // The fixture must be DEEP to take this path — that is the whole point of
+    // the switch. `deepAggregate(1, 1, 0)` gives the smallest possible deep
+    // shape: root ← order ← line, one card per ring, hence a geometry where the
+    // minimal gap is that of two consecutive rings, exactly `ρ₁ + ρ₂ + cardGap`
+    // by construction.
     const { graph, aggregates, visible } = setupOn(deepAggregate(1, 1, 0), deepAggregateConfig)
     const members = [...aggregates.aggregates.get("Customer#c0")!.memberIds]
     expect(members).toHaveLength(3)
@@ -477,27 +475,27 @@ describe("options", () => {
     const small = await minSeparationWith(16)
     const large = await minSeparationWith(64)
 
-    // Chaque écart dépasse la marge demandée — la garantie — et l'excédent est
-    // le MÊME des deux côtés : c'est le surcoût du critère par disques.
+    // Each gap exceeds the requested margin — the guarantee — and the excess is
+    // the SAME on both sides: that is the overhead of the per-disc criterion.
     expect(small).toBeGreaterThanOrEqual(16 - 1e-9)
     expect(large).toBeGreaterThanOrEqual(64 - 1e-9)
     expect(large - small).toBeCloseTo(64 - 16, 6)
     expect(small - 16).toBeCloseTo(large - 64, 6)
-    // Et le surcoût est bien réel, sinon ce test ne dirait rien de plus que le
-    // précédent : il vaut 45,5 px sur ces cartes-là.
+    // And the overhead is real, otherwise this test would say nothing more than
+    // the previous one: it is 45.5 px on these cards.
     expect(small - 16).toBeGreaterThan(1)
   })
 })
 
 describe("placement radial intra-agrégat", () => {
   /**
-   * Distance de référence à la racine, RECALCULÉE ICI à partir du graphe.
+   * Reference distance to the root, RECOMPUTED HERE from the graph.
    *
-   * Le moteur fait le même BFS pour construire ses anneaux ; le refaire dans le
-   * test est ce qui rend les assertions ci-dessous indépendantes. Comparer les
-   * anneaux du moteur à ses propres anneaux ne vérifierait rien.
+   * The engine runs the same BFS to build its rings; redoing it in the test is
+   * what makes the assertions below independent. Comparing the engine's rings to
+   * its own rings would check nothing.
    *
-   * Sens de parcours : de la cible vers la source, comme `buildAggregates`.
+   * Traversal direction: from target to source, as in `buildAggregates`.
    */
   function refDistances(graph: Graph, rootId: NodeId, members: Set<NodeId>): Map<NodeId, number> {
     const incoming = new Map<NodeId, NodeId[]>()
@@ -536,9 +534,9 @@ describe("placement radial intra-agrégat", () => {
   }
 
   it("le fixture produit bien un gros agrégat profond", async () => {
-    // Garde anti-test-creux : si `deepAggregate` cessait de produire de la
-    // profondeur, toutes les assertions radiales ci-dessous passeraient sans
-    // rien exercer — un agrégat plat les vérifie trivialement.
+    // Anti-hollow-test guard: were `deepAggregate` to stop producing depth,
+    // every radial assertion below would pass without exercising anything — a
+    // flat aggregate satisfies them trivially.
     const { aggregate, dist } = await deepSetup()
     expect(aggregate.memberIds.size).toBe(41)
     expect(Math.max(...dist.values())).toBe(3)
@@ -547,27 +545,27 @@ describe("placement radial intra-agrégat", () => {
   })
 
   it("la racine est la carte la plus proche du centre de son enveloppe", async () => {
-    // C'est le défaut que le radial corrige, et il était spectaculaire : sous
-    // le packing en étagères la racine sortait **40e sur 41**, à 597,7 px du
-    // centre de son propre disque, parce que le tri par id la posait en tête de
-    // la première ligne, c'est-à-dire dans un coin du bloc.
+    // This is the flaw radial placement fixes, and it was spectacular: under
+    // shelf packing the root came out **40th of 41**, 597.7 px from the centre
+    // of its own disc, because sorting by id put it at the head of the first
+    // row, that is, in a corner of the block.
     const { aggregate, radiusOf } = await deepSetup()
     const ranked = [...aggregate.memberIds]
       .map((id) => ({ id, r: radiusOf(id) }))
       .sort((a, b) => a.r - b.r)
     expect(ranked[0]!.id).toBe(aggregate.rootId)
-    // Et pas seulement première ex aequo : nettement plus proche que la
-    // suivante. Mesuré : 16,4 px contre 291,6 px.
+    // And not merely tied for first: markedly closer than the next one.
+    // Measured: 16.4 px against 291.6 px.
     expect(ranked[0]!.r).toBeLessThan(ranked[1]!.r / 2)
   })
 
   it("la distance au centre croît avec la distance de référence", async () => {
-    // La propriété qui définit le placement radial. Assertée sur la MOYENNE par
-    // anneau et non carte par carte : le centre du cercle englobant n'est pas
-    // exactement le centre de la racine (il est calculé sur les coins de toutes
-    // les cartes), donc deux cartes du même anneau n'ont pas exactement le même
-    // rayon, et une carte d'un anneau peut dépasser une carte du suivant de
-    // quelques pixels sans que la structure en anneaux soit en cause.
+    // The property that defines radial placement. Asserted on the per-ring MEAN
+    // and not card by card: the enclosing circle's centre is not exactly the
+    // root's centre (it is computed on the corners of every card), so two cards
+    // of the same ring do not have exactly the same radius, and a card of one
+    // ring can overtake a card of the next by a few pixels without the ring
+    // structure being at fault.
     const { aggregate, dist, radiusOf } = await deepSetup()
     const sums = new Map<number, { total: number; n: number }>()
     for (const id of aggregate.memberIds) {
@@ -582,22 +580,22 @@ describe("placement radial intra-agrégat", () => {
     for (let i = 1; i < means.length; i++) {
       expect(means[i]!).toBeGreaterThan(means[i - 1]!)
     }
-    // Strictement croissant ne suffirait pas : un écart d'un pixel passerait.
-    // Chaque anneau doit s'éloigner d'au moins une demi-carte.
+    // Strictly increasing would not do: a one-pixel gap would pass. Each ring
+    // must move out by at least half a card.
     for (let i = 1; i < means.length; i++) {
       expect(means[i]! - means[i - 1]!).toBeGreaterThan(70)
     }
   })
 
   it("tient ses garanties sur le gros agrégat, y compris à 66 cartes", async () => {
-    // Les garanties à l'échelle du dépôt sont vérifiées sur `bigShop`, dont
-    // TOUS les agrégats font 2 cartes : le placement radial n'y pose jamais
-    // qu'un seul anneau d'une seule carte. Rien là-dedans n'exerce le calcul de
-    // circonférence, la scission d'un anneau trop plein, ni l'empilement de
-    // plusieurs anneaux. C'est ce que ce test-ci couvre.
+    // The repo-scale guarantees are checked on `bigShop`, EVERY aggregate of
+    // which holds 2 cards: radial placement never lays more than a single ring
+    // of a single card there. None of that exercises the circumference
+    // computation, the splitting of an overfull ring, or the stacking of several
+    // rings. That is what this test covers.
     for (const [o, l, s] of [
-      [4, 3, 2], // 41 cartes, 3 anneaux
-      [5, 3, 3], // 66 cartes, dont un anneau de 45 — celui qui doit se scinder
+      [4, 3, 2], // 41 cards, 3 rings
+      [5, 3, 3], // 66 cards, including a ring of 45 — the one that must split
     ] as [number, number, number][]) {
       const { result, aggregate, shape } = await deepSetup(o, l, s)
       const rects = [...result.positions.values()]
@@ -614,7 +612,7 @@ describe("placement radial intra-agrégat", () => {
       expect(overlapping).toBe(0)
       expect(tooClose).toBe(0)
 
-      // Toutes les cartes tiennent dans l'enveloppe peinte.
+      // Every card fits inside the painted envelope.
       for (const id of aggregate.memberIds) {
         for (const corner of cornersOf(result.positions.get(id)!)) {
           expect(Math.hypot(corner.x - shape.cx, corner.y - shape.cy)).toBeLessThanOrEqual(
@@ -626,10 +624,10 @@ describe("placement radial intra-agrégat", () => {
   }, 30_000)
 
   it("reste déterministe au bit près sur un agrégat profond", async () => {
-    // Le radial ajoute un BFS, un tri par angle de parent et une trigonométrie
-    // dont l'ordre des opérations doit être reproductible. Le déterminisme
-    // asserté ailleurs sur `bigShop` n'exerce rien de tout ça : un anneau d'une
-    // carte n'a ni tri ni bouclage.
+    // Radial placement adds a BFS, a sort by parent angle and trigonometry whose
+    // order of operations must be reproducible. The determinism asserted
+    // elsewhere on `bigShop` exercises none of that: a one-card ring has neither
+    // sort nor wrap-around.
     const data = deepAggregate()
     const first = setupOn(data, deepAggregateConfig)
     const second = setupOn(data, deepAggregateConfig)
@@ -644,15 +642,15 @@ describe("placement radial intra-agrégat", () => {
   })
 
   it("choisit le mode par la PROFONDEUR, pas par le nombre de cartes", async () => {
-    // Le critère : radial si et seulement si un membre est à distance de
-    // référence ≥ 2 de la racine. Les deux cas ci-dessous ont le MÊME nombre de
-    // cartes (5) et des profondeurs différentes — c'est ce qui fait qu'un test
-    // sur le cardinal ne pourrait pas les distinguer, et que celui-ci le peut.
+    // The criterion: radial if and only if some member sits at reference
+    // distance ≥ 2 from the root. The two cases below have the SAME number of
+    // cards (5) and different depths — which is why a test on cardinality could
+    // not tell them apart, and why this one can.
     //
-    // Signature observable de chaque mode : en radial la racine est au centre
-    // de son disque ; en étagères elle est en tête de la première ligne, donc
-    // dans un coin, loin du centre. On mesure le rang de la racine par
-    // proximité au centre plutôt que d'inspecter l'interne.
+    // Each mode's observable signature: in radial the root is at the centre of
+    // its disc; in shelves it is at the head of the first row, hence in a
+    // corner, far from the centre. We measure the root's rank by proximity to
+    // the centre rather than inspecting internals.
     const rootRankIn = async (data: unknown) => {
       const { graph, aggregates, visible } = setupOn(data, deepAggregateConfig)
       const result = await createTwoLevelLayoutEngine().layout(graph, aggregates, visible)
@@ -667,34 +665,34 @@ describe("placement radial intra-agrégat", () => {
       return { rank: ranked.findIndex((x) => x.id === aggregate.rootId) + 1, r: shape.r, n: ranked.length }
     }
 
-    // PLAT : 4 commandes sous la racine, profondeur 1. Rien à encoder en
-    // distance au centre, donc étagères — et la racine finit dans un coin.
+    // FLAT: 4 orders under the root, depth 1. Nothing to encode as distance to
+    // the centre, hence shelves — and the root ends up in a corner.
     const flat = await rootRankIn(deepAggregate(4, 0, 0))
     expect(flat.n).toBe(5)
     expect(flat.rank).toBeGreaterThan(1)
 
-    // PROFOND : 2 commandes, 1 ligne chacune, profondeur 2. Même cardinal,
-    // mode différent — la racine passe au centre.
+    // DEEP: 2 orders, 1 line each, depth 2. Same cardinality, different mode —
+    // the root moves to the centre.
     const deep = await rootRankIn(deepAggregate(2, 1, 0))
     expect(deep.n).toBe(5)
     expect(deep.rank).toBe(1)
 
-    // Et le prix du radial est visible sur ce couple : à cardinal égal, le
-    // disque profond est nettement plus gros. Mesuré : 258 px contre 602.
+    // And radial's price is visible on this pair: at equal cardinality, the deep
+    // disc is markedly bigger. Measured: 258 px against 602.
     expect(deep.r).toBeGreaterThan(flat.r * 1.5)
   })
 
   it("un orphelin ne fait pas basculer un agrégat plat en radial", async () => {
-    // Un membre non atteint par le BFS local — ici parce que le maillon
-    // intermédiaire est MASQUÉ — reçoit en radial un anneau synthétique
-    // au-delà du dernier. Cet anneau ne traduit aucune profondeur de
-    // référence, seulement une absence d'information, donc il ne doit PAS
-    // déclencher le radial. Sans l'exclusion des orphelins du critère, cet
-    // agrégat-ci basculerait et paierait le prix du radial pour rien.
+    // A member the local BFS never reaches — here because the intermediate link
+    // is HIDDEN — is given, in radial mode, a synthetic ring beyond the last
+    // one. That ring translates no reference depth, only an absence of
+    // information, so it must NOT trigger radial mode. Without excluding
+    // orphans from the criterion, this aggregate would switch over and pay
+    // radial's price for nothing.
     //
-    // Montage : `deepAggregate(2, 1, 0)` est profond (racine ← commande ←
-    // ligne). En retirant les deux COMMANDES de `visible`, les deux lignes
-    // deviennent orphelines et ce qui reste — racine + 2 lignes — est plat.
+    // Setup: `deepAggregate(2, 1, 0)` is deep (root ← order ← line). Removing
+    // the two ORDERS from `visible` orphans the two lines, and what is left —
+    // root + 2 lines — is flat.
     const data = deepAggregate(2, 1, 0)
     const { graph, aggregates } = setupOn(data, deepAggregateConfig)
     const visible = new Set(
@@ -714,11 +712,11 @@ describe("placement radial intra-agrégat", () => {
       rootRect.y + rootRect.height / 2 - shape.cy,
     )
 
-    // Signature des étagères : la racine n'est pas au centre. Si le critère
-    // comptait les orphelins, elle y serait, et ce disque serait bien plus gros.
+    // The shelves' signature: the root is not at the centre. Were the criterion
+    // to count orphans, it would be, and this disc would be far bigger.
     expect(rootDistance).toBeGreaterThan(20)
 
-    // Les garanties tiennent quand même sur ce chemin dégénéré.
+    // The guarantees hold all the same on this degenerate path.
     const rects = [...result.positions.values()]
     for (let i = 0; i < rects.length; i++) {
       for (let j = i + 1; j < rects.length; j++) {
@@ -729,11 +727,10 @@ describe("placement radial intra-agrégat", () => {
   })
 
   it("raccourcit les références intra-agrégat", async () => {
-    // La raison d'être du changement. Chiffres mesurés sous le packing en
-    // étagères, sur ce même fixture : moyenne 591,4 px, max 976,3 px. Sous
-    // radial : 363,0 et 488,1. Les bornes ci-dessous sont posées à mi-chemin,
-    // assez larges pour ne pas casser au moindre pixel et assez serrées pour
-    // qu'un retour aux étagères les fasse tomber.
+    // The whole point of the change. Figures measured under shelf packing, on
+    // this same fixture: mean 591.4 px, max 976.3 px. Under radial: 363.0 and
+    // 488.1. The bounds below sit halfway, loose enough not to break over a
+    // pixel and tight enough that a return to shelves would knock them down.
     const { graph, aggregate, result } = await deepSetup()
     const centreOf = (id: NodeId) => {
       const r = result.positions.get(id)!
@@ -760,20 +757,18 @@ describe("placement radial intra-agrégat", () => {
 
 describe("graphe inter-cluster dense", () => {
   /**
-   * La réserve n°5 de la sonde du moteur : « la passe dure finale peut défaire
-   * un ressort ; un graphe inter-agrégat très dense pourrait se dégrader — non
-   * sondé ». Elle l'est ici.
+   * The engine probe's caveat #5: "the final hard pass can undo a spring; a very
+   * dense inter-aggregate graph could degrade — not probed". It is probed here.
    *
-   * Ce que ces assertions valent : elles ne disent RIEN du calibrage des
-   * constantes de la simulation, et c'est voulu. Les garanties du moteur sont
-   * portées par le packing et par la passe dure finale, jamais par la
-   * simulation — donc elles doivent tenir quel que soit le réglage, et
-   * particulièrement là où les ressorts tirent le plus fort contre la
-   * contrainte. Un balayage de constantes qui casserait ces tests signalerait
-   * un défaut de conception, pas un mauvais réglage.
+   * What these assertions are worth: they say NOTHING about the calibration of
+   * the simulation's constants, and that is deliberate. The engine's guarantees
+   * are carried by the packing and by the final hard pass, never by the
+   * simulation — so they must hold at any setting, and especially where the
+   * springs pull hardest against the constraint. A constant sweep that broke
+   * these tests would signal a design flaw, not a bad setting.
    *
-   * Degré moyen 12,0 et max 12 sur 80 clusters, contre 4,6 sur le jeu de la
-   * démo — voir `denseRefs` pour la forme exacte.
+   * Average degree 12.0 and max 12 over 80 clusters, against 4.6 on the demo's
+   * dataset — see `denseRefs` for the exact shape.
    */
   let dense: { result: GraphLayoutResult; aggregates: AggregateIndex } | null = null
   async function atDensity() {
@@ -785,8 +780,8 @@ describe("graphe inter-cluster dense", () => {
   }
 
   it("le fixture est bien dense", async () => {
-    // Garde anti-test-creux : sans elle, une régression du générateur rendrait
-    // les assertions ci-dessous vraies sur un graphe quelconque.
+    // Anti-hollow-test guard: without it, a regression in the generator would
+    // make the assertions below true on any graph whatsoever.
     const { result, aggregates } = await atDensity()
     expect(result.positions.size).toBe(200)
     expect(result.clusters.length).toBe(80)
@@ -795,8 +790,8 @@ describe("graphe inter-cluster dense", () => {
       const own = aggregates.byNode.get(id)?.[0]
       expect(own).toBeDefined()
     }
-    // 480 paires de clusters reliées, comptées depuis l'index : c'est le
-    // chiffre que la doc du fixture annonce.
+    // 480 linked cluster pairs, counted from the index: the figure the fixture's
+    // doc announces.
     for (const aggregate of aggregates.aggregates.values()) pairs.add(aggregate.id)
     expect(pairs.size).toBe(80)
   })
@@ -826,8 +821,8 @@ describe("graphe inter-cluster dense", () => {
           worst = Math.min(worst, diskGap(disks[i]!, disks[j]!))
         }
       }
-      // Le point de la réserve : même quand 480 ressorts tirent contre elle, la
-      // passe dure finale garde le dernier mot.
+      // The point of the caveat: even when 480 springs pull against it, the
+      // final hard pass keeps the last word.
       expect(worst).toBeGreaterThanOrEqual(CLUSTER_GAP - 1e-6)
     },
     60_000,
@@ -844,10 +839,10 @@ describe("graphe inter-cluster dense", () => {
   })
 
   it("tient aussi quand les références se concentrent sur des hubs", async () => {
-    // L'autre moitié de la réserve : `denseRefs(40, 8)` ramène les 480
-    // références sur 8 produits seulement — degré max 40 au lieu de 12. Un hub
-    // est tiré dans toutes les directions à la fois, ce qui est le cas où la
-    // passe dure a le plus de ressorts à contredire d'un coup.
+    // The other half of the caveat: `denseRefs(40, 8)` funnels the 480
+    // references onto 8 products only — max degree 40 instead of 12. A hub is
+    // pulled in all directions at once, which is the case where the hard pass
+    // has the most springs to contradict at a time.
     const { graph, aggregates, visible } = setupOn(denseRefs(40, 8), denseRefsConfig)
     const result = await createTwoLevelLayoutEngine().layout(graph, aggregates, visible)
     const disks = disksOf(result, aggregates)
@@ -873,10 +868,10 @@ describe("graphe inter-cluster dense", () => {
 
 describe("jitter — bruit déterministe contre la régularité du pavage", () => {
   /**
-   * Écart-type de l'écart bord à bord au PLUS PROCHE VOISIN, sur tous les
-   * disques. C'est la métrique qui objective « le pavage est régulier » : dans
-   * un réseau, tous les voisins sont à la même distance, donc l'écart-type est
-   * nul. Le jitter n'existe que pour le faire monter.
+   * Standard deviation of the edge-to-edge NEAREST-NEIGHBOUR gap, over every
+   * disc. This is the metric that makes "the tiling is regular" objective: in a
+   * lattice every neighbour sits at the same distance, so the standard deviation
+   * is zero. The jitter exists only to raise it.
    */
   function nearestNeighbourSd(result: GraphLayoutResult, aggregates: AggregateIndex): number {
     const disks = disksOf(result, aggregates)
@@ -893,11 +888,11 @@ describe("jitter — bruit déterministe contre la régularité du pavage", () =
     return Math.sqrt(gaps.reduce((a, b) => a + (b - mean) ** 2, 0) / gaps.length)
   }
 
-  // `bigShop(3000)` est LE fixture qui isole l'effet : 167 agrégats de taille
-  // identique et AUCUNE arête entre eux, donc la simulation n'a que la gravité
-  // et la collision, et converge vers l'empilement hexagonal — l'optimum de
-  // densité de cercles égaux. Sur un jeu à ressorts, la topologie brouillerait
-  // la mesure.
+  // `bigShop(3000)` is THE fixture that isolates the effect: 167 aggregates of
+  // identical size and NO edge between them, so the simulation has only gravity
+  // and collision, and converges towards hexagonal packing — the density optimum
+  // for equal circles. On a dataset with springs, the topology would blur the
+  // measurement.
   const flatSetup = () => setupOn(bigShop(3000))
 
   it(
@@ -909,8 +904,8 @@ describe("jitter — bruit déterministe contre la régularité du pavage", () =
         aggregates,
         visible,
       )
-      // Mesuré : 0,00 px. C'est la définition d'un pavage régulier, et c'est
-      // l'état que le défaut corrige.
+      // Measured: 0.00 px. That is the definition of a regular tiling, and it is
+      // the state the default fixes.
       expect(nearestNeighbourSd(result, aggregates)).toBeLessThan(0.5)
     },
     30_000,
@@ -928,15 +923,16 @@ describe("jitter — bruit déterministe contre la régularité du pavage", () =
         )
         return nearestNeighbourSd(result, aggregates)
       }
-      // Mesuré : 0,00 / 6,36 / 12,02 / 17,65 px. La monotonie est la propriété
-      // qui compte — `jitter` gradue bien la variance, il ne la déclenche pas
-      // en tout ou rien.
+      // Measured: 0.00 / 6.36 / 12.02 / 17.65 px. Monotonicity is the property
+      // that matters — `jitter` really grades the variance, it does not trigger
+      // it all or nothing.
       const [none, small, mid, large] = [await sdOf(0), await sdOf(16), await sdOf(32), await sdOf(48)]
       expect(none!).toBeLessThan(0.5)
       expect(small!).toBeGreaterThan(3)
       expect(mid!).toBeGreaterThan(small!)
       expect(large!).toBeGreaterThan(mid!)
-      // Et le défaut est bien actif : sans argument, on obtient le régime de 32.
+      // And the default is really in force: with no argument, we get the 32
+      // regime.
       const byDefault = nearestNeighbourSd(
         await createTwoLevelLayoutEngine().layout(graph, aggregates, visible),
         aggregates,
@@ -949,15 +945,15 @@ describe("jitter — bruit déterministe contre la régularité du pavage", () =
   it(
     "le jitter ne touche NI les garanties NI les formes peintes",
     async () => {
-      // Les deux invariants que ce mécanisme ne doit jamais entamer, et la
-      // raison pour laquelle il est sûr d'en faire un défaut.
+      // The two invariants this mechanism must never dent, and the reason it is
+      // safe to make it a default.
       //
-      // 1. La passe dure finale travaille sur le VRAI rayon, donc l'écart
-      //    garanti reste `clusterGap` quelle que soit l'amplitude. Mesuré :
-      //    min nn = 160,00 px à 0, 16, 32, 48 et 64.
-      // 2. Le gonflement n'entre pas dans le cercle englobant : à packing
-      //    identique, les rayons émis doivent être IDENTIQUES d'une amplitude à
-      //    l'autre. Seules les positions bougent.
+      // 1. The final hard pass works on the REAL radius, so the guaranteed gap
+      //    stays `clusterGap` whatever the amplitude. Measured: min nn =
+      //    160.00 px at 0, 16, 32, 48 and 64.
+      // 2. The inflation does not enter the enclosing circle: at identical
+      //    packing, the emitted radii must be IDENTICAL from one amplitude to
+      //    the next. Only the positions move.
       const { graph, aggregates, visible } = flatSetup()
       const quiet = await createTwoLevelLayoutEngine({ jitter: 0 }).layout(graph, aggregates, visible)
       const loud = await createTwoLevelLayoutEngine({ jitter: 64 }).layout(graph, aggregates, visible)
@@ -971,23 +967,23 @@ describe("jitter — bruit déterministe contre la régularité du pavage", () =
         }
       }
 
-      // Rayons identiques au bit près : le jitter est purement transitoire.
+      // Radii identical down to the bit: the jitter is purely transient.
       const radiiOf = (r: GraphLayoutResult) =>
         [...r.clusters].sort((a, b) => (a.aggregateId < b.aggregateId ? -1 : 1)).map((c) => c.r)
       expect(radiiOf(loud)).toEqual(radiiOf(quiet))
 
-      // Contre-garde : les POSITIONS, elles, doivent avoir bougé — sinon le
-      // test ci-dessus passerait aussi avec un jitter inopérant.
+      // Counter-guard: the POSITIONS, for their part, must have moved —
+      // otherwise the test above would pass with an inert jitter too.
       expect([...loud.positions.entries()]).not.toEqual([...quiet.positions.entries()])
     },
     60_000,
   )
 
   it("reste déterministe au bit près avec le jitter actif", async () => {
-    // Le jitter est la seule source de « hasard » du moteur, et elle est
-    // entièrement dérivée du hachage des ids. Deux exécutions doivent donc
-    // rester identiques au bit près — c'est ce qui distingue ce mécanisme d'un
-    // `Math.random`, qui donnerait le même rendu et casserait cette propriété.
+    // The jitter is the engine's only source of "randomness", and it derives
+    // entirely from the hash of the ids. Two runs must therefore stay identical
+    // down to the bit — that is what sets this mechanism apart from a
+    // `Math.random`, which would give the same look and break this property.
     const { graph, aggregates, visible } = setupOn(bigShop(600))
     const a = await createTwoLevelLayoutEngine().layout(graph, aggregates, visible)
     const b = await createTwoLevelLayoutEngine().layout(graph, aggregates, visible)
@@ -1016,9 +1012,9 @@ describe("entrées dégénérées", () => {
   })
 
   it("aucune entité visible : rien n'est posé, et la normalisation ne divague pas", async () => {
-    // `minX` vaut alors `Infinity` : la normalisation doit être court-circuitée,
-    // sans quoi elle propagerait des `NaN` — ici il n'y a rien à observer, donc
-    // c'est l'absence de jet et le résultat vide qui pinnent le garde-fou.
+    // `minX` is then `Infinity`: the normalization must be short-circuited,
+    // otherwise it would propagate `NaN`s — there is nothing to observe here, so
+    // it is the absence of a throw and the empty result that pin the guard.
     const { graph, aggregates } = setup()
     const result = await createTwoLevelLayoutEngine().layout(graph, aggregates, new Set())
     expect(result.positions.size).toBe(0)
@@ -1026,11 +1022,10 @@ describe("entrées dégénérées", () => {
   })
 
   it("une entité hors agrégat devient un disque singleton, écarté comme les autres", async () => {
-    // /orders/1 référence le client GHOST : l'arête est cassée, donc aucune
-    // racine ne l'atteint et il n'appartient à aucun agrégat. Sans le disque
-    // singleton il resterait posé DANS l'enveloppe d'un voisin, qui ne le
-    // contient pourtant pas — exactement le cas que `separateClusters` traite
-    // de son côté.
+    // /orders/1 references the GHOST customer: the edge is dangling, so no root
+    // reaches it and it belongs to no aggregate. Without the singleton disc it
+    // would stay placed INSIDE a neighbour's envelope, which does not contain it
+    // — exactly the case `separateClusters` handled on its side.
     const { graph, aggregates, visible } = setup()
     expect(aggregates.byNode.has("/orders/1")).toBe(false)
 
@@ -1045,7 +1040,7 @@ describe("entrées dégénérées", () => {
       expect(diskGap(lone, cluster)).toBeGreaterThanOrEqual(CLUSTER_GAP - 1e-6)
     }
 
-    // Et la carte isolée est bien HORS de chaque enveloppe peinte.
+    // And the isolated card is indeed OUTSIDE every painted envelope.
     const rect = result.positions.get("/orders/1")!
     for (const cluster of result.clusters) {
       for (const corner of cornersOf(rect)) {
@@ -1055,10 +1050,10 @@ describe("entrées dégénérées", () => {
   })
 
   it("un agrégat d'une seule carte a une enveloppe, et c'est le cercle circonscrit de cette carte", async () => {
-    // Customer#c2 (/customers/1) n'a aucune commande valide : son agrégat se
-    // réduit à sa racine. Le packing d'un seul rect doit donner le cercle
-    // circonscrit de ce rect, marge comprise — pas un cercle dégénéré de rayon
-    // nul, ni un débordement de `Math.max(...[])`.
+    // Customer#c2 (/customers/1) has no valid order: its aggregate reduces to
+    // its root. Packing a single rect must give that rect's circumscribed
+    // circle, padding included — not a degenerate circle of zero radius, nor an
+    // overflow of `Math.max(...[])`.
     const { graph, aggregates, visible } = setup()
     const result = await createTwoLevelLayoutEngine().layout(graph, aggregates, visible)
 
@@ -1071,9 +1066,9 @@ describe("entrées dégénérées", () => {
   })
 
   it("une config sans `aggregates` : chaque entité est son propre disque, zéro enveloppe", async () => {
-    // `shopConfig` nu ne déclare aucune racine, donc `buildAggregates` rend un
-    // index vide. Le moteur ne doit alors rien peindre — et surtout continuer
-    // d'écarter les quatre cartes, qui sont quatre disques singletons.
+    // Bare `shopConfig` declares no root, so `buildAggregates` returns an empty
+    // index. The engine must then paint nothing — and above all keep pushing
+    // apart the four cards, which are four singleton discs.
     const { graph, aggregates, visible } = setupOn(shopData, shopConfig)
     expect(aggregates.aggregates.size).toBe(0)
 
@@ -1091,11 +1086,11 @@ describe("entrées dégénérées", () => {
   })
 
   it("une entité arbitrée ne tombe que dans UNE enveloppe", async () => {
-    // /orders/0 est à un saut de Customer#c1 et de Product#p9 ; `Customer`
-    // étant déclaré en premier, il l'emporte (règle de partition,
-    // `aggregate.ts`). Géométriquement, la carte doit être HORS du disque de
-    // Product#p9 — ce que la séparation des disques garantit ici par
-    // construction, puisqu'elle n'a jamais fait partie de ce cluster.
+    // /orders/0 is one hop from Customer#c1 and from Product#p9; `Customer`
+    // being declared first, it wins (partition rule, `aggregate.ts`).
+    // Geometrically, the card must be OUTSIDE Product#p9's disc — which disc
+    // separation guarantees here by construction, since the card was never part
+    // of that cluster.
     const { graph, aggregates, visible } = setupOn(twoRootsData, twoRootsConfig)
     const result = await createTwoLevelLayoutEngine().layout(graph, aggregates, visible)
     expect(result.clusters).toHaveLength(2)

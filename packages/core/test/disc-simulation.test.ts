@@ -1,18 +1,18 @@
 import { describe, it, expect } from "vitest"
 import { layoutDiscs, type Disc } from "../src/disc-simulation.js"
 
-// Le niveau 2 testé SEUL, sans passer par le moteur : `graph-layout.test.ts`
-// l'exerce à travers des fixtures de graphe, ce qui plafonne à quelques
-// centaines de disques et mélange le coût du packing à celui de la simulation.
-// Ici on fabrique directement le tableau de disques, donc on choisit le
-// cardinal — et c'est le cardinal qui est le sujet.
+// Level 2 tested ON ITS OWN, without going through the engine:
+// `graph-layout.test.ts` exercises it through graph fixtures, which caps out at
+// a few hundred discs and mixes the packing's cost with the simulation's. Here
+// we build the disc array directly, so we choose the cardinality — and the
+// cardinality is the subject.
 //
-// Le jeu réel qui a motivé la grille spatiale (audit d'archi BNPP, 6 251
-// entités) produit ~1 300 disques ; on en prend 1 500 pour rester au-dessus.
+// The real data set that motivated the spatial grid (BNPP architecture audit,
+// 6,251 entities) produces ~1,300 discs; we take 1,500 to stay above it.
 
-/** Le même FNV-1a que le module, recopié ici pour que le fixture ne dépende
- * que de son propre indice — aucune source d'aléa, donc un jeu d'entrée
- * identique d'une exécution à l'autre. */
+/** The same FNV-1a as the module, copied here so that the fixture depends only
+ * on its own index — no source of randomness, hence an identical input set from
+ * one run to the next. */
 function hash(s: string): number {
   let h = 2166136261
   for (let i = 0; i < s.length; i++) {
@@ -25,8 +25,8 @@ function hash(s: string): number {
 const COUNT = 1500
 const CLUSTER_GAP = 160
 
-/** Rayons variés — de 40 à 200 px, l'ordre de grandeur des enveloppes
- * d'agrégats réelles — tirés du hachage de l'indice. */
+/** Varied radii — from 40 to 200 px, the order of magnitude of real aggregate
+ * envelopes — drawn from the hash of the index. */
 function makeDiscs(): Disc[] {
   return Array.from({ length: COUNT }, (_, i) => ({
     id: `d${i}`,
@@ -36,8 +36,8 @@ function makeDiscs(): Disc[] {
   }))
 }
 
-/** ~4 500 paires : le régime de couplage d'un vrai graphe d'archi, où les
- * ressorts ont autant de mots à dire que la collision. */
+/** ~4,500 pairs: the coupling regime of a real architecture graph, where the
+ * springs have as much say as the collision. */
 function makePairs(): Array<readonly [string, string]> {
   const pairs: Array<readonly [string, string]> = []
   for (let i = 0; i < COUNT; i++) {
@@ -60,10 +60,10 @@ describe("layoutDiscs à l'échelle du jeu réel", () => {
       layoutDiscs(discs, makePairs(), OPTIONS)
       const elapsed = Date.now() - t0
 
-      // L'invariant vérifié par FORCE BRUTE sur le résultat : c'est un test,
-      // le O(n²) y est le bon outil — il ne partage aucune structure avec
-      // l'implémentation, donc un bug de la grille (une paire jamais énumérée)
-      // tombe ici et pas ailleurs.
+      // The invariant checked by BRUTE FORCE on the result: this is a test, and
+      // O(n²) is the right tool here — it shares no structure with the
+      // implementation, so a grid bug (a pair never enumerated) falls out here
+      // and nowhere else.
       let violations = 0
       let worst = 0
       for (let i = 0; i < discs.length; i++) {
@@ -80,10 +80,10 @@ describe("layoutDiscs à l'échelle du jeu réel", () => {
       }
       expect({ violations, worst, elapsed }).toEqual({ violations: 0, worst: 0, elapsed })
 
-      // La borne de temps n'est pas un micro-benchmark : elle sépare deux
-      // régimes. Avec la double boucle O(k²) d'origine ce volume demandait
-      // plusieurs minutes (le test sortait en timeout) ; avec la grille il
-      // tient largement sous la seconde ou deux.
+      // The time bound is not a micro-benchmark: it separates two regimes. With
+      // the original O(k²) double loop this volume took several minutes (the
+      // test timed out); with the grid it stays comfortably under a second or
+      // two.
       expect(elapsed).toBeLessThan(20_000)
     },
     30_000,
@@ -92,10 +92,10 @@ describe("layoutDiscs à l'échelle du jeu réel", () => {
   it(
     "reste déterministe au bit près à cette échelle",
     () => {
-      // La grille ne doit rien emprunter à l'ordre d'itération d'une Map ou
-      // d'un Set : son parcours est dérivé des seuls indices du tableau et des
-      // positions. Deux exécutions sur des copies de la même entrée doivent
-      // donc rendre exactement les mêmes flottants.
+      // The grid must borrow nothing from the iteration order of a Map or a Set:
+      // its traversal derives from the array indices and the positions alone.
+      // Two runs over copies of the same input must therefore yield exactly the
+      // same floats.
       const a = makeDiscs()
       const b = makeDiscs()
       layoutDiscs(a, makePairs(), OPTIONS)
@@ -110,17 +110,17 @@ describe("convergence en chaîne", () => {
   it(
     "sépare une chaîne de 200 disques dont chaque séparation en déclenche une autre",
     () => {
-      // Le pire cas de `hardSeparation` n'est pas la densité mais la
-      // PROPAGATION : une chaîne où écarter i de i+1 rentre dans i+2, dont la
-      // séparation rentre dans i+3, etc. Chaque passe ne règle qu'un bout de la
-      // chaîne, il en faut beaucoup, et c'est le budget de convergence — pas
-      // l'énumération — qui est sur la sellette.
+      // `hardSeparation`'s worst case is not density but PROPAGATION: a chain
+      // where pushing i away from i+1 runs into i+2, whose separation runs into
+      // i+3, and so on. Each pass only settles one end of the chain, many are
+      // needed, and it is the convergence budget — not the enumeration — that is
+      // on trial.
       //
-      // `layoutDiscs` ré-amorce toujours les positions, donc on ne peut pas
-      // POSER une chaîne colinéaire depuis l'extérieur. On la fait produire par
-      // le moteur, ce qui est de toute façon le cas réaliste : une chaîne de
-      // ressorts de poids fort comprime les 200 disques sur une ligne, et la
-      // passe dure doit la rouvrir maillon par maillon.
+      // `layoutDiscs` always re-seeds the positions, so a collinear chain cannot
+      // be PLACED from outside. We have the engine produce it, which is the
+      // realistic case anyway: a chain of heavily weighted springs compresses
+      // the 200 discs onto a line, and the hard pass must reopen it link by
+      // link.
       const N = 200
       const GAP = 24
       const discs: Disc[] = Array.from({ length: N }, (_, i) => ({
@@ -131,8 +131,8 @@ describe("convergence en chaîne", () => {
       }))
       const pairs: Array<readonly [string, string]> = []
       for (let i = 0; i + 1 < N; i++) {
-        // Poids fort : le ressort domine largement, la chaîne se comprime et la
-        // passe dure doit la rouvrir maillon par maillon.
+        // Heavy weight: the spring dominates by far, the chain compresses and
+        // the hard pass must reopen it link by link.
         for (let k = 0; k < 4; k++) pairs.push([`chain${i}`, `chain${i + 1}`] as const)
       }
 
@@ -158,9 +158,9 @@ describe("convergence en chaîne", () => {
   )
 
   it("la cascade reste déterministe au bit près", () => {
-    // Une chaîne enchaîne des milliers de passes sur les mêmes tampons : c'est
-    // le régime où un résidu d'état entre passes se verrait le plus vite, et il
-    // se verrait dans les derniers bits.
+    // A chain runs thousands of passes over the same buffers: this is the regime
+    // where leftover state between passes would show up fastest, and it would
+    // show up in the last bits.
     const build = (): Disc[] =>
       Array.from({ length: 120 }, (_, i) => ({ id: `casc${i}`, r: 25, x: 0, y: 0 }))
     const pairs: Array<readonly [string, string]> = []
@@ -174,12 +174,12 @@ describe("convergence en chaîne", () => {
   })
 
   it("deux mises en page successives ne se marchent pas dessus par les tampons", () => {
-    // Les tampons de la grille persistent au module. Un jeu GRAND suivi d'un
-    // jeu PETIT relit donc des tableaux surdimensionnés dont la queue porte les
-    // résidus du précédent : si une remise à zéro manquait (`starts`, l'
-    // histogramme des cellules, ou `cellRMax`, le max des rayons par cellule qui
-    // pilote l'élagage), le second layout produirait autre chose que s'il avait
-    // tourné seul. On compare exactement ça.
+    // The grid's buffers persist at module scope. A LARGE set followed by a
+    // SMALL one therefore re-reads oversized arrays whose tail carries the
+    // previous run's leftovers: if a reset were missing (`starts`, the cell
+    // histogram, or `cellRMax`, the per-cell max radius that drives the
+    // pruning), the second layout would produce something other than what it
+    // would have produced alone. That is exactly what we compare.
     const small = (): Disc[] =>
       Array.from({ length: 40 }, (_, i) => ({ id: `s${i}`, r: 18 + (i % 5) * 7, x: 0, y: 0 }))
     const o = { clusterGap: 45, simIterations: 120, jitter: 6 }
@@ -209,9 +209,9 @@ describe("entrées dégénérées", () => {
   })
 
   it("des rayons nuls et un gap nul ne demandent aucune séparation", () => {
-    // Cas limite de la grille : la taille de cellule dérive du diamètre max et
-    // du gap, donc elle vaut 0 ici. Aucune paire ne peut violer quoi que ce
-    // soit (`min` vaut 0, `d ≥ 0`), la passe doit le voir et rendre 0.
+    // The grid's edge case: cell size derives from the max diameter and the gap,
+    // so it is 0 here. No pair can violate anything (`min` is 0, `d ≥ 0`); the
+    // pass must see that and return 0.
     const discs: Disc[] = Array.from({ length: 40 }, (_, i) => ({
       id: `z${i}`,
       r: 0,
@@ -226,18 +226,18 @@ describe("entrées dégénérées", () => {
   })
 
   it("sépare des disques empilés exactement au même point", () => {
-    // Centres confondus : la direction de poussée vient du hachage des ids. La
-    // grille les met tous dans la MÊME cellule, ce qui est le pire cas de
-    // densité, et l'invariant doit tenir quand même.
+    // Coincident centres: the push direction comes from the hash of the ids. The
+    // grid puts them all in the SAME cell, which is the worst case for density,
+    // and the invariant must hold all the same.
     const discs: Disc[] = Array.from({ length: 30 }, (_, i) => ({
       id: `stack${i}`,
       r: 20,
       x: 0,
       y: 0,
     }))
-    // Après `seedDiscs` ils ne sont plus confondus ; on force le cas en
-    // écrasant l'amorçage par un jitter nul et un gap qui les fait tous se
-    // toucher. L'assertion porte sur la sortie.
+    // After `seedDiscs` they are no longer coincident; we force the case by
+    // overriding the seeding with a zero jitter and a gap that makes them all
+    // touch. The assertion is on the output.
     layoutDiscs(discs, [], { clusterGap: 50, simIterations: 50, jitter: 0 })
     for (let i = 0; i < discs.length; i++) {
       for (let j = i + 1; j < discs.length; j++) {
@@ -249,9 +249,9 @@ describe("entrées dégénérées", () => {
   })
 
   it("un disque géant parmi des petits reste séparé de tous", () => {
-    // La fenêtre de recherche doit couvrir `r_i + r_max + gap` pour CHAQUE
-    // disque, y compris les petits : sinon aucun petit ne verrait jamais le
-    // géant et l'invariant sauterait sur ces paires-là exactement.
+    // The search window must cover `r_i + r_max + gap` for EVERY disc, small
+    // ones included: otherwise no small disc would ever see the giant, and the
+    // invariant would break on exactly those pairs.
     const discs: Disc[] = [
       { id: "giant", r: 3000, x: 0, y: 0 },
       ...Array.from({ length: 120 }, (_, i) => ({ id: `small${i}`, r: 12, x: 0, y: 0 })),
@@ -269,20 +269,19 @@ describe("entrées dégénérées", () => {
   it(
     "les petits trouvent le géant alors que l'élagage par cellule coupe leur fenêtre",
     () => {
-      // LE cas qui discrimine l'élagage par cellule, dimensionné pour que la
-      // grille l'exerce vraiment — le test précédent ne le fait pas : avec 120
-      // petits autour d'un géant, la grille ne fait que quelques cellules et
-      // rien n'est jamais élagué.
+      // THE case that discriminates per-cell pruning, sized so that the grid
+      // really exercises it — the previous test does not: with 120 small discs
+      // around one giant, the grid amounts to a handful of cells and nothing is
+      // ever pruned.
       //
-      // Ici : 600 petits (r = 30) plus un géant (r = 2000), gap 60. La maille
-      // vaut (2·2000 + 60)/3 ≈ 1353 px et la fenêtre d'un petit fait 2 anneaux.
-      // Le seuil d'élagage de l'anneau 2 est (2−1)·1353 − (30 + 60) ≈ 1263 px :
-      // toute cellule qui n'abrite que des petits (max de rayon 30) est donc
-      // sautée à l'anneau 2, alors que la cellule du géant (max de rayon 2000)
-      // ne l'est PAS. C'est exactement la discrimination qu'on veut voir tenir —
-      // un élagage qui se tromperait de max ferait rater le géant à tous les
-      // petits situés à deux anneaux de lui, et l'invariant sauterait sur ces
-      // paires-là et seulement sur elles.
+      // Here: 600 small discs (r = 30) plus one giant (r = 2000), gap 60. The
+      // cell size is (2·2000 + 60)/3 ≈ 1353 px and a small disc's window spans 2
+      // rings. Ring 2's pruning threshold is (2−1)·1353 − (30 + 60) ≈ 1263 px:
+      // every cell holding only small discs (max radius 30) is therefore skipped
+      // at ring 2, while the giant's cell (max radius 2000) is NOT. That is
+      // exactly the discrimination we want to see hold — a pruning that got the
+      // max wrong would make every small disc two rings away miss the giant, and
+      // the invariant would break on those pairs and only those.
       const GAP = 60
       const discs: Disc[] = [
         { id: "giant", r: 2000, x: 0, y: 0 },
@@ -300,9 +299,9 @@ describe("entrées dégénérées", () => {
           const d = Math.hypot(b.x - a.x, b.y - a.y)
           if (d < min - 1e-6) {
             violations++
-            // On isole les paires QUI TOUCHENT LE GÉANT : ce sont elles que
-            // l'élagage mettrait en défaut, et les distinguer rend le
-            // diagnostic immédiat en cas de régression.
+            // We single out the pairs THAT INVOLVE THE GIANT: those are the ones
+            // pruning would get wrong, and telling them apart makes the
+            // diagnosis immediate on a regression.
             if (i === 0) worstGiant = Math.max(worstGiant, min - d)
           }
         }

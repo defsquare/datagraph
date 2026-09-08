@@ -1,8 +1,8 @@
 import type { DataGraphConfig } from "@defsquare/data-graph-core";
 
-// Duplique volontairement `packages/core/test/fixtures.ts` : le renderer est un
-// consommateur du paquet publié et ne doit importer que son API publique,
-// jamais ses fichiers de test. C'est la convention déjà suivie par la démo.
+// Deliberately duplicates `packages/core/test/fixtures.ts`: the renderer is a
+// consumer of the published package and must import only its public API, never
+// its test files. That is the convention the demo already follows.
 
 export const shopData = {
   customers: [
@@ -28,9 +28,9 @@ export const shopConfig: DataGraphConfig = {
   refs: [{ from: "$.orders[*].customerId", to: "$.customers[*].id" }],
 };
 
-// Une référence portée par un VALUE OBJECT : `CartLine` n'a pas d'identité,
-// donc pas d'entité ni de carte en vue graphe, mais elle porte `productRef`.
-// C'est le cas dont le tracé doit être HISSÉ jusqu'à un ancêtre visible.
+// A reference carried by a VALUE OBJECT: `CartLine` has no identity, hence no
+// entity and no card in graph view, yet it carries `productRef`. This is the
+// case whose stroke must be LIFTED up to a visible ancestor.
 export const cartData = {
   carts: [{ id: "k1", lines: [{ sku: "A-1", productRef: "p1" }] }],
   products: [{ id: "p1", name: "Clavier" }],

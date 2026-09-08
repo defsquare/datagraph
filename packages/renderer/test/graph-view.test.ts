@@ -8,12 +8,12 @@ import {
   type NodeMetrics,
   type Rect,
 } from "@defsquare/data-graph-core";
-// Import STATIQUE du point d'entrée de la vue graphe, et c'est permis ici : la
-// règle de `bundle-purity.test.ts` ne porte que sur `src/` (c'est le bundle du
-// consommateur qu'elle protège), et le contrôleur lui-même n'y touche toujours
-// que par son `import()` dynamique. On lit la constante plutôt que d'écrire 18
-// dans le test : c'est exactement l'invariant qu'on veut asserter — le renderer
-// ne garde AUCUNE copie de ce nombre.
+// STATIC import of the graph view entry point, and it is allowed here: the rule
+// in `bundle-purity.test.ts` covers `src/` only (the consumer's bundle is what it
+// protects), and the controller itself still reaches it only through its dynamic
+// `import()`. We read the constant instead of writing 18 into the test: that is
+// exactly the invariant we want to assert — the renderer keeps NO copy of that
+// number.
 import { TWO_LEVEL_LAYOUT_DEFAULTS } from "@defsquare/data-graph-core/graph-layout";
 import {
   createGraphViewController,
@@ -24,15 +24,15 @@ import {
 import { cartConfig, cartData, shopConfig, shopData } from "./fixtures.js";
 
 /**
- * Les fixtures partagées n'ont pas de `groups` — sans racine déclarée,
- * `buildAggregates` rend un index VIDE et la vue graphe n'aurait aucune
- * enveloppe à montrer. On ajoute donc le seul morceau qui manque, et rien
- * d'autre : c'est la config minimale qui produit des agrégats.
+ * The shared fixtures have no `groups` — with no declared root, `buildAggregates`
+ * returns an EMPTY index and the graph view would have no envelope to show. So we
+ * add the one missing piece and nothing else: this is the minimal config that
+ * produces aggregates.
  *
- * Le résultat, sur `shopData` : `Customer#c1` = {c1, o1} (o1 référence c1),
- * `Customer#c2` = {c2}. `o2` référence un client fantôme, n'atteint donc aucune
- * racine et n'appartient à aucun agrégat — ce qui donne au passage une carte
- * sans enveloppe.
+ * The result, on `shopData`: `Customer#c1` = {c1, o1} (o1 references c1),
+ * `Customer#c2` = {c2}. `o2` references a phantom customer, therefore reaches no
+ * root and belongs to no aggregate — which incidentally gives us a card with no
+ * envelope.
  */
 const graphConfig: DataGraphConfig = { ...shopConfig, groups: ["Customer"] };
 const cartGraphConfig: DataGraphConfig = { ...cartConfig, groups: ["Cart"] };
@@ -48,8 +48,8 @@ function controllerFor(hooks: Partial<GraphViewHooks> = {}): GraphViewController
   });
 }
 
-/** Un contrôleur qui a publié l'état de `shopGraph` : le point de départ de tout
- * ce qui teste une lecture dérivée. */
+/** A controller that has published `shopGraph`'s state: the starting point of
+ * everything that tests a derived read. */
 async function published(hooks: Partial<GraphViewHooks> = {}): Promise<GraphViewController> {
   const controller = controllerFor(hooks);
   controller.publish(await controller.compute(shopGraph, graphConfig, false));
@@ -63,7 +63,7 @@ describe("graph view controller — cycle de vie", () => {
     expect(controller.clusters()).toEqual([]);
     expect(controller.aggregateOf("Customer#c1")).toBeUndefined();
     expect(controller.memberIdsContaining("/customers/0")).toBeUndefined();
-    // Les entités, elles, ne dépendent d'aucun état publié.
+    // The entities, for their part, depend on no published state.
     expect(controller.entityIds(shopGraph).size).toBe(4);
   });
 
@@ -75,9 +75,9 @@ describe("graph view controller — cycle de vie", () => {
     const clusters = controller.clusters();
     expect(clusters.map((c) => c.aggregateId).sort()).toEqual(["Customer#c1", "Customer#c2"]);
 
-    // L'invariant, écrit tel quel : toute enveloppe de la mise en page publiée
-    // se résout dans l'index publié, et tous les membres qu'elle nomme ont une
-    // position dans cette même mise en page.
+    // The invariant, spelled out: every envelope of the published layout resolves
+    // in the published index, and every member it names has a position in that
+    // same layout.
     for (const cluster of clusters) {
       const aggregate = controller.aggregateOf(cluster.aggregateId);
       expect(aggregate, cluster.aggregateId).toBeDefined();
@@ -104,9 +104,9 @@ describe("graph view controller — compute ne publie jamais", () => {
     const controller = controllerFor();
     const state = await controller.compute(shopGraph, graphConfig, false);
 
-    // Le calcul a bien abouti…
+    // The computation did succeed…
     expect(state.layout.clusters).toHaveLength(2);
-    // …et rien n'a bougé chez le contrôleur.
+    // …and nothing moved on the controller's side.
     expect(controller.positions()).toBeUndefined();
     expect(controller.clusters()).toEqual([]);
     expect(controller.aggregateOf("Customer#c1")).toBeUndefined();
@@ -114,8 +114,8 @@ describe("graph view controller — compute ne publie jamais", () => {
 
   it("garde l'état PUBLIÉ, et pas celui du dernier calcul terminé", async () => {
     const controller = controllerFor();
-    // Deux calculs entrelacés sur deux graphes différents, exactement la course
-    // que la séparation compute/publish existe pour rendre survivable.
+    // Two interleaved computations on two different graphs, exactly the race the
+    // compute/publish split exists to make survivable.
     const pending = Promise.all([
       controller.compute(shopGraph, graphConfig, false),
       controller.compute(cartGraph, cartGraphConfig, false),
@@ -123,7 +123,7 @@ describe("graph view controller — compute ne publie jamais", () => {
     const [shopState, cartState] = await pending;
     expect(cartState.layout.clusters).toHaveLength(1);
 
-    // Un seul `publish`, celui du premier : l'appelant a jugé le second périmé.
+    // A single `publish`, the first one's: the caller judged the second stale.
     controller.publish(shopState);
 
     expect([...controller.positions()!.keys()]).toContain("/customers/0");
@@ -141,8 +141,8 @@ describe("graph view controller — hullPadding", () => {
   it("prend la valeur du MOTEUR dès le premier calcul, publié ou non", async () => {
     const controller = controllerFor();
     await controller.compute(shopGraph, graphConfig, false);
-    // Le chargement du moteur suffit : la marge sert à recalculer un disque
-    // pendant un déplacement, pas à décrire l'état publié.
+    // Loading the engine is enough: the padding serves to recompute a disc during
+    // a move, not to describe the published state.
     expect(controller.hullPadding()).toBe(TWO_LEVEL_LAYOUT_DEFAULTS.hullPadding);
   });
 
@@ -157,19 +157,19 @@ describe("graph view controller — hullPadding", () => {
 describe("graph view controller — memberIdsContaining", () => {
   it("retrouve l'enveloppe et les membres de l'agrégat d'une carte", async () => {
     const controller = await published();
-    // `o1` n'est pas la racine de son agrégat : c'est bien l'appartenance qui
-    // est cherchée, pas l'identité de la racine.
+    // `o1` is not its aggregate's root: what is being looked up really is
+    // membership, not the root's identity.
     const owner = controller.memberIdsContaining("/orders/0");
     expect(owner?.cluster.aggregateId).toBe("Customer#c1");
     expect([...owner!.memberIds].sort()).toEqual(["/customers/0", "/orders/0"]);
-    // La forme rendue est CELLE du moteur, pas une copie : c'est en la mutant
-    // que `recomputeClusterCircle` met le disque peint à jour.
+    // The shape returned is THE engine's, not a copy: mutating it is how
+    // `recomputeClusterCircle` brings the painted disc up to date.
     expect(controller.clusters()).toContain(owner!.cluster);
   });
 
   it("ne trouve rien pour une carte hors agrégat", async () => {
     const controller = await published();
-    // `o2` référence un client qui n'existe pas : il n'atteint aucune racine.
+    // `o2` references a customer that does not exist: it reaches no root.
     expect(controller.memberIdsContaining("/orders/1")).toBeUndefined();
     expect(controller.memberIdsContaining("/nope")).toBeUndefined();
   });
@@ -178,8 +178,8 @@ describe("graph view controller — memberIdsContaining", () => {
 describe("graph view controller — extendBoundsToClusters", () => {
   it("unit les boîtes englobantes des disques aux bornes reçues", async () => {
     const controller = await published();
-    // Des bornes volontairement minuscules et centrées : chaque disque doit les
-    // pousser dans les quatre directions.
+    // Deliberately tiny, centered bounds: every disc must push them out in all
+    // four directions.
     const bounds: Rect = { x: 0, y: 0, width: 1, height: 1 };
     controller.extendBoundsToClusters(bounds);
 
@@ -199,8 +199,8 @@ describe("graph view controller — extendBoundsToClusters", () => {
 });
 
 describe("graph view controller — clustersFor", () => {
-  /** Les arguments au repos : pas de sélection, pas de survol, rien d'estompé.
-   * Chaque test ne surcharge que ce dont il parle. */
+  /** The arguments at rest: no selection, no hover, nothing dimmed. Each test
+   * overrides only what it is about. */
   function args(overrides: Partial<ClustersForArgs> = {}): ClustersForArgs {
     return {
       graph: shopGraph,
@@ -213,8 +213,8 @@ describe("graph view controller — clustersFor", () => {
     };
   }
 
-  /** Les enveloppes indexées par agrégat : l'ordre du moteur n'est pas un
-   * contrat, et un test qui s'y accrocherait casserait au premier réglage. */
+  /** The envelopes indexed by aggregate: the engine's ordering is not a contract,
+   * and a test latching onto it would break at the first tweak. */
   function byId(paints: ReturnType<GraphViewController["clustersFor"]>, controller: GraphViewController) {
     const ids = controller.clusters().map((c) => c.aggregateId);
     return new Map(paints.map((paint, i) => [ids[i]!, paint]));
@@ -233,7 +233,7 @@ describe("graph view controller — clustersFor", () => {
 
   it("estompe la seule enveloppe dont aucun membre n'est à garder", async () => {
     const controller = await published();
-    // Sélection sur `c2` : son agrégat reste plein, l'autre recule.
+    // Selection on `c2`: its aggregate stays full, the other recedes.
     const paints = byId(controller.clustersFor(args({ keep: new Set(["/customers/1"]) })), controller);
     expect(paints.get("Customer#c2")!.dim).toBe(false);
     expect(paints.get("Customer#c1")!.dim).toBe(true);
@@ -241,7 +241,7 @@ describe("graph view controller — clustersFor", () => {
 
   it("garde pleine une enveloppe dès qu'UN membre est à garder", async () => {
     const controller = await published();
-    // `o1` n'est pas la racine : un membre quelconque suffit.
+    // `o1` is not the root: any member at all is enough.
     const paints = byId(controller.clustersFor(args({ keep: new Set(["/orders/0"]) })), controller);
     expect(paints.get("Customer#c1")!.dim).toBe(false);
     expect(paints.get("Customer#c2")!.dim).toBe(true);
@@ -250,13 +250,13 @@ describe("graph view controller — clustersFor", () => {
   it("laisse PLEINE une enveloppe dont l'agrégat manque à l'index", async () => {
     const controller = controllerFor();
     const state = await controller.compute(shopGraph, graphConfig, false);
-    // Un index amputé sous une mise en page intacte : on ne sait plus rien des
-    // membres, donc on n'estompe pas plutôt que d'estomper par défaut.
+    // A truncated index under an intact layout: we no longer know anything about
+    // the members, so we do not dim rather than dimming by default.
     controller.publish({
       index: { aggregates: new Map(), byNode: new Map() },
       layout: state.layout,
-      // Un index amputé n'a plus d'appartenance, donc plus d'arête agrégée : le
-      // champ suit son index, il n'est pas repris de l'état intact.
+      // A truncated index has no membership left, hence no aggregated edge: the
+      // field follows its index, it is not carried over from the intact state.
       semanticEdges: [],
       semanticLabels: state.semanticLabels,
     });
@@ -272,8 +272,8 @@ describe("graph view controller — clustersFor", () => {
       controller.clustersFor(args({ selectedAggregateId: "Customer#c1", hoverOf: () => 0.3 })),
       controller,
     );
-    // Le `max` : la sélection ne peut pas être ramenée sous 1 par un survol qui
-    // retombe, et le survol d'une autre enveloppe passe tel quel.
+    // The `max`: the selection cannot be pulled below 1 by a hover falling back,
+    // and another envelope's hover passes through unchanged.
     expect(paints.get("Customer#c1")!.hover).toBe(1);
     expect(paints.get("Customer#c2")!.hover).toBe(0.3);
   });
@@ -290,8 +290,8 @@ describe("graph view controller — clustersFor", () => {
 
   it("colore par l'accent de la racine, et retombe sur la couleur de repli sans elle", async () => {
     const controller = await published();
-    // Le graphe passé ici est celui de l'appelant : une racine qui n'y est plus
-    // (un graphe remplacé sous une mise en page encore debout) n'a pas d'accent.
+    // The graph passed here is the caller's: a root no longer in it (a graph
+    // replaced under a layout still standing) has no accent.
     const amputated: Graph = buildGraph(shopData, graphConfig);
     amputated.nodes.delete("/customers/0");
 
@@ -305,15 +305,15 @@ describe("graph view controller — clustersFor", () => {
     const paint = controller.clustersFor(args())[0]!;
     const cluster = controller.clusters()[0]!;
     expect(paint.circle).toEqual({ cx: cluster.cx, cy: cluster.cy, r: cluster.r });
-    // La donnée de dessin ne doit pas être un alias de la forme du moteur : la
-    // muter en peignant corromprait la mise en page.
+    // The drawing data must not alias the engine's shape: mutating it while
+    // painting would corrupt the layout.
     expect(paint.circle).not.toBe(cluster);
   });
 });
 
 describe("graph view controller — tryCompute", () => {
-  /** Un échec RÉALISTE : les métriques sont relues à chaque mise en page, et
-   * `getMetrics` est le hook que l'appelant branche sur une mesure de police. */
+  /** A REALISTIC failure: metrics are re-read at every layout, and `getMetrics` is
+   * the hook the caller wires onto a font measurement. */
   const failing: Partial<GraphViewHooks> = {
     getMetrics: (): NodeMetrics => {
       throw new Error("metrics unavailable");
@@ -335,8 +335,7 @@ describe("graph view controller — tryCompute", () => {
       expect(state).toBeNull();
       expect(controller.positions()).toBeUndefined();
       expect(controller.clusters()).toEqual([]);
-      // Le contexte du site d'appel est relayé tel quel : c'est tout ce qu'il
-      // sert à faire.
+      // The call site's context is relayed verbatim: that is all it is for.
       expect(warn.mock.calls[0]?.[0]).toContain("contexte de test");
     } finally {
       warn.mockRestore();

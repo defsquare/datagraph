@@ -1,12 +1,11 @@
-// Gel des valeurs livrées : prouve que le passage aux tokens est un refactor
-// neutre. Toute évolution délibérée d'un thème doit mettre à jour ce gel en le
-// disant dans le commit.
+// Freeze of the shipped values: proves the move to tokens is a neutral refactor.
+// Any deliberate change to a theme must update this freeze and say so in the
+// commit.
 //
-// Le deep-equal est volontairement TOTAL (et non un échantillon de clés) : une
-// valeur qui dériverait — une couleur, une taille de police, une épaisseur de
-// trait, l'ordre de la palette d'entités — changerait le rendu livré sans
-// qu'aucun autre test ne s'en aperçoive, `theme.test.ts` ne vérifiant que la
-// forme des groupes.
+// The deep-equal is deliberately TOTAL (rather than a sample of keys): a value
+// drifting — a color, a font size, a stroke width, the order of the entity
+// palette — would change the shipped rendering without any other test noticing,
+// `theme.test.ts` only checking the shape of the groups.
 import { describe, it, expect } from "vitest";
 import { defsquareLight, defsquareDark, neutralLight, neutralDark } from "../src/index.js";
 

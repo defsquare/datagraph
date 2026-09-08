@@ -22,11 +22,11 @@ export const shopConfig: DataGraphConfig = {
 }
 
 /**
- * Un Order référence à la fois un Customer et un Product, les deux racines :
- * égalité de distance, donc ARBITRAGE. Ce fixture existait pour produire un
- * chevauchement ; il produit maintenant le cas limite de la règle de partition,
- * et c'est le même graphe qui sert : `Customer` est déclaré avant `Product`,
- * donc la commande lui revient et l'agrégat Product se réduit à sa racine.
+ * An Order references both a Customer and a Product, both roots: a distance tie,
+ * hence a TIE-BREAK. This fixture used to exist to produce an overlap; it now
+ * produces the edge case of the partition rule, and the same graph serves:
+ * `Customer` is declared before `Product`, so the order goes to it and the
+ * Product aggregate reduces to its root.
  */
 export const twoRootsData = {
   customers: [{ id: "c1", name: "Dupont" }],
@@ -47,9 +47,9 @@ export const twoRootsConfig: DataGraphConfig = {
   groups: ["Customer", "Product"],
 }
 
-/** Chaîne LineItem -> Order -> Customer : appartenance transitive à 2 sauts.
- * Et Customer -> Country, Country racine elle aussi : c'est le cas « hub »,
- * qui doit rester borné. */
+/** Chain LineItem -> Order -> Customer: transitive membership over 2 hops.
+ * And Customer -> Country, with Country a root too: the "hub" case, which must
+ * stay bounded. */
 export const chainData = {
   countries: [{ id: "fr", name: "France" }],
   customers: [{ id: "c1", name: "Dupont", countryId: "fr" }],
@@ -72,7 +72,7 @@ export const chainConfig: DataGraphConfig = {
   groups: ["Customer", "Country"],
 }
 
-/** Génère ~`n` nœuds logiques pour les tests de perf/échelle. */
+/** Generates ~`n` logical nodes for the perf/scale tests. */
 export function bigShop(n: number) {
   const customers = [], orders = []
   for (let i = 0; customers.length * 8 + orders.length * 10 < n; i++) {
@@ -85,13 +85,12 @@ export function bigShop(n: number) {
 }
 
 /**
- * N triplets indépendants customer_i / order_i / review_i : order_i et
- * review_i référencent tous deux customer_i, mais AUCUNE arête ne les relie
- * l'un à l'autre — ce sont des frères, pas une chaîne. Sert à vérifier que le
- * regroupement visuel d'un agrégat n'a besoin d'aucun montage particulier :
- * order_i et review_i se rapprochent simplement parce qu'ils sont tous deux
- * tirés vers le même voisin partagé, customer_i, par leur propre arête de
- * référence.
+ * N independent triples customer_i / order_i / review_i: order_i and review_i
+ * both reference customer_i, but NO edge links them to each other — they are
+ * siblings, not a chain. Used to check that an aggregate's visual grouping needs
+ * no special rigging: order_i and review_i simply move closer because both are
+ * pulled towards the same shared neighbour, customer_i, by their own reference
+ * edge.
  */
 export function bigShopWithReviews(n: number) {
   const customers = [], orders = [], reviews = []
@@ -118,19 +117,19 @@ export const bigShopReviewsConfig: DataGraphConfig = {
 }
 
 /**
- * Longueurs de valeur du champ `note`, en nombre de caractères. La table sert à
- * faire VARIER LA LARGEUR des cartes — `measureNode` dérive la largeur de la
- * ligne la plus longue —, et sa taille (7) est choisie **première avec les
- * arités** de l'arbre de `deepAggregate` (4, 3, 2, dont le PPCM est 12).
+ * Value lengths for the `note` field, in characters. The table exists to VARY
+ * THE WIDTH of the cards — `measureNode` derives the width from the longest row
+ * — and its size (7) is chosen **coprime with the arities** of `deepAggregate`'s
+ * tree (4, 3, 2, whose LCM is 12).
  *
- * PIÈGE DE PÉRIODICITÉ, et c'est la raison d'être de ce commentaire : indexer
- * cette table par un compteur dont la période divise une arité donnerait à
- * toutes les cartes d'un même anneau exactement la même largeur. Le placement
- * radial deviendrait alors un cas parfaitement régulier — anneaux de cartes
- * identiques —, et un test de non-recouvrement y passerait sans jamais exercer
- * le calcul de circonférence sur des largeurs hétérogènes, qui est précisément
- * ce que ce calcul doit gérer. 7 contre 12 garantit qu'un anneau mélange des
- * largeurs, et que deux anneaux consécutifs n'ont pas le même motif.
+ * PERIODICITY TRAP, and this is the reason this comment exists: indexing this
+ * table by a counter whose period divides an arity would give every card of the
+ * same ring exactly the same width. Radial placement would then become a
+ * perfectly regular case — rings of identical cards — and a non-overlap test
+ * would pass without ever exercising the circumference computation on
+ * heterogeneous widths, which is precisely what that computation must handle. 7
+ * against 12 guarantees that a ring mixes widths, and that two consecutive rings
+ * do not share a pattern.
  */
 const NOTE_LENGTHS = [3, 17, 8, 29, 5, 22, 11]
 
@@ -139,27 +138,26 @@ function noteOf(counter: number): string {
 }
 
 /**
- * UN SEUL agrégat, gros et PROFOND — le cas qu'aucun autre fixture de ce
- * fichier ne produit. `bigShop` fait des agrégats de 2 cartes et le jeu de la
- * démo monte à 5 ; ici la chaîne de références descend sur quatre niveaux :
+ * ONE aggregate, big and DEEP — the case no other fixture in this file produces.
+ * `bigShop` makes 2-card aggregates and the demo data set reaches 5; here the
+ * reference chain runs down four levels:
  *
  *   Customer  ←  Order  ←  OrderLine  ←  Serial
  *   distance 0    dist. 1    dist. 2      dist. 3
  *
- * Le sens est celui de l'appartenance (`buildAggregates` remonte les références
- * de la cible vers la source) : une commande *pointe vers* son client, une
- * ligne *pointe vers* sa commande. La distance d'appartenance est donc bien la
- * profondeur dans cet arbre, et c'est elle que le placement radial traduit en
- * anneaux.
+ * The direction is that of membership (`buildAggregates` walks references back
+ * from target to source): an order *points at* its customer, a line *points at*
+ * its order. Membership distance is therefore the depth in this tree, and that
+ * is what radial placement translates into rings.
  *
- * Par défaut : 1 + 4 + 12 + 24 = **41 cartes en un seul agrégat**. Les trois
- * arités sont paramétrables pour pousser plus haut (5, 3, 3 → 66 cartes) sans
- * toucher aux tests qui dépendent du défaut.
+ * By default: 1 + 4 + 12 + 24 = **41 cards in a single aggregate**. The three
+ * arities are parameterizable to push higher (5, 3, 3 → 66 cards) without
+ * touching the tests that depend on the default.
  *
- * L'arbre est volontairement DÉSÉQUILIBRÉ en largeur de carte (voir
- * `NOTE_LENGTHS`) et parfaitement équilibré en structure : le déséquilibre
- * qu'on veut mesurer est celui des tailles, pas celui des degrés, sans quoi on
- * ne saurait pas lequel des deux explique un résultat.
+ * The tree is deliberately UNBALANCED in card width (see `NOTE_LENGTHS`) and
+ * perfectly balanced in structure: the imbalance we want to measure is the one
+ * in sizes, not the one in degrees, otherwise we could not tell which of the two
+ * explains a result.
  */
 export function deepAggregate(orders = 4, linesPerOrder = 3, serialsPerLine = 2) {
   const customers = [{ id: "c0", name: "Client profond", email: "c0@x.fr", segment: "grand compte" }]
@@ -167,9 +165,9 @@ export function deepAggregate(orders = 4, linesPerOrder = 3, serialsPerLine = 2)
   const lines = []
   const serials = []
 
-  // Un compteur unique pour tout l'arbre, et non un par niveau : deux cartes de
-  // niveaux différents ne doivent pas hériter de la même largeur par accident
-  // de synchronisation des compteurs.
+  // A single counter for the whole tree, not one per level: two cards from
+  // different levels must not inherit the same width by an accident of counter
+  // synchronization.
   let counter = 0
   for (let i = 0; i < orders; i++) {
     orderRows.push({ id: `o${i}`, customerId: "c0", total: 100 + i, note: noteOf(counter++) })
@@ -185,49 +183,48 @@ export function deepAggregate(orders = 4, linesPerOrder = 3, serialsPerLine = 2)
 }
 
 /**
- * Un graphe INTER-CLUSTER dense — l'adversité qu'aucun autre fixture du dépôt
- * ne produit, et la réserve n°5 de la sonde du moteur à deux niveaux
- * (« la passe dure finale peut défaire un ressort ; un graphe inter-agrégat
- * très dense pourrait se dégrader — non sondé »).
+ * A dense INTER-CLUSTER graph — the adversity no other fixture in the repo
+ * produces, and reservation #5 from the two-level engine's probe ("the final
+ * hard pass can undo a spring; a very dense inter-aggregate graph could degrade
+ * — not probed").
  *
- * **La forme d'adversité encodée.** Deux racines sont déclarées, `Customer` et
- * `Product`. Chaque commande référence son client ET quatre produits ; par
- * arbitrage (`Customer` déclaré en premier) elle appartient à l'agrégat du
- * client, donc ses quatre références produit sont toutes INTER-cluster. Chaque
- * produit, racine, est un cluster d'une seule carte, très référencé.
+ * **The shape of adversity encoded here.** Two roots are declared, `Customer`
+ * and `Product`. Every order references its customer AND four products; by
+ * tie-break (`Customer` declared first) it belongs to the customer's aggregate,
+ * so its four product references are all INTER-cluster. Every product, being a
+ * root, is a single-card cluster with many references.
  *
- * Aux valeurs par défaut (40 clients, 40 produits, 3 commandes de 4 produits) :
- * **200 cartes, 80 clusters, 480 arêtes inter-cluster**, soit un degré moyen de
- * **12,0** et un degré max de **12** — contre 4,6 en moyenne sur le jeu de la
- * démo, le plus dense qu'on avait, et 0 sur `bigShop`.
+ * At the default values (40 customers, 40 products, 3 orders of 4 products):
+ * **200 cards, 80 clusters, 480 inter-cluster edges**, i.e. an average degree of
+ * **12.0** and a max degree of **12** — against 4.6 on average for the demo data
+ * set, the densest we had, and 0 on `bigShop`.
  *
- * Le graphe est donc **RÉGULIER** : chaque client touche exactement 12 produits
- * et chaque produit exactement 12 clients, par construction. C'est délibéré et
- * c'est ce qui en fait un bon fixture de calibrage — la charge de ressort est
- * la même partout, donc ce qu'on mesure est l'effet d'une constante et non
- * celui d'une hétérogénéité de degré. Dit autrement : il encode la densité
- * PURE, sans confondre avec la forme.
+ * The graph is therefore **REGULAR**: each customer touches exactly 12 products
+ * and each product exactly 12 customers, by construction. That is deliberate and
+ * is what makes it a good calibration fixture — the spring load is the same
+ * everywhere, so what we measure is the effect of a constant and not that of a
+ * degree heterogeneity. Put differently: it encodes PURE density, without
+ * confounding it with shape.
  *
- * **L'adversité « hub » est atteignable par paramètre**, et n'est pas le
- * défaut : réduire le nombre de produits concentre les références sur moins de
- * racines. Mesuré — `denseRefs(40, 12)` donne 52 clusters, degré moyen 15,4 et
- * **max 34** ; `denseRefs(40, 8)` donne 48 clusters, moyen 13,3 et **max 40**.
- * Ce sont deux adversités différentes : la première (défaut) charge toutes les
- * arêtes également, la seconde tire un petit nombre de clusters dans toutes les
- * directions à la fois. Le calibrage se fait sur la première ; la seconde reste
- * disponible pour sonder la réserve « un hub très référencé se dégrade-t-il ? »
- * sans avoir à écrire un fixture de plus.
+ * **The "hub" adversity is reachable by parameter**, and is not the default:
+ * reducing the number of products concentrates references on fewer roots.
+ * Measured — `denseRefs(40, 12)` gives 52 clusters, average degree 15.4 and
+ * **max 34**; `denseRefs(40, 8)` gives 48 clusters, average 13.3 and **max 40**.
+ * These are two different adversities: the first (default) loads every edge
+ * equally, the second pulls a small number of clusters in all directions at
+ * once. Calibration is done on the first; the second stays available to probe
+ * the reservation "does a heavily referenced hub degrade?" without having to
+ * write yet another fixture.
  *
- * **Choix des produits, et pourquoi ces trois nombres.** L'indice produit est
- * `(7·i + 13·j + 17·k) mod P` — client i, commande j, position k. 7, 13 et 17
- * sont premiers avec P = 40, donc : deux positions d'une même commande ne
- * tombent jamais sur le même produit (les quatre valeurs de `17k mod 40` sont
- * distinctes), deux commandes d'un même client ne se recouvrent pas
- * entièrement, et deux clients ne tirent pas le même paquet. Un pas qui
- * partagerait un facteur avec P replierait tout le monde sur un sous-ensemble
- * des produits : le graphe paraîtrait dense en nombre d'arêtes tout en n'ayant
- * qu'une poignée de hubs, et le fixture mesurerait autre chose que ce qu'il
- * annonce.
+ * **Choice of products, and why those three numbers.** The product index is
+ * `(7·i + 13·j + 17·k) mod P` — customer i, order j, position k. 7, 13 and 17
+ * are coprime with P = 40, hence: two positions of the same order never land on
+ * the same product (the four values of `17k mod 40` are distinct), two orders of
+ * the same customer do not fully overlap, and two customers do not draw the same
+ * bundle. A step sharing a factor with P would fold everyone onto a subset of
+ * the products: the graph would look dense in edge count while having only a
+ * handful of hubs, and the fixture would measure something other than what it
+ * advertises.
  */
 export function denseRefs(customers = 40, products = 40, orders = 3, perOrder = 4) {
   const customerRows = []
@@ -263,9 +260,9 @@ export const denseRefsConfig: DataGraphConfig = {
     { from: "$.orders[*].productId2", to: "$.products[*].id" },
     { from: "$.orders[*].productId3", to: "$.products[*].id" },
   ],
-  // `Customer` en premier : l'arbitrage lui donne les commandes, et les
-  // références produit deviennent toutes inter-cluster. Inverser l'ordre
-  // donnerait les commandes aux produits et changerait complètement la forme.
+  // `Customer` first: the tie-break gives it the orders, and the product
+  // references all become inter-cluster. Reversing the order would give the
+  // orders to the products and change the shape entirely.
   groups: ["Customer", "Product"],
 }
 

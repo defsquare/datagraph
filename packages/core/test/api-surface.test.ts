@@ -3,21 +3,21 @@ import * as index from "../src/index.js"
 import * as graphLayout from "../src/graph-layout.js"
 
 /**
- * CE TEST EST LE CONTRAT des deux points d'entrée publics du cœur (`.` et
- * `./graph-layout`, cf. le champ `exports` de `package.json`). Les listes
- * ci-dessous ne sont pas une observation à rafraîchir quand elles rougissent :
- * elles disent ce que le paquet promet. Toute modification doit donc être
- * VOLONTAIRE — ajouter une ligne, c'est s'engager à maintenir le symbole ; en
- * retirer une, c'est assumer une rupture pour les consommateurs.
+ * THIS TEST IS THE CONTRACT of the core's two public entry points (`.` and
+ * `./graph-layout`, see the `exports` field of `package.json`). The lists below
+ * are not an observation to refresh whenever they turn red: they state what the
+ * package promises. Any change must therefore be DELIBERATE — adding a line
+ * commits you to maintaining the symbol; removing one owns a break for
+ * consumers.
  *
- * Seuls les exports d'EXÉCUTION sont vérifiables ainsi : les types disparaissent
- * à la compilation et n'apparaissent pas dans `Object.keys`. C'est sans perte
- * pour ce que ce test garde — une surface d'exécution qui grossit par accident
- * (un symbole interne remonté « au cas où ») est précisément ce qu'on veut voir.
+ * Only RUNTIME exports can be checked this way: types vanish at compile time and
+ * never show up in `Object.keys`. That costs nothing for what this test guards —
+ * a runtime surface growing by accident (an internal symbol raised "just in
+ * case") is exactly what we want to see.
  *
- * L'import passe par le CHEMIN SOURCE du point d'entrée et non par le nom du
- * paquet, pour rester dans le régime vitest du dossier (pas de `dist/` à jour
- * requis) ; c'est bien le même fichier que `package.json` publie.
+ * The import goes through the entry point's SOURCE PATH rather than the package
+ * name, to stay in the folder's vitest regime (no up-to-date `dist/` required);
+ * it is indeed the same file `package.json` publishes.
  */
 describe("api surface", () => {
   it("le point d'entrée `.` exporte exactement ces symboles d'exécution", () => {
@@ -26,13 +26,13 @@ describe("api surface", () => {
       "ConfigError",
       "DEFAULT_METRICS",
       "GraphTooLargeError",
-      // Ajout VOLONTAIRE : le budget de dépliage initial est le défaut qu'un
-      // appelant surcharge (`new CollapseState(g, { initialCardBudget })`) ;
-      // il doit être nommable hors du cœur plutôt que recopié en littéral.
+      // DELIBERATE addition: the initial expansion budget is the default a
+      // caller overrides (`new CollapseState(g, { initialCardBudget })`); it
+      // must be nameable outside the core rather than copied as a literal.
       "INITIAL_CARD_BUDGET",
-      // Ajout VOLONTAIRE : la pagination des enfants-cartes est un contrat
-      // partagé avec le renderer, qui dessine les jetons de trous — il lui faut
-      // la taille de page et la fonction qui nomme la page d'un indice.
+      // DELIBERATE addition: card-children pagination is a contract shared with
+      // the renderer, which draws the gap tokens — it needs the page size and
+      // the function that names the page of an index.
       "PAGE_SIZE",
       "VERSION",
       "anchorRectFor",
@@ -55,16 +55,16 @@ describe("api surface", () => {
   })
 
   /**
-   * Les deux symboles ajoutés — `extractGraphLayoutInput` et `layoutFromInput`
-   * — le sont VOLONTAIREMENT, au sens exact du paragraphe ci-dessus : ils
-   * portent la moitié du contrat du Web Worker de la vue graphe. Le renderer
-   * extrait sur le thread principal (seul endroit où le `Graph` existe) et
-   * exécute le cœur pur dans le worker ; sans ces deux exports, la frontière ne
-   * serait franchissable que par une copie du moteur.
+   * The two added symbols — `extractGraphLayoutInput` and `layoutFromInput` —
+   * are DELIBERATE, in the exact sense of the paragraph above: they carry half
+   * the contract of the graph view's Web Worker. The renderer extracts on the
+   * main thread (the only place where the `Graph` exists) and runs the pure core
+   * inside the worker; without these two exports, the boundary could only be
+   * crossed by a copy of the engine.
    *
-   * Ils ne remplacent pas `createTwoLevelLayoutEngine`, qui reste le chemin en
-   * processus et le repli du worker — les trois vivent ensemble et se
-   * maintiennent ensemble.
+   * They do not replace `createTwoLevelLayoutEngine`, which stays the in-process
+   * path and the worker's fallback — the three live together and are maintained
+   * together.
    */
   it("le point d'entrée `./graph-layout` exporte exactement ces symboles d'exécution", () => {
     expect(Object.keys(graphLayout).sort()).toEqual([

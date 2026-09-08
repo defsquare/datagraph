@@ -41,6 +41,6 @@ Also remember to update the index `docs/adr/README.md` whenever an ADR is create
 
 ## Conventions
 
-- Code comments in English; they document constraints/invariants (the "why"), not the "what". (Legacy comments are still in French — a global translation pass over the codebase is planned; write new comments in English in the meantime.)
+- Code comments in English; they document constraints/invariants (the "why"), not the "what". The global translation pass is done — no French comment remains in the sources. User-facing strings, on the other hand, stay French: the demo and the playground are French on screen, and so are the e2e test names.
 - `draw.ts` takes only bare data (no graph/interface state) to stay testable without an instance.
 - Every async mutating operation is guarded by `opGen` + `destroyed` (see `create.ts`).

@@ -2,26 +2,25 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { Container, type FederatedPointerEvent } from "pixi.js";
 import { attachHover, HOVER_MS, type HoverTicker } from "../src/hover.js";
 
-/** L'événement que Pixi passe à ses écouteurs de survol. Vide, et c'est le
- * point : `attachHover` n'en lit RIEN — ni bouton ni position, contrairement à
- * `attachDrag`. Il n'est là que pour satisfaire la signature de `emit`. */
+/** The event Pixi hands its hover listeners. Empty, and that is the point:
+ * `attachHover` reads NOTHING from it — no button, no position, unlike
+ * `attachDrag`. It only exists to satisfy `emit`'s signature. */
 const EVENT = {} as unknown as FederatedPointerEvent;
 
-/** Un ticker factice à la place de celui de Pixi : `attachHover` ne lui demande
- * que d'appeler une fonction par image, donc le tenir à la main est ce qui
- * rend l'animation observable pas à pas — et ces tests sans canvas, comme
- * `drag.test.ts` fabrique ses événements plutôt que de faire tourner un
- * `EventSystem`. */
+/** A fake ticker in place of Pixi's: `attachHover` asks it for nothing but
+ * calling a function once per frame, so driving it by hand is what makes the
+ * animation observable step by step — and these tests canvas-free, the way
+ * `drag.test.ts` fabricates its events rather than running an `EventSystem`. */
 function ticker() {
   const fns = new Set<() => void>();
   return {
-    /** Le nombre d'inscrits : c'est par lui qu'on prouve l'auto-retrait, qui ne
-     * se voit sur aucune valeur d'intensité. */
+    /** The number of subscribers: this is what proves the self-removal, which
+     * shows up in no intensity value. */
     get size() {
       return fns.size;
     },
-    /** Une image. La copie du Set protège de l'inscrit qui se retire pendant
-     * son propre appel — exactement ce que fait la fin d'animation. */
+    /** One frame. Copying the Set guards against a subscriber removing itself
+     * during its own call — exactly what the end of an animation does. */
     frame() {
       for (const fn of [...fns]) fn();
     },
@@ -36,8 +35,8 @@ function ticker() {
   };
 }
 
-/** Le temps est piloté à la main plutôt que par des `vi.useFakeTimers` : le
- * module lit `performance.now()` comme `animatePositions`, et rien d'autre. */
+/** Time is driven by hand rather than through `vi.useFakeTimers`: the module
+ * reads `performance.now()` like `animatePositions`, and nothing else. */
 function clock() {
   let now = 0;
   vi.spyOn(performance, "now").mockImplementation(() => now);
@@ -48,7 +47,7 @@ function clock() {
   };
 }
 
-/** Monte une cible câblée et retourne de quoi jouer le scénario complet. */
+/** Mounts a wired target and returns what it takes to play the whole scenario. */
 function mount(isBlocked?: () => boolean) {
   const target = new Container();
   const tk = ticker();
@@ -65,10 +64,9 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-/** La valeur de l'ease-out quad à mi-course : 1 − (1 − 0,5)² = 0,75. Elle est
- * écrite en clair dans les tests parce que c'est la COURBE qu'on veut tenir —
- * une interpolation linéaire donnerait 0,5 et passerait toutes les assertions
- * de bornes. */
+/** The value of the ease-out quad at half time: 1 − (1 − 0.5)² = 0.75. It is
+ * spelled out in the tests because the CURVE is what we mean to hold — a linear
+ * interpolation would give 0.5 and would pass every bounds assertion. */
 const EASED_HALF = 0.75;
 
 describe("attachHover — montée", () => {
@@ -82,8 +80,8 @@ describe("attachHover — montée", () => {
     const { target, tk, frames, time } = mount();
 
     target.emit("pointerover", EVENT);
-    // La première image tombe au même instant que l'entrée : l'intensité vaut
-    // encore 0, et c'est ce qui garantit qu'aucun saut visuel n'ouvre l'effet.
+    // The first frame lands at the same instant as the entry: the intensity is
+    // still 0, and that is what guarantees no visual jump opens the effect.
     tk.frame();
     expect(frames.at(-1)).toBeCloseTo(0, 6);
 
@@ -93,14 +91,14 @@ describe("attachHover — montée", () => {
 
     time.advance(HOVER_MS / 2);
     tk.frame();
-    // Exactement 1, et pas « près de 1 » : c'est la valeur au repos haut, celle
-    // dont dépend la position compensée d'une carte survolée.
+    // Exactly 1, not "close to 1": this is the value at the upper rest state, the
+    // one a hovered card's compensated position depends on.
     expect(frames.at(-1)).toBe(1);
   });
 
   it("se retire du ticker une fois arrivé à 1", () => {
-    // Sans cet auto-retrait, chaque carte jamais quittée coûterait un rappel
-    // par image pour toujours.
+    // Without this self-removal, every card never left would cost one callback
+    // per frame forever.
     const { target, tk, time } = mount();
 
     target.emit("pointerover", EVENT);
@@ -120,9 +118,9 @@ describe("attachHover — montée", () => {
   });
 
   it("passe la cible en static", () => {
-    // Sans `eventMode`, Pixi n'émet aucun `pointerover` : le module pose
-    // lui-même ce dont il dépend, plutôt que de compter sur `attachTap` ou
-    // `drawClusterHitAreas` de l'avoir fait avant lui.
+    // Without `eventMode`, Pixi emits no `pointerover` at all: the module sets up
+    // what it depends on itself, rather than counting on `attachTap` or
+    // `drawClusterHitAreas` having done it first.
     const { target } = mount();
     expect(target.eventMode).toBe("static");
   });
@@ -149,9 +147,9 @@ describe("attachHover — descente", () => {
   });
 
   it("repart de la valeur courante quand la montée n'était pas finie", () => {
-    // Le cas du survol rasant, qui est le plus fréquent : sortir à mi-montée
-    // doit redescendre depuis là. Repartir de 1 ferait un à-coup — la carte
-    // grossirait d'un coup au moment même où le pointeur la quitte.
+    // The grazing hover, the most frequent case: leaving mid-ramp must come back
+    // down from there. Restarting from 1 would jolt — the card would suddenly
+    // grow at the very moment the pointer leaves it.
     const { target, tk, frames, time } = mount();
 
     target.emit("pointerover", EVENT);
@@ -161,8 +159,8 @@ describe("attachHover — descente", () => {
 
     target.emit("pointerout", EVENT);
     tk.frame();
-    // Première image de la descente, au même instant que la sortie : la valeur
-    // n'a pas bougé d'un pouce.
+    // First frame of the descent, at the same instant as the exit: the value has
+    // not budged.
     expect(frames.at(-1)).toBeCloseTo(EASED_HALF, 6);
 
     time.advance(HOVER_MS / 2);
@@ -191,9 +189,9 @@ describe("attachHover — descente", () => {
   });
 
   it("ne relance rien sur une sortie alors que l'intensité est déjà nulle", () => {
-    // Un `pointerout` sans `pointerover` précédent arrive pour de bon : entrée
-    // inhibée par un drag, puis relâchement hors de la carte. Animer une
-    // descente de 0 vers 0 ne coûterait qu'une inscription inutile au ticker.
+    // A `pointerout` with no preceding `pointerover` really does happen: entry
+    // inhibited by a drag, then release outside the card. Animating a descent
+    // from 0 to 0 would cost nothing but a useless ticker subscription.
     const { target, tk, frames } = mount();
 
     target.emit("pointerout", EVENT);
@@ -205,8 +203,8 @@ describe("attachHover — descente", () => {
 
 describe("attachHover — inhibition", () => {
   it("ne démarre pas quand isBlocked est vrai", () => {
-    // Le survol pendant un déplacement : la carte saisie suit le pointeur, la
-    // grossir en même temps la ferait décrocher de lui.
+    // Hover during a move: the grabbed card follows the pointer, and growing it
+    // at the same time would make it come off the cursor.
     let blocked = true;
     const { target, tk, frames } = mount(() => blocked);
 
@@ -214,8 +212,8 @@ describe("attachHover — inhibition", () => {
     expect(tk.size).toBe(0);
     expect(frames).toEqual([]);
 
-    // Le prédicat est relu à CHAQUE entrée et non capturé à l'attache : le
-    // survol d'après le drag doit redevenir possible.
+    // The predicate is re-read on EVERY entry, not captured at attach time: hover
+    // must become possible again after the drag.
     blocked = false;
     target.emit("pointerover", EVENT);
     expect(tk.size).toBe(1);
@@ -224,10 +222,9 @@ describe("attachHover — inhibition", () => {
 
 describe("attachHover — cible détruite", () => {
   it("s'auto-retire du ticker plutôt que de lancer", () => {
-    // Un `rebuild()` détruit tous les containers de cartes sans qu'aucun
-    // `pointerout` ne soit passé. Sans cette garde, le rappel lancerait à
-    // chaque image — et pour toujours, puisque l'exception tombe avant son
-    // propre retrait.
+    // A `rebuild()` destroys every card container without any `pointerout` ever
+    // being delivered. Without this guard, the callback would throw every frame —
+    // and forever, since the exception lands before its own removal.
     const { target, tk, frames, time } = mount();
 
     target.emit("pointerover", EVENT);
@@ -239,17 +236,17 @@ describe("attachHover — cible détruite", () => {
     expect(() => tk.frame()).not.toThrow();
 
     expect(tk.size).toBe(0);
-    // Aucune intensité publiée sur un container mort : l'appelant écrirait sur
-    // une `.position` nulle.
+    // No intensity published on a dead container: the caller would be writing to
+    // a null `.position`.
     expect(frames.length).toBe(before);
   });
 });
 
 describe("attachHover — cancel", () => {
   it("ramène l'intensité à 0, publie ce retour au repos et coupe l'animation", () => {
-    // C'est ce que le début d'un drag appelle : la carte doit retrouver son
-    // échelle et sa position exactes AVANT que le geste ne commence à la
-    // suivre, et une seule voie de retour au repos vaut mieux que deux.
+    // This is what the start of a drag calls: the card must recover its exact
+    // scale and position BEFORE the gesture starts moving it, and one single path
+    // back to rest is worth more than two.
     const { target, tk, frames, handle, time } = mount();
 
     target.emit("pointerover", EVENT);
@@ -258,12 +255,12 @@ describe("attachHover — cancel", () => {
 
     handle.cancel();
 
-    // Retour au repos publié une fois, et plus rien qui tourne.
+    // The return to rest published once, and nothing left running.
     expect(frames.at(-1)).toBe(0);
     expect(tk.size).toBe(0);
 
-    // L'animation ne reprend pas d'elle-même : le temps qui passe ne rallume
-    // pas une intensité annulée.
+    // The animation does not restart on its own: time passing does not relight a
+    // cancelled intensity.
     const after = frames.length;
     time.advance(HOVER_MS);
     tk.frame();
@@ -271,9 +268,9 @@ describe("attachHover — cancel", () => {
   });
 
   it("ne publie rien si l'intensité était déjà nulle", () => {
-    // `onStart` de drag appelle `cancel()` sans savoir si la carte était
-    // survolée. Repeindre le repos sur une carte déjà au repos serait au mieux
-    // inutile, au pire un écrasement de position pendant un geste.
+    // The drag's `onStart` calls `cancel()` without knowing whether the card was
+    // hovered. Repainting rest onto a card already at rest would be useless at
+    // best, and at worst a position overwrite in the middle of a gesture.
     const { handle, frames } = mount();
     handle.cancel();
     expect(frames).toEqual([]);

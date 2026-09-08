@@ -31,9 +31,9 @@ describe("parseRelativePath", () => {
     ])
   })
   it("accepts a path that already starts on a token", () => {
-    // `.foo` et `[0]` sont les deux formes de token du sélecteur : les
-    // réancrer en `$..foo` serait une erreur de syntaxe, alors que l'auteur a
-    // écrit un chemin parfaitement lisible.
+    // `.foo` and `[0]` are the selector's two token forms: re-anchoring them
+    // as `$..foo` would be a syntax error, when the author wrote a perfectly
+    // readable path.
     expect(parseRelativePath(".lines[*]")).toEqual(parseRelativePath("lines[*]"))
     expect(parseRelativePath("[0].sku")).toEqual([
       { kind: "index", index: 0 }, { kind: "key", key: "sku" },
@@ -45,17 +45,17 @@ describe("parseRelativePath", () => {
     }
   })
   it("treats a leading $ as an ordinary key, not as the root anchor", () => {
-    // `$` est un nom de clé valide pour le token du sélecteur, donc `$.lines`
-    // ne peut pas être distingué syntaxiquement d'un chemin vers une clé
-    // nommée `$`. Le cas n'est pas silencieux pour autant : ne matchant aucun
-    // nœud, il ressort à la construction en `unresolved-reference`.
+    // `$` is a valid key name for the selector's token, so `$.lines` cannot be
+    // told apart syntactically from a path to a key named `$`. The case is not
+    // silent for all that: matching no node, it surfaces at build time as
+    // `unresolved-reference`.
     expect(parseRelativePath("$.lines")).toEqual([
       { kind: "key", key: "$" }, { kind: "key", key: "lines" },
     ])
   })
   it("cites the ORIGINAL path in the error, not the re-anchored one", () => {
-    // Le `$` est un détail d'implémentation : le faire apparaître enverrait
-    // l'auteur chercher un caractère qu'il n'a pas écrit.
+    // The `$` is an implementation detail: surfacing it would send the author
+    // hunting for a character they never wrote.
     expect(() => parseRelativePath("a..b")).toThrow(/a\.\.b/)
     expect(() => parseRelativePath("a..b")).not.toThrow(/\$/)
   })

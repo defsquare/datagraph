@@ -51,40 +51,40 @@ function mb(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(0)} MB`
 }
 
-// Mesure d'échelle : `maxNodes` n'est plus une garde de coût de layout (la vue
-// graphe borne ce qu'elle dispose) mais une garde MÉMOIRE sur buildGraph +
-// buildSearchIndex, tous deux linéaires. Le défaut de `config.ts` se choisit
-// donc sur ces chiffres-là, mesurés sous les options node PAR DÉFAUT : la
-// webview n'aura pas de `--max-old-space-size` non plus.
+// Scale measurement: `maxNodes` is no longer a layout-cost guard (the graph
+// view bounds what it lays out) but a MEMORY guard over buildGraph +
+// buildSearchIndex, both linear. The `config.ts` default is therefore chosen on
+// these numbers, measured under DEFAULT node options: the webview will not get
+// a `--max-old-space-size` either.
 //
-// MÉTHODOLOGIE — le balayage groupé (les trois paliers d'affilée) est un
-// MAJORANT BRUITÉ, pas la mesure de décision : les paliers s'enchaînent dans le
-// même heap, le GC n'a pas forcément tourné entre eux, donc le `heap` imprimé
-// porte encore des restes du palier précédent (jusqu'à ~650 Mo observés à 1 M).
-// Le défaut `maxNodes: 1_000_000` de `config.ts` a été figé sur des exécutions
-// ISOLÉES, un process par palier, via `BENCH_SCALE_N` :
+// METHODOLOGY — the grouped sweep (the three tiers back to back) is a NOISY
+// UPPER BOUND, not the deciding measurement: the tiers run in the same heap, the
+// GC has not necessarily run between them, so the printed `heap` still carries
+// leftovers from the previous tier (up to ~650 MB observed at 1 M). The
+// `maxNodes: 1_000_000` default in `config.ts` was fixed on ISOLATED runs, one
+// process per tier, via `BENCH_SCALE_N`:
 //
-//   BENCH_SCALE_N=100000  pnpm --filter @defsquare/data-graph-core bench  →  95 Mo,  66 ms
-//   BENCH_SCALE_N=500000  ...                                            → 291 Mo, 338 ms
-//   BENCH_SCALE_N=1000000 ...                                            → 479 Mo, 814 ms
+//   BENCH_SCALE_N=100000  pnpm --filter @defsquare/data-graph-core bench  →  95 MB,  66 ms
+//   BENCH_SCALE_N=500000  ...                                            → 291 MB, 338 ms
+//   BENCH_SCALE_N=1000000 ...                                            → 479 MB, 814 ms
 //
-// (heap absolu et build+index ; node 25 / darwin arm64, options par défaut.)
-// Ces heaps incluent ~40 Mo de socle : le bench a déjà construit le graphe 10k
-// et son moteur de layout plus haut, et ne les libère pas. La croissance reste
-// linéaire — ~0,43 Ko et ~0,8 µs par nœud logique — et 479 Mo laisse 3× de marge
-// sous le budget de ~1,5 Go visé, d'où 1 M.
+// (absolute heap and build+index; node 25 / darwin arm64, default options.)
+// Those heaps include a ~40 MB floor: the bench has already built the 10k graph
+// and its layout engine above, and never frees them. Growth stays linear —
+// ~0.43 KB and ~0.8 µs per logical node — and 479 MB leaves 3× of headroom under
+// the ~1.5 GB budget aimed at, hence 1 M.
 //
-// Refaire ces trois runs isolés avant de retoucher le défaut : les chiffres du
-// balayage groupé ne leur sont pas comparables.
+// Redo those three isolated runs before touching the default: the grouped
+// sweep's numbers are not comparable to them.
 async function scaleSweep(): Promise<void> {
   console.log("\n--- échelle mémoire buildGraph + buildSearchIndex ---")
   console.log("    (balayage groupé = majorant bruité par le GC ; le défaut maxNodes est calé sur des runs isolés, cf. commentaire de scaleSweep)")
-  // MAX_SAFE_INTEGER : sans quoi la mesure serait bloquée par le défaut en
-  // vigueur, qui est précisément ce qu'on cherche à calibrer.
+  // MAX_SAFE_INTEGER: without it the measurement would be blocked by the
+  // default in force, which is precisely what we are trying to calibrate.
   const unbounded: DataGraphConfig = { ...bigShopConfig, maxNodes: Number.MAX_SAFE_INTEGER }
 
-  // `BENCH_SCALE_N` restreint le balayage à un seul palier : c'est ce qui rend
-  // le protocole isolé ci-dessus reproductible sans script hors dépôt.
+  // `BENCH_SCALE_N` narrows the sweep to a single tier: that is what makes the
+  // isolated protocol above reproducible without an out-of-repo script.
   const override = process.env.BENCH_SCALE_N
   const tiers = override !== undefined ? [Number(override)] : [100_000, 500_000, 1_000_000]
 
@@ -105,14 +105,14 @@ async function scaleSweep(): Promise<void> {
       const peak = process.memoryUsage().heapUsed
       console.log(
         `n=${n}: build ${buildMs.toFixed(0)}ms + index ${indexMs.toFixed(0)}ms = ${(buildMs + indexMs).toFixed(0)}ms` +
-        // Les deux deltas peuvent sortir NÉGATIFS : ce sont des différences de
-        // `heapUsed` entre deux instants, et un GC survenu entre les bornes
-        // libère plus qu'on n'a alloué. Seul le `heap` absolu fait foi.
+        // Both deltas can come out NEGATIVE: they are `heapUsed` differences
+        // between two instants, and a GC occurring between the bounds frees
+        // more than was allocated. Only the absolute `heap` is authoritative.
         ` | heap ${mb(peak)} (deltas GC-bruités, parfois négatifs — source ${mb(afterData - before)}, graphe+index ${mb(peak - afterData)})` +
         ` | ${graph.logicalNodeCount} nœuds logiques`,
       )
     } catch (err: unknown) {
-      // Un OOM/échec à un palier EST une mesure : on l'imprime et on continue.
+      // An OOM/failure at a tier IS a measurement: print it and carry on.
       console.log(`n=${n}: ÉCHEC — ${err instanceof Error ? err.message : String(err)}`)
     }
   }

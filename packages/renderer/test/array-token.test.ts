@@ -10,10 +10,10 @@ import { drawNode } from "../src/draw.js";
 import { resolveTheme } from "../src/theme.js";
 
 /**
- * Même substitution d'adaptateur DOM que `ref-indicator.test.ts` : Pixi mesure
- * la hauteur des libellés via un canvas 2D absent du runtime Node, et ce que ces
- * tests observent — la présence du jeton, son chevron, l'absence de clé — ne
- * dépend pas de la fidélité de cette mesure.
+ * Same DOM adapter substitution as `ref-indicator.test.ts`: Pixi measures label
+ * height through a 2D canvas the Node runtime does not have, and what these
+ * tests observe — the token's presence, its chevron, the absent key — does not
+ * depend on that measurement being faithful.
  */
 class FakeCanvasContext {
   font = "";
@@ -49,8 +49,8 @@ const product = graph.nodes.get("/products/0")!;
 const TAGS_ROW = product.rows.findIndex((r) => r.key === "tags");
 const TAGS_ID = "/products/0/tags";
 
-/** Les textes rendus par la carte, à plat — le jeton monte ses enfants dans un
- * sous-conteneur, donc une lecture à un seul niveau les manquerait. */
+/** The texts the card renders, flattened — the token mounts its children in a
+ * sub-container, so a single-level read would miss them. */
 function textsOf(view: Container): string[] {
   const out: string[] = [];
   const walk = (c: Container): void => {
@@ -71,14 +71,14 @@ describe("jeton d'une ligne-tableau", () => {
   it("rend le compte d'elements, pas la valeur brute", () => {
     const view = drawNode(product, rect, theme, 0, false, "#000", metrics, false, false);
     expect(textsOf(view)).toContain(arrayTokenTextFor(3));
-    // « 3 » nu serait le rendu qu'on obtiendrait en traitant la ligne comme une
-    // ligne scalaire ordinaire.
+    // A bare "3" is what we would get by treating the row as an ordinary scalar
+    // row.
     expect(textsOf(view)).not.toContain("3");
   });
 
   it("monte le jeton dans un conteneur repere par label", () => {
-    // C'est ce label qui permet à `create.ts` d'animer le survol sans redessiner
-    // la carte ni recalculer sa geometrie.
+    // This label is what lets `create.ts` animate hover without redrawing the
+    // card or recomputing its geometry.
     const view = drawNode(product, rect, theme, 0, false, "#000", metrics, false, false);
     expect(tokenOf(view)).not.toBeNull();
   });
@@ -98,10 +98,10 @@ describe("jeton d'une ligne-tableau", () => {
       product, rect, theme, 0, false, "#000", metrics, false, false, undefined, undefined,
       new Set([TAGS_ID]),
     );
-    // Le chevron replie « ▸ » est plus haut que large, le deplie « ▾ » l'inverse.
-    // On lit les sommets du triangle dans le contexte du Graphics, comme le fait
-    // `segmentOf` dans `ref-indicator.test.ts` : la geometrie du trace est ce que
-    // ces tests observent, pas un rendu.
+    // The collapsed chevron "▸" is taller than it is wide, the expanded "▾" the
+    // other way round. We read the triangle's vertices from the Graphics context,
+    // as `segmentOf` does in `ref-indicator.test.ts`: the drawing's geometry is
+    // what these tests observe, not a render.
     const shapeOf = (v: Container): { w: number; h: number } => {
       const g = tokenOf(v)!.getChildByLabel("chevron") as Graphics;
       const instructions = g.context.instructions as any[];
@@ -118,8 +118,8 @@ describe("jeton d'une ligne-tableau", () => {
   });
 
   it("n'affiche aucun chevron quand la vue ne plie rien", () => {
-    // `null` est ce que `create.ts` passe en vue graphe : le jeton reste lisible
-    // mais n'annonce plus un geste qui n'aurait aucun effet.
+    // `null` is what `create.ts` passes in graph view: the token stays readable
+    // but no longer advertises a gesture that would do nothing.
     const view = drawNode(
       product, rect, theme, 0, false, "#000", metrics, false, false, undefined, undefined, null,
     );
@@ -130,9 +130,9 @@ describe("jeton d'une ligne-tableau", () => {
 
 describe("ligne a valeur seule", () => {
   it("dessine la valeur sans sa cle", () => {
-    // L'element scalaire d'un tableau porte `tags[0]` en en-tete : repeter
-    // `$value` en cle n'apprendrait rien, et `measureNode` ne lui reserve donc
-    // aucune largeur de cle.
+    // An array's scalar element carries `tags[0]` as its header: repeating
+    // `$value` as the key would teach nothing, so `measureNode` reserves no key
+    // width for it.
     const element = graph.nodes.get("/products/0/tags/0")!;
     const view = drawNode(element, rect, theme, 0, false, "#000", metrics, false, false);
     const texts = textsOf(view);

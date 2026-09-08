@@ -5,10 +5,10 @@ import { drawRemainderToken, REMAINDER_TOKEN_GAP, REMAINDER_TOKEN_HEIGHT } from 
 import { resolveTheme } from "../src/theme.js";
 
 /**
- * Même substitution d'adaptateur DOM que `array-token.test.ts` : Pixi mesure la
- * hauteur des libellés via un canvas 2D absent du runtime Node, et ce que ces
- * tests observent — le libellé, la géométrie de la pilule — ne dépend pas de la
- * fidélité de cette mesure.
+ * Same DOM adapter substitution as `array-token.test.ts`: Pixi measures label
+ * height through a 2D canvas the Node runtime does not have, and what these
+ * tests observe — the label, the pill's geometry — does not depend on that
+ * measurement being faithful.
  */
 class FakeCanvasContext {
   font = "";
@@ -32,7 +32,7 @@ DOMAdapter.set({
 const theme = resolveTheme(undefined);
 const metrics = DEFAULT_METRICS;
 
-/** Tous les textes du jeton, à plat. */
+/** Every text in the token, flattened. */
 function textsOf(view: Container): string[] {
   const out: string[] = [];
   const walk = (c: Container): void => {
@@ -45,9 +45,9 @@ function textsOf(view: Container): string[] {
   return out;
 }
 
-/** La géométrie du fond, lue dans les instructions du Graphics — même lecture
- * que `array-token.test.ts` fait du chevron : c'est le tracé qu'on observe, pas
- * un rendu. */
+/** The background's geometry, read out of the Graphics instructions — the same
+ * reading `array-token.test.ts` does of the chevron: what we observe is the
+ * drawing commands, not a render. */
 function restRect(token: Container): { x: number; y: number; w: number; h: number } {
   const g = token.getChildByLabel("rest") as Graphics;
   const fill = (g.context.instructions as any[]).find((i) => i.action === "fill");
@@ -67,36 +67,35 @@ describe("jeton de reliquat", () => {
   });
 
   it("prend la largeur qu'on lui donne — celle de la carte voisine qui l'ancre", () => {
-    // Un jeton plus étroit ou plus large que la colonne de cartes se lirait
-    // comme un objet d'une autre nature, alors qu'il tient la place des cartes
-    // manquantes.
+    // A token narrower or wider than the card column would read as an object of
+    // a different nature, when it in fact stands in for the missing cards.
     const rect = restRect(drawRemainderToken({ count: 12, width: 187, theme, metrics }));
     expect(rect.w).toBe(187);
     expect(rect.h).toBe(REMAINDER_TOKEN_HEIGHT);
   });
 
   it("tient dans la bande qui separe deux cartes empilees", () => {
-    // La mise en page ne réserve aucune place au jeton : au-delà de `NODE_GAP`
-    // (24 px, `packages/core/src/structure-layout.ts`) il recouvre la carte
-    // voisine ET lui vole ses clics, son calque étant au-dessus. L'écart que
-    // `create.ts` ajoute (`REMAINDER_TOKEN_GAP`) doit encore tenir dans ce qui
-    // reste : c'est l'invariant complet, pas seulement la hauteur du jeton,
-    // qui doit être vérifié, sans quoi une hauteur bien sous 24 px masquerait
-    // un écart qui, additionné, déborde.
+    // Layout reserves no room at all for the token: past `NODE_GAP` (24 px,
+    // `packages/core/src/structure-layout.ts`) it covers the neighboring card
+    // AND steals its clicks, its layer being on top. The gap `create.ts` adds
+    // (`REMAINDER_TOKEN_GAP`) must still fit in what is left: it is the whole
+    // invariant that must be checked, not just the token's height, otherwise a
+    // height comfortably under 24 px would hide a gap that overflows once the
+    // two are added.
     expect(REMAINDER_TOKEN_GAP + REMAINDER_TOKEN_HEIGHT).toBeLessThan(24);
   });
 
   it("se dessine en (0,0) dans son espace local, comme une carte", () => {
-    // C'est l'appelant qui le place : `create.ts` calcule l'ancrage à partir des
-    // positions, et un décalage interne le décalerait deux fois.
+    // The caller is the one placing it: `create.ts` computes the anchor from the
+    // positions, and an internal offset would shift it twice.
     const rect = restRect(drawRemainderToken({ count: 12, width: 187, theme, metrics }));
     expect(rect.x).toBe(0);
     expect(rect.y).toBe(0);
   });
 
   it("tronque le libelle plutot que de deborder d'un jeton etroit", () => {
-    // La largeur vient de la carte voisine et non du texte : sur une colonne
-    // étroite, un libellé non tronqué sortirait de la pilule.
+    // The width comes from the neighboring card, not from the text: on a narrow
+    // column, an untruncated label would spill out of the pill.
     const token = drawRemainderToken({ count: 1234567, width: 24, theme, metrics });
     const texts = textsOf(token);
     expect(texts).not.toContain("+ 1234567");

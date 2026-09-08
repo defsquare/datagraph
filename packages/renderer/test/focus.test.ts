@@ -2,13 +2,14 @@ import { describe, it, expect } from "vitest";
 import type { NodeId, RefEdge } from "@defsquare/data-graph-core";
 import { clusterDimmed, clusterRelatedIds, DIM_ALPHA, relatedIds } from "../src/focus.js";
 
-/** Une arête de référence nue : `relatedIds` ne lit que `fromEntity`, `to` et
- * `dangling`, et fabriquer l'objet à la main garde ces tests indépendants du
- * pipeline de construction du graphe.
+/** A bare reference edge: `relatedIds` reads nothing but `fromEntity`, `to` and
+ * `dangling`, and building the object by hand keeps these tests independent of
+ * the graph construction pipeline.
  *
- * `fromEntity` vaut `from` par défaut, ce qui est l'invariant de toute
- * référence déclarée sans navigation : ces cas décrivent donc le comportement
- * inchangé, et le hissage se teste à part, en le dissociant explicitement. */
+ * `fromEntity` defaults to `from`, which is the invariant of any reference
+ * declared without navigation: these cases therefore describe the unchanged
+ * behavior, and lifting is tested separately, by pulling the two apart
+ * explicitly. */
 function ref(
   from: NodeId,
   to: NodeId | null,
@@ -29,9 +30,9 @@ function ref(
 
 describe("relatedIds", () => {
   it("returns null when nothing is focused", () => {
-    // `null` et non l'ensemble vide : les deux se lisent autrement à
-    // l'application. Un ensemble vide dirait « personne n'est lié », donc
-    // « estompe tout » ; `null` dit « aucun focus », donc « n'estompe rien ».
+    // `null` and not the empty set: the two read differently when applied. An
+    // empty set would say "nobody is related", hence "dim everything"; `null`
+    // says "no focus", hence "dim nothing".
     expect(relatedIds([ref("a", "b")], null, "p", ["c"])).toBeNull();
   });
 
@@ -45,9 +46,8 @@ describe("relatedIds", () => {
   });
 
   it("holds the sources of the incoming references", () => {
-    // Une référence est ORIENTÉE, mais le lien qu'elle établit ne l'est pas :
-    // une carte qui pointe vers la sélection lui est aussi liée que celle
-    // qu'elle pointe.
+    // A reference is DIRECTED, but the link it establishes is not: a card
+    // pointing at the selection is as related to it as the one it points to.
     const edges = [ref("x", "a"), ref("y", "a")];
     expect(relatedIds(edges, "a", null, [])).toEqual(new Set(["a", "x", "y"]));
   });
@@ -57,9 +57,9 @@ describe("relatedIds", () => {
   });
 
   it("ignores a dangling reference of the focused node", () => {
-    // `to === null` n'est pas un voisin : il n'y a personne au bout. Sans
-    // cette garde, `null` entrerait dans l'ensemble et n'y correspondrait à
-    // aucune carte — inoffensif mais faux.
+    // `to === null` is not a neighbor: there is nobody at the far end. Without
+    // this guard, `null` would enter the set and match no card in it — harmless
+    // but wrong.
     const keep = relatedIds([ref("a", null)], "a", null, []);
     expect(keep).toEqual(new Set(["a"]));
     expect(keep?.has(null as unknown as NodeId)).toBe(false);
@@ -71,26 +71,27 @@ describe("relatedIds", () => {
   });
 
   it("does not pull in a grandchild, only the direct children", () => {
-    // Le voisinage est à DISTANCE 1 : au-delà, l'estompage ne distinguerait
-    // plus rien, ce qui est tout ce qu'on lui demande.
+    // The neighborhood is at DISTANCE 1: past that, dimming would no longer
+    // single anything out, which is all we ask of it.
     expect(relatedIds([], "a", null, ["c"])).toEqual(new Set(["a", "c"]));
   });
 
   it("lit le bout source d'une référence sur son ENTITÉ, pas sur le value object", () => {
-    // La référence est portée par `a/lines/0`, mais elle est déclarée par `a` :
-    // en vue graphe, `a/lines/0` n'a aucune carte, et sélectionner `a` doit
-    // garder pleine la carte que sa propre ligne référence.
+    // The reference is carried by `a/lines/0`, but it is declared by `a`: in
+    // graph view `a/lines/0` has no card, and selecting `a` must keep at full
+    // opacity the card its own line references.
     const edges = [ref("a/lines/0", "b", false, "a")];
     expect(relatedIds(edges, "a", null, [])).toEqual(new Set(["a", "b"]));
-    // Et symétriquement depuis la cible : c'est `a` qui est liée, pas la ligne.
+    // And symmetrically from the target: `a` is what is related, not the line.
     expect(relatedIds(edges, "b", null, [])).toEqual(new Set(["b", "a"]));
   });
 });
 
 describe("clusterRelatedIds", () => {
   it("holds every member, even one with no reference at all", () => {
-    // L'agrégat est l'unité désignée : un membre isolé en fait partie autant
-    // que sa racine, et l'estomper contredirait l'enveloppe qui l'entoure.
+    // The aggregate is the designated unit: an isolated member belongs to it as
+    // much as its root does, and dimming it would contradict the envelope drawn
+    // around it.
     expect(clusterRelatedIds([], new Set(["m1", "m2"]))).toEqual(new Set(["m1", "m2"]));
   });
 
@@ -100,14 +101,14 @@ describe("clusterRelatedIds", () => {
   });
 
   it("holds an outside node that points AT a member", () => {
-    // Même symétrie que pour une carte : une référence est orientée, le lien
-    // qu'elle établit ne l'est pas.
+    // Same symmetry as for a card: a reference is directed, the link it
+    // establishes is not.
     const keep = clusterRelatedIds([ref("out", "m1")], new Set(["m1"]));
     expect(keep).toEqual(new Set(["m1", "out"]));
   });
 
   it("ignores a dangling reference leaving a member", () => {
-    // `to === null` ne désigne personne : rien à garder plein au bout.
+    // `to === null` designates nobody: nothing at the far end to keep full.
     const keep = clusterRelatedIds([ref("m1", null)], new Set(["m1"]));
     expect(keep).toEqual(new Set(["m1"]));
     expect(keep.has(null as unknown as NodeId)).toBe(false);
@@ -119,46 +120,46 @@ describe("clusterRelatedIds", () => {
   });
 
   it("does not follow a second hop out of the aggregate", () => {
-    // Distance 1 depuis le BLOC, pas depuis chaque voisin : sans cette borne,
-    // l'ensemble finirait par couvrir la plus grande partie du graphe.
+    // Distance 1 from the BLOCK, not from each neighbor: without that bound, the
+    // set would end up covering most of the graph.
     const edges = [ref("m1", "out"), ref("out", "far")];
     expect(clusterRelatedIds(edges, new Set(["m1"]))).toEqual(new Set(["m1", "out"]));
   });
 
   it("compte une référence hissée pour son entité membre", () => {
-    // Le membre de l'agrégat est `m1` ; la ligne `m1/lines/0` n'en est pas un
-    // et ne pourrait jamais l'être — l'appartenance ne connaît que des entités.
+    // The aggregate's member is `m1`; the line `m1/lines/0` is not one and could
+    // never be — membership only knows entities.
     const keep = clusterRelatedIds([ref("m1/lines/0", "out", false, "m1")], new Set(["m1"]));
     expect(keep).toEqual(new Set(["m1", "out"]));
   });
 
   it("does not mutate the member set it is given", () => {
-    // L'ensemble reçu est celui de l'index d'agrégats (`Aggregate.memberIds`),
-    // qui est partagé par tous ses lecteurs : y ajouter les voisins ferait
-    // grossir l'agrégat à chaque sélection.
+    // The set we receive is the aggregate index's own (`Aggregate.memberIds`),
+    // shared by all its readers: adding the neighbors to it would grow the
+    // aggregate on every selection.
     const members = new Set(["m1"]);
     clusterRelatedIds([ref("m1", "out")], members);
     expect(members).toEqual(new Set(["m1"]));
   });
 
   it("returns the empty set for an aggregate with no members", () => {
-    // Pas de `null` en retour, à la différence de `relatedIds` : l'absence de
-    // sélection est portée par l'appelant, qui n'appelle alors pas du tout. Un
-    // ensemble vide dit donc « estompe tout », ce qui est correct.
+    // No `null` returned here, unlike `relatedIds`: the absence of a selection is
+    // the caller's business, and it then does not call at all. An empty set
+    // therefore says "dim everything", which is correct.
     expect(clusterRelatedIds([ref("a", "b")], new Set())).toEqual(new Set());
   });
 });
 
 describe("clusterDimmed", () => {
   it("n'estompe rien sans sélection", () => {
-    // Même lecture de `null` que partout ailleurs : « aucun focus », donc
-    // « n'estompe rien » — et surtout pas « personne n'est lié ».
+    // Same reading of `null` as everywhere else: "no focus", hence "dim nothing"
+    // — and most definitely not "nobody is related".
     expect(clusterDimmed(null, ["m1", "m2"])).toBe(false);
   });
 
   it("garde pleine une enveloppe dont un membre est lié à la sélection", () => {
-    // Un SEUL membre lié suffit : l'enveloppe est alors la seule chose qui
-    // montre où ce membre habite.
+    // ONE related member is enough: the envelope is then the only thing showing
+    // where that member lives.
     expect(clusterDimmed(new Set(["m2"]), ["m1", "m2", "m3"])).toBe(false);
   });
 
@@ -167,24 +168,25 @@ describe("clusterDimmed", () => {
   });
 
   it("garde pleine l'enveloppe SÉLECTIONNÉE sans cas particulier", () => {
-    // `clusterRelatedIds` part des membres : ils sont donc tous dans l'ensemble
-    // à garder, et la règle générale suffit à ne pas estomper l'agrégat désigné.
+    // `clusterRelatedIds` starts from the members: they are therefore all in the
+    // keep set, and the general rule is enough to leave the designated aggregate
+    // undimmed.
     const members = new Set(["m1", "m2"]);
     const keep = clusterRelatedIds([ref("m1", "out")], members);
     expect(clusterDimmed(keep, members)).toBe(false);
   });
 
   it("estompe une enveloppe sans aucun membre quand une sélection est active", () => {
-    // Rien à garder plein là-dedans : l'ensemble vide ne rencontre jamais
-    // l'ensemble à garder. Le cas ne devrait pas exister (un agrégat a au moins
-    // sa racine), mais il ne doit pas se lire comme « pas de sélection ».
+    // Nothing in there to keep full: the empty set never meets the keep set. The
+    // case should not exist (an aggregate has at least its root), but it must not
+    // read as "no selection".
     expect(clusterDimmed(new Set(["a"]), [])).toBe(true);
     expect(clusterDimmed(null, [])).toBe(false);
   });
 
   it("accepte un Set de membres aussi bien qu'un tableau", () => {
-    // L'appelant réel passe `Aggregate.memberIds`, qui est un Set ; les tests
-    // ci-dessus passent des tableaux. Les deux doivent décider pareil.
+    // The real caller passes `Aggregate.memberIds`, which is a Set; the tests
+    // above pass arrays. Both must decide the same way.
     expect(clusterDimmed(new Set(["m1"]), new Set(["m1"]))).toBe(false);
     expect(clusterDimmed(new Set(["m1"]), new Set(["m2"]))).toBe(true);
   });

@@ -7,26 +7,25 @@ import { resolveTheme } from "../src/theme.js";
 import { shopData, shopConfig, cartData, cartConfig } from "./fixtures.js";
 
 /**
- * `EdgeMode` a deux effets, et un seul était couvert : le mode `"ref"` cessait
- * bien de tracer le containment, mais il continuait à tracer les références en
- * POINTILLÉ, alors que la spec de la vue graphe les veut PLEINES — le pointillé
- * y signifierait « décoration » dans la vue dont les références sont justement
- * tout le sujet.
+ * `EdgeMode` has two effects, and only one was covered: `"ref"` mode did stop
+ * drawing containment, but it kept drawing references DASHED, whereas the graph
+ * view's spec wants them SOLID — dashes would read as "decoration" in the very
+ * view whose whole subject is references.
  *
- * Ce que le test observe : le `GraphicsContext` de Pixi, comme le fait déjà
- * `hulls.test.ts`. Chaque appel à `stroke()`/`fill()` y pousse une instruction
- * portant le chemin accumulé ; le NOMBRE de commandes de ce chemin distingue
- * sans ambiguïté un trait plein (un seul `moveTo`+`lineTo`) d'un pointillé (un
- * couple par tiret). Aucun rendu n'est nécessaire.
+ * What the test observes: Pixi's `GraphicsContext`, as `hulls.test.ts` already
+ * does. Every call to `stroke()`/`fill()` pushes an instruction carrying the
+ * accumulated path; the NUMBER of commands in that path unambiguously separates a
+ * solid stroke (a single `moveTo`+`lineTo`) from a dashed one (a pair per dash).
+ * No rendering is needed.
  */
 describe("drawEdges — mode structure vs mode graphe", () => {
   const theme = resolveTheme(undefined);
   const graph = buildGraph(shopData, shopConfig);
 
-  // Positions étalées pour tous les nœuds : les arêtes de containment ne sont
-  // dessinées que si LES DEUX bouts sont positionnés, et sans elles le mode
-  // `"contain"` ne se distinguerait de rien. L'écart de 400 px garantit aussi
-  // des segments assez longs pour porter plusieurs tirets.
+  // Positions spread out for every node: containment edges are drawn only when
+  // BOTH ends are positioned, and without them `"contain"` mode would not stand
+  // apart from anything. The 400 px spacing also guarantees segments long enough
+  // to carry several dashes.
   const positions = new Map<string, { x: number; y: number; width: number; height: number }>();
   let i = 0;
   for (const id of graph.nodes.keys()) {
@@ -34,34 +33,34 @@ describe("drawEdges — mode structure vs mode graphe", () => {
     i++;
   }
 
-  /** Les commandes de chemin (`moveTo`, `lineTo`, …) portées par la n-ième
-   * instruction du contexte. */
+  /** The path commands (`moveTo`, `lineTo`, …) carried by the context's n-th
+   * instruction. */
   function pathActions(g: ReturnType<typeof drawEdges>, index: number): string[] {
     const instruction = g.context.instructions[index] as any;
     return instruction.data.path.instructions.map((x: any) => x.action);
   }
 
-  // Le fixture ne contient qu'UNE référence résolue (o1 → c1) et une cassée
-  // (o2 → GHOST) : le chemin des références résolues décrit donc une seule
-  // arête, ce qui rend le comptage lisible.
+  // The fixture holds only ONE resolved reference (o1 → c1) and one broken one
+  // (o2 → GHOST): the resolved references' path therefore describes a single
+  // edge, which keeps the counting readable.
   const resolvedRefs = graph.refEdges.filter((e) => !e.dangling && e.to !== null);
 
   it("the fixture holds exactly one resolved and one dangling reference", () => {
-    // Garde anti-test-creux : tous les comptages ci-dessous en dépendent.
+    // Guard against a hollow test: every count below depends on it.
     expect(resolvedRefs).toHaveLength(1);
     expect(graph.refEdges.filter((e) => e.dangling)).toHaveLength(1);
   });
 
   it('draws references dashed in "contain" mode', () => {
     const g = drawEdges(graph, positions, theme, 0, "contain");
-    // stroke(containment) + stroke(références) + fill(têtes de flèche). Rien
-    // pour la référence cassée : elle ne vit plus dans l'espace des arêtes.
+    // stroke(containment) + stroke(references) + fill(arrow heads). Nothing for
+    // the broken reference: it no longer lives in the edge space.
     expect(g.context.instructions.length).toBe(3);
     expect((g.context.instructions[0] as any).action).toBe("stroke");
-    // Le containment est bien tracé : une bézier par arête.
+    // Containment is indeed drawn: one bezier per edge.
     expect(pathActions(g, 0)).toContain("bezierCurveTo");
-    // Les références : bien plus de deux commandes pour une seule arête, donc
-    // une suite de tirets.
+    // The references: far more than two commands for a single edge, hence a run
+    // of dashes.
     const ref = pathActions(g, 1);
     expect(ref.length).toBeGreaterThan(2);
     expect(ref.filter((a) => a === "lineTo").length).toBeGreaterThan(1);
@@ -69,18 +68,18 @@ describe("drawEdges — mode structure vs mode graphe", () => {
 
   it('draws the same references solid in "ref" mode', () => {
     const g = drawEdges(graph, positions, theme, 0, "ref");
-    // Une instruction de moins : plus aucun stroke de containment.
+    // One instruction fewer: no containment stroke left at all.
     expect(g.context.instructions.length).toBe(2);
-    // Une seule arête résolue, tracée d'un seul segment : exactement
-    // moveTo + lineTo, là où le mode "contain" en produit une dizaine.
+    // A single resolved edge, drawn as one segment: exactly moveTo + lineTo,
+    // where "contain" mode produces a dozen or so.
     expect(pathActions(g, 0)).toEqual(["moveTo", "lineTo"]);
   });
 
   it("n'émet plus rien pour une référence cassée, dans aucun mode", () => {
-    // Le moignon flottant accroché au bord de la carte désignait la CARTE, pas
-    // le CHAMP fautif. Le diagnostic est passé sur la ligne de la carte (une
-    // croix contre la valeur), et l'espace des arêtes n'en porte plus trace :
-    // le tracé est exactement celui d'un graphe sans référence cassée.
+    // The floating stub hooked onto the card's edge designated the CARD, not the
+    // offending FIELD. The diagnostic moved onto the card's row (a cross against
+    // the value), and the edge space carries no trace of it any more: the drawing
+    // is exactly that of a graph with no broken reference.
     for (const mode of ["contain", "ref"] as const) {
       const withDangling = drawEdges(graph, positions, theme, 0, mode);
       const resolvedOnly = drawEdges(
@@ -100,8 +99,8 @@ describe("drawEdges — mode structure vs mode graphe", () => {
   });
 
   it("keeps drawing the arrow heads in both modes", () => {
-    // Le trait plein remplace le pointillé, il ne remplace pas la flèche : le
-    // sens de lecture de la référence doit survivre à la bascule.
+    // The solid stroke replaces the dashes, it does not replace the arrow: the
+    // reference's reading direction must survive the switch.
     for (const mode of ["contain", "ref"] as const) {
       const g = drawEdges(graph, positions, theme, 0, mode);
       const fills = (g.context.instructions as any[]).filter((x) => x.action === "fill");
@@ -117,17 +116,16 @@ describe("drawEdges — mode structure vs mode graphe", () => {
 });
 
 /**
- * L'estompage : quand une carte est sélectionnée, une arête qui ne la touche
- * pas recule au second plan. Un `stroke()` ne porte qu'un seul style, donc
- * l'alpha ne peut pas se poser arête par arête : chaque groupe de couleur se
- * scinde en DEUX passes, l'estompée puis la pleine, et c'est ce découpage que
- * le test observe — le nombre d'instructions et l'alpha de chacune.
+ * Dimming: when a card is selected, an edge that does not touch it recedes into
+ * the background. A `stroke()` carries a single style, so alpha cannot be set
+ * edge by edge: each color group splits into TWO passes, the dimmed one then the
+ * full one, and that split is what the test observes — the number of instructions
+ * and each one's alpha.
  *
- * Le focus est un ENSEMBLE d'ids depuis que l'agrégat est lui aussi
- * sélectionnable. Ce bloc-ci ne passe que des SINGLETONS : c'est la sélection
- * d'une carte, et il tient qu'elle rend exactement ce qu'elle rendait quand la
- * signature portait un id unique. Le cas à plusieurs ids a son propre bloc plus
- * bas.
+ * The focus is a SET of ids ever since aggregates became selectable too. THIS
+ * block passes nothing but SINGLETONS: that is a card selection, and it holds
+ * that it renders exactly what it rendered when the signature carried a single
+ * id. The multi-id case has its own block further down.
  */
 describe("drawEdges — estompage autour du focus", () => {
   const theme = resolveTheme(undefined);
@@ -140,21 +138,21 @@ describe("drawEdges — estompage autour du focus", () => {
     i++;
   }
 
-  /** L'action et l'alpha de chaque instruction, dans l'ordre d'émission. */
+  /** Each instruction's action and alpha, in emission order. */
   function passes(g: ReturnType<typeof drawEdges>): [string, number][] {
     return (g.context.instructions as any[]).map((x) => [x.action, x.data.style.alpha]);
   }
 
-  // La seule référence résolue du fixture part de `/orders/0`, la seule cassée
-  // de `/orders/1` : focaliser l'une ou l'autre suffit à couvrir les deux
-  // côtés de chaque groupe.
+  // The fixture's only resolved reference leaves from `/orders/0`, the only
+  // broken one from `/orders/1`: focusing either is enough to cover both sides of
+  // each group.
   const SOURCE = "/orders/0";
   const ELSEWHERE = "/customers/1";
 
   it("draws exactly as before when nothing is focused", () => {
-    // Garde de non-régression : `focusIds` est optionnel, et l'omettre ou passer
-    // `null` doit rendre le tracé d'avant la fonctionnalité, à l'instruction
-    // près — donc aucune passe estompée, puisqu'il n'y a rien à estomper.
+    // Non-regression guard: `focusIds` is optional, and omitting it or passing
+    // `null` must give the drawing from before the feature, instruction for
+    // instruction — hence no dimmed pass, since there is nothing to dim.
     const none = drawEdges(graph, positions, theme, 0, "contain");
     const explicit = drawEdges(graph, positions, theme, 0, "contain", null);
     expect(passes(explicit)).toEqual(passes(none));
@@ -167,8 +165,8 @@ describe("drawEdges — estompage autour du focus", () => {
 
   it("splits containment into a dimmed and a full pass around the focus", () => {
     const g = drawEdges(graph, positions, theme, 0, "contain", new Set([SOURCE]));
-    // Containment estompé puis plein, et la référence sortante du focus (trait
-    // + tête de flèche) à pleine opacité.
+    // Containment dimmed then full, and the focus's outgoing reference (stroke +
+    // arrow head) at full opacity.
     expect(passes(g)).toEqual([
       ["stroke", DIM_ALPHA],
       ["stroke", 1],
@@ -179,8 +177,8 @@ describe("drawEdges — estompage autour du focus", () => {
 
   it("dims a reference that touches neither end of the focus", () => {
     const g = drawEdges(graph, positions, theme, 0, "contain", new Set([ELSEWHERE]));
-    // `/customers/1` n'est ni la source ni la cible de la référence résolue :
-    // trait ET tête de flèche reculent.
+    // `/customers/1` is neither source nor target of the resolved reference: both
+    // stroke AND arrow head recede.
     expect(passes(g)).toEqual([
       ["stroke", DIM_ALPHA],
       ["stroke", 1],
@@ -190,8 +188,8 @@ describe("drawEdges — estompage autour du focus", () => {
   });
 
   it("keeps a reference at full opacity from its TARGET as well", () => {
-    // Une référence entrante lie autant que sortante : la cible sélectionnée
-    // doit garder son arête au premier plan.
+    // An incoming reference relates just as much as an outgoing one: the selected
+    // target must keep its edge in the foreground.
     const g = drawEdges(graph, positions, theme, 0, "ref", new Set(["/customers/0"]));
     expect(passes(g)).toEqual([
       ["stroke", 1],
@@ -201,8 +199,8 @@ describe("drawEdges — estompage autour du focus", () => {
 
   it("still draws no containment in ref mode, focused or not", () => {
     const g = drawEdges(graph, positions, theme, 0, "ref", new Set([SOURCE]));
-    // Deux instructions : la référence du focus, trait puis flèche. Aucune
-    // passe de containment, ni pleine ni estompée.
+    // Two instructions: the focus's reference, stroke then arrow. No containment
+    // pass at all, neither full nor dimmed.
     expect(passes(g)).toHaveLength(2);
   });
 
@@ -212,12 +210,11 @@ describe("drawEdges — estompage autour du focus", () => {
 });
 
 /**
- * Le focus à PLUSIEURS ids : c'est ce que passe la sélection d'un agrégat, dont
- * l'ensemble est celui de ses MEMBRES. La règle est la même qu'au singleton —
- * une arête est pleine si l'un de ses bouts est dans l'ensemble —, mais elle
- * produit alors une lecture que le singleton ne peut pas donner : les arêtes
- * INTERNES au bloc et celles qui le TRAVERSENT restent pleines, et seules celles
- * dont aucun bout n'appartient au bloc reculent.
+ * The MULTI-id focus: this is what an aggregate selection passes, its set being
+ * that of its MEMBERS. The rule is the same as for a singleton — an edge is full
+ * if one of its ends is in the set — but it then yields a reading a singleton
+ * cannot give: edges INTERNAL to the block and those CROSSING it stay full, and
+ * only those with neither end in the block recede.
  */
 describe("drawEdges — estompage autour d'un ensemble de membres", () => {
   const theme = resolveTheme(undefined);
@@ -235,15 +232,15 @@ describe("drawEdges — estompage autour d'un ensemble de membres", () => {
   }
 
   it("garde pleine chaque arête dont UN bout est dans l'ensemble", () => {
-    // Un bloc qui tient la source de la seule référence résolue : elle reste
-    // pleine, et le second membre n'y change rien.
+    // A block holding the only resolved reference's source: it stays full, and
+    // the second member changes nothing.
     const both = new Set(["/orders/0", "/orders/1"]);
     expect(passes(drawEdges(graph, positions, theme, 0, "ref", both))).toEqual([
       ["stroke", 1],
       ["fill", 1],
     ]);
-    // La preuve que c'est bien l'APPARTENANCE d'un bout qui l'a rendue pleine :
-    // le même bloc privé de la source l'estompe.
+    // The proof that MEMBERSHIP of an end is what made it full: the same block
+    // stripped of the source dims it.
     expect(passes(drawEdges(graph, positions, theme, 0, "ref", new Set(["/orders/1"])))).toEqual([
       ["stroke", DIM_ALPHA],
       ["fill", DIM_ALPHA],
@@ -251,8 +248,8 @@ describe("drawEdges — estompage autour d'un ensemble de membres", () => {
   });
 
   it("garde pleine une arête TRAVERSANTE, prise par sa cible", () => {
-    // Un bloc côté clients : la référence entre dans le bloc sans en partir, et
-    // reste pleine.
+    // A block on the customer side: the reference enters the block without
+    // leaving it, and stays full.
     const customers = new Set(["/customers/0", "/customers/1"]);
     expect(passes(drawEdges(graph, positions, theme, 0, "ref", customers))).toEqual([
       ["stroke", 1],
@@ -261,8 +258,8 @@ describe("drawEdges — estompage autour d'un ensemble de membres", () => {
   });
 
   it("estompe tout quand l'ensemble ne touche aucune arête", () => {
-    // Un bloc de nœuds sans aucune référence : rien ne lui parle, donc tout
-    // recule — y compris la tête de flèche, qui suit l'alpha de sa passe.
+    // A block of nodes with no reference at all: nothing speaks to it, so
+    // everything recedes — arrow head included, which follows its pass's alpha.
     const unrelated = new Set(["/orders/0/lines/0", "/orders/0/lines/1"]);
     expect(passes(drawEdges(graph, positions, theme, 0, "ref", unrelated))).toEqual([
       ["stroke", DIM_ALPHA],
@@ -271,8 +268,8 @@ describe("drawEdges — estompage autour d'un ensemble de membres", () => {
   });
 
   it("scinde aussi le containment en deux passes", () => {
-    // Même découpage qu'au singleton : un ensemble non nul suffit à ouvrir la
-    // passe estompée, quel que soit son cardinal.
+    // Same split as for the singleton: a non-null set is enough to open the
+    // dimmed pass, whatever its cardinality.
     const g = drawEdges(graph, positions, theme, 0, "contain", new Set(["/orders/0", "/orders/1"]));
     expect(passes(g)).toEqual([
       ["stroke", DIM_ALPHA],
@@ -283,9 +280,9 @@ describe("drawEdges — estompage autour d'un ensemble de membres", () => {
   });
 
   it("estompe tout avec un ensemble VIDE, qui n'est pas l'absence de focus", () => {
-    // `null` dit « aucune sélection », l'ensemble vide dirait « une sélection
-    // que personne ne touche ». Les deux ne peuvent pas se confondre, sans quoi
-    // un agrégat introuvable rendrait le graphe entier au premier plan.
+    // `null` says "no selection", the empty set would say "a selection nobody
+    // touches". The two must not be conflated, otherwise an aggregate that cannot
+    // be found would bring the entire graph to the foreground.
     expect(passes(drawEdges(graph, positions, theme, 0, "ref", new Set()))).toEqual([
       ["stroke", DIM_ALPHA],
       ["fill", DIM_ALPHA],
@@ -294,14 +291,14 @@ describe("drawEdges — estompage autour d'un ensemble de membres", () => {
 });
 
 /**
- * L'ancrage d'une référence était FIXE : milieu-droit de la source vers
- * milieu-gauche de la cible. Comme les arêtes sont dessinées SOUS le calque des
- * cartes, une cible située en dessous ou à gauche faisait passer la ligne sous
- * la carte source : son départ était invisible, l'arête semblait sortir de
- * nulle part. L'ancrage suit désormais la direction réelle centre→centre.
+ * A reference's anchoring used to be FIXED: source's mid-right to target's
+ * mid-left. Since edges are drawn UNDER the card layer, a target sitting below or
+ * to the left ran the line beneath the source card: its start was invisible, and
+ * the edge seemed to come out of nowhere. Anchoring now follows the real
+ * center→center direction.
  */
 describe("anchorOnRect", () => {
-  const rect = { x: 100, y: 100, width: 200, height: 100 }; // centre (200, 150)
+  const rect = { x: 100, y: 100, width: 200, height: 100 }; // center (200, 150)
 
   it("lands on the right edge for a target to the right", () => {
     expect(anchorOnRect(rect, 1000, 150)).toEqual({ x: 300, y: 150 });
@@ -320,17 +317,17 @@ describe("anchorOnRect", () => {
   });
 
   it("stays on the perimeter and on the centre→target ray in diagonal", () => {
-    // Cible en diagonale « molle » (pente 1/4) : c'est le bord VERTICAL qui est
-    // atteint le premier, pas le coin.
+    // Target on a "shallow" diagonal (slope 1/4): the VERTICAL edge is reached
+    // first, not the corner.
     const p = anchorOnRect(rect, 200 + 400, 150 + 100);
-    expect(p.x).toBeCloseTo(300, 10); // sur le bord droit
+    expect(p.x).toBeCloseTo(300, 10); // on the right edge
     expect(p.y).toBeGreaterThan(100);
-    expect(p.y).toBeLessThan(200); // …et dans la hauteur du rect
-    // Colinéaire au segment centre→cible.
+    expect(p.y).toBeLessThan(200); // …and within the rect's height
+    // Collinear with the center→target segment.
     expect((p.y - 150) / (p.x - 200)).toBeCloseTo(100 / 400, 10);
 
-    // Cible en diagonale « raide » (pente 4) : cette fois c'est le bord
-    // HORIZONTAL du bas qui est atteint le premier.
+    // Target on a "steep" diagonal (slope 4): this time the bottom HORIZONTAL
+    // edge is reached first.
     const q = anchorOnRect(rect, 200 + 100, 150 + 400);
     expect(q.y).toBeCloseTo(200, 10);
     expect(q.x).toBeGreaterThan(100);
@@ -339,8 +336,8 @@ describe("anchorOnRect", () => {
   });
 
   it("falls back to the centre for a target inside the rect", () => {
-    // Repli propre : l'arête sera cachée sous les cartes qui se chevauchent,
-    // ce qui est acceptable — il n'y a pas de « bon » point de sortie ici.
+    // A clean fallback: the edge will be hidden under the overlapping cards,
+    // which is acceptable — there is no "right" exit point here.
     expect(anchorOnRect(rect, 210, 160)).toEqual({ x: 200, y: 150 });
     expect(anchorOnRect(rect, 200, 150)).toEqual({ x: 200, y: 150 });
   });
@@ -350,17 +347,16 @@ describe("edge anchoring follows the direction to the target", () => {
   const theme = resolveTheme(undefined);
   const graph = buildGraph(shopData, shopConfig);
 
-  // La seule référence résolue du fixture est /orders/0 → /customers/0. On la
-  // place ici en pile VERTICALE : c'est précisément le cas que l'ancrage fixe
-  // milieu-droit / milieu-gauche rendait illisible.
+  // The fixture's only resolved reference is /orders/0 → /customers/0. We stack
+  // it VERTICALLY here: precisely the case the fixed mid-right / mid-left
+  // anchoring made unreadable.
   const SOURCE = "/orders/0";
   const TARGET = "/customers/0";
   const positions = new Map<string, { x: number; y: number; width: number; height: number }>([
-    [SOURCE, { x: 0, y: 0, width: 160, height: 60 }], // centre (80, 30)
-    [TARGET, { x: 0, y: 300, width: 160, height: 60 }], // centre (80, 330)
+    [SOURCE, { x: 0, y: 0, width: 160, height: 60 }], // center (80, 30)
+    [TARGET, { x: 0, y: 300, width: 160, height: 60 }], // center (80, 330)
   ]);
-  // Départ attendu : bord INFÉRIEUR de la source. Arrivée : bord SUPÉRIEUR de
-  // la cible.
+  // Expected start: the source's BOTTOM edge. Arrival: the target's TOP edge.
   const START: [number, number] = [80, 60];
   const END: [number, number] = [80, 300];
 
@@ -373,7 +369,7 @@ describe("edge anchoring follows the direction to the target", () => {
     const path = firstPath(g, 0);
     expect(path[0].action).toBe("moveTo");
     expect(path[0].data).toEqual(START);
-    // La ligne s'arrête au pied de la flèche : même direction, un peu avant.
+    // The line stops at the foot of the arrow: same direction, a little short.
     const [ex, ey] = path[1].data;
     expect(ex).toBeCloseTo(80, 10);
     expect(ey).toBeGreaterThan(280);
@@ -382,7 +378,7 @@ describe("edge anchoring follows the direction to the target", () => {
 
   it("puts the arrow head tip on the target edge facing the source", () => {
     const g = drawEdges(graph, positions, theme, 0, "ref");
-    // Dernière instruction : le fill des têtes de flèche.
+    // Last instruction: the arrow heads' fill.
     const fill = (g.context.instructions as any[]).filter((x) => x.action === "fill");
     expect(fill).toHaveLength(1);
     const tip = fill[0].data.path.instructions[0];
@@ -392,8 +388,8 @@ describe("edge anchoring follows the direction to the target", () => {
 
   it("uses the same anchors for the dashed reference in contain mode", () => {
     const g = drawEdges(graph, positions, theme, 0, "contain");
-    // Aucune arête de containment ici (les deux bouts d'aucune paire ne sont
-    // positionnés) : les références sont donc la première instruction.
+    // No containment edge here (no pair has both ends positioned): the references
+    // are therefore the first instruction.
     const path = firstPath(g, 0);
     expect(path[0].data).toEqual(START);
   });
@@ -409,55 +405,55 @@ describe("edge anchoring follows the direction to the target", () => {
 
   it("aligns the selection overlay with the drawn reference", () => {
     const g = drawSelectionOverlay(graph, positions, theme, SOURCE);
-    // Le DERNIER stroke, et non la dernière instruction : depuis que le
-    // surlignage repeint aussi la tête de flèche, le contexte se termine par un
-    // `fill()`, pas par le tracé des références sortantes.
+    // The LAST stroke, not the last instruction: ever since the highlight repaints
+    // the arrow head too, the context ends with a `fill()`, not with the outgoing
+    // references' drawing.
     const actions = (g.context.instructions as any[]).map((x) => x.action);
     const path = firstPath(g, actions.lastIndexOf("stroke"));
     expect(path[0].action).toBe("moveTo");
     expect(path[0].data).toEqual(START);
-    // Pointillé s'arrêtant au pied de la flèche : le dernier point tracé tombe
-    // où le dernier tiret s'arrête, donc à moins d'un motif (tiret + espace)
-    // plus la longueur de la flèche de l'ancrage de la cible.
+    // Dashes stopping at the foot of the arrow: the last point drawn falls where
+    // the last dash ends, hence within one pattern (dash + gap) plus the arrow's
+    // length of the target's anchor.
     const last = path[path.length - 1].data;
     expect(last[0]).toBeCloseTo(END[0], 10);
     expect(Math.abs(last[1] - END[1])).toBeLessThanOrEqual(20);
   });
 
   it("ne crée aucune zone de clic pour une référence cassée", () => {
-    // Il n'y a plus de trait à viser : le diagnostic vit sur la ligne de la
-    // carte, et c'est le tap sur la carte qui le porte. Une zone de clic posée
-    // dans le vide promettrait une navigation que `followRef` ne fera pas.
+    // There is no stroke left to aim at: the diagnostic lives on the card's row,
+    // and the tap on the card is what carries it. A hit area laid down in the void
+    // would promise a navigation `followRef` will not perform.
     const withBroken = new Map(positions);
     withBroken.set("/orders/1", { x: 0, y: 600, width: 160, height: 60 });
     const hits = drawEdgeHitAreas(graph, withBroken);
     expect(hits.find((h) => h.edge.dangling)).toBeUndefined();
-    // Les références résolues, elles, gardent la leur.
+    // Resolved references, for their part, keep theirs.
     expect(hits.find((h) => h.edge.from === SOURCE)).toBeDefined();
   });
 });
 
 /**
- * Le surlignage de sélection ne doit PAS ajouter un tracé par-dessus l'arête
- * existante : il doit lui faire changer de STYLE. Il reprend donc la géométrie
- * de `drawEdges` (mêmes ancrages, arrêt au pied de la flèche, tête repeinte) et
- * son trait suit le mode — plein en vue graphe, pointillé en vue structure.
- * Le pointillé surajouté sur une arête pleine était le défaut signalé.
+ * The selection highlight must NOT add a drawing on top of the existing edge: it
+ * must change that edge's STYLE. It therefore reuses `drawEdges`'s geometry (same
+ * anchors, stop at the foot of the arrow, head repainted) and its stroke follows
+ * the mode — solid in graph view, dashed in structure view. Dashes laid over a
+ * solid edge was the reported defect.
  */
 describe("drawSelectionOverlay — le surlignage suit le style de l'arête", () => {
   const theme = resolveTheme(undefined);
   const graph = buildGraph(shopData, shopConfig);
 
-  const SOURCE = "/orders/0"; // référence résolue vers /customers/0
+  const SOURCE = "/orders/0"; // resolved reference to /customers/0
   const TARGET = "/customers/0";
-  const DANGLING = "/orders/1"; // référence cassée : plus aucune arête tracée
+  const DANGLING = "/orders/1"; // broken reference: no edge drawn any more
   const positions = new Map<string, { x: number; y: number; width: number; height: number }>([
     [SOURCE, { x: 0, y: 0, width: 160, height: 60 }],
     [TARGET, { x: 0, y: 300, width: 160, height: 60 }],
     [DANGLING, { x: 600, y: 0, width: 160, height: 60 }],
   ]);
 
-  /** Action et commandes de chemin de chaque instruction, dans l'ordre. */
+  /** Each instruction's action and path commands, in order. */
   function shape(g: ReturnType<typeof drawSelectionOverlay>): { action: string; path: string[] }[] {
     return (g.context.instructions as any[]).map((x) => ({
       action: x.action,
@@ -468,10 +464,10 @@ describe("drawSelectionOverlay — le surlignage suit le style de l'arête", () 
   it('trace la référence PLEINE en mode "ref"', () => {
     const g = drawSelectionOverlay(graph, positions, theme, SOURCE, "ref");
     const s = shape(g);
-    // Anneau de la carte, trait de la référence, tête de flèche. Aucune chaîne
-    // de parenté : les parents ne sont pas positionnés ici.
+    // The card's ring, the reference's stroke, the arrow head. No parent chain:
+    // the parents are not positioned here.
     expect(s.map((x) => x.action)).toEqual(["stroke", "stroke", "fill"]);
-    // Un seul segment, comme `drawEdges` en mode "ref" — pas les N tirets.
+    // A single segment, like `drawEdges` in "ref" mode — not the N dashes.
     expect(s[1]!.path).toEqual(["moveTo", "lineTo"]);
   });
 
@@ -490,7 +486,7 @@ describe("drawSelectionOverlay — le surlignage suit le style de l'arête", () 
       const fills = (g.context.instructions as any[]).filter((x) => x.action === "fill");
       expect(fills).toHaveLength(1);
       expect(fills[0].data.style.color).toBe(new Color(theme.accent.selection).toNumber());
-      // La pointe est posée sur l'ancrage de la cible, comme dans `drawEdges`.
+      // The tip sits on the target's anchor, as in `drawEdges`.
       expect(fills[0].data.path.instructions[0].data).toEqual([80, 300]);
     }
   });
@@ -505,8 +501,8 @@ describe("drawSelectionOverlay — le surlignage suit le style de l'arête", () 
   });
 
   it("ne surligne rien de plus que l'anneau pour une référence cassée", () => {
-    // Une référence cassée n'a plus d'arête à restyler : sélectionner sa source
-    // ne peut donc peindre que l'anneau de la carte.
+    // A broken reference has no edge left to restyle: selecting its source can
+    // therefore paint nothing but the card's ring.
     const contain = shape(drawSelectionOverlay(graph, positions, theme, DANGLING, "contain"));
     const ref = shape(drawSelectionOverlay(graph, positions, theme, DANGLING, "ref"));
     expect(ref).toEqual(contain);
@@ -524,15 +520,15 @@ describe("drawSelectionOverlay — le surlignage suit le style de l'arête", () 
 });
 
 /**
- * Une référence déclarée par chemin part du nœud qui PORTE la ligne — un value
- * object, qui n'a le plus souvent aucune carte à l'écran : replié en vue
- * structure, inexistant en vue graphe. Son départ est donc HISSÉ jusqu'à la plus
- * proche CARTE, faute de quoi l'arête ne serait pas tracée du tout et la
- * relation disparaîtrait de la vue qui est censée la montrer.
+ * A reference declared by path starts at the node that CARRIES the row — a value
+ * object, which most often has no card on screen: collapsed in structure view,
+ * nonexistent in graph view. Its start is therefore LIFTED to the nearest CARD,
+ * failing which the edge would not be drawn at all and the relation would vanish
+ * from the very view meant to show it.
  *
- * Et bien la carte, pas la bande de la ligne : partir de la bande ne
- * distinguait pas une arête hissée d'une référence directe, c'était un
- * demi-signal. Le détail est passé aux étiquettes de sélection.
+ * And to the card, mind, not the row's band: starting from the band did not
+ * distinguish a lifted edge from a direct reference, it was half a signal. That
+ * detail moved to the selection labels.
  */
 describe("drawEdges — départ hissé d'une référence portée par un value object", () => {
   const theme = resolveTheme(undefined);
@@ -542,8 +538,8 @@ describe("drawEdges — départ hissé d'une référence portée par un value ob
   const PRODUCT = { x: 600, y: 0, width: 160, height: 60 };
   const LINE = { x: 300, y: 200, width: 180, height: 100 };
 
-  /** La bande de la ligne `lines` sur la carte du panier — l'ancre que le tracé
-   * n'utilise justement PLUS. */
+  /** The `lines` row's band on the cart card — precisely the anchor the drawing
+   * NO LONGER uses. */
   const rows = graph.nodes.get("/carts/0")!.rows;
   const band = rowRectFor(CART, rows.findIndex((r) => r.key === "lines"), DEFAULT_METRICS);
 
@@ -558,22 +554,22 @@ describe("drawEdges — départ hissé d'une référence portée par un value ob
   });
 
   it("part de la CARTE hôte quand la carte source est absente de positions", () => {
-    // C'est exactement la vue graphe, et la vue structure repliée : `lines` est
-    // élidé et `/carts/0/lines/0` n'a pas de rect.
+    // This is exactly the graph view, and the collapsed structure view: `lines` is
+    // elided and `/carts/0/lines/0` has no rect.
     const positions = new Map([["/carts/0", CART], ["/products/0", PRODUCT]]);
     const g = drawEdges(graph, positions, theme, 0, "ref");
     const start = anchorOnRect(CART, PRODUCT.x + PRODUCT.width / 2, PRODUCT.y + PRODUCT.height / 2);
     const path = firstPath(g, 0);
     expect(path[0].action).toBe("moveTo");
     expect(path[0].data).toEqual([start.x, start.y]);
-    // Et surtout pas la bande du jeton : c'est le demi-signal abandonné.
+    // And most definitely not the token's band: that is the abandoned half-signal.
     const onBand = anchorOnRect(band, PRODUCT.x + PRODUCT.width / 2, PRODUCT.y + PRODUCT.height / 2);
     expect(path[0].data).not.toEqual([onBand.x, onBand.y]);
   });
 
   it("part de la carte du value object dès qu'elle est dépliée", () => {
-    // Le hissage ne prend la main qu'à défaut : une carte présente reste
-    // l'ancre, sans quoi déplier le jeton n'y changerait rien.
+    // Lifting only takes over as a fallback: a card that is present stays the
+    // anchor, otherwise expanding the token would change nothing.
     const positions = new Map([
       ["/carts/0", CART],
       ["/carts/0/lines/0", LINE],
@@ -586,16 +582,16 @@ describe("drawEdges — départ hissé d'une référence portée par un value ob
   });
 
   it("ne trace rien quand la CIBLE est cachée", () => {
-    // L'arrivée n'est pas hissée : une cible hors de l'écran n'a pas de point
-    // d'attache à montrer, et l'arête tomberait dans le vide.
+    // The arrival is not lifted: a target off screen has no attachment point to
+    // show, and the edge would fall into the void.
     const g = drawEdges(graph, new Map([["/carts/0", CART]]), theme, 0, "ref");
     expect(g.context.instructions).toHaveLength(0);
   });
 
   it("garde l'arête pleine quand c'est l'ENTITÉ déclarante qui est focalisée", () => {
-    // En vue graphe la sélection est le panier ; le value object n'y a pas de
-    // carte à sélectionner. Sans `fromEntity`, sélectionner le panier
-    // estomperait l'arête que sa propre ligne porte.
+    // In graph view the selection is the cart; the value object has no card there
+    // to select. Without `fromEntity`, selecting the cart would dim the very edge
+    // its own row carries.
     const positions = new Map([["/carts/0", CART], ["/products/0", PRODUCT]]);
     const g = drawEdges(graph, positions, theme, 0, "ref", new Set(["/carts/0"]));
     const strokes = (g.context.instructions as any[]).filter((x) => x.action === "stroke");
@@ -604,7 +600,7 @@ describe("drawEdges — départ hissé d'une référence portée par un value ob
   });
 
   it("garde l'arête pleine quand c'est le VALUE OBJECT qui est focalisé", () => {
-    // En vue structure, c'est la carte de la ligne de panier qui se sélectionne.
+    // In structure view, the cart line's own card is what gets selected.
     const positions = new Map([["/carts/0", CART], ["/products/0", PRODUCT]]);
     const g = drawEdges(graph, positions, theme, 0, "ref", new Set(["/carts/0/lines/0"]));
     const strokes = (g.context.instructions as any[]).filter((x) => x.action === "stroke");
@@ -622,10 +618,10 @@ describe("drawEdges — départ hissé d'une référence portée par un value ob
 });
 
 /**
- * Le surlignage de sélection obéit à la MÊME règle d'appartenance que les
- * étiquettes : une arête est aussi celle de son entité déclarante. Sans quoi
- * sélectionner le panier étiquetterait `lines[0].productRef` sans surligner le
- * trait — deux réponses contradictoires au même geste.
+ * The selection highlight obeys the SAME ownership rule as the labels: an edge
+ * also belongs to the entity that declares it. Otherwise selecting the cart would
+ * label `lines[0].productRef` without highlighting the stroke — two contradictory
+ * answers to the same gesture.
  */
 describe("drawSelectionOverlay — une arête hissée appartient aussi à son entité", () => {
   const theme = resolveTheme(undefined);
@@ -637,8 +633,8 @@ describe("drawSelectionOverlay — une arête hissée appartient aussi à son en
 
   function refStrokes(selectedId: string): number {
     const g = drawSelectionOverlay(graph, positions, theme, selectedId, "ref");
-    // Anneau de carte + (éventuel) trait de référence : le trait est le stroke
-    // qui suit l'anneau, la tête de flèche son fill.
+    // Card ring + (possible) reference stroke: the stroke is the one following the
+    // ring, the arrow head its fill.
     return (g.context.instructions as any[]).filter((x) => x.action === "stroke").length;
   }
 

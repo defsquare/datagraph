@@ -11,7 +11,7 @@ describe("drawClusters", () => {
     const g = drawClusters([], theme);
     expect(g).toBeDefined();
     expect(g.destroyed).toBe(false);
-    // Rien à peindre : le contexte Graphics ne contient aucune instruction.
+    // Nothing to paint: the Graphics context holds no instruction at all.
     expect(g.context.instructions.length).toBe(0);
   });
 
@@ -23,18 +23,17 @@ describe("drawClusters", () => {
       ],
       theme,
     );
-    // Un fill() + un stroke() par enveloppe : 2 enveloppes -> 4 instructions.
+    // One fill() + one stroke() per envelope: 2 envelopes -> 4 instructions.
     expect(g.context.instructions.length).toBe(4);
-    // Les bornes couvrent bien les deux disques, pas seulement le premier.
+    // The bounds do cover both discs, not just the first.
     const bounds = g.getBounds();
     expect(bounds.minX).toBeLessThan(1);
     expect(bounds.maxX).toBeGreaterThan(279);
     expect(bounds.maxY).toBeGreaterThan(89);
   });
 
-  /** Les styles effectivement émis, dans l'ordre : c'est là que vivent l'alpha
-   * et l'épaisseur, et les lire directement évite d'inférer un rendu depuis des
-   * bornes. */
+  /** The styles actually emitted, in order: this is where alpha and width live,
+   * and reading them directly avoids inferring a render from bounds. */
   function styles(g: ReturnType<typeof drawClusters>) {
     return g.context.instructions.map((instruction) => {
       const style = (instruction.data as { style: { alpha: number; width?: number } }).style;
@@ -43,8 +42,8 @@ describe("drawClusters", () => {
   }
 
   it("peint au repos quand aucune intensite de survol n'est donnee", () => {
-    // Le champ est optionnel : tout appelant qui l'ignore doit obtenir
-    // exactement le rendu d'avant le survol.
+    // The field is optional: any caller ignoring it must get exactly the
+    // rendering from before hover existed.
     const [fill, stroke] = styles(
       drawClusters([{ circle: { cx: 0, cy: 0, r: 10 }, color: "#ff0000" }], theme),
     );
@@ -63,9 +62,9 @@ describe("drawClusters", () => {
   });
 
   it("interpole lineairement entre les deux etats", () => {
-    // L'intensite arrive deja adoucie par `attachHover` : interpoler une
-    // seconde fois par une courbe ici doublerait l'easing et rendrait la montee
-    // molle au depart.
+    // The intensity arrives already eased by `attachHover`: interpolating a
+    // second time along a curve here would double the easing and make the ramp
+    // limp at the start.
     const [fill, stroke] = styles(
       drawClusters([{ circle: { cx: 0, cy: 0, r: 10 }, color: "#ff0000", hover: 0.5 }], theme),
     );
@@ -75,8 +74,8 @@ describe("drawClusters", () => {
   });
 
   it("borne une intensite hors de [0,1]", () => {
-    // Aucune source ne devrait en produire, mais un alpha superieur a 1 ou
-    // negatif serait un rendu invalide et pas seulement laid.
+    // No source should ever produce one, but an alpha above 1 or negative would
+    // be an invalid render, not merely an ugly one.
     const over = styles(
       drawClusters([{ circle: { cx: 0, cy: 0, r: 10 }, color: "#f00", hover: 4 }], theme),
     );
@@ -88,8 +87,8 @@ describe("drawClusters", () => {
   });
 
   it("n'applique l'intensite qu'a l'enveloppe qui la porte", () => {
-    // Le rendu est par enveloppe : survoler l'une ne doit pas allumer sa
-    // voisine, qui reste peinte au repos dans le meme Graphics.
+    // Rendering is per envelope: hovering one must not light up its neighbor,
+    // which stays painted at rest in the same Graphics.
     const s = styles(
       drawClusters(
         [
@@ -104,9 +103,9 @@ describe("drawClusters", () => {
   });
 
   it("peint pleinement quand aucun estompage n'est demande", () => {
-    // Le champ est optionnel, comme `hover` : un appelant qui l'ignore obtient
-    // exactement le rendu d'avant l'estompage. C'est aussi le cas « aucune
-    // selection », que `clustersFor` traduit par `dim: false` partout.
+    // The field is optional, like `hover`: a caller ignoring it gets exactly the
+    // rendering from before dimming existed. It is also the "no selection" case,
+    // which `clustersFor` turns into `dim: false` everywhere.
     const [fill, stroke] = styles(
       drawClusters([{ circle: { cx: 0, cy: 0, r: 10 }, color: "#f00", dim: false }], theme),
     );
@@ -123,8 +122,8 @@ describe("drawClusters", () => {
   });
 
   it("laisse l'epaisseur du trait intacte en estompant", () => {
-    // L'epaisseur dit la taille de l'objet, pas son importance : l'amincir en
-    // plus de le palir ferait rentrer l'enveloppe dans le sub-pixel.
+    // Width states the object's size, not its importance: thinning it on top of
+    // paling it would push the envelope into the sub-pixel.
     const [, stroke] = styles(
       drawClusters([{ circle: { cx: 0, cy: 0, r: 10 }, color: "#f00", dim: true }], theme),
     );
@@ -132,8 +131,8 @@ describe("drawClusters", () => {
   });
 
   it("multiplie l'estompage par l'intensite de survol au lieu de s'y substituer", () => {
-    // Une enveloppe estompee que le pointeur traverse repond quand meme, en
-    // restant au fond : les deux informations ne s'annulent pas.
+    // A dimmed envelope the pointer crosses still responds, while staying in the
+    // background: the two pieces of information do not cancel each other out.
     const [fill, stroke] = styles(
       drawClusters([{ circle: { cx: 0, cy: 0, r: 10 }, color: "#f00", hover: 1, dim: true }], theme),
     );
@@ -142,8 +141,8 @@ describe("drawClusters", () => {
   });
 
   it("n'estompe que l'enveloppe qui le demande", () => {
-    // Le rendu est par enveloppe : estomper l'une ne doit pas faire reculer sa
-    // voisine, peinte dans le meme Graphics.
+    // Rendering is per envelope: dimming one must not push its neighbor back,
+    // painted as it is in the same Graphics.
     const s = styles(
       drawClusters(
         [
@@ -159,7 +158,7 @@ describe("drawClusters", () => {
 
   it("skips a circle of non-positive radius", () => {
     const g = drawClusters([{ circle: { cx: 10, cy: 10, r: 0 }, color: "#fff" }], theme);
-    // Aucune instruction émise : un disque de rayon nul n'est pas une surface.
+    // No instruction emitted: a disc of zero radius is not a surface.
     expect(g.context.instructions.length).toBe(0);
   });
 
@@ -171,17 +170,18 @@ describe("drawClusters", () => {
       ],
       theme,
     );
-    // La deuxième enveloppe, valide, est bien peinte malgré la première ignorée.
+    // The second envelope, a valid one, is indeed painted despite the first
+    // being skipped.
     expect(g.context.instructions.length).toBe(2);
   });
 });
 
 describe("drawClusterHitAreas", () => {
   it("rend un container par enveloppe, centre sur elle", () => {
-    // Le container est POSITIONNE sur le centre et sa `hitArea` est centree sur
-    // l'origine locale : deplacer le cluster revient alors a bouger sa
-    // position, exactement comme une carte. Une `hitArea` en coordonnees monde
-    // obligerait a muter le cercle a chaque image.
+    // The container is POSITIONED on the center and its `hitArea` is centered on
+    // the local origin: moving the cluster then comes down to moving its
+    // position, exactly like a card. A `hitArea` in world coordinates would force
+    // us to mutate the circle every frame.
     const hits = drawClusterHitAreas([
       { cx: 50, cy: 40, r: 30 },
       { cx: 250, cy: 30, r: 60 },
@@ -196,8 +196,8 @@ describe("drawClusterHitAreas", () => {
   });
 
   it("rend l'objet d'entree tel quel, sans copie", () => {
-    // C'est ce qui permet a l'appelant de muter le `ClusterShape` du layout
-    // pendant le drag et d'en voir l'effet au repeint suivant.
+    // This is what lets the caller mutate the layout's `ClusterShape` during the
+    // drag and see the effect on the next repaint.
     const cluster = { cx: 0, cy: 0, r: 10 };
     expect(drawClusterHitAreas([cluster])[0]!.cluster).toBe(cluster);
   });
@@ -209,19 +209,18 @@ describe("drawClusterHitAreas", () => {
   });
 
   it("ne cable aucun comportement : la cible est nue", () => {
-    // Un tap sur une enveloppe selectionne bien son agregat, mais c'est
-    // `create.ts` qui le cable — comme le drag et le survol. Cette fonction-ci
-    // ne rend qu'une geometrie sensible au pointeur, sans quoi elle ne se
-    // testerait plus sans index d'agregats ni instance.
+    // A tap on an envelope does select its aggregate, but `create.ts` is what
+    // wires that — like the drag and the hover. THIS function returns nothing but
+    // a pointer-sensitive geometry, otherwise it could no longer be tested
+    // without an aggregate index and an instance.
     const hit = drawClusterHitAreas([{ cx: 0, cy: 0, r: 10 }])[0]!.container;
     expect(hit.listenerCount("pointertap")).toBe(0);
     expect(hit.listenerCount("pointerdown")).toBe(0);
   });
 
   it("ignore un rayon non positif", () => {
-    // Meme garde que `drawClusters` : un disque de rayon nul n'est pas une
-    // surface, et une `hitArea` de rayon nul serait insaisissable de toute
-    // facon.
+    // Same guard as `drawClusters`: a disc of zero radius is not a surface, and a
+    // `hitArea` of zero radius would be ungrabbable anyway.
     expect(drawClusterHitAreas([{ cx: 10, cy: 10, r: 0 }])).toEqual([]);
   });
 });

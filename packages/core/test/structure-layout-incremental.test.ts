@@ -21,7 +21,7 @@ describe("incremental layout", () => {
     const next = await engine.layoutAfterExpand(initial, g, "/customers/0", cs.visibleNodeIds())
     const anchor = before.get("/customers/0")!
     for (const [id, r] of before) {
-      if (r.y + r.height <= anchor.y) expect(next.positions.get(id)).toEqual(r) // au-dessus : intact
+      if (r.y + r.height <= anchor.y) expect(next.positions.get(id)).toEqual(r) // above: untouched
     }
     expect(next.positions.has("/customers/0/address")).toBe(true)
     const addr = next.positions.get("/customers/0/address")!
@@ -52,10 +52,10 @@ describe("incremental layout", () => {
   })
 
   it("replier un tableau elide annule le decalage de son depliage", async () => {
-    // `/orders/0/lines` est un tableau, donc ELIDE : il n'a pas de carte, il est
-    // le jeton d'une ligne de `/orders/0`. C'est lui qui porte le pli de ses
-    // elements, et c'est donc lui — et non la commande qui le contient — qui
-    // doit rendre les positions a leur etat d'avant.
+    // `/orders/0/lines` is an array, hence ELIDED: it has no card, it is the
+    // token of a row of `/orders/0`. It is the one that carries the fold of its
+    // elements, and therefore the one — not the order that contains it — that
+    // must return the positions to their previous state.
     const { g, cs, engine, initial } = await setup()
     const before = new Map([...initial.positions].map(([id, r]) => [id, { ...r }]))
 
@@ -64,7 +64,7 @@ describe("incremental layout", () => {
       initial, g, "/orders/0/lines", cs.visibleNodeIds(),
     )
     expect(expanded.positions.has("/orders/0/lines/0")).toBe(true)
-    // Le tableau elide n'a AUCUN rect : sa ligne vit dans la carte de la commande.
+    // The elided array has NO rect: its row lives in the order's card.
     expect(expanded.positions.has("/orders/0/lines")).toBe(false)
 
     cs.collapse("/orders/0/lines")
@@ -74,11 +74,11 @@ describe("incremental layout", () => {
   })
 
   it("replier la carte hote ne retracte pas ce que le jeton a deplie", async () => {
-    // Le chevron d'en-tete et le jeton `[ n items ]` sont deux commandes
-    // INDEPENDANTES : le premier gouverne les cartes enfants, le second son
-    // tableau. Replier `/orders/0` laisse sa carte — et donc sa ligne `lines`,
-    // toujours marquee depliee — a l'ecran ; retirer les cartes d'elements ferait
-    // mentir le jeton sur ce qu'il montre.
+    // The header chevron and the `[ n items ]` token are two INDEPENDENT
+    // controls: the first governs the child cards, the second its array.
+    // Collapsing `/orders/0` leaves its card — and hence its `lines` row, still
+    // marked expanded — on screen; removing the element cards would make the
+    // token lie about what it shows.
     const { g, cs, engine, initial } = await setup()
     cs.expand("/orders/0/lines")
     const expanded = await engine.layoutAfterExpand(
@@ -97,8 +97,8 @@ describe("incremental layout", () => {
   it("layout() global purge la memoire de deltas : un collapse ulterieur n'annule rien", async () => {
     const { g, cs, engine, initial } = await setup()
 
-    // `/orders/0/lines` est le depliage de la fixture qui decale reellement des
-    // cartes : sans delta non nul memorise, le test ne prouverait rien.
+    // `/orders/0/lines` is the fixture's expansion that actually shifts cards:
+    // without a non-zero delta memorized, the test would prove nothing.
     cs.expand("/orders/0/lines")
     const expanded = await engine.layoutAfterExpand(
       initial, g, "/orders/0/lines", cs.visibleNodeIds(),
@@ -108,8 +108,8 @@ describe("incremental layout", () => {
     )
     expect(moved).toBe(true)
 
-    // Mise en page GLOBALE : les positions repartent de zero, le delta memorise
-    // pour `/orders/0/lines` ne decrit plus rien de ce qui est a l'ecran.
+    // GLOBAL layout: positions start over from scratch, and the delta memorized
+    // for `/orders/0/lines` no longer describes anything on screen.
     const fresh = await engine.layout(g, cs.visibleNodeIds())
     const snapshot = new Map([...fresh.positions].map(([id, r]) => [id, { ...r }]))
 
@@ -117,8 +117,8 @@ describe("incremental layout", () => {
     const visible = cs.visibleNodeIds()
     const back = engine.layoutAfterCollapse(fresh, g, "/orders/0/lines", visible)
 
-    // Aucune carte etrangere au sous-arbre replie ne doit avoir bouge : si le
-    // delta perime avait survecu, tout ce qui est sous son seuil remonterait.
+    // No card outside the collapsed subtree may have moved: had the stale delta
+    // survived, everything below its threshold would rise back up.
     for (const [id, r] of snapshot) {
       if (!visible.has(id)) continue
       expect(back.positions.get(id)!.y).toBeCloseTo(r.y, 5)
@@ -129,9 +129,9 @@ describe("incremental layout", () => {
 function manyItems(n: number): unknown {
   return { items: Array.from({ length: n }, (_, i) => ({ v: i, w: { deep: i } })) }
 }
-// `ids: {}` : aucune entite, comme le mode CLI sans config. `/items` est ELIDE
-// (une ligne de la carte racine) mais deplie ; ses elements sont de vraies
-// cartes, donc paginees — c'est le terrain de `layoutAfterReveal`.
+// `ids: {}`: no entity at all, like CLI mode without a config. `/items` is
+// ELIDED (one row of the root card) but expanded; its elements are real cards,
+// hence paginated — this is `layoutAfterReveal`'s home ground.
 const noConfig: DataGraphConfig = { ids: {} }
 
 describe("layoutAfterReveal", () => {
@@ -146,12 +146,12 @@ describe("layoutAfterReveal", () => {
     const after = await engine.layoutAfterReveal(before, g, "/items", cs.visibleNodeIds())
 
     const first = after.positions.get("/items/100")!
-    expect(first.x).toBeCloseTo(lastOfPage0.x, 1) // meme colonne
-    expect(first.y).toBeGreaterThan(lastOfPage0.y) // dessous
-    // La derniere carte de la page 0 est AU-DESSUS du point d'insertion : elle
-    // ne bouge pas, c'est elle qui ancre la pose.
+    expect(first.x).toBeCloseTo(lastOfPage0.x, 1) // same column
+    expect(first.y).toBeGreaterThan(lastOfPage0.y) // below
+    // The last card of page 0 is ABOVE the insertion point: it does not move, it
+    // is the one that anchors the placement.
     expect(after.positions.get("/items/99")!.y).toBeCloseTo(lastOfPage0.y, 1)
-    // Le bloc entier tient sous le point d'insertion.
+    // The whole block sits below the insertion point.
     for (let i = 100; i < 200; i++) {
       expect(after.positions.get(`/items/${i}`)!.y).toBeGreaterThan(lastOfPage0.y)
     }
@@ -172,7 +172,7 @@ describe("layoutAfterReveal", () => {
 
     expect(after.positions.get("/items/0")).toBeDefined()
     expect(after.positions.get("/items/0")!.y).toBeLessThan(after.positions.get("/items/200")!.y)
-    // Le suivant a ete POUSSE vers le bas pour faire place au bloc insere.
+    // The next block was PUSHED down to make room for the inserted one.
     expect(after.positions.get("/items/200")!.y).toBeGreaterThan(
       only.positions.get("/items/200")!.y,
     )
@@ -186,7 +186,7 @@ describe("layoutAfterReveal", () => {
     const g = buildGraph(manyItems(250), noConfig)
     const cs = new CollapseState(g)
     const engine = createStructureLayoutEngine()
-    cs.unrevealPage("/items", 0) // plus une seule carte enfant a l'ecran
+    cs.unrevealPage("/items", 0) // not a single child card left on screen
     const engineBase = await engine.layout(g, cs.visibleNodeIds())
     const root = engineBase.positions.get("/")!
     expect(engineBase.positions.size).toBe(1)
@@ -194,11 +194,11 @@ describe("layoutAfterReveal", () => {
     cs.revealPage("/items", 1)
     const after = await engine.layoutAfterReveal(engineBase, g, "/items", cs.visibleNodeIds())
 
-    // `/items` est elide : son ancre est la bande de sa ligne dans la carte
-    // racine, d'ou une pose 48 px a droite de cette carte.
+    // `/items` is elided: its anchor is the band of its row inside the root
+    // card, hence a placement 48 px to the right of that card.
     const first = after.positions.get("/items/100")!
     expect(first.x).toBeCloseTo(root.x + root.width + 48, 1)
-    // La carte qui porte l'ancre ne descend pas avec le bloc qu'elle ouvre.
+    // The card carrying the anchor does not move down with the block it opens.
     expect(after.positions.get("/")!.y).toBeCloseTo(root.y, 5)
   })
 
@@ -208,11 +208,11 @@ describe("layoutAfterReveal", () => {
     const engine = createStructureLayoutEngine()
     const before = await engine.layout(g, cs.visibleNodeIds())
 
-    // Rien de nouveau : appel redondant sur les pages deja posees.
+    // Nothing new: a redundant call over pages already placed.
     const after = await engine.layoutAfterReveal(before, g, "/items", cs.visibleNodeIds())
     expect(after.positions.size).toBe(before.positions.size)
     for (const [id, r] of before.positions) expect(after.positions.get(id)).toEqual(r)
-    // Copie, pas alias : muter le resultat ne doit pas contaminer `before`.
+    // A copy, not an alias: mutating the result must not contaminate `before`.
     expect(after.positions).not.toBe(before.positions)
   })
 
@@ -220,8 +220,8 @@ describe("layoutAfterReveal", () => {
     const g = buildGraph(manyItems(250), noConfig)
     const cs = new CollapseState(g)
     const engine = createStructureLayoutEngine()
-    // Partir de la seule page 2 : c'est ce bloc, pose le plus bas, qui encaisse
-    // les deux decalages et qui SURVIT au retrait des pages 0 et 1.
+    // Start from page 2 alone: that block, placed lowest, is the one that takes
+    // both shifts and SURVIVES the removal of pages 0 and 1.
     cs.unrevealPage("/items", 0)
     cs.revealPage("/items", 2)
     const base = await engine.layout(g, cs.visibleNodeIds())
@@ -236,9 +236,9 @@ describe("layoutAfterReveal", () => {
     expect(afterFirst).toBeGreaterThan(baseline.get("/items/200")!.y)
     expect(afterSecond).toBeGreaterThan(afterFirst)
 
-    // Retirer les deux pages revelees : le cumul memorise sous `/items` doit
-    // rendre au bloc restant sa position d'origine. Avec un ecrasement au lieu
-    // d'une accumulation, seul le second decalage serait annule.
+    // Remove the two revealed pages: the total memorized under `/items` must
+    // give the remaining block back its original position. With an overwrite
+    // instead of an accumulation, only the second shift would be undone.
     cs.unrevealPage("/items", 0)
     cs.unrevealPage("/items", 1)
     const visible = cs.visibleNodeIds()

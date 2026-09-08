@@ -8,7 +8,7 @@ import {
   type WheelSignal,
 } from "../src/camera.js";
 
-/** Un `WheelEvent` minimal : `classifyWheel` ne lit que ces champs. */
+/** A minimal `WheelEvent`: `classifyWheel` reads nothing but these fields. */
 function wheel(partial: Partial<WheelSignal> = {}): WheelSignal {
   return { deltaX: 0, deltaY: 0, deltaMode: 0, ctrlKey: false, metaKey: false, ...partial };
 }
@@ -19,8 +19,8 @@ describe("normalizeWheelDelta", () => {
   });
 
   it("convertit le mode ligne en pixels", () => {
-    // Firefox rapporte les crans de molette en lignes (deltaY = 3). Sans cette
-    // conversion, un cran valait 0.3% de zoom : la molette y etait morte.
+    // Firefox reports wheel notches in lines (deltaY = 3). Without this
+    // conversion, one notch was worth 0.3% of zoom: the wheel was dead there.
     expect(normalizeWheelDelta(3, 1)).toBe(48);
   });
 
@@ -35,8 +35,8 @@ describe("normalizeWheelDelta", () => {
 
 describe("classifyWheel", () => {
   it("ctrlKey est un zoom, quel que soit le reste", () => {
-    // macOS synthetise un wheel + ctrlKey pour le pincement trackpad, et
-    // Ctrl+molette est la convention navigateur universelle.
+    // macOS synthesizes a wheel + ctrlKey for the trackpad pinch, and Ctrl+wheel
+    // is the universal browser convention.
     expect(classifyWheel(wheel({ ctrlKey: true, deltaY: 2 }))).toBe("zoom");
     expect(classifyWheel(wheel({ ctrlKey: true, deltaY: 2, deltaX: 5 }))).toBe("zoom");
     expect(classifyWheel(wheel({ ctrlKey: true, deltaY: 100 }))).toBe("zoom");
@@ -48,10 +48,10 @@ describe("classifyWheel", () => {
   });
 
   it("sans modificateur, un balayage trackpad se deplace TOUJOURS", () => {
-    // Le coeur de la regression : un swipe deux doigts vertical et rapide
-    // arrive avec deltaX quantifie a 0 et un deltaY entier de l'ordre du cran
-    // de molette. Toute heuristique qui lit ces trois champs le prend pour une
-    // molette et zoome au milieu d'une navigation.
+    // The heart of the regression: a fast vertical two-finger swipe arrives with
+    // deltaX quantized to 0 and a whole-number deltaY on the order of a wheel
+    // notch. Any heuristic reading those three fields takes it for a wheel and
+    // zooms in the middle of a navigation.
     expect(classifyWheel(wheel({ deltaY: 100 }))).toBe("pan");
     expect(classifyWheel(wheel({ deltaY: -120 }))).toBe("pan");
     expect(classifyWheel(wheel({ deltaY: 8 }))).toBe("pan");
@@ -61,8 +61,8 @@ describe("classifyWheel", () => {
   });
 
   it("sans modificateur, une vraie molette se deplace aussi, deltaMode compris", () => {
-    // Firefox rapporte les crans en lignes. C'est bien une molette, mais la
-    // molette nue deplace : le zoom demande un modificateur explicite.
+    // Firefox reports notches in lines. It really is a wheel, but a bare wheel
+    // pans: zoom demands an explicit modifier.
     expect(classifyWheel(wheel({ deltaY: 3, deltaMode: 1 }))).toBe("pan");
     expect(classifyWheel(wheel({ deltaY: 1, deltaMode: 2 }))).toBe("pan");
   });
@@ -74,13 +74,13 @@ describe("classifyWheel", () => {
 
 describe("zoomFactorFor", () => {
   it("est fin sur les petits deltas du pincement", () => {
-    // ~6% par image : franc a la cadence d'un pincement, sans etre nerveux.
+    // ~6% per frame: decisive at pinch cadence, without being twitchy.
     expect(zoomFactorFor(-5)).toBeCloseTo(Math.exp(0.06), 6);
   });
 
   it("plafonne un cran de molette a 1.22x, comme l'ancien gain dedie", () => {
-    // Le plafond existe pour qu'aucun code n'ait a reconnaitre la molette : un
-    // cran de 100px bute dessus et retrouve exactement son toucher d'avant.
+    // The cap exists so that no code has to recognize the wheel: a 100px notch
+    // runs into it and gets back exactly its former feel.
     expect(zoomFactorFor(-100)).toBeCloseTo(1.2214, 4);
     expect(zoomFactorFor(-100)).toBeCloseTo(Math.exp(100 * 0.002), 6);
   });
@@ -90,7 +90,7 @@ describe("zoomFactorFor", () => {
   });
 
   it("plafonne aussi un cran Firefox converti en pixels", () => {
-    // deltaMode ligne : 3 lignes -> 48px, deja bien au-dela du plafond.
+    // Line deltaMode: 3 lines -> 48px, already well past the cap.
     expect(zoomFactorFor(-normalizeWheelDelta(3, 1))).toBeCloseTo(1.2214, 4);
   });
 
@@ -99,9 +99,9 @@ describe("zoomFactorFor", () => {
   });
 });
 
-/** Le pan est cable sur des ecouteurs DOM natifs (canvas + window) : on les
- * capture au lieu de faire tourner un vrai navigateur, comme
- * `classifyWheel` est teste sur un `WheelEvent` fabrique. */
+/** Pan is wired onto native DOM listeners (canvas + window): we capture them
+ * instead of running a real browser, the same way `classifyWheel` is tested on
+ * a fabricated `WheelEvent`. */
 function mountCamera(isBlocked: () => boolean = () => false) {
   const handlers = new Map<string, (event: unknown) => void>();
   const record =
@@ -140,9 +140,9 @@ describe("Camera — inhibition du pan", () => {
   });
 
   it("ne deplace rien pendant qu'une carte est deplacee", () => {
-    // Le meme geste, avec un drag de carte en cours : la toile doit rester
-    // immobile, sans quoi la carte fuirait sous le curseur au double de la
-    // vitesse du pointeur.
+    // The same gesture, with a card drag under way: the canvas must stay still,
+    // otherwise the card would flee under the cursor at twice the pointer's
+    // speed.
     let blocked = false;
     const { stage, down, move } = mountCamera(() => blocked);
     down(100, 100);
@@ -154,9 +154,9 @@ describe("Camera — inhibition du pan", () => {
   });
 
   it("ne rattrape pas le chemin parcouru pendant l'inhibition", () => {
-    // La garde est au MOVE et non au DOWN : le pan reprend donc en cours de
-    // geste, et il doit repartir de la DERNIERE position vue, pas de celle
-    // d'avant l'inhibition — sinon la toile saute au relachement de la carte.
+    // The guard is at MOVE, not at DOWN: pan therefore resumes mid-gesture, and
+    // it must restart from the LAST position seen, not from the one before the
+    // inhibition — otherwise the canvas jumps when the card is released.
     let blocked = true;
     const { stage, down, move } = mountCamera(() => blocked);
     down(100, 100);
@@ -168,9 +168,9 @@ describe("Camera — inhibition du pan", () => {
 });
 
 /**
- * Ce que la camera montre du MONDE, pour ce qui doit se placer en coordonnees
- * monde tout en tenant compte de ce qu'on regarde — les etiquettes d'aretes,
- * qui glissent le long de leur trait pour rester dans le cadre.
+ * What the camera shows of the WORLD, for whatever has to place itself in world
+ * coordinates while accounting for what is being looked at — edge labels, which
+ * slide along their stroke to stay in frame.
  */
 describe("Camera — worldViewport", () => {
   afterEach(() => {
@@ -185,15 +185,15 @@ describe("Camera — worldViewport", () => {
     camera.centerOn(rect, VIEWPORT, 2);
     const world = camera.worldViewport(VIEWPORT);
 
-    // Le rect tient entierement dedans...
+    // The rect fits entirely inside...
     expect(world.x).toBeLessThan(rect.x);
     expect(world.y).toBeLessThan(rect.y);
     expect(world.x + world.width).toBeGreaterThan(rect.x + rect.width);
     expect(world.y + world.height).toBeGreaterThan(rect.y + rect.height);
-    // ...et centre : les deux centres coincident.
+    // ...and centered: the two centers coincide.
     expect(world.x + world.width / 2).toBeCloseTo(rect.x + rect.width / 2, 6);
     expect(world.y + world.height / 2).toBeCloseTo(rect.y + rect.height / 2, 6);
-    // La taille du monde vu est celle de l'ecran divisee par l'echelle.
+    // The size of the world in view is the screen's, divided by the scale.
     expect(world.width).toBeCloseTo(VIEWPORT.width / 2, 6);
     expect(world.height).toBeCloseTo(VIEWPORT.height / 2, 6);
   });
@@ -203,7 +203,7 @@ describe("Camera — worldViewport", () => {
     camera.centerOn({ x: 0, y: 0, width: 0, height: 0 }, VIEWPORT, 1);
     const before = camera.worldViewport(VIEWPORT);
     down(100, 100);
-    move(150, 100); // la toile va vers la droite, donc le regard vers la gauche
+    move(150, 100); // the canvas goes right, so the gaze goes left
     const after = camera.worldViewport(VIEWPORT);
     expect(after.x).toBeCloseTo(before.x - 50, 6);
     expect(after.y).toBeCloseTo(before.y, 6);

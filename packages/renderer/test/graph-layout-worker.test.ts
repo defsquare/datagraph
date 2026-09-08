@@ -12,37 +12,36 @@ import {
 import { shopConfig, shopData } from "./fixtures.js";
 
 /**
- * LE PROTOCOLE DU WORKER DE MISE EN PAGE, testé sans navigateur.
+ * THE LAYOUT WORKER'S PROTOCOL, tested without a browser.
  *
- * C'est possible — et c'est tout le bénéfice de la forme choisie — parce que le
- * contrôleur ne connaît pas `Worker` : il reçoit une FABRIQUE
- * (`GraphViewHooks.spawnLayoutWorker`), et `create.ts` est le seul endroit du
- * dépôt qui écrive `new Worker`. On injecte donc ici un faux worker qui répond
- * exactement ce qu'on lui dit de répondre, et on vérifie les quatre choses que
- * le protocole promet :
+ * That is possible — and it is the whole benefit of the shape chosen — because
+ * the controller does not know `Worker`: it receives a FACTORY
+ * (`GraphViewHooks.spawnLayoutWorker`), and `create.ts` is the only place in the
+ * repo that writes `new Worker`. So we inject a fake worker here that answers
+ * exactly what we tell it to, and we check the four things the protocol promises:
  *
- *  1. une réponse correcte est appliquée, et la mise en page qui en sort est
- *     celle du moteur — pas une approximation reconstruite de travers ;
- *  2. une réponse de génération PÉRIMÉE est jetée sans rien publier ni résoudre ;
- *  3. un échec (message d'erreur, worker injouable) avertit UNE fois et se
- *     replie sur le moteur en processus, DÉFINITIVEMENT ;
- *  4. `destroy()` termine le worker et solde ce qui est en vol.
+ *  1. a correct response is applied, and the layout coming out of it is the
+ *     engine's — not an approximation rebuilt sideways;
+ *  2. a response from a STALE generation is dropped without publishing or
+ *     resolving anything;
+ *  3. a failure (error message, unrunnable worker) warns ONCE and falls back to
+ *     the in-process engine, PERMANENTLY;
+ *  4. `destroy()` terminates the worker and settles whatever is in flight.
  *
- * Le faux worker calcule pour de vrai, via `layoutFromInput` : c'est ce qui rend
- * l'assertion 1 intéressante — la sortie doit être identique à celle du chemin
- * en processus, sérialisation comprise.
+ * The fake worker computes for real, through `layoutFromInput`: that is what
+ * makes assertion 1 interesting — the output must be identical to the in-process
+ * path's, serialization included.
  */
 
 const graphConfig: DataGraphConfig = { ...shopConfig, groups: ["Customer"] };
 const shopGraph = buildGraph(shopData, graphConfig);
 
 /**
- * Un faux worker à la main : rien ne part tout seul.
+ * A fake worker driven by hand: nothing leaves on its own.
  *
- * `requests` garde ce qui a été posté, `flush()` répond à la plus ancienne
- * requête en attente, et `reply()` permet d'écrire n'importe quelle réponse —
- * y compris une génération qui n'a jamais été demandée, ce qui est le cœur de
- * l'assertion 2.
+ * `requests` keeps what was posted, `flush()` answers the oldest pending request,
+ * and `reply()` lets us write any response at all — including a generation that
+ * was never asked for, which is the heart of assertion 2.
  */
 function fakeWorker() {
   const requests: GraphLayoutWorkerRequest[] = [];
@@ -68,8 +67,8 @@ function fakeWorker() {
     terminated: () => terminated,
     reply: (response: GraphLayoutWorkerResponse) => onMessage?.(response),
     fail: (error: unknown) => onError?.(error),
-    /** Répond à la requête d'indice `i` en calculant réellement la mise en page,
-     * comme le vrai worker : même aplatissement, même contenu. */
+    /** Answers the request at index `i` by actually computing the layout, like
+     * the real worker: same flattening, same content. */
     flush: (i = 0) => {
       const request = requests[i]!;
       const { positions, clusters } = layoutFromInput(request.input);
@@ -94,15 +93,16 @@ describe("worker de mise en page — le chemin nominal", () => {
     const controller = controllerFor({ spawnLayoutWorker: worker.spawn });
     const pending = controller.compute(shopGraph, graphConfig, false);
 
-    // L'extraction est synchrone une fois le module chargé ; un tour de boucle
-    // suffit à la voir partir.
+    // Extraction is synchronous once the module is loaded; one turn of the loop
+    // is enough to see it leave.
     await vi.waitFor(() => expect(worker.requests).toHaveLength(1));
     const request = worker.requests[0]!;
     expect(request.gen).toBe(1);
-    // La propriété qui compte : ce qui part traverse un `postMessage`. Un
-    // `Graph`, une `Map` de nœuds ou une fonction qui aurait fui s'y verrait.
+    // The property that matters: what leaves survives a `postMessage`. A `Graph`,
+    // a `Map` of nodes or a leaked function would show up right here.
     expect(structuredClone(request.input)).toEqual(request.input);
-    // Et c'est bien l'entrée du moteur, pas un objet de circonstance.
+    // And it really is the engine's input, not an object made up for the
+    // occasion.
     expect(request.input.entities.map((e) => e.id).sort()).toEqual(
       [...controller.entityIds(shopGraph)].sort(),
     );
@@ -125,8 +125,8 @@ describe("worker de mise en page — le chemin nominal", () => {
 
     const inProcessState = await controllerFor().compute(shopGraph, graphConfig, false);
 
-    // La sérialisation en tuples puis la réhydratation ne doivent rien perdre —
-    // ni une carte, ni une décimale.
+    // Serializing to tuples and rehydrating must lose nothing — not a card, not a
+    // decimal.
     expect([...workerState.layout.positions.entries()].sort()).toEqual(
       [...inProcessState.layout.positions.entries()].sort(),
     );
@@ -141,8 +141,8 @@ describe("worker de mise en page — le chemin nominal", () => {
     worker.flush();
     controller.publish(await pending);
 
-    // Ce que fait `translateCluster` à chaque image d'un déplacement d'agrégat.
-    // Un objet figé ferait échouer ici, et NULLE PART ailleurs.
+    // What `translateCluster` does on every frame of an aggregate move. A frozen
+    // object would fail here, and NOWHERE else.
     const cluster = controller.clusters()[0]!;
     cluster.cx += 10;
     expect(controller.clusters()[0]!.cx).toBe(cluster.cx);
@@ -166,7 +166,7 @@ describe("worker de mise en page — le chemin nominal", () => {
     await second;
 
     expect(worker.spawns()).toBe(1);
-    // Les générations sont monotones : deux requêtes n'en partagent jamais une.
+    // Generations are monotonic: two requests never share one.
     expect(worker.requests.map((r) => r.gen)).toEqual([1, 2]);
   });
 
@@ -184,9 +184,9 @@ describe("worker de mise en page — générations", () => {
     const pending = controller.compute(shopGraph, graphConfig, false);
     await vi.waitFor(() => expect(worker.requests).toHaveLength(1));
 
-    // Une réponse d'une génération périmée — typiquement celle d'un `setData`
-    // dont le calcul a été soldé entre-temps. Elle ne doit ni résoudre la
-    // requête en cours, ni rien publier.
+    // A response from a stale generation — typically a `setData`'s, whose
+    // computation was settled in the meantime. It must neither resolve the
+    // request in flight nor publish anything.
     let settled = false;
     void pending.then(() => (settled = true));
     worker.reply({ gen: 999, ok: true, positions: [["/customers/0", 1, 2, 3, 4]], clusters: [] });
@@ -194,7 +194,7 @@ describe("worker de mise en page — générations", () => {
     expect(settled).toBe(false);
     expect(controller.positions()).toBeUndefined();
 
-    // …et la vraie réponse, elle, passe.
+    // …and the real response, for its part, goes through.
     worker.flush();
     await expect(pending).resolves.toBeDefined();
   });
@@ -208,20 +208,20 @@ describe("worker de mise en page — générations", () => {
     const second = controller.compute(shopGraph, graphConfig, false);
     await vi.waitFor(() => expect(worker.requests).toHaveLength(2));
 
-    // La seconde répond d'abord : sans appariement par génération, elle
-    // résoudrait la première.
+    // The second answers first: without matching by generation, it would resolve
+    // the first one.
     worker.flush(1);
     worker.reply({ gen: worker.requests[0]!.gen, ok: false, message: "boom" });
 
     await expect(second).resolves.toBeDefined();
-    // La première a bien reçu SON échec, et pas la réussite de l'autre. Le repli
-    // en processus la sauve, mais c'est un autre test qui le dit.
+    // The first did receive ITS failure, not the other's success. The in-process
+    // fallback saves it, but another test is the one that says so.
     await expect(first).resolves.toBeDefined();
   });
 });
 
 describe("worker de mise en page — repli définitif", () => {
-  /** Le contrôleur avertit sur `console.warn` ; on le fait taire et on le lit. */
+  /** The controller warns on `console.warn`; we silence it and read it. */
   function withWarn<T>(run: (warn: ReturnType<typeof vi.spyOn>) => Promise<T>): Promise<T> {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     return run(warn).finally(() => warn.mockRestore());
@@ -236,16 +236,16 @@ describe("worker de mise en page — repli définitif", () => {
       await vi.waitFor(() => expect(worker.requests).toHaveLength(1));
       worker.reply({ gen: worker.requests[0]!.gen, ok: false, message: "layout exploded" });
 
-      // La mise en page arrive quand même : c'est le moteur en processus.
+      // The layout arrives anyway: this is the in-process engine.
       const state = await first;
       expect(state.layout.clusters).toHaveLength(2);
       expect(warn).toHaveBeenCalledTimes(1);
       expect(String(warn.mock.calls[0]?.[0])).toContain("graphLayoutWorkerUrl");
-      // Le worker est terminé, pas laissé à tourner.
+      // The worker is terminated, not left running.
       expect(worker.terminated()).toBe(1);
 
-      // DÉFINITIF : le calcul suivant ne repasse pas par le worker, et
-      // n'avertit pas une seconde fois.
+      // PERMANENT: the next computation does not go back through the worker, and
+      // does not warn a second time.
       const second = await controller.compute(shopGraph, graphConfig, true);
       expect(second.layout.clusters).toHaveLength(2);
       expect(worker.requests).toHaveLength(1);
@@ -274,8 +274,8 @@ describe("worker de mise en page — repli définitif", () => {
       const pending = controller.compute(shopGraph, graphConfig, false);
       await vi.waitFor(() => expect(worker.requests).toHaveLength(1));
 
-      // Un `error` du worker ne dit pas à quelle requête il se rapporte : il
-      // condamne le worker et solde tout ce qui est en vol, qui se replie.
+      // An `error` from the worker does not say which request it relates to: it
+      // condemns the worker and settles everything in flight, which falls back.
       worker.fail(new Error("failed to load worker script"));
       const state = await pending;
       expect(state.layout.clusters).toHaveLength(2);
@@ -284,8 +284,8 @@ describe("worker de mise en page — repli définitif", () => {
   });
 
   it("ne passe par AUCUN worker quand l'hôte n'en fournit pas", async () => {
-    // Le régime de vitest, de headless, et de tout consommateur qui n'a pas
-    // passé `graphLayoutWorkerUrl` : rien ne change, aucun avertissement.
+    // The regime of vitest, of headless, and of any consumer that did not pass
+    // `graphLayoutWorkerUrl`: nothing changes, no warning.
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       const state = await controllerFor().compute(shopGraph, graphConfig, false);
@@ -309,14 +309,14 @@ describe("worker de mise en page — destruction", () => {
       controller.destroy();
       expect(worker.terminated()).toBe(1);
 
-      // Le calcul en vol échoue plutôt que de rester en suspens : son appelant
-      // (`setView`) doit se terminer, pas geler le bouton qu'il a mis en
-      // attente. Et surtout il ne rejoue PAS les secondes de calcul en
-      // processus — ce serait le gel qu'on vient d'éviter, pour une instance
-      // qui n'existe plus.
+      // The computation in flight fails rather than hanging: its caller
+      // (`setView`) must finish, not freeze the button it left pending. And above
+      // all it does NOT replay those seconds of computation in process — that
+      // would be the very freeze we just avoided, for an instance that no longer
+      // exists.
       await expect(pending).rejects.toThrow(/destroyed/);
-      // Rien n'a été publié, et aucun avertissement de repli n'a été émis : une
-      // destruction n'est pas une panne de worker.
+      // Nothing was published, and no fallback warning was emitted: a destruction
+      // is not a worker failure.
       expect(controller.positions()).toBeUndefined();
       expect(warn).not.toHaveBeenCalled();
     } finally {
@@ -329,7 +329,7 @@ describe("worker de mise en page — destruction", () => {
     const controller = controllerFor({ spawnLayoutWorker: worker.spawn });
     controller.destroy();
     controller.destroy();
-    expect(worker.terminated()).toBe(0); // aucun worker n'avait été ouvert
+    expect(worker.terminated()).toBe(0); // no worker had been opened
   });
 });
 
@@ -345,8 +345,8 @@ describe("worker de mise en page — l'entrée que le worker reçoit", () => {
 
     const input: GraphLayoutInput = worker.requests[0]!.input;
     expect(input.options.hullPadding).toBe(42);
-    // Et le contrôleur apprend la même valeur pour recalculer les disques à la
-    // souris : les deux ne peuvent pas diverger.
+    // And the controller learns the same value for recomputing discs under the
+    // mouse: the two cannot diverge.
     expect(controller.hullPadding()).toBe(42);
   });
 });

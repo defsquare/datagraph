@@ -9,8 +9,8 @@ describe("CollapseState", () => {
     const g = buildGraph(shopData, shopConfig)
     const cs = new CollapseState(g)
     const visible = cs.visibleNodeIds()
-    expect(visible).toContain("/customers/0")     // enfant de /customers, lui-même enfant de racine…
-    expect(visible).not.toContain("/customers/0/address") // …mais rien sous une entité repliée
+    expect(visible).toContain("/customers/0")     // child of /customers, itself a child of the root…
+    expect(visible).not.toContain("/customers/0/address") // …but nothing under a collapsed entity
     expect(cs.isExpanded("/customers/0")).toBe(false)
   })
   it("expand reveals direct children only", () => {
@@ -18,7 +18,7 @@ describe("CollapseState", () => {
     const cs = new CollapseState(g)
     cs.expand("/orders/0")
     expect(cs.visibleNodeIds()).toContain("/orders/0/lines")
-    expect(cs.visibleNodeIds()).not.toContain("/orders/0/lines/0") // lines pas encore déplié
+    expect(cs.visibleNodeIds()).not.toContain("/orders/0/lines/0") // lines not expanded yet
   })
   it("expandPathTo returns newly expanded ancestors root-first", () => {
     const g = buildGraph(shopData, shopConfig)
@@ -33,9 +33,9 @@ describe("CollapseState", () => {
 function manyItems(n: number): unknown {
   return { items: Array.from({ length: n }, (_, i) => ({ v: i, w: { deep: i } })) }
 }
-// `ids: {}` : aucune entité, comme le mode CLI sans config. Le tableau `/items`
-// est alors ÉLIDÉ (une ligne de la carte racine) mais reste déplié par le BFS :
-// ses 250 éléments objets sont, eux, de vraies cartes — donc paginés.
+// `ids: {}`: no entity at all, like CLI mode without a config. The `/items`
+// array is then ELIDED (one row of the root card) but stays expanded by the
+// BFS: its 250 object elements ARE real cards — hence paginated.
 const noConfig: DataGraphConfig = { ids: {} }
 
 describe("CollapseState — pages révélées", () => {
@@ -56,15 +56,15 @@ describe("CollapseState — pages révélées", () => {
     const visible = cs.visibleNodeIds()
     expect(visible.has("/items/200")).toBe(true)
     expect(visible.has("/items/249")).toBe(true)
-    // Le BFS initial n'a enfilé que la PREMIÈRE page de `/items` : `/items/200`
-    // n'a donc jamais été marqué déplié, et révéler sa page le fait entrer seul.
-    // C'est voulu — révéler une page ne doit pas faire entrer un sous-arbre que
-    // le budget initial avait justement écarté ; l'utilisateur déplie ensuite.
+    // The initial BFS only queued the FIRST page of `/items`, so `/items/200`
+    // was never marked expanded, and revealing its page brings it in alone.
+    // That is deliberate — revealing a page must not drag in a subtree the
+    // initial budget had precisely ruled out; the user expands afterwards.
     expect(cs.isExpanded("/items/200")).toBe(false)
     expect(visible.has("/items/200/w")).toBe(false)
     cs.expand("/items/200")
     expect(cs.visibleNodeIds().has("/items/200/w")).toBe(true)
-    expect(visible.has("/items/100")).toBe(false) // la page 1 reste cachée
+    expect(visible.has("/items/100")).toBe(false) // page 1 stays hidden
   })
 
   it("unrevealPage retire une page, y compris la page 0", () => {
@@ -90,11 +90,11 @@ describe("CollapseState — pages révélées", () => {
   it("hiddenGaps décrit les trous en ordre d'indices, avec la page à révéler", () => {
     const g = buildGraph(manyItems(250), noConfig)
     const cs = new CollapseState(g)
-    cs.revealPage("/items", 2) // révélé : pages {0, 2} sur 3 pages (250 cartes)
+    cs.revealPage("/items", 2) // revealed: pages {0, 2} out of 3 (250 cards)
     expect(cs.hiddenGaps("/items")).toEqual([
       { fromIndex: 100, count: 100, nextPage: 1 },
     ])
-    cs.unrevealPage("/items", 0) // révélé : {2}
+    cs.unrevealPage("/items", 0) // revealed: {2}
     expect(cs.hiddenGaps("/items")).toEqual([
       { fromIndex: 0, count: 200, nextPage: 0 },
     ])
@@ -103,8 +103,8 @@ describe("CollapseState — pages révélées", () => {
   it("hiddenGaps borne le dernier trou sur le nombre réel de cartes", () => {
     const g = buildGraph(manyItems(250), noConfig)
     const cs = new CollapseState(g)
-    // Seule la page 0 est révélée : le trou couvre les pages 1 et 2, dont la
-    // dernière est incomplète (50 cartes, pas 100).
+    // Only page 0 is revealed: the gap covers pages 1 and 2, the last of which
+    // is incomplete (50 cards, not 100).
     expect(cs.hiddenGaps("/items")).toEqual([
       { fromIndex: 100, count: 150, nextPage: 1 },
     ])
@@ -123,18 +123,18 @@ describe("CollapseState — pages révélées", () => {
     expect(cs.cardIndexOf("/items", "/items/0")).toBe(0)
     expect(cs.cardIndexOf("/items", "/items/113")).toBe(113)
     expect(cs.cardIndexOf("/items", "/absent")).toBe(-1)
-    // `/items` est élidé : il ne compte pas comme carte de la racine.
+    // `/items` is elided: it does not count as a card of the root.
     expect(cs.cardIndexOf("/", "/items")).toBe(-1)
   })
 
   it("expandPathTo révèle la page de chaque maillon du chemin, pas tout le préfixe", () => {
     const g = buildGraph(manyItems(250), noConfig)
     const cs = new CollapseState(g)
-    cs.collapse("/items") // repartir d'un tableau replié
+    cs.collapse("/items") // start over from a collapsed array
     cs.expandPathTo("/items/213/w")
     const visible = cs.visibleNodeIds()
     expect(visible.has("/items/213")).toBe(true)
-    expect(visible.has("/items/100")).toBe(false) // la page 1 n'a pas été payée
+    expect(visible.has("/items/100")).toBe(false) // page 1 was never paid for
     expect(cs.revealedPages("/items").has(2)).toBe(true)
     expect(cs.expandPathTo("/items/213/w")).toEqual([]) // idempotent
   })
@@ -148,7 +148,7 @@ describe("CollapseState — pages révélées", () => {
 })
 
 describe("CollapseState — budget initial", () => {
-  // Trois niveaux : root -> a,b (objets) -> chacun 10 enfants objets.
+  // Three tiers: root -> a,b (objects) -> 10 object children each.
   function tiers(): unknown {
     const child = () => Object.fromEntries(
       Array.from({ length: 10 }, (_, i) => [`k${i}`, { leaf: i }]),
@@ -160,8 +160,8 @@ describe("CollapseState — budget initial", () => {
     const g = buildGraph(tiers(), noConfig)
     const cs = new CollapseState(g, { initialCardBudget: 5 })
     const visible = cs.visibleNodeIds()
-    // la racine et ses 2 enfants tiennent dans 5 ; les 10 petits-enfants
-    // de /a en feraient 13 -> /a et /b restent des cartes repliées visibles
+    // the root and its 2 children fit within 5; the 10 grandchildren of /a
+    // would make 13 -> /a and /b stay visible collapsed cards
     expect(visible.has("/a")).toBe(true)
     expect(visible.has("/b")).toBe(true)
     expect(cs.isExpanded("/a")).toBe(false)
@@ -172,12 +172,12 @@ describe("CollapseState — budget initial", () => {
     const g = buildGraph(tiers(), noConfig)
     const cs = new CollapseState(g, { initialCardBudget: 0 })
     expect(cs.isExpanded(g.rootId)).toBe(true)
-    expect(cs.visibleNodeIds().has("/a")).toBe(true) // enfants de la racine = cartes visibles repliées
+    expect(cs.visibleNodeIds().has("/a")).toBe(true) // root children = visible collapsed cards
   })
 
   it("un document sous le budget est intégralement déplié, comme avant", () => {
     const g = buildGraph(tiers(), noConfig)
-    const cs = new CollapseState(g) // défaut 300 >> ~23 cartes
+    const cs = new CollapseState(g) // default 300 >> ~23 cards
     expect(cs.isExpanded("/a")).toBe(true)
     expect(cs.visibleNodeIds().has("/a/k0")).toBe(true)
   })
@@ -194,7 +194,7 @@ describe("CollapseState — budget initial", () => {
 
   it("un nœud marqué déplié ne révèle que sa première page (interaction budget × pages)", () => {
     const g = buildGraph(manyItems(250), noConfig)
-    const cs = new CollapseState(g) // 250 cartes > 100 mais budget 300 : marqué déplié
+    const cs = new CollapseState(g) // 250 cards > 100 but budget 300: marked expanded
     expect(cs.visibleNodeIds().has("/items/100")).toBe(false)
   })
 })

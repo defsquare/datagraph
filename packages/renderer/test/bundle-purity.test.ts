@@ -4,73 +4,70 @@ import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 
 /**
- * Pendant renderer du test de pureté de `packages/core` — et la moitié
- * manquante de la chaîne. Celui du cœur vérifie que le `dist/index.js` du CŒUR
- * n'atteint pas le moteur de la vue graphe ; mais le chargement paresseux de
- * cette vue ne tient PAS là : il tient à deux lignes de `src/graph-view.ts`,
- * l'`import type` du point d'entrée `./graph-layout` et l'`import()` dynamique
- * d'`ensureModule`. Transformer cet `import type` en import de valeur
- * suffit à faire entrer tout ce que ce point d'entrée tire dans le bundle de
- * TOUT consommateur — et, avant ce test, la totalité de la suite (cœur,
- * renderer, e2e), le build et le typecheck restaient verts.
+ * The renderer counterpart of `packages/core`'s purity test — and the chain's
+ * missing half. The core one checks that the CORE's `dist/index.js` does not
+ * reach the graph view engine; but that view's lazy loading does NOT hinge
+ * there: it hinges on two lines of `src/graph-view.ts`, the `import type` of the
+ * `./graph-layout` entry point and `ensureModule`'s dynamic `import()`. Turning
+ * that `import type` into a value import is enough to pull everything that entry
+ * point drags into EVERY consumer's bundle — and, before this test, the whole
+ * suite (core, renderer, e2e), the build and the typecheck all stayed green.
  *
- * L'ENJEU A CHANGÉ D'ORDRE DE GRANDEUR, et le dire fait partie du test. Ces
- * deux lignes gardaient ~178 ko gzip tant que l'ancien moteur importait
- * `cytoscape` + `cytoscape-fcose` ; ce moteur est retiré et le chunk mesure
- * désormais **3,58 ko gzip** au lieu de 180,28. Une régression coûterait donc
- * 3,58 ko, pas 178. Ce que ces deux lignes gardent encore, et qui n'a pas de
- * substitut, c'est la FORME : la vue graphe est chargée à la demande par
- * construction, `setView` est asynchrone pour cette raison, et tout poids qu'on
- * ajoutera derrière cette vue héritera de la paresse au lieu d'avoir à la
- * redemander. Voir la même mise au point dans
+ * THE STAKES HAVE CHANGED BY AN ORDER OF MAGNITUDE, and saying so is part of the
+ * test. Those two lines were holding back ~178 kB gzip as long as the old engine
+ * imported `cytoscape` + `cytoscape-fcose`; that engine is gone and the chunk now
+ * measures **3.58 kB gzip** instead of 180.28. A regression would therefore cost
+ * 3.58 kB, not 178. What those two lines still hold, and what has no substitute,
+ * is the SHAPE: the graph view is loaded on demand by construction, `setView` is
+ * async for that reason, and any weight added behind that view inherits the
+ * laziness instead of having to ask for it again. See the same clarification in
  * `packages/core/test/bundle-purity.test.ts`.
  *
- * Ces deux lignes VIVAIENT dans `src/create.ts` ; elles ont suivi l'état de la
- * vue graphe dans `src/graph-view.ts` (étape M2a de
- * `docs/superpowers/specs/2026-09-06-view-machine-design.md`), et ce test avec
- * elles. Rien de la règle n'a changé : la première assertion balaie TOUTES les
- * sources du renderer et ne connaît aucun nom de fichier, donc l'interdiction
- * d'un import de valeur reste posée partout — `create.ts` compris, qui garde un
- * `import type` du même point d'entrée pour relayer `TwoLevelLayoutOptions` à
- * l'API publique. Seule la contre-garde, qui doit bien nommer le fichier où
- * l'`import()` dynamique se trouve, a changé de cible.
+ * Those two lines USED TO LIVE in `src/create.ts`; they followed the graph view's
+ * state into `src/graph-view.ts` (step M2a of
+ * `docs/superpowers/specs/2026-09-06-view-machine-design.md`), and this test with
+ * them. Nothing about the rule changed: the first assertion sweeps ALL of the
+ * renderer's sources and knows no file name, so the ban on a value import still
+ * stands everywhere — `create.ts` included, which keeps an `import type` of the
+ * same entry point to relay `TwoLevelLayoutOptions` to the public API. Only the
+ * counter-guard, which must name the file where the dynamic `import()` lives,
+ * changed target.
  *
- * Le test est volontairement un examen du SOURCE par expression régulière, et
- * pas une inspection du bundle : ce qu'il faut interdire est une propriété
- * syntaxique (« aucun import statique de valeur vers ce specifier »), que le
- * `dist/` du renderer ne révèle pas — tsup efface l'`import type` comme il
- * conserverait un import de valeur, et seul le bundler du consommateur, en
- * aval, verrait la différence. Lire le source est ici la manière honnête de
- * tester la chose : c'est exactement l'invariant qu'on demanderait à un
- * relecteur de tenir à la main.
+ * The test is deliberately a regex examination of the SOURCE rather than an
+ * inspection of the bundle: what has to be forbidden is a syntactic property
+ * ("no static value import of this specifier"), which the renderer's `dist/` does
+ * not reveal — tsup erases the `import type` just as it would preserve a value
+ * import, and only the consumer's bundler, downstream, would see the difference.
+ * Reading the source is the honest way to test this: it is exactly the invariant
+ * one would ask a reviewer to hold by hand.
  */
 
-/** Retire commentaires de bloc et de ligne. Indispensable : le commentaire qui
- * documente justement cette règle au-dessus de l'import contient les mots
- * « `import type` », et une première version de ce test s'y accrochait — elle
- * lisait le commentaire, y voyait un `import type` conforme, et laissait donc
- * passer l'import de VALEUR situé juste en dessous. La garde `[^:]` évite de
- * tronquer un `https://` pris pour un commentaire. */
+/** Strips block and line comments. Indispensable: the comment that documents
+ * this very rule above the import contains the words "`import type`", and an
+ * early version of this test latched onto it — it read the comment, saw a
+ * compliant `import type` there, and therefore let the VALUE import sitting just
+ * below slip through. The `[^:]` guard avoids truncating an `https://` mistaken
+ * for a comment. */
 function stripComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`\\])\/\/.*$/gm, "$1");
 }
 
 /**
- * LA SEULE EXEMPTION, et elle est nommée pour qu'on ne puisse pas en ajouter une
- * par distraction.
+ * THE ONE EXEMPTION, and it is named so that nobody can add another by
+ * inattention.
  *
- * `src/graph-layout-worker.ts` importe STATIQUEMENT le point d'entrée
- * `./graph-layout` — il n'a pas le choix : c'est le corps d'un Web Worker, et un
- * `import()` dynamique y ajouterait un aller-retour sans rien acheter. La règle
- * qu'il enfreint ne le concerne pas, parce qu'elle protège le bundle du
- * CONSOMMATEUR : ce fichier est une ENTRÉE de build à part (voir
- * `tsup.config.ts`), publiée sous `@defsquare/data-graph/graph-layout-worker` et
- * désignée par une URL, jamais importée.
+ * `src/graph-layout-worker.ts` STATICALLY imports the `./graph-layout` entry
+ * point — it has no choice: it is the body of a Web Worker, and a dynamic
+ * `import()` there would add a round trip and buy nothing. The rule it breaks
+ * does not concern it, because that rule protects the CONSUMER's bundle: this
+ * file is a build ENTRY of its own (see `tsup.config.ts`), published as
+ * `@defsquare/data-graph/graph-layout-worker` and referred to by URL, never
+ * imported.
  *
- * L'exemption a donc une CONTREPARTIE, vérifiée juste en dessous : personne
- * n'importe ce fichier. Le jour où un module de `src/` s'y référerait, il
- * tirerait le moteur dans le bundle de tout consommateur exactement comme
- * l'import interdit, et c'est ce test-là qui le dirait.
+ * The exemption therefore has a PRICE, checked right below: nobody imports this
+ * file. The day a module of `src/` refers to it, it would drag the engine into
+ * every consumer's bundle exactly as the forbidden import would, and this is the
+ * test that would say so.
  */
 const WORKER_ENTRY = "graph-layout-worker.ts";
 
@@ -84,26 +81,26 @@ describe("bundle purity (renderer sources)", () => {
     .map((name) => ({ name, code: stripComments(readFileSync(join(srcDir, name), "utf8")) }));
 
   it("has sources to scan", () => {
-    // Garde anti-test-creux : si le dossier était vide ou mal résolu, toutes
-    // les assertions ci-dessous passeraient sans rien vérifier.
+    // Guard against a hollow test: were the folder empty or wrongly resolved,
+    // every assertion below would pass while checking nothing.
     expect(sources.length).toBeGreaterThan(5);
     expect(sources.map((s) => s.name)).toContain("create.ts");
-    // Le porteur du chargement paresseux : un renommage ou une suppression doit
-    // faire échouer ce test-ci, pas rendre la contre-garde ci-dessous vacante.
+    // The carrier of the lazy loading: a rename or a deletion must fail THIS
+    // test, not quietly make the counter-guard below vacuous.
     expect(sources.map((s) => s.name)).toContain("graph-view.ts");
-    // Idem pour l'entrée exemptée : si le fichier disparaissait, l'exemption
-    // deviendrait un trou nommé dans le vide.
+    // Same for the exempted entry: were the file to disappear, the exemption
+    // would become a named hole in thin air.
     expect(sources.map((s) => s.name)).toContain(WORKER_ENTRY);
   });
 
   it("never statically imports the graph-layout entry point as a value", () => {
     for (const { name, code } of sources.filter((s) => s.name !== WORKER_ENTRY)) {
-      // `import <clause> from "<specifier>"` — la clause doit commencer par
-      // `type`. Ancrée en début de ligne (`^[ \t]*`, drapeau `m`) : une
-      // déclaration d'import l'est toujours. La clause peut courir sur
-      // plusieurs lignes (imports nommés) mais ne doit pas traverser un autre
-      // `from`, sinon la capture partirait d'un import antérieur du fichier et
-      // avalerait tout ce qui le sépare de celui-ci.
+      // `import <clause> from "<specifier>"` — the clause must start with
+      // `type`. Anchored at the start of a line (`^[ \t]*`, `m` flag): an import
+      // declaration always is. The clause may run over several lines (named
+      // imports) but must not cross another `from`, otherwise the capture would
+      // start at an earlier import in the file and swallow everything between
+      // the two.
       const withClause = new RegExp(
         `^[ \\t]*import\\s+((?:(?!\\bfrom\\b)[\\s\\S])*?)from\\s+["']${SPEC_RE}["']`,
         "gm",
@@ -115,8 +112,8 @@ describe("bundle purity (renderer sources)", () => {
         ).toBe(true);
       }
 
-      // Import nu (`import "<specifier>"`) et réexport (`export … from`) : deux
-      // formes qui n'admettent aucune clause `type`, donc interdites d'office.
+      // Bare import (`import "<specifier>"`) and re-export (`export … from`):
+      // two forms that admit no `type` clause, hence forbidden outright.
       expect(code, `${name}: import nu de ${SPECIFIER}`).not.toMatch(
         new RegExp(`^[ \\t]*import\\s+["']${SPEC_RE}["']`, "m"),
       );
@@ -127,10 +124,10 @@ describe("bundle purity (renderer sources)", () => {
   });
 
   it("still reaches the engine through a dynamic import", () => {
-    // Contre-garde de l'assertion précédente : sans elle, supprimer purement et
-    // simplement les deux imports la ferait passer tout en cassant la vue
-    // graphe. Le SEUL chemin d'exécution vers le moteur doit rester cet
-    // `import()` dynamique, et les types doivent venir d'un `import type`.
+    // Counter-guard for the previous assertion: without it, simply deleting both
+    // imports would make that one pass while breaking the graph view. The ONLY
+    // runtime path to the engine must remain this dynamic `import()`, and the
+    // types must come from an `import type`.
     const graphView = sources.find((s) => s.name === "graph-view.ts")!.code;
     expect(graphView).toMatch(new RegExp(`import\\(\\s*["']${SPEC_RE}["']`));
     expect(graphView).toMatch(
@@ -140,10 +137,10 @@ describe("bundle purity (renderer sources)", () => {
       ),
     );
 
-    // Et NULLE PART ailleurs : un second `import()` du même point d'entrée
-    // signifierait un second chemin de chargement, que rien ne tiendrait
-    // d'accord avec celui-ci — c'est justement ce que `graph-view.ts` possède en
-    // propre depuis M2a. `create.ts` en particulier n'en garde plus aucun.
+    // And NOWHERE else: a second `import()` of the same entry point would mean a
+    // second loading path, which nothing would keep in agreement with this one —
+    // and that path is precisely what `graph-view.ts` owns outright since M2a.
+    // `create.ts` in particular no longer keeps any.
     const dynamicImporters = sources
       .filter(({ code }) => new RegExp(`import\\(\\s*["']${SPEC_RE}["']`).test(code))
       .map((s) => s.name);
@@ -152,23 +149,21 @@ describe("bundle purity (renderer sources)", () => {
 });
 
 /**
- * L'AUTRE MOITIÉ DE L'EXEMPTION. Ce que le worker a le droit de faire (importer
- * le moteur) est acquis ; ce qui est vérifié ici est le prix qu'il paie pour ce
- * droit.
+ * THE OTHER HALF OF THE EXEMPTION. What the worker is allowed to do (import the
+ * engine) is settled; what is checked here is the price it pays for that right.
  *
- * Trois propriétés, et chacune casserait le worker en silence si elle tombait :
+ * Three properties, and each would break the worker silently if it fell:
  *
- *  - PERSONNE NE L'IMPORTE. C'est ce qui rend l'exemption inoffensive : un
- *    `import "./graph-layout-worker.js"` depuis `create.ts` ou `index.ts`
- *    tirerait le moteur dans le bundle de tous les consommateurs, sans qu'aucun
- *    autre test ne bronche.
- *  - PAS DE PIXI. Un worker n'a pas de canvas ; importer Pixi le ferait échouer
- *    au chargement, et le repli en processus masquerait la panne derrière un
- *    simple avertissement — la vue graphe marcherait, sans worker, sans qu'on le
- *    sache.
- *  - PAS DE DOM. Même mécanique : `document` et `window` n'existent pas là-bas.
- *    L'examen est syntaxique et grossier, mais il attrape la faute réelle qu'on
- *    craint — un bout de code du renderer copié dans le worker.
+ *  - NOBODY IMPORTS IT. This is what makes the exemption harmless: an
+ *    `import "./graph-layout-worker.js"` from `create.ts` or `index.ts` would
+ *    drag the engine into every consumer's bundle, without any other test
+ *    flinching.
+ *  - NO PIXI. A worker has no canvas; importing Pixi would make it fail at load,
+ *    and the in-process fallback would hide the failure behind a mere warning —
+ *    the graph view would work, without a worker, without anyone knowing.
+ *  - NO DOM. Same mechanics: `document` and `window` do not exist over there.
+ *    The examination is syntactic and coarse, but it catches the real mistake we
+ *    fear — a piece of renderer code copied into the worker.
  */
 describe("bundle purity (worker de mise en page)", () => {
   const srcDir = fileURLToPath(new URL("../src", import.meta.url));
@@ -186,7 +181,7 @@ describe("bundle purity (worker de mise en page)", () => {
   });
 
   it("importe bien le moteur, et statiquement", () => {
-    // Contre-garde : sans elle, vider le fichier ferait passer tout le reste.
+    // Counter-guard: without it, emptying the file would make all the rest pass.
     expect(worker.code).toMatch(
       /^[ \t]*import\s+\{[^}]*layoutFromInput[^}]*\}\s+from\s+["']@defsquare\/data-graph-core\/graph-layout["']/m,
     );
@@ -194,8 +189,8 @@ describe("bundle purity (worker de mise en page)", () => {
 
   it("n'importe ni Pixi ni quoi que ce soit du rendu", () => {
     expect(worker.code).not.toMatch(/from\s+["']pixi\.js["']/);
-    // Le seul import du renderer autorisé est celui du PROTOCOLE, et il doit
-    // être un `import type` — le worker ne doit tirer aucun code d'ici.
+    // The only renderer import allowed is the PROTOCOL's, and it must be an
+    // `import type` — the worker must drag no code out of here.
     for (const match of worker.code.matchAll(
       /^[ \t]*import\s+((?:(?!\bfrom\b)[\s\S])*?)from\s+["'](\.\/[^"']+)["']/gm,
     )) {
@@ -206,8 +201,8 @@ describe("bundle purity (worker de mise en page)", () => {
   });
 
   it("ne touche à aucune API de document", () => {
-    // `self` est légitime (c'est la portée du worker) ; `document` et `window`
-    // ne le sont pas.
+    // `self` is legitimate (it is the worker's scope); `document` and `window`
+    // are not.
     expect(worker.code).not.toMatch(/\bdocument\b/);
     expect(worker.code).not.toMatch(/\bwindow\b/);
   });

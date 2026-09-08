@@ -18,16 +18,16 @@ import {
 } from "../src/create.js";
 import { drawClusterHitAreas } from "../src/draw.js";
 
-/** Un `FederatedPointerEvent` minimal : `attachDrag` et `attachTap` ne lisent
- * que le bouton et la position globale. Fabriquer l'objet plutôt que de faire
- * tourner un vrai `EventSystem` garde ces tests sans canvas ni WebGL — c'est
- * déjà la ligne suivie par `camera.test.ts` pour les `WheelEvent`. */
+/** A minimal `FederatedPointerEvent`: `attachDrag` and `attachTap` read nothing
+ * but the button and the global position. Fabricating the object rather than
+ * running a real `EventSystem` keeps these tests free of canvas and WebGL — the
+ * line `camera.test.ts` already follows for `WheelEvent`. */
 function pointer(x: number, y: number, button = 0): FederatedPointerEvent {
   return { button, global: { x, y } } as unknown as FederatedPointerEvent;
 }
 
-/** Enregistre ce que les hooks reçoivent, pour asserter sur la SÉQUENCE des
- * appels et pas seulement sur leur nombre. */
+/** Records what the hooks receive, so as to assert on the SEQUENCE of calls and
+ * not merely on their count. */
 function recorder(scale = 1) {
   const moves: [number, number][] = [];
   let starts = 0;
@@ -62,21 +62,20 @@ describe("attachDrag — seuil", () => {
     attachDrag(target, rec.hooks);
 
     target.emit("pointerdown", pointer(100, 100));
-    target.emit("globalpointermove", pointer(102, 102)); // 2,83 px
+    target.emit("globalpointermove", pointer(102, 102)); // 2.83 px
     target.emit("pointerup", pointer(102, 102));
 
     expect(rec.starts).toBe(0);
     expect(rec.moves).toEqual([]);
-    // `onEnd` non plus : rien n'a commencé, il n'y a rien à terminer, et un
-    // appelant qui y remet le pan de la caméra en route le ferait pour un
-    // simple clic.
+    // No `onEnd` either: nothing started, so there is nothing to end, and a
+    // caller that restarts camera panning there would do so for a plain click.
     expect(rec.ends).toBe(0);
   });
 
   it("ne demarre pas EXACTEMENT au seuil", () => {
-    // La complementarite avec `attachTap` tient a cette egalite stricte : le
-    // tap ignore les gestes `> TAP_THRESHOLD`, le drag ne demarre qu'au-dela.
-    // A 4 px pile, le geste doit rester un tap et un seul.
+    // Complementarity with `attachTap` rests on this strict equality: tap ignores
+    // gestures `> TAP_THRESHOLD`, drag only starts beyond it. At exactly 4 px, the
+    // gesture must stay a tap, and nothing but a tap.
     const target = new Container();
     const rec = recorder();
     attachDrag(target, rec.hooks);
@@ -98,9 +97,9 @@ describe("attachDrag — seuil", () => {
 
     expect(rec.starts).toBe(1);
     expect(rec.moves).toEqual([
-      // Le premier delta est mesure depuis le POINT DE PRESSION et non depuis
-      // le seuil : la carte se retrouve exactement sous le curseur, sans le
-      // retard de 4 px qu'un comptage a partir du franchissement laisserait.
+      // The first delta is measured from the PRESS POINT and not from the
+      // threshold: the card ends up exactly under the cursor, without the 4 px
+      // lag that counting from the crossing would leave.
       [10, 0],
       [10, 0],
     ]);
@@ -131,8 +130,8 @@ describe("attachDrag — seuil", () => {
 
 describe("attachDrag — conversion ecran vers monde", () => {
   it("divise les deltas par l'echelle de la camera", () => {
-    // A 0,5, un pixel ecran vaut deux unites monde : sans la division, la carte
-    // decrocherait du curseur des qu'on quitte le zoom 1.
+    // At 0.5, one screen pixel is worth two world units: without the division,
+    // the card would come off the cursor as soon as you leave zoom 1.
     const target = new Container();
     const rec = recorder(0.5);
     attachDrag(target, rec.hooks);
@@ -148,9 +147,9 @@ describe("attachDrag — conversion ecran vers monde", () => {
   });
 
   it("relit l'echelle a chaque mouvement", () => {
-    // L'echelle est un hook et non une valeur figee a l'attache : un zoom en
-    // cours de drag (molette d'une main, bouton de l'autre) doit changer la
-    // conversion immediatement.
+    // The scale is a hook and not a value frozen at attach time: a zoom mid-drag
+    // (wheel in one hand, button in the other) must change the conversion
+    // immediately.
     const target = new Container();
     const moves: [number, number][] = [];
     let scale = 1;
@@ -170,9 +169,9 @@ describe("attachDrag — conversion ecran vers monde", () => {
 
 describe("attachDrag — la position suit le geste", () => {
   it("mute le rect de la carte dans la map de positions", () => {
-    // Le contrat cote `create.ts` : `onMove` mute EN PLACE le `Rect` de la vue
-    // courante. Ce test verifie la composition seuil + echelle + mutation, qui
-    // est tout ce que le renderer ajoute par-dessus.
+    // The contract on `create.ts`'s side: `onMove` mutates the current view's
+    // `Rect` IN PLACE. This test checks the threshold + scale + mutation
+    // composition, which is all the renderer adds on top.
     const positions = new Map<NodeId, Rect>([["/a", { x: 100, y: 50, width: 200, height: 80 }]]);
     const target = new Container();
     attachDrag(target, {
@@ -189,7 +188,7 @@ describe("attachDrag — la position suit le geste", () => {
     target.emit("globalpointermove", pointer(10, 20));
     target.emit("pointerup", pointer(10, 20));
 
-    // 10 px ecran a 0,5 => 20 unites monde ; puis 10 px de plus en Y.
+    // 10 screen px at 0.5 => 20 world units; then 10 px more on Y.
     expect(positions.get("/a")).toEqual({ x: 120, y: 90, width: 200, height: 80 });
   });
 });
@@ -206,14 +205,14 @@ describe("attachDrag — fin du geste", () => {
     target.emit("globalpointermove", pointer(40, 0));
 
     expect(rec.ends).toBe(1);
-    // Le mouvement d'apres le relachement ne deplace plus rien.
+    // The move after the release no longer displaces anything.
     expect(rec.moves).toEqual([[20, 0]]);
   });
 
   it("termine sur pointerupoutside", () => {
-    // Relacher hors de la carte est le cas NORMAL d'un drag rapide : le
-    // pointeur sort de la carte avant qu'elle ne l'ait rattrapee. Sans cet
-    // ecouteur, le drag resterait arme et le pan de la camera inhibe.
+    // Releasing outside the card is the NORMAL case of a fast drag: the pointer
+    // leaves the card before the card has caught up with it. Without this
+    // listener, the drag would stay armed and the camera pan inhibited.
     const target = new Container();
     const rec = recorder();
     attachDrag(target, rec.hooks);
@@ -252,8 +251,8 @@ describe("attachDrag — fin du geste", () => {
 describe("attachDrag — curseur", () => {
   it("passe en grabbing pendant le drag et restaure ensuite", () => {
     const target = new Container();
-    // La valeur posee par `attachTap` sur les cartes : c'est elle qu'il faut
-    // retrouver a la fin, pas un `null` qui effacerait le curseur main.
+    // The value `attachTap` sets on cards: it is the one we must find again at
+    // the end, not a `null` that would erase the hand cursor.
     target.cursor = "pointer";
     attachDrag(target, { scale: () => 1, onMove: () => {} });
 
@@ -267,9 +266,9 @@ describe("attachDrag — curseur", () => {
 });
 
 describe("attachDrag et attachTap sont complementaires", () => {
-  /** Rejoue un geste complet sur une cible cablee comme une carte de la vue :
-   * `attachTap` d'abord, `attachDrag` par-dessus, exactement comme `rebuild()`.
-   * Retourne ce que chacun des deux a vu. */
+  /** Replays a full gesture on a target wired like a card of the view:
+   * `attachTap` first, `attachDrag` on top, exactly as `rebuild()` does. Returns
+   * what each of the two saw. */
   function gesture(dx: number, dy: number): { taps: number; drags: number } {
     const target = new Container();
     let taps = 0;
@@ -282,8 +281,8 @@ describe("attachDrag et attachTap sont complementaires", () => {
     target.emit("pointerdown", pointer(100, 100));
     target.emit("globalpointermove", pointer(100 + dx, 100 + dy));
     target.emit("pointerup", pointer(100 + dx, 100 + dy));
-    // Pixi synthetise `pointertap` apres le `pointerup` quand la pression et le
-    // relachement tombent sur la meme cible — y compris apres un drag.
+    // Pixi synthesizes `pointertap` after the `pointerup` when press and release
+    // land on the same target — after a drag included.
     target.emit("pointertap", pointer(100 + dx, 100 + dy));
     return { taps, drags };
   }
@@ -297,9 +296,9 @@ describe("attachDrag et attachTap sont complementaires", () => {
   });
 
   it("un geste au-dela du seuil est un drag et n'est plus un tap", () => {
-    // Les deux gardes sont independantes — `attachTap` compare depuis SON
-    // `pointerdown`, `attachDrag` depuis le sien — mais elles lisent le meme
-    // seuil, donc leurs domaines se partagent exactement la droite reelle.
+    // The two guards are independent — `attachTap` compares from ITS
+    // `pointerdown`, `attachDrag` from its own — but they read the same
+    // threshold, so their domains partition the real line exactly.
     expect(gesture(10, 0)).toEqual({ taps: 0, drags: 1 });
   });
 });
@@ -307,7 +306,7 @@ describe("attachDrag et attachTap sont complementaires", () => {
 describe("recomputeClusterCircle", () => {
   const PADDING = 18;
 
-  /** Trois cartes en triangle, dans un agregat. */
+  /** Three cards in a triangle, inside one aggregate. */
   function scene(): { positions: Map<NodeId, Rect>; members: NodeId[] } {
     return {
       positions: new Map<NodeId, Rect>([
@@ -319,10 +318,9 @@ describe("recomputeClusterCircle", () => {
     };
   }
 
-  /** Le contrat que l'enveloppe doit tenir a tout instant : contenir les quatre
-   * coins de chaque carte membre, marge comprise. C'est ce que le moteur
-   * garantit a la sortie du layout, et donc ce que le deplacement d'une carte
-   * ne doit pas casser. */
+  /** The contract the envelope must hold at all times: contain all four corners
+   * of every member card, padding included. This is what the engine guarantees on
+   * the way out of layout, and therefore what moving a card must not break. */
   function encloses(circle: { cx: number; cy: number; r: number }, rects: Rect[]): boolean {
     return rects.every((rect) =>
       [
@@ -340,8 +338,8 @@ describe("recomputeClusterCircle", () => {
     recomputeClusterCircle(cluster, members, positions, PADDING);
     const before = { ...cluster };
 
-    // On tire /b loin vers la droite : le cercle doit suivre, en centre comme
-    // en rayon.
+    // We pull /b far to the right: the circle must follow, in center as in
+    // radius.
     positions.get("/b")!.x += 600;
     recomputeClusterCircle(cluster, members, positions, PADDING);
 
@@ -351,8 +349,8 @@ describe("recomputeClusterCircle", () => {
   });
 
   it("se resserre quand la carte revient", () => {
-    // Le pendant du test precedent : un cercle qui ne ferait que croitre
-    // laisserait une aureole vide autour de l'agregat des qu'on ramene la carte.
+    // The counterpart of the previous test: a circle that only ever grew would
+    // leave an empty halo around the aggregate as soon as the card comes back.
     const { positions, members } = scene();
     const cluster = { cx: 0, cy: 0, r: 0 };
     recomputeClusterCircle(cluster, members, positions, PADDING);
@@ -367,8 +365,8 @@ describe("recomputeClusterCircle", () => {
   });
 
   it("mute l'objet en place plutot que d'en rendre un nouveau", () => {
-    // `ClusterShape` est partage avec `graphLayout.clusters` : c'est la mutation
-    // qui fait que `clustersFor()` repeint la bonne forme au mouvement suivant.
+    // `ClusterShape` is shared with `graphLayout.clusters`: the mutation is what
+    // makes `clustersFor()` repaint the right shape on the next move.
     const { positions, members } = scene();
     const cluster = { cx: 1, cy: 2, r: 3 };
     const returned = recomputeClusterCircle(cluster, members, positions, PADDING);
@@ -377,8 +375,8 @@ describe("recomputeClusterCircle", () => {
   });
 
   it("ignore les membres sans position", () => {
-    // Un membre non visible n'a pas de rect : il ne doit ni gonfler l'enveloppe
-    // ni la faire tomber sur des NaN.
+    // A member that is not visible has no rect: it must neither inflate the
+    // envelope nor collapse it into NaNs.
     const { positions } = scene();
     const cluster = { cx: 0, cy: 0, r: 0 };
     recomputeClusterCircle(cluster, ["/a", "/b", "/c", "/absent"], positions, PADDING);
@@ -390,7 +388,7 @@ describe("recomputeClusterCircle", () => {
     const positions = new Map<NodeId, Rect>([["/a", { x: 0, y: 0, width: 100, height: 0 }]]);
     const cluster = { cx: 0, cy: 0, r: 0 };
     recomputeClusterCircle(cluster, ["/a"], positions, PADDING);
-    // Cercle circonscrit d'un segment de 100 : rayon 50, plus la marge.
+    // Circle circumscribed around a 100-long segment: radius 50, plus the padding.
     expect(cluster.r).toBeCloseTo(50 + PADDING, 6);
   });
 });
@@ -407,9 +405,9 @@ describe("translateCluster", () => {
   }
 
   it("translate le cercle et toutes ses cartes du meme delta", () => {
-    // RIGIDE : le geste deplace l'agregat en bloc, il ne le deforme pas. Le
-    // rayon est donc intact, et il n'y a rien a recalculer — a la difference du
-    // deplacement d'une carte seule, qui rebat l'enveloppe.
+    // RIGID: the gesture moves the aggregate as a block, it does not deform it.
+    // The radius is therefore intact, and there is nothing to recompute — unlike
+    // moving a single card, which reshapes the envelope.
     const { positions, members } = scene();
     const cluster = { cx: 150, cy: 20, r: 180 };
 
@@ -433,8 +431,8 @@ describe("translateCluster", () => {
   });
 
   it("ignore un membre sans position", () => {
-    // Un membre non visible n'a pas de rect : il ne doit pas faire tomber le
-    // geste, et il n'y a rien a translater pour lui.
+    // A member that is not visible has no rect: it must not bring the gesture
+    // down, and there is nothing to translate for it.
     const { positions } = scene();
     const cluster = { cx: 150, cy: 20, r: 180 };
 
@@ -453,10 +451,10 @@ describe("translateCluster", () => {
 });
 
 describe("drag d'une enveloppe", () => {
-  /** Reproduit le cablage de `rebuild()` : le container de saisie porte le
-   * drag, `onMove` translate le cluster puis recale la position du container.
-   * C'est la composition qu'on veut prouver — seuil, echelle, translation
-   * rigide et cible de saisie qui suit. */
+  /** Reproduces `rebuild()`'s wiring: the grab container carries the drag,
+   * `onMove` translates the cluster then realigns the container's position. This
+   * composition is what we want to prove — threshold, scale, rigid translation
+   * and a grab target that follows. */
   function mount(scale: number) {
     const positions = new Map<NodeId, Rect>([
       ["/a", { x: 0, y: 0, width: 100, height: 40 }],
@@ -481,13 +479,12 @@ describe("drag d'une enveloppe", () => {
     container.emit("globalpointermove", pointer(10, 0));
     container.emit("pointerup", pointer(10, 0));
 
-    // 10 px ecran a 0,5 => 20 unites monde, pour le cercle comme pour ses
-    // cartes.
+    // 10 screen px at 0.5 => 20 world units, for the circle as for its cards.
     expect(cluster.cx).toBe(170);
     expect(cluster.r).toBe(180);
     expect(positions.get("/a")).toMatchObject({ x: 20, y: 0 });
     expect(positions.get("/b")).toMatchObject({ x: 220, y: 0 });
-    // La zone de saisie a suivi : le geste suivant part du bon endroit.
+    // The grab area followed: the next gesture starts from the right place.
     expect(container.position.x).toBe(170);
     expect(container.position.y).toBe(20);
   });
@@ -505,15 +502,14 @@ describe("drag d'une enveloppe", () => {
 });
 
 /**
- * Le tap sur une enveloppe, qui SÉLECTIONNE l'agrégat. C'est le même partage que
- * sur les cartes — `attachTap` en deçà du seuil, `attachDrag` au-delà —, monté
- * ici sur la cible de saisie d'une enveloppe. Ce qu'on veut tenir : les deux
- * câblages ne se marchent pas dessus, et le déplacement ne sélectionne jamais en
- * passant.
+ * The tap on an envelope, which SELECTS the aggregate. It is the same split as on
+ * cards — `attachTap` below the threshold, `attachDrag` beyond it — mounted here
+ * on an envelope's grab target. What we want to hold: the two wirings do not step
+ * on each other, and moving never selects along the way.
  */
 describe("tap sur une enveloppe", () => {
-  /** Reproduit le câblage de `redrawClusterHitAreas()` : drag, puis tap, puis
-   * le curseur de saisie reposé — c'est cet ordre qui est testé plus bas. */
+  /** Reproduces `redrawClusterHitAreas()`'s wiring: drag, then tap, then the grab
+   * cursor set back — that order is what gets tested below. */
   function mount() {
     let selections = 0;
     let moves = 0;
@@ -548,8 +544,8 @@ describe("tap sur une enveloppe", () => {
   });
 
   it("tolere le geste EXACTEMENT au seuil", () => {
-    // Même égalité stricte que partout ailleurs : à 4 px pile, c'est encore un
-    // tap, et `attachDrag` n'a rien démarré.
+    // Same strict equality as everywhere else: at exactly 4 px it is still a tap,
+    // and `attachDrag` has started nothing.
     const m = mount();
     m.container.emit("pointerdown", pointer(50, 50));
     m.container.emit("globalpointermove", pointer(50 + TAP_THRESHOLD, 50));
@@ -559,8 +555,8 @@ describe("tap sur une enveloppe", () => {
   });
 
   it("ne selectionne pas quand le geste est devenu un deplacement", () => {
-    // Sans le seuil partagé, déplacer un agrégat le sélectionnerait aussi au
-    // relâchement — deux gestes pour le prix d'un.
+    // Without the shared threshold, moving an aggregate would also select it on
+    // release — two gestures for the price of one.
     const m = mount();
     m.container.emit("pointerdown", pointer(50, 50));
     m.container.emit("globalpointermove", pointer(50 + TAP_THRESHOLD + 1, 50));
@@ -571,15 +567,15 @@ describe("tap sur une enveloppe", () => {
   });
 
   it("garde la main ouverte malgre attachTap", () => {
-    // `attachTap` pose `"pointer"` : le câblage la repose en `"grab"` juste
-    // après, parce que le geste dominant du disque reste la saisie. L'ordre est
-    // ce qui le rend vrai, d'où ce test.
+    // `attachTap` sets `"pointer"`: the wiring puts it back to `"grab"` right
+    // after, because the disc's dominant gesture remains the grab. The ordering is
+    // what makes that true, hence this test.
     expect(mount().container.cursor).toBe("grab");
   });
 
   it("restaure la main ouverte apres un deplacement", () => {
-    // `attachDrag` capture le curseur au franchissement du seuil : il doit donc
-    // retrouver `"grab"` et pas le `"pointer"` d'`attachTap`.
+    // `attachDrag` captures the cursor when the threshold is crossed: it must
+    // therefore find `"grab"` again, and not `attachTap`'s `"pointer"`.
     const m = mount();
     m.container.emit("pointerdown", pointer(50, 50));
     m.container.emit("globalpointermove", pointer(80, 50));
@@ -590,14 +586,14 @@ describe("tap sur une enveloppe", () => {
 });
 
 /**
- * Le tap sur le FOND de la toile, qui désélectionne. Deux mécanismes se
- * partagent le même vide et le même bouton : le pan de la caméra (écouteurs DOM
- * natifs) et ce tap-ci (événements fédérés Pixi). Ce qui les départage est le
- * seuil de `TAP_THRESHOLD`, exactement comme entre `attachTap` et `attachDrag`.
+ * The tap on the canvas BACKGROUND, which deselects. Two mechanisms share the
+ * same void and the same button: the camera pan (native DOM listeners) and this
+ * tap (Pixi federated events). What separates them is `TAP_THRESHOLD`, exactly as
+ * between `attachTap` and `attachDrag`.
  */
 describe("tap sur le fond de la toile", () => {
-  /** Même minimalisme que `pointer` ci-dessus, plus la CIBLE : c'est elle qui
-   * distingue un tap sur le vide d'un tap remonté depuis une carte. */
+  /** Same minimalism as `pointer` above, plus the TARGET: that is what separates
+   * a tap on the void from a tap bubbled up from a card. */
   function tap(x: number, y: number, target: Container): FederatedPointerEvent {
     return { button: 0, global: { x, y }, target } as unknown as FederatedPointerEvent;
   }
@@ -623,9 +619,8 @@ describe("tap sur le fond de la toile", () => {
   });
 
   it("ne desélectionne pas quand le geste a depasse le seuil", () => {
-    // C'est un pan de la toile : il finit lui aussi par un `pointertap` sur le
-    // fond, et sans le seuil chaque déplacement de la vue viderait la
-    // sélection.
+    // This is a canvas pan: it too ends with a `pointertap` on the background, and
+    // without the threshold every move of the view would clear the selection.
     const m = mount();
     m.background.emit("pointerdown", tap(400, 300, m.background));
     m.background.emit("pointertap", tap(400 + TAP_THRESHOLD + 1, 300, m.background));
@@ -633,7 +628,7 @@ describe("tap sur le fond de la toile", () => {
   });
 
   it("tolere le geste EXACTEMENT au seuil", () => {
-    // Même égalité stricte que `attachTap` : à 4 px pile, c'est encore un tap.
+    // Same strict equality as `attachTap`: at exactly 4 px it is still a tap.
     const m = mount();
     m.background.emit("pointerdown", tap(400, 300, m.background));
     m.background.emit("pointertap", tap(400 + TAP_THRESHOLD, 300, m.background));
@@ -641,8 +636,8 @@ describe("tap sur le fond de la toile", () => {
   });
 
   it("ignore un tap remonte depuis une carte", () => {
-    // Le `pointertap` d'une carte remonte jusqu'au fond ; sans le test de
-    // cible, tout clic désélectionnerait juste après avoir sélectionné.
+    // A card's `pointertap` bubbles all the way to the background; without the
+    // target check, every click would deselect right after selecting.
     const m = mount();
     const card = new Container();
     m.background.emit("pointerdown", tap(400, 300, card));
@@ -651,17 +646,17 @@ describe("tap sur le fond de la toile", () => {
   });
 
   it("n'est atteint par le hit-testing que sur le vide", () => {
-    // La raison d'être du calque dédié : le hit-testing de Pixi HÉRITE le mode
-    // d'événement en descendant. Un `app.stage` passé en `"static"` rendrait
-    // interactif le moindre Graphics décoratif, qui avalerait alors le clic de
-    // la carte qu'il recouvre. Ce test monte exactement cette scène — un
-    // surlignage plein écran AU-DESSUS d'une carte — et vérifie les deux
-    // réponses : la carte sous le décor, le fond sur le vide.
-    // Pixi n'installe la couche d'événements fédérés sur `Container` que via
-    // son extension de navigateur, absente sous l'environnement Node de
-    // vitest : sans ce mixin, `hitTestRecursive` échoue sur un
-    // `isInteractive` inexistant. On monte donc la MÊME couche que celle qui
-    // tourne dans le navigateur, plutôt que d'en simuler une.
+    // The dedicated layer's reason for being: Pixi's hit-testing INHERITS the
+    // event mode on the way down. An `app.stage` switched to `"static"` would make
+    // the least decorative Graphics interactive, and it would then swallow the
+    // click of the card it covers. This test mounts exactly that scene — a
+    // full-screen highlight ABOVE a card — and checks both answers: the card under
+    // the decoration, the background on the void.
+    // Pixi installs the federated event layer on `Container` only through its
+    // browser extension, absent under vitest's Node environment: without this
+    // mixin, `hitTestRecursive` fails on a nonexistent `isInteractive`. So we
+    // mount the SAME layer as the one running in the browser, rather than
+    // simulating one.
     extensions.mixin(Container, FederatedContainer);
 
     const stage = new Container();

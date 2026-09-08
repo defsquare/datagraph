@@ -172,23 +172,23 @@ import type { Graph, NodeId } from "./model.js"
 import type { LayoutResult, Rect } from "./structure-layout.js"
 import { enclosingCircle } from "./hull.js"
 import { measureNode, DEFAULT_METRICS, type NodeMetrics } from "./measure.js"
-// Les deux niveaux de l'algorithme, chacun dans son module et importés ICI et
-// nulle part ailleurs — ce fichier reste le seul point d'entrée du moteur.
+// The algorithm's two levels, each in its own module and imported HERE and
+// nowhere else — this file remains the engine's only entry point.
 import { packCluster } from "./graph-pack.js"
 import { layoutDiscs, type Disc } from "./disc-simulation.js"
 
-// Le contrat de la vue graphe — l'enveloppe, le résultat, l'interface du moteur
-// — est déclaré ICI depuis le retrait de `layout-graph.ts`, où il vivait tant
-// que deux moteurs le partageaient. Il n'en reste qu'un, et un module de types
-// dont le seul contenu serait ces trois interfaces demanderait sa propre
-// justification. Ce qu'un consommateur importe ne bouge pas pour autant : ce
-// fichier EST le point d'entrée `./graph-layout`, et les expose sous ces noms.
+// The graph view's contract — the envelope, the result, the engine's interface —
+// is declared HERE since the removal of `layout-graph.ts`, where it lived for as
+// long as two engines shared it. Only one is left, and a types module whose sole
+// content would be these three interfaces would need its own justification. What
+// a consumer imports does not move for all that: this file IS the
+// `./graph-layout` entry point, and exposes them under these names.
 //
-// Ces types restent nommés « Graph… » et non « TwoLevel… » : ils décrivent la
-// VUE, pas l'algorithme. Un second moteur de vue graphe les réimplémenterait
-// tels quels — c'est exactement ce qui vient de se passer dans l'autre sens.
+// These types stay named "Graph…" and not "TwoLevel…": they describe the VIEW,
+// not the algorithm. A second graph-view engine would reimplement them as they
+// stand — which is exactly what just happened in the other direction.
 
-/** Enveloppe d'un agrégat : un disque, dans le repère de `positions`. */
+/** An aggregate's envelope: a disc, in `positions`' coordinate system. */
 export interface ClusterShape {
   aggregateId: string
   rootId: NodeId
@@ -202,14 +202,14 @@ export interface GraphLayoutResult extends LayoutResult {
 }
 
 /**
- * Le moteur de mise en page de la vue graphe.
+ * The graph view's layout engine.
  *
- * `layout()` est asynchrone par contrat, pas par nécessité : l'implémentation
- * actuelle est entièrement synchrone (voir `createTwoLevelLayoutEngine`), mais
- * celle qu'elle remplace attendait un `layoutstop` de cytoscape, et le
- * renderer `await` déjà ce résultat. Rendre la signature synchrone
- * n'achèterait rien et fermerait la porte à une implémentation qui céderait la
- * main — un Web Worker, par exemple.
+ * `layout()` is asynchronous by contract, not by necessity: the current
+ * implementation is entirely synchronous (see `createTwoLevelLayoutEngine`), but
+ * the one it replaces waited on a cytoscape `layoutstop`, and the renderer
+ * already `await`s this result. Making the signature synchronous would buy
+ * nothing and would close the door on an implementation that yields — a Web
+ * Worker, for instance.
  */
 export interface GraphLayoutEngine {
   layout(
@@ -221,270 +221,265 @@ export interface GraphLayoutEngine {
 }
 
 export interface TwoLevelLayoutOptions {
-  /** Marge entre le coin de carte le plus éloigné du centre de l'enveloppe et
-   * le bord de celle-ci. Même sens et même valeur que dans le moteur retiré :
-   * c'est le rayon du disque que le renderer peint. */
+  /** Margin between the card corner farthest from the envelope's centre and the
+   * envelope's edge. Same meaning and same value as in the removed engine: it is
+   * the radius of the disc the renderer paints. */
   hullPadding?: number
-  /** Marge entre deux cartes d'un même agrégat, INCLUSE dans le packing (donc
-   * acquise par construction, là où le `separationMargin` du moteur retiré
-   * était le but d'une relaxation plafonnée). */
+  /** Margin between two cards of the same aggregate, INCLUDED in the packing
+   * (hence acquired by construction, where the removed engine's
+   * `separationMargin` was the goal of a capped relaxation). */
   cardGap?: number
-  /** Écart bord à bord garanti entre deux disques d'agrégats. */
+  /** Guaranteed edge-to-edge gap between two aggregate discs. */
   clusterGap?: number
-  /** Itérations de la simulation à ressorts du niveau 2. */
+  /** Iterations of level 2's spring simulation. */
   simIterations?: number
   /**
-   * Amplitude, en pixels, du gonflement virtuel des disques PENDANT la
-   * simulation — le bruit déterministe qui casse la régularité du pavage. `0`
-   * le désactive. Voir le commentaire au-dessus de `virtualRadii`
-   * (`disc-simulation.ts`) pour le mécanisme et
-   * `TWO_LEVEL_LAYOUT_DEFAULTS` pour le choix de l'amplitude.
+   * Amplitude, in pixels, of the discs' virtual inflation DURING the simulation
+   * — the deterministic noise that breaks the tiling's regularity. `0` disables
+   * it. See the comment above `virtualRadii` (`disc-simulation.ts`) for the
+   * mechanism, and `TWO_LEVEL_LAYOUT_DEFAULTS` for the choice of amplitude.
    *
-   * Ce réglage ne peut pas dégrader une garantie : la passe dure finale ignore
-   * le gonflement, et la forme peinte n'est jamais gonflée.
+   * This setting cannot degrade a guarantee: the final hard pass ignores the
+   * inflation, and the painted shape is never inflated.
    */
   jitter?: number
 }
 
 /**
- * Les valeurs par défaut, EXPORTÉES — et pas seulement parce que c'est plus
- * poli. Le renderer a besoin de `hullPadding` pour recalculer l'enveloppe d'un
- * agrégat quand une carte est déplacée à la souris : sans cette constante, il
- * en garderait une copie, et le jour où la valeur bouge ici les enveloppes
- * peintes après un déplacement ne coïncideraient plus avec celles que le moteur
- * calcule — un décalage silencieux de 18 px, visible seulement après un drag.
+ * The default values, EXPORTED — and not merely out of politeness. The renderer
+ * needs `hullPadding` to recompute an aggregate's envelope when a card is
+ * dragged with the mouse: without this constant it would keep a copy, and the
+ * day the value moves here, envelopes painted after a drag would no longer
+ * coincide with those the engine computes — a silent 18 px discrepancy, visible
+ * only after a drag.
  *
- * Il la lit par le NAMESPACE de l'`import()` dynamique de la vue graphe, celui
- * de `ensureGraphEngine`, et non par un import statique : les deux tests de
- * pureté de bundle exigent que ce module ne soit atteignable que par là. C'est
- * gratuit — la constante n'a de sens qu'en vue graphe, donc exactement quand ce
- * module est déjà chargé.
+ * It reads it through the NAMESPACE of the graph view's dynamic `import()`, the
+ * one in `ensureGraphEngine`, and not through a static import: the two bundle
+ * purity tests require that this module be reachable only that way. It is free —
+ * the constant only means anything in the graph view, hence exactly when this
+ * module is already loaded.
  */
 export const TWO_LEVEL_LAYOUT_DEFAULTS: Required<TwoLevelLayoutOptions> = {
-  // Repris du moteur retiré sans les rejuger : ce sont les mêmes formes
-  // dessinées et le même contrat visuel. La sonde a mesuré les deux moteurs
-  // avec ces valeurs des deux côtés, pour comparer à garanties égales.
+  // Carried over from the removed engine without re-judging them: these are the
+  // same shapes drawn and the same visual contract. The probe measured both
+  // engines with these values on both sides, to compare at equal guarantees.
   //
-  // `clusterGap: 160` n'est pas un choix au goût : il vient d'un balayage
-  // complet (gap 0 / 80 / 160 / 240 / 320 / 400, en mesurant recouvrements
-  // d'enveloppes, écart au plus proche voisin, bbox et remplissage) fait sur le
-  // moteur retiré. Le tableau vivait dans son `DEFAULTS` ; il est reporté dans
-  // la section « Graph view » du README racine, et son code dans l'historique
-  // git. Ce qu'il établit et qui vaut toujours : la CORRECTION — zéro paire
-  // d'enveloppes en recouvrement — est déjà acquise à 80 px, tout ce qui est
-  // au-dessus achète de la largeur de couloir. 160 px valent 10× `cardGap` et
-  // une hauteur et demie de carte : l'écart se voit sans zoomer.
+  // `clusterGap: 160` is not a matter of taste: it comes from a full sweep (gap
+  // 0 / 80 / 160 / 240 / 320 / 400, measuring envelope overlaps, nearest
+  // neighbour gap, bbox and fill rate) run on the removed engine. The table used
+  // to live in its `DEFAULTS`; it is reproduced in the root README's "Graph
+  // view" section, and its code lives in the git history. What it establishes,
+  // and what still holds: CORRECTNESS — zero overlapping envelope pairs — is
+  // already acquired at 80 px, and anything above buys corridor width. 160 px is
+  // 10× `cardGap` and one and a half card heights: the gap is visible without
+  // zooming.
   //
-  // Il n'a PAS été re-balayé sur ce moteur-ci, et le résultat serait
-  // différent : le balayage mesurait des cercles gonflés par l'éparpillement de
-  // fcose, là où ceux d'ici sont minimaux par construction. À remesurer si la
-  // valeur redevient une question ; elle ne l'est pas devenue.
+  // It has NOT been re-swept on this engine, and the result would differ: the
+  // sweep measured circles inflated by fcose's scattering, where the ones here
+  // are minimal by construction. To be re-measured if the value becomes a
+  // question again; it has not.
   hullPadding: 18,
   cardGap: 16,
   clusterGap: 160,
-  // CALIBRÉ, et « calibré » veut dire MESURÉ — pas nécessairement changé. Ces
-  // quatre constantes du niveau 2 (400 itérations, force de ressort 0,15,
-  // plafond de poids `min(1, w/2)`, gravité 0,02) étaient le PREMIER jeu
-  // essayé, ce que ce commentaire disait sans détour. Le balayage a été fait ;
-  // il les CONFIRME toutes les quatre, et c'est un résultat, pas une absence de
-  // résultat.
+  // CALIBRATED, and "calibrated" means MEASURED — not necessarily changed. These
+  // four level-2 constants (400 iterations, spring force 0.15, weight cap
+  // `min(1, w/2)`, gravity 0.02) were the FIRST set tried, which is what this
+  // comment used to say without ceremony. The sweep has been run; it CONFIRMS
+  // all four, and that is a result, not the absence of one.
   //
-  // Trois fixtures, choisis parce qu'ils épuisent les régimes du niveau 2 :
-  // **A** `bigShop(3000)` — 167 disques, ZÉRO arête, donc seules la gravité et
-  // la collision agissent ; **B** le jeu de la démo — 116 disques, degré moyen
-  // 4,6 ; **D** `denseRefs()` — 80 disques, degré 12,0 partout, le fixture de
-  // la réserve « un graphe inter-agrégat très dense pourrait se dégrader ».
-  // Métrique de qualité : la longueur moyenne d'une référence INTER-agrégat,
-  // celle que les ressorts servent. Le moteur étant déterministe, un run par
-  // configuration suffit.
+  // Three fixtures, chosen because they exhaust level 2's regimes: **A**
+  // `bigShop(3000)` — 167 discs, ZERO edges, so only gravity and collision act;
+  // **B** the demo's dataset — 116 discs, average degree 4.6; **D**
+  // `denseRefs()` — 80 discs, degree 12.0 everywhere, the fixture for the caveat
+  // "a very dense inter-aggregate graph could degrade". Quality metric: the
+  // average length of an INTER-aggregate reference, the one the springs serve.
+  // The engine being deterministic, one run per configuration is enough.
   //
-  //   FORCE DE RESSORT (réf. inter moyenne)      B       D      sd nn sur D
-  //     0,05                                   2084    1699       13,1
-  //     0,10                                   1557    1618       13,1
-  //     0,15  ← retenue                        1439  **1554**     11,8
-  //     0,25                                   1418    1611        7,9
-  //     0,40                                   1398    1694        4,1
+  //   SPRING FORCE (avg. inter-agg. ref.)        B       D      sd nn on D
+  //     0.05                                   2084    1699       13.1
+  //     0.10                                   1557    1618       13.1
+  //     0.15  ← chosen                         1439  **1554**     11.8
+  //     0.25                                   1418    1611        7.9
+  //     0.40                                   1398    1694        4.1
   //
-  // 0,15 est le MINIMUM EXACT sur D. Au-delà, les ressorts tirent si fort que
-  // la passe dure doit les contredire, et les références RALLONGENT au lieu de
-  // raccourcir — c'est précisément la réserve n°5 de la sonde, observée. Sur B,
-  // 0,40 gagne 3 % de longueur, pour un écart-type de voisinage divisé par 3.
+  // 0.15 is the EXACT MINIMUM on D. Beyond it the springs pull so hard that the
+  // hard pass has to contradict them, and the references GET LONGER instead of
+  // shorter — precisely the probe's caveat #5, observed. On B, 0.40 gains 3% of
+  // length, for a neighbourhood standard deviation divided by 3.
   //
-  //   PLAFOND DE POIDS min(1, w/N)               B       D      sd nn sur D
-  //     N=1 (aucune gradation)                  1341    1570        4,7
-  //     N=2  ← retenu                           1439  **1554**     11,8
-  //     N=4                                     1753    1589       11,7
-  //     N=8                                     2155    1756       12,1
+  //   WEIGHT CAP min(1, w/N)                     B       D      sd nn on D
+  //     N=1 (no grading)                        1341    1570        4.7
+  //     N=2  ← chosen                           1439  **1554**     11.8
+  //     N=4                                     1753    1589       11.7
+  //     N=8                                     2155    1756       12.1
   //
-  //   GRAVITÉ                            A rempl.      B       D
-  //     0,005                               8,9 %    1445    1543
-  //     0,01                                9,5 %    1407    1614
-  //     0,02  ← retenue                  **10,3 %**  1439    1554
-  //     0,04                               10,3 %    1497    1572
-  //     0,08                               10,7 %    1687    1685   (339 passes dures)
+  //   GRAVITY                              A fill      B       D
+  //     0.005                                8.9%    1445    1543
+  //     0.01                                 9.5%    1407    1614
+  //     0.02  ← chosen                    **10.3%**  1439    1554
+  //     0.04                                10.3%    1497    1572
+  //     0.08                                10.7%    1687    1685   (339 hard passes)
   //
-  //   ITÉRATIONS                         A rempl.      B       D      sd nn sur D   ms (A/B/D)
-  //     100                                 9,5 %    1609    1742        4,1        66/45/39
-  //     200                                10,1 %    1487    1647        4,4        53/36/23
-  //     400  ← retenues                    10,3 %    1439  **1554**     11,8        88/58/32
-  //     800                                10,7 %    1392    1582       12,8       170/98/59
-  //    1600                                 9,9 %    1392    1560       13,0      342/187/117
+  //   ITERATIONS                           A fill      B       D      sd nn on D   ms (A/B/D)
+  //     100                                  9.5%    1609    1742        4.1        66/45/39
+  //     200                                 10.1%    1487    1647        4.4        53/36/23
+  //     400  ← chosen                       10.3%    1439  **1554**     11.8        88/58/32
+  //     800                                 10.7%    1392    1582       12.8       170/98/59
+  //    1600                                  9.9%    1392    1560       13.0      342/187/117
   //
-  // CE QUE LE BALAYAGE A APPRIS, et qui n'était pas prévu : **les constantes du
-  // niveau 2 et le `jitter` interagissent**. Une force de ressort forte (0,25,
-  // 0,40) ou des poids non gradués (N=1) RECOMPRIMENT le pavage et défont le
-  // bruit — l'écart-type de l'écart au plus proche voisin tombe de 11,8 à 4,1
-  // px sur D, soit l'essentiel de ce que `jitter: 32` avait acheté. Un
-  // `simIterations` trop bas fait pareil, pour une autre raison : à 100 ou 200
-  // la simulation n'a pas convergé assez pour que la variance s'exprime (4,1 et
-  // 4,4). Les valeurs retenues sont donc aussi celles qui LAISSENT le jitter
-  // fonctionner, ce qui n'était pas un critère au moment de le régler.
+  // WHAT THE SWEEP TAUGHT, and what was not anticipated: **the level-2 constants
+  // and the `jitter` interact**. A strong spring force (0.25, 0.40) or ungraded
+  // weights (N=1) RECOMPRESS the tiling and undo the noise — the standard
+  // deviation of the nearest-neighbour gap falls from 11.8 to 4.1 px on D, which
+  // is most of what `jitter: 32` had bought. Too low a `simIterations` does the
+  // same, for a different reason: at 100 or 200 the simulation has not converged
+  // enough for the variance to express itself (4.1 and 4.4). The chosen values
+  // are therefore also the ones that LET the jitter work, which was not a
+  // criterion at the time it was tuned.
   //
-  // LE SEUL ARBITRAGE RÉEL, exposé plutôt que tranché en douce : la grille
-  // croisée donne `spring 0,15 / gravité 0,01 / N=1` meilleur sur B (référence
-  // 1282 contre 1439, −11 %). Il est écarté parce qu'il coûte l'écart-type de D
-  // (11,8 → 6,3) et 0,8 point de remplissage sur A. B est un cas nominal parmi
-  // trois ; sacrifier le pavage de A et la densité de D pour 11 % sur lui seul
-  // n'est pas un bon échange, et la mesure ne le dit pas — c'est un jugement,
-  // et il est ici pour être contesté.
+  // THE ONE REAL TRADE-OFF, laid out rather than settled quietly: the crossed
+  // grid gives `spring 0.15 / gravity 0.01 / N=1` better on B (reference 1282
+  // against 1439, −11%). It is set aside because it costs D's standard deviation
+  // (11.8 → 6.3) and 0.8 points of fill rate on A. B is one nominal case out of
+  // three; sacrificing A's tiling and D's density for 11% on it alone is not a
+  // good trade, and the measurement does not say so — that is a judgement, and
+  // it is here to be contested.
   //
-  // Ce que ces constantes N'ACHÈTENT PAS, à aucune valeur : la correction. Les
-  // garanties de sortie (non-recouvrement des cartes, écart des disques) sont
-  // portées par le packing et par la passe dure finale. `min nn = 160,00 px`
-  // dans les 27 configurations mesurées, sans exception.
+  // What these constants DO NOT BUY, at any value: correctness. The exit
+  // guarantees (card non-overlap, disc separation) are carried by the packing
+  // and by the final hard pass. `min nn = 160.00 px` in all 27 configurations
+  // measured, without exception.
   simIterations: 400,
-  // RÉGLAGE D'ŒIL, comme `clusterGap`, et assumé comme tel — mais pas choisi
-  // sans chiffres. Ce que le jitter corrige est un artefact visuel : sur des
-  // disques de MÊME rayon, gravité + collision convergent vers l'empilement
-  // hexagonal, qui est l'optimum de densité de cercles égaux. `bigShop(3000)`
-  // — 167 agrégats identiques, aucune arête entre eux — sortait en pavage
-  // hexagonal si régulier que les alignements traversaient toute la toile.
+  // AN EYE SETTING, like `clusterGap`, and owned as such — but not chosen
+  // without numbers. What the jitter fixes is a visual artefact: on discs of the
+  // SAME radius, gravity + collision converge towards hexagonal packing, the
+  // density optimum for equal circles. `bigShop(3000)` — 167 identical
+  // aggregates, no edge between them — came out as a hexagonal tiling so regular
+  // that the alignments ran across the whole canvas.
   //
-  // La métrique qui objective ça est l'ÉCART-TYPE de l'écart bord à bord au
-  // plus proche voisin entre disques. À jitter nul il vaut **0,00 px** : tous
-  // les voisins exactement à `clusterGap`, ce qui EST la définition d'un
-  // réseau régulier. Balayage complet, `bigShop(3000)` :
+  // The metric that makes this objective is the STANDARD DEVIATION of the
+  // edge-to-edge nearest-neighbour gap between discs. At zero jitter it is
+  // **0.00 px**: every neighbour exactly at `clusterGap`, which IS the
+  // definition of a regular lattice. Full sweep, `bigShop(3000)`:
   //
-  //   jitter | é.-type nn | moyenne nn | min nn | remplissage |   bbox
-  //        0 |    0,00 px |   160,0 px | 160,00 |    12,3 %   | 6026×5929
-  //       16 |    6,36 px |   166,1 px | 160,00 |    11,2 %   | 6141×6397
-  //       32 |   12,02 px |   177,9 px | 160,00 |    10,3 %   | 6394×6692
-  //       48 |   17,65 px |   189,2 px | 160,00 |     9,8 %   | 6617×6806
-  //       64 |   22,72 px |   201,5 px | 160,00 |     8,9 %   | 6917×7142
+  //   jitter | sd nn      | mean nn    | min nn | fill rate   |   bbox
+  //        0 |    0.00 px |   160.0 px | 160.00 |    12.3%    | 6026×5929
+  //       16 |    6.36 px |   166.1 px | 160.00 |    11.2%    | 6141×6397
+  //       32 |   12.02 px |   177.9 px | 160.00 |    10.3%    | 6394×6692
+  //       48 |   17.65 px |   189.2 px | 160.00 |     9.8%    | 6617×6806
+  //       64 |   22.72 px |   201.5 px | 160.00 |     8.9%    | 6917×7142
   //
-  // La colonne qui compte le plus est `min nn` : **160,00 à toutes les
-  // amplitudes**. La garantie ne bouge pas d'un centième, parce que la passe
-  // dure finale ignore le gonflement. Le jitter n'achète que de la variance.
+  // The column that matters most is `min nn`: **160.00 at every amplitude**. The
+  // guarantee does not move by a hundredth, because the final hard pass ignores
+  // the inflation. The jitter buys nothing but variance.
   //
-  // 32 RETENU, aux rendus (les quatre SVG sont dans la section B du doc de
-  // sonde). À 16 les alignements diagonaux survivent par plaques : l'œil lit
-  // encore un réseau. À 32 plus aucun alignement long ne subsiste, alors que le
-  // champ reste uniformément dense — ni trou ni grappe. À 48 la variance
-  // commence à se voir comme telle, avec des couloirs franchement plus larges
-  // que d'autres, sans que le rendu soit plus « vivant » qu'à 32 ; elle coûte
-  // 0,5 point de remplissage de plus pour ça.
+  // 32 CHOSEN, on the renderings (the four SVGs are in section B of the probe
+  // doc). At 16 the diagonal alignments survive in patches: the eye still reads
+  // a lattice. At 32 no long alignment is left, while the field stays uniformly
+  // dense — no hole, no clump. At 48 the variance starts to read as such, with
+  // corridors distinctly wider than others, without the rendering being any more
+  // "alive" than at 32; it costs 0.5 points of fill rate more for that.
   //
-  // Ce que 32 coûte, précisément : sur `bigShop(3000)`, remplissage 12,3 →
-  // 10,3 % (−2,0 points) et bbox 6026×5929 → 6394×6692, parce que l'écart
-  // MOYEN monte de 160,0 à 177,9 px — gonfler les disques pendant la
-  // simulation les fait converger un peu plus au large. Sur le jeu de la démo
-  // le coût est dans le bruit et non monotone (15,1 % à 0, 15,5 % à 16, 13,7 %
-  // à 32, 14,8 % à 48) : ses ressorts inter-agrégats rebattent la mise en page
-  // à chaque amplitude, donc la comparaison amplitude par amplitude n'y a pas
-  // de sens fin. C'est le fixture SANS arête qui isole l'effet, et c'est sur
-  // lui que le choix se fait.
+  // What 32 costs, precisely: on `bigShop(3000)`, fill rate 12.3 → 10.3%
+  // (−2.0 points) and bbox 6026×5929 → 6394×6692, because the AVERAGE gap rises
+  // from 160.0 to 177.9 px — inflating the discs during the simulation makes
+  // them converge a little further apart. On the demo's dataset the cost is
+  // within the noise and not monotone (15.1% at 0, 15.5% at 16, 13.7% at 32,
+  // 14.8% at 48): its inter-aggregate springs reshuffle the layout at every
+  // amplitude, so an amplitude-by-amplitude comparison has no fine meaning
+  // there. It is the EDGELESS fixture that isolates the effect, and it is on
+  // that one that the choice is made.
   jitter: 32,
 }
 
 /**
- * L'ENTRÉE DU CŒUR PUR : tout ce que le moteur consomme, et rien d'autre.
+ * THE PURE CORE'S INPUT: everything the engine consumes, and nothing else.
  *
- * Ce type existe pour une raison unique et mesurée : sur un audit réel — 6 251
- * entités, ~1 300 agrégats — `layout()` passe ~4,4 s dans un calcul entièrement
- * synchrone, ce qui gèle le thread principal du navigateur pendant toute la
- * bascule de vue. Le seul remède qui garde le temps total est de déporter le
- * calcul dans un Web Worker ; or un `Graph` ne traverse pas un `postMessage` —
- * il porte des `Map` de nœuds, des arêtes indexées, et pèse plusieurs ordres de
- * grandeur de plus que ce que le moteur en lit.
+ * This type exists for a single, measured reason: on a real audit — 6,251
+ * entities, ~1,300 aggregates — `layout()` spends ~4.4 s in an entirely
+ * synchronous computation, which freezes the browser's main thread for the whole
+ * view switch. The only remedy that keeps the total time is to move the
+ * computation into a Web Worker; and a `Graph` does not cross a `postMessage` —
+ * it carries `Map`s of nodes, indexed edges, and weighs several orders of
+ * magnitude more than what the engine reads from it.
  *
- * D'où la scission : `extractGraphLayoutInput` est la SEULE partie qui touche au
- * `Graph`, elle tourne sur le thread principal, et elle rend cet objet PLAT —
- * que le clonage structuré transporte tel quel. `layoutFromInput` est tout le
- * reste : pur, sans DOM, sans graphe, donc exécutable des deux côtés de la
- * frontière. L'invariant qui tient l'ensemble est écrit dans
- * `test/graph-layout-identity.test.ts` : la scission ne change AUCUN bit de la
- * sortie, c'est le même code réordonné.
+ * Hence the split: `extractGraphLayoutInput` is the ONLY part that touches the
+ * `Graph`, it runs on the main thread, and it returns this FLAT object — which
+ * structured cloning carries as is. `layoutFromInput` is all the rest: pure, no
+ * DOM, no graph, hence runnable on either side of the boundary. The invariant
+ * that holds the whole together is written in
+ * `test/graph-layout-identity.test.ts`: the split changes NO bit of the output,
+ * it is the same code reordered.
  *
- * CE QUI N'Y EST PAS, et pourquoi : les `NodeMetrics`. Elles ne servent qu'à
- * `measureNode`, que l'extraction a déjà appelé — la taille de chaque carte est
- * dans `entities`. Les faire traverser en plus serait transporter la RECETTE
- * d'un résultat qu'on transporte déjà.
+ * WHAT IS NOT IN IT, and why: the `NodeMetrics`. They only serve `measureNode`,
+ * which the extraction has already called — each card's size is in `entities`.
+ * Carrying them across as well would mean carrying the RECIPE for a result we
+ * are already carrying.
  */
 export interface GraphLayoutInput {
-  /** Les entités à placer, triées par id — le tri est une CONDITION du
-   * déterminisme du moteur, pas un confort de lecture. `w`/`h` sont la taille
-   * de la carte, déjà mesurée. */
+  /** The entities to place, sorted by id — the sort is a CONDITION of the
+   * engine's determinism, not a reading convenience. `w`/`h` are the card's
+   * size, already measured. */
   entities: { id: NodeId; w: number; h: number }[]
   /**
-   * Les références qui relient deux entités placées, DANS L'ORDRE de
-   * `graph.refEdges` et sans dédoublonnage : le niveau 2 fait le poids de
-   * chaque ressort avec la multiplicité, et le niveau 1 dédoublonne lui-même ce
-   * dont il a besoin. Les bouts sont `fromEntity` et `to` — c'est l'entité
-   * porteuse qui est placée, jamais le value object qui écrit le champ.
+   * The references linking two placed entities, IN THE ORDER of
+   * `graph.refEdges` and without deduplication: level 2 makes each spring's
+   * weight out of the multiplicity, and level 1 deduplicates what it needs on
+   * its own. The endpoints are `fromEntity` and `to` — it is the carrying entity
+   * that is placed, never the value object that writes the field.
    */
   refs: { from: NodeId; to: NodeId }[]
   /**
-   * Les agrégats qui revendiquent au moins une entité placée, avec ces
-   * entités-là pour membres. C'est la forme groupée de la partition que porte
-   * `AggregateIndex.byNode` — une entité absente de toutes ces listes est un
-   * singleton, exactement comme un `byNode` vide chez l'appelant.
+   * The aggregates that claim at least one placed entity, with those entities as
+   * members. This is the grouped form of the partition `AggregateIndex.byNode`
+   * carries — an entity absent from all these lists is a singleton, exactly as
+   * with an empty `byNode` on the caller's side.
    */
   aggregates: { id: string; rootId: NodeId; memberIds: NodeId[] }[]
-  /** Les réglages RÉSOLUS : l'extraction applique les défauts, le cœur pur ne
-   * relit jamais `TWO_LEVEL_LAYOUT_DEFAULTS`. */
+  /** The RESOLVED settings: the extraction applies the defaults, and the pure
+   * core never re-reads `TWO_LEVEL_LAYOUT_DEFAULTS`. */
   options: Required<TwoLevelLayoutOptions>
 }
 
 /**
- * Un cluster du niveau 2 : un agrégat, ou une entité seule promue en disque.
+ * A level-2 cluster: an aggregate, or a lone entity promoted to a disc.
  *
- * Il ÉTEND `Disc`, ce qui est tout le raccord entre les deux niveaux : la
- * simulation ne voit que `id`, `r`, `x`, `y` et écrit `x`/`y` en place, sans
- * jamais rien savoir des membres ni des rects que ce même objet transporte.
+ * It EXTENDS `Disc`, which is the whole joint between the two levels: the
+ * simulation sees only `id`, `r`, `x`, `y` and writes `x`/`y` in place, never
+ * knowing anything about the members or the rects that same object carries.
  */
 interface LocalCluster extends Disc {
-  /** `null` pour un singleton hors agrégat — il n'émettra pas d'enveloppe. */
+  /** `null` for a singleton outside any aggregate — it will emit no envelope. */
   rootId: NodeId | null
   isAggregate: boolean
-  /** Ordre du packing : racine d'abord, puis ids triés. */
+  /** Packing order: root first, then sorted ids. */
   memberIds: NodeId[]
-  /** Rects LOCAUX, recentrés pour que le centre du cercle englobant soit à
-   * l'origine — c'est ce qui permet de traiter le cluster comme un disque
-   * centré en (x, y) au niveau 2. */
+  /** LOCAL rects, recentred so that the enclosing circle's centre sits at the
+   * origin — that is what allows the cluster to be treated as a disc centred at
+   * (x, y) at level 2. */
   local: Map<NodeId, Rect>
 }
 
 /**
- * L'EXTRACTION : la seule fonction du moteur qui lise le `Graph`, et tout ce
- * qu'elle en lit.
+ * THE EXTRACTION: the engine's only function that reads the `Graph`, and
+ * everything it reads from it.
  *
- * Trois lectures, et pas une de plus — c'est ce qui rend la frontière du worker
- * vérifiable plutôt que crue sur parole :
- *  1. les ids des nœuds VISIBLES de type entité (les nœuds structurels — racine,
- *     tableaux, objets — n'existent pas dans cette vue) ;
- *  2. `measureNode` sur chacun, pour la taille de sa carte ;
- *  3. `graph.refEdges`, filtré aux références résolues dont les DEUX bouts sont
- *     des entités placées.
+ * Three reads, and not one more — that is what makes the worker boundary
+ * checkable rather than taken on trust:
+ *  1. the ids of the VISIBLE nodes of entity kind (structural nodes — root,
+ *     arrays, objects — do not exist in this view);
+ *  2. `measureNode` on each of them, for its card's size;
+ *  3. `graph.refEdges`, filtered down to resolved references whose BOTH ends are
+ *     placed entities.
  *
- * Le reste vient de l'`AggregateIndex`. `byNode[0]` est sûr parce que
- * l'appartenance est une PARTITION — chaque tableau tient au plus un id (voir
- * `AggregateIndex`), et l'index qui le produit remplit toujours `aggregates` en
- * même temps, ce qui est ce qui autorise le `rootId` non nullable ci-dessous.
+ * The rest comes from the `AggregateIndex`. `byNode[0]` is safe because
+ * membership is a PARTITION — each array holds at most one id (see
+ * `AggregateIndex`), and the index that produces it always fills `aggregates` at
+ * the same time, which is what licenses the non-nullable `rootId` below.
  *
- * Exportée parce qu'un appelant qui veut faire tourner le cœur AILLEURS — un
- * Web Worker, typiquement — doit pouvoir faire cette moitié-ci sur le thread qui
- * possède le graphe. `createTwoLevelLayoutEngine` n'est plus que la composition
- * des deux.
+ * Exported because a caller wanting to run the core ELSEWHERE — a Web Worker,
+ * typically — must be able to do this half on the thread that owns the graph.
+ * `createTwoLevelLayoutEngine` is now nothing but the composition of the two.
  */
 export function extractGraphLayoutInput(
   graph: Graph,
@@ -493,9 +488,9 @@ export function extractGraphLayoutInput(
   metrics: NodeMetrics = DEFAULT_METRICS,
   options: TwoLevelLayoutOptions = {},
 ): GraphLayoutInput {
-  // Le tri est une CONDITION du déterminisme, pas une commodité de lecture :
-  // `visible` est un `Set` construit par l'appelant, dont l'ordre d'itération
-  // n'est le contrat de personne.
+  // The sort is a CONDITION of determinism, not a reading convenience:
+  // `visible` is a `Set` built by the caller, whose iteration order is nobody's
+  // contract.
   const entityIds: NodeId[] = []
   for (const id of visible) {
     const node = graph.nodes.get(id)
@@ -511,9 +506,9 @@ export function extractGraphLayoutInput(
     entitySet.add(id)
   }
 
-  // Les agrégats, groupés depuis `byNode` : c'est la même partition, dite dans
-  // l'autre sens. Ne sont retenus que ceux qui revendiquent une entité PLACÉE —
-  // un agrégat dont aucun membre n'est visible n'a ni disque ni enveloppe.
+  // The aggregates, grouped from `byNode`: the same partition, stated the other
+  // way round. Only those claiming a PLACED entity are kept — an aggregate none
+  // of whose members is visible has neither disc nor envelope.
   const memberIdsByAggregate = new Map<string, NodeId[]>()
   for (const id of entityIds) {
     const aggId = aggregates.byNode.get(id)?.[0]
@@ -524,20 +519,20 @@ export function extractGraphLayoutInput(
   }
   const inputAggregates: GraphLayoutInput["aggregates"] = []
   for (const [id, memberIds] of memberIdsByAggregate) {
-    // Un id de `byNode` absent d'`aggregates` ne peut pas arriver — les deux
-    // tables sortent du même `buildAggregates` — et le sauter plutôt que de
-    // porter un `rootId` nullable dans le contrat public est le choix assumé :
-    // la seule sortie possible d'un tel cluster serait un groupe sans enveloppe
-    // à peindre, indiscernable de singletons.
+    // An id from `byNode` missing from `aggregates` cannot happen — both tables
+    // come out of the same `buildAggregates` — and skipping it rather than
+    // carrying a nullable `rootId` in the public contract is the deliberate
+    // choice: the only possible output for such a cluster would be a group with
+    // no envelope to paint, indistinguishable from singletons.
     const rootId = aggregates.aggregates.get(id)?.rootId
     if (rootId === undefined) continue
     inputAggregates.push({ id, rootId, memberIds })
   }
 
-  // Une paire PAR référence, doublons compris et dans l'ordre du graphe : la
-  // multiplicité fait le poids des ressorts du niveau 2, et le niveau 1
-  // dédoublonne lui-même ce dont il a besoin. `fromEntity` et non `from` : c'est
-  // l'entité porteuse qui est placée, un value object n'a pas de carte.
+  // One pair PER reference, duplicates included and in the graph's order:
+  // multiplicity makes the weight of level 2's springs, and level 1 deduplicates
+  // what it needs on its own. `fromEntity` and not `from`: it is the carrying
+  // entity that is placed, a value object has no card.
   const refs: GraphLayoutInput["refs"] = []
   for (const edge of graph.refEdges) {
     if (edge.to === null || edge.dangling) continue
@@ -554,19 +549,17 @@ export function extractGraphLayoutInput(
 }
 
 /**
- * LE CŒUR PUR : les deux niveaux, sans graphe, sans DOM, sans état.
+ * THE PURE CORE: the two levels, with no graph, no DOM, no state.
  *
- * C'est exactement l'ancien `run` moins ses lectures du `Graph`, qui sont
- * passées dans `extractGraphLayoutInput`. Le déplacement est textuel et
- * l'identité de la sortie est asserté au bit près
- * (`test/graph-layout-identity.test.ts`).
+ * This is exactly the old `run` minus its reads of the `Graph`, which moved into
+ * `extractGraphLayoutInput`. The move is textual and the identity of the output
+ * is asserted down to the bit (`test/graph-layout-identity.test.ts`).
  *
- * « Pure » a ici un sens opérationnel : cette fonction peut tourner dans un Web
- * Worker, où il n'existe ni `document`, ni `window`, ni le `Graph` du thread
- * principal. Y ajouter la moindre lecture d'environnement casserait le worker
- * du renderer (`packages/renderer/src/graph-layout-worker.ts`) sans casser un
- * seul test de ce dossier — d'où cet avertissement plutôt qu'une garde
- * illusoire.
+ * "Pure" has an operational meaning here: this function can run inside a Web
+ * Worker, where there is no `document`, no `window`, and no main-thread `Graph`.
+ * Adding the slightest environment read to it would break the renderer's worker
+ * (`packages/renderer/src/graph-layout-worker.ts`) without breaking a single
+ * test in this folder — hence this warning rather than an illusory guard.
  */
 export function layoutFromInput(input: GraphLayoutInput): GraphLayoutResult {
   const o = input.options
@@ -574,7 +567,8 @@ export function layoutFromInput(input: GraphLayoutInput): GraphLayoutResult {
   const sizes = new Map<NodeId, { width: number; height: number }>()
   for (const entity of input.entities) sizes.set(entity.id, { width: entity.w, height: entity.h })
 
-  // Partition en clusters : l'agrégat s'il existe, un singleton sinon.
+  // Partition into clusters: the aggregate if there is one, a singleton
+  // otherwise.
   const clusterOf = new Map<NodeId, string>()
   const rootOf = new Map<string, NodeId>()
   for (const agg of input.aggregates) {
@@ -593,14 +587,14 @@ export function layoutFromInput(input: GraphLayoutInput): GraphLayoutResult {
     else members.set(cid, [entity.id])
   }
 
-  // Adjacence inverse INTRA-cluster : cible → sources qui la référencent, les
-  // deux bouts dans le même cluster. C'est ce qui donne au placement radial sa
-  // distance de référence ; le niveau 2 ignore ces arêtes-là, et se sert des
-  // arêtes INTER-cluster (`refPairs`, plus bas), qui sont exactement les autres.
+  // INTRA-cluster reverse adjacency: target → the sources that reference it,
+  // both ends in the same cluster. This is what gives radial placement its
+  // reference distance; level 2 ignores those edges and uses the INTER-cluster
+  // ones (`refPairs`, below), which are exactly the others.
   //
-  // Le sens est celui de `buildAggregates` — on remonte de la cible vers la
-  // source —, sans quoi la distance d'anneau ne coïnciderait pas avec la
-  // distance d'appartenance qui a formé le cluster.
+  // The direction is that of `buildAggregates` — we walk back from target to
+  // source — otherwise the ring distance would not coincide with the membership
+  // distance that formed the cluster.
   const childrenOf = new Map<NodeId, NodeId[]>()
   for (const ref of input.refs) {
     if (clusterOf.get(ref.from) !== clusterOf.get(ref.to)) continue
@@ -608,10 +602,10 @@ export function layoutFromInput(input: GraphLayoutInput): GraphLayoutResult {
     if (list) list.push(ref.from)
     else childrenOf.set(ref.to, [ref.from])
   }
-  // Tri des listes d'adjacence : l'ordre des références du graphe ne doit pas
-  // transparaître dans la sortie. Dédoublonnage au passage — deux champs de la
-  // même carte peuvent référencer la même cible, ce qui la ferait compter deux
-  // fois dans un anneau.
+  // Sorting the adjacency lists: the order of the graph's references must not
+  // show through in the output. Deduplication along the way — two fields of the
+  // same card may reference the same target, which would make it count twice in
+  // a ring.
   for (const [key, list] of childrenOf) {
     list.sort()
     childrenOf.set(
@@ -620,7 +614,7 @@ export function layoutFromInput(input: GraphLayoutInput): GraphLayoutResult {
     )
   }
 
-  // NIVEAU 1 : packing local de chaque cluster, racine au centre.
+  // LEVEL 1: local packing of each cluster, root at the centre.
   const clusters: LocalCluster[] = []
   for (const cid of [...members.keys()].sort()) {
     const rootId = rootOf.get(cid)
@@ -651,22 +645,22 @@ export function layoutFromInput(input: GraphLayoutInput): GraphLayoutResult {
     })
   }
 
-  // Les paires de clusters reliées par une référence, dans l'ordre des
-  // références du graphe : une paire PAR référence, les doublons faisant le
-  // poids du ressort et les paires intra-cluster étant écartées par
-  // `aggregateSprings`. C'est tout ce que le niveau 2 apprend du graphe.
+  // The cluster pairs linked by a reference, in the order of the graph's
+  // references: one pair PER reference, the duplicates making the spring's
+  // weight and the intra-cluster pairs being discarded by `aggregateSprings`.
+  // This is all level 2 learns of the graph.
   const refPairs: [string, string][] = []
   for (const ref of input.refs) {
     refPairs.push([clusterOf.get(ref.from)!, clusterOf.get(ref.to)!])
   }
 
-  // NIVEAU 2 : amorçage, ressorts, gravité, collision, puis la passe dure qui
-  // porte l'invariant de sortie. Il écrit `x`/`y` en place sur les clusters ;
-  // leur contenu — rects locaux et rayon — est figé depuis le niveau 1.
+  // LEVEL 2: seeding, springs, gravity, collision, then the hard pass that
+  // carries the exit invariant. It writes `x`/`y` in place on the clusters;
+  // their content — local rects and radius — has been frozen since level 1.
   layoutDiscs(clusters, refPairs, o)
 
-  // Report des positions locales dans le repère global, puis normalisation : le
-  // coin haut-gauche de la bbox à l'origine, comme le moteur retiré.
+  // Carrying the local positions into the global frame, then normalizing: the
+  // bbox's top-left corner at the origin, as in the removed engine.
   const positions = new Map<NodeId, Rect>()
   for (const c of clusters) {
     for (const id of c.memberIds) {
@@ -687,14 +681,14 @@ export function layoutFromInput(input: GraphLayoutInput): GraphLayoutResult {
     }
   }
 
-  // Enveloppes : seuls les VRAIS agrégats en émettent une. Un singleton a bien
-  // été traité comme un disque au niveau 2 — c'est ce qui l'empêche d'atterrir
-  // dans l'enveloppe d'un voisin — mais il n'a pas d'enveloppe à peindre.
+  // Envelopes: only REAL aggregates emit one. A singleton was indeed treated as
+  // a disc at level 2 — that is what keeps it from landing inside a neighbour's
+  // envelope — but it has no envelope to paint.
   //
-  // Le centre translaté de la même quantité que les positions : c'est le MÊME
-  // disque, à la même marge, que celui que la simulation a écarté. Pas de
-  // recalcul après coup, donc aucune dérive possible entre la forme séparée et
-  // la forme dessinée.
+  // The centre is translated by the same amount as the positions: it is the SAME
+  // disc, at the same padding, as the one the simulation pushed apart. No
+  // recomputation after the fact, hence no possible drift between the separated
+  // shape and the drawn one.
   const shapes: ClusterShape[] = []
   for (const c of clusters) {
     if (!c.isAggregate) continue
@@ -705,22 +699,22 @@ export function layoutFromInput(input: GraphLayoutInput): GraphLayoutResult {
 }
 
 /**
- * Moteur de mise en page à deux niveaux, et le seul depuis le retrait de
- * `createGraphLayoutEngine`. Il reprend l'interface `GraphLayoutEngine` que les
- * deux partageaient tant que l'ancien existait, ce qui a rendu la bascule
- * transparente au point d'appel.
+ * The two-level layout engine, and the only one since the removal of
+ * `createGraphLayoutEngine`. It keeps the `GraphLayoutEngine` interface the two
+ * shared for as long as the old one existed, which made the switch transparent
+ * at the call site.
  *
- * `layout()` est `async` par conformité d'interface seulement : ce calcul est
- * entièrement synchrone et ne cède jamais la main (~64–143 ms sur les jeux
- * mesurés, contre 1,6–4,2 s pour l'ancien moteur qui, lui, attendait un
- * `layoutstop` de cytoscape ; ~4,4 s sur l'audit réel de 6 251 entités, ce qui
- * est la mesure qui a motivé la scission ci-dessus).
+ * `layout()` is `async` out of interface conformance only: this computation is
+ * entirely synchronous and never yields (~64–143 ms on the measured datasets,
+ * against 1.6–4.2 s for the old engine, which did wait on a cytoscape
+ * `layoutstop`; ~4.4 s on the real 6,251-entity audit, the measurement that
+ * motivated the split above).
  *
- * Ce moteur-ci reste le chemin EN PROCESSUS, et il ne devient pas un détail
- * d'implémentation du worker : c'est lui que le renderer exécute quand aucune
- * URL de worker n'est fournie (vitest, headless, hôte sans worker) et c'est sur
- * lui qu'il se replie DÉFINITIVEMENT au premier échec du worker. Sa signature
- * ne bouge donc pas d'un iota.
+ * This engine remains the IN-PROCESS path, and it does not become an
+ * implementation detail of the worker: it is what the renderer runs when no
+ * worker URL is provided (vitest, headless, a host without workers) and it is
+ * what it falls back to PERMANENTLY at the worker's first failure. Its signature
+ * therefore does not move an inch.
  */
 export function createTwoLevelLayoutEngine(opts: TwoLevelLayoutOptions = {}): GraphLayoutEngine {
   return {

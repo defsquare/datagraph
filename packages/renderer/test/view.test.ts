@@ -11,7 +11,7 @@ describe("nearestEntityAncestor", () => {
   });
 
   it("walks up to the closest entity ancestor", () => {
-    // /customers/0/address est un objet imbriqué sous une entité.
+    // /customers/0/address is an object nested under an entity.
     expect(nearestEntityAncestor(graph, "/customers/0/address")).toBe("/customers/0");
   });
 

@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest"
 import { enclosingCircle } from "../src/hull.js"
 import type { Rect } from "../src/structure-layout.js"
 
-/** Vrai si `p` est dans le cercle (ou sur son bord), à epsilon près. Sert
- * d'invariant à toutes les assertions de ce fichier. */
+/** True if `p` is inside the circle (or on its edge), up to epsilon. Serves as
+ * the invariant behind every assertion in this file. */
 function inside(c: { cx: number; cy: number; r: number }, p: { x: number; y: number }): boolean {
   return Math.hypot(p.x - c.cx, p.y - c.cy) <= c.r + 1e-6
 }
@@ -26,14 +26,14 @@ describe("enclosingCircle", () => {
     const c = enclosingCircle([{ x: 10, y: 20, width: 100, height: 40 }], 5)
     expect(c.cx).toBeCloseTo(60, 6)
     expect(c.cy).toBeCloseTo(40, 6)
-    // Demi-diagonale d'un 100×40, plus la marge : √(50² + 20²) + 5.
+    // Half-diagonal of a 100×40, plus the padding: √(50² + 20²) + 5.
     expect(c.r).toBeCloseTo(Math.hypot(50, 20) + 5, 6)
   })
 
   it("spans two rects on the diameter of their two farthest corners", () => {
-    // (0,0) et (380,180) sont les deux coins les plus éloignés ; le cercle
-    // ayant ce segment pour diamètre contient déjà les six autres, donc c'est
-    // LE cercle minimal — un cas à deux points de support, pas trois.
+    // (0,0) and (380,180) are the two farthest corners; the circle having that
+    // segment as its diameter already contains the six others, so it IS the
+    // minimal circle — a two-support-point case, not three.
     const rects: Rect[] = [
       { x: 0, y: 0, width: 100, height: 40 },
       { x: 300, y: 120, width: 80, height: 60 },
@@ -59,9 +59,9 @@ describe("enclosingCircle", () => {
   })
 
   it("stays minimal: shrinking the radius drops at least one corner", () => {
-    // Le contenant n'est pas suffisant — une boîte englobante circonscrite le
-    // serait aussi. Ce qu'on veut est le cercle MINIMAL : le réduire d'un
-    // millième de pixel doit faire sortir un coin.
+    // Containing is not enough — a circumscribed bounding box would contain
+    // too. What we want is the MINIMAL circle: shrinking it by a thousandth of
+    // a pixel must push a corner out.
     const rects: Rect[] = [
       { x: 0, y: 0, width: 100, height: 40 },
       { x: 300, y: 120, width: 80, height: 60 },
@@ -81,9 +81,9 @@ describe("enclosingCircle", () => {
       { x: 200, y: 0, width: 50, height: 20 },
     ]
     const c = enclosingCircle(rects, 4)
-    // Les quatre coins extrêmes — (0,0), (250,0), (0,20), (250,20) — sont
-    // équidistants du centre de la bande : le cercle minimal est celui de
-    // diamètre la diagonale, aucune configuration à trois points ici.
+    // The four extreme corners — (0,0), (250,0), (0,20), (250,20) — are
+    // equidistant from the centre of the band: the minimal circle is the one
+    // whose diameter is the diagonal, no three-point configuration here.
     expect(c.cx).toBeCloseTo(125, 6)
     expect(c.cy).toBeCloseTo(10, 6)
     expect(c.r).toBeCloseTo(Math.hypot(125, 10) + 4, 6)
@@ -104,8 +104,8 @@ describe("enclosingCircle", () => {
   })
 
   it("is deterministic", () => {
-    // L'entrée n'est PAS mélangée (voir la doc de `enclosingCircle`) : deux
-    // appels sur la même entrée donnent bit pour bit le même cercle.
+    // The input is NOT shuffled (see the doc on `enclosingCircle`): two calls
+    // on the same input give bit-for-bit the same circle.
     const rects: Rect[] = [
       { x: 0, y: 0, width: 100, height: 40 },
       { x: 300, y: 120, width: 80, height: 60 },

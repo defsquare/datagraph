@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import { createFontRegistry, fontNameFor, fontSpecFor, specKey } from "../src/font-registry.js";
 import { defsquareLight, resolveTheme } from "../src/theme.js";
 
-/** Un registre adossé à des hooks factices : on observe les installations et
- * désinstallations réelles plutôt que de se fier à des compteurs internes. */
+/** A registry backed by fake hooks: we observe the actual installs and
+ * uninstalls rather than trusting internal counters. */
 function harness() {
   const installs: string[] = [];
   const uninstalls: string[] = [];
@@ -33,7 +33,7 @@ describe("FontRegistry", () => {
     const { registry, installs } = harness();
     registry.lease().sync(defsquareLight);
     expect(installs).toHaveLength(4);
-    expect(new Set(installs).size).toBe(4); // quatre noms distincts
+    expect(new Set(installs).size).toBe(4); // four distinct names
   });
 
   it("ne reinstalle rien quand on resynchronise le meme theme", () => {
@@ -53,14 +53,14 @@ describe("FontRegistry", () => {
   });
 
   it("deux instances aux typographies differentes coexistent au lieu de se pietiner", () => {
-    // C'etait le bug : un nom d'atlas fixe par role faisait que la seconde
-    // instance ecrasait les atlas de la premiere a chaque rebuild.
+    // This was the bug: one fixed atlas name per role meant the second instance
+    // overwrote the first one's atlases on every rebuild.
     const { registry, installs, uninstalls } = harness();
     const other = resolveTheme({ typography: { header: { size: 20 } } });
     registry.lease().sync(defsquareLight);
     registry.lease().sync(other);
     expect(uninstalls).toHaveLength(0);
-    expect(installs).toHaveLength(5); // 4 + le seul role qui differe
+    expect(installs).toHaveLength(5); // 4 + the one role that differs
   });
 
   it("ne desinstalle un atlas que quand son dernier porteur le libere", () => {
@@ -81,7 +81,7 @@ describe("FontRegistry", () => {
     lease.sync(defsquareLight);
     lease.sync(resolveTheme({ typography: { key: { size: 18 } } }));
     expect(installs).toHaveLength(5);
-    expect(uninstalls).toHaveLength(1); // l'ancien atlas `key`, plus porte par personne
+    expect(uninstalls).toHaveLength(1); // the old `key` atlas, no longer held by anyone
   });
 
   it("dispose() est idempotent", () => {
@@ -103,8 +103,8 @@ describe("FontRegistry", () => {
   });
 
   it("installe exactement les noms que fontNameFor derive du theme", () => {
-    // C'est l'invariant qui permet a drawNode de retrouver l'atlas sans rien
-    // recevoir du bail : le nom est une fonction pure du theme et du role.
+    // This is the invariant that lets drawNode find the atlas without receiving
+    // anything from the lease: the name is a pure function of theme and role.
     const { registry, installs } = harness();
     registry.lease().sync(defsquareLight);
     const expected = (["header", "badge", "key", "value"] as const).map((role) =>

@@ -15,7 +15,7 @@ describe("buildGraph", () => {
   it("groups scalar fields as rows, not child nodes", () => {
     const c1 = g.nodes.get("/customers/0")!
     expect(c1.rows.map(r => r.key)).toEqual(["id", "name", "email"])
-    expect(c1.childIds).toEqual(["/customers/0/address"]) // seul l'objet imbriqué est un enfant
+    expect(c1.childIds).toEqual(["/customers/0/address"]) // only the nested object is a child
   })
   it("builds containment edges and stable pointer ids", () => {
     expect(g.containEdges).toContainEqual({ kind: "contain", from: "/customers/0", to: "/customers/0/address" })
@@ -36,9 +36,9 @@ describe("buildGraph", () => {
     expect(() => buildGraph(bigShop(2000), { ...shopConfig, maxNodes: 100 })).toThrow(GraphTooLargeError)
   })
   it("GraphTooLargeError dit comment relever le plafond", () => {
-    // Le plafond est une garde mémoire délibérément relevable : le message doit
-    // nommer le levier (`maxNodes` dans la config), sinon l'utilisateur bloqué
-    // n'a aucune issue.
+    // The cap is a memory guard, deliberately raisable: the message must name
+    // the lever (`maxNodes` in the config), otherwise a blocked user has no way
+    // out.
     expect(() => buildGraph(bigShop(2000), { ...shopConfig, maxNodes: 100 })).toThrow(/maxNodes.*config/)
   })
   it("handles 10k logical nodes under 1s", () => {
@@ -64,7 +64,7 @@ describe("buildGraph", () => {
   })
   it("builds a plain structure tree with an empty ids config", () => {
     const g2 = buildGraph(shopData, { ids: {} })
-    // Aucune entité reconnue : que du containment, pas de références.
+    // No entity recognized: containment only, no references.
     for (const node of g2.nodes.values()) expect(node.kind).not.toBe("entity")
     expect(g2.entityIndex.size).toBe(0)
     expect(g2.refEdges).toEqual([])

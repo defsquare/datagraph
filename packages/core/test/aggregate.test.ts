@@ -13,21 +13,20 @@ describe("buildAggregates", () => {
     const idx = index(shopData, { ...shopConfig, groups: ["Customer"] })
     expect([...idx.aggregates.keys()].sort()).toEqual(["Customer#c1", "Customer#c2"])
     expect([...idx.aggregates.get("Customer#c1")!.memberIds].sort()).toEqual(["/customers/0", "/orders/0"])
-    // c2 n'est référencée par personne : son agrégat se réduit à elle-même.
+    // Nobody references c2: its aggregate reduces to itself.
     expect([...idx.aggregates.get("Customer#c2")!.memberIds]).toEqual(["/customers/1"])
   })
 
   it("leaves an entity with a dangling reference out of every aggregate", () => {
     const idx = index(shopData, { ...shopConfig, groups: ["Customer"] })
-    // /orders/1 pointe vers "GHOST" : la référence est cassée, elle ne propage rien.
+    // /orders/1 points at "GHOST": the reference is dangling, it propagates nothing.
     expect(idx.byNode.get("/orders/1")).toBeUndefined()
   })
 
   it("arbitrates a distance tie by declaration order of the root type", () => {
-    // /orders/0 est à un saut de Customer#c1 ET de Product#p9. La règle
-    // n'admet plus le partage : `Customer` est déclaré en premier dans
-    // `groups`, donc il emporte l'arbitrage, et Product#p9 se réduit à
-    // lui-même.
+    // /orders/0 is one hop from Customer#c1 AND from Product#p9. The rule no
+    // longer allows sharing: `Customer` is declared first in `groups`, so it
+    // wins the tie, and Product#p9 reduces to itself.
     const idx = index(twoRootsData, twoRootsConfig)
     expect(idx.byNode.get("/orders/0")).toEqual(["Customer#c1"])
     expect(idx.aggregates.get("Customer#c1")!.memberIds.has("/orders/0")).toBe(true)
@@ -36,9 +35,9 @@ describe("buildAggregates", () => {
   })
 
   it("follows the declaration order, not the type name: reversing it flips the winner", () => {
-    // Même donnée, ordre de déclaration inversé : c'est Product qui gagne.
-    // C'est ce qui prouve que l'arbitrage lit bien `config.groups` et non
-    // un ordre alphabétique ou l'ordre de découverte du BFS.
+    // Same data, declaration order reversed: Product wins. This is what proves
+    // the tie-break really reads `config.groups`, and not an alphabetical
+    // order or the BFS discovery order.
     const reversed = { ...twoRootsConfig, groups: ["Product", "Customer"] }
     const idx = index(twoRootsData, reversed)
     expect(idx.byNode.get("/orders/0")).toEqual(["Product#p9"])
@@ -46,9 +45,9 @@ describe("buildAggregates", () => {
   })
 
   it("breaks a tie WITHIN one root type by root id", () => {
-    // Deux racines du même type à la même distance : le rang de déclaration ne
-    // départage rien. L'id de la racine le fait, pour que le résultat soit
-    // stable d'une construction à l'autre.
+    // Two roots of the same type at the same distance: declaration rank breaks
+    // nothing. The root id does, so that the result is stable from one build
+    // to the next.
     const data = {
       customers: [{ id: "c2", name: "Martin" }, { id: "c1", name: "Dupont" }],
       orders: [{ id: "o1", buyerId: "c2", payerId: "c1" }],
@@ -65,14 +64,14 @@ describe("buildAggregates", () => {
       groups: ["Customer"],
     }
     const idx = index(data, config)
-    // "Customer#c1" < "Customer#c2", et ce malgré l'ordre du tableau JSON qui
-    // place c2 en premier.
+    // "Customer#c1" < "Customer#c2", and this despite the JSON array order,
+    // which puts c2 first.
     expect(idx.byNode.get("/orders/0")).toEqual(["Customer#c1"])
   })
 
   it("is a strict partition: no entity belongs to two aggregates", () => {
-    // L'invariant qui remplace le chevauchement. Vérifié sur le fixture qui
-    // existe précisément pour produire une égalité de distance.
+    // The invariant that replaces overlap. Checked on the fixture that exists
+    // precisely to produce a distance tie.
     const idx = index(twoRootsData, twoRootsConfig)
     for (const ids of idx.byNode.values()) expect(ids).toHaveLength(1)
 
@@ -95,15 +94,15 @@ describe("buildAggregates", () => {
 
   it("bounds a hub root: only the nearest root claims an entity", () => {
     const idx = index(chainData, chainConfig)
-    // L'Order atteint Customer à 1 saut et Country à 2 : il reste chez Customer.
+    // The Order reaches Customer in 1 hop and Country in 2: it stays with Customer.
     expect(idx.byNode.get("/orders/0")).toEqual(["Customer#c1"])
-    // Country ne récupère donc pas tout le graphe.
+    // Country therefore does not swallow the whole graph.
     expect([...idx.aggregates.get("Country#fr")!.memberIds]).toEqual(["/countries/0"])
   })
 
   it("never absorbs a root into another aggregate", () => {
     const idx = index(chainData, chainConfig)
-    // c1 référence fr, mais c1 est elle-même racine : distance 0 à elle-même.
+    // c1 references fr, but c1 is itself a root: distance 0 to itself.
     expect(idx.byNode.get("/customers/0")).toEqual(["Customer#c1"])
   })
 

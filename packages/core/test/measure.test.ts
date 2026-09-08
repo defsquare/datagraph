@@ -22,9 +22,9 @@ describe("badgeTextFor", () => {
 
 describe("measureNode", () => {
   it("budgete la valeur mono a son avance propre, pas a celle du body", () => {
-    // Une valeur mono longue doit elargir la carte davantage qu'une cle body
-    // de meme longueur : c'est exactement le bug qui faisait deborder
-    // "dupont@example.com" hors de sa carte.
+    // A long mono value must widen the card more than a body key of the same
+    // length: that is exactly the bug that made "dupont@example.com" overflow
+    // its card.
     const node = {
       kind: "object" as const,
       id: "/x",

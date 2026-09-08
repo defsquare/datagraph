@@ -22,16 +22,16 @@ describe("validateConfig", () => {
         navigate: [],
         field: "customerId",
         targetType: "Customer",
-        // `path` porte le `from` ABSOLU tel qu'écrit : c'est la déclaration
-        // que l'auteur relira dans un diagnostic.
+        // `path` carries the ABSOLUTE `from` exactly as written: it is the
+        // declaration the author will read back in a diagnostic.
         path: "$.orders[*].customerId",
       },
     ])
-    // `maxNodes` ne garde plus le coût du layout (la vue graphe borne elle-même
-    // ce qu'elle dispose) : c'est une pure garde MÉMOIRE sur buildGraph +
-    // buildSearchIndex, linéaires. Le défaut est calibré au bench — 1 M nœuds
-    // logiques tiennent en ~430 Mo de heap / ~0,8 s sous les options node par
-    // défaut (voir bench/bench.ts, section « échelle mémoire »).
+    // `maxNodes` no longer guards layout cost (the graph view bounds what it
+    // lays out on its own): it is a pure MEMORY guard over buildGraph +
+    // buildSearchIndex, both linear. The default is calibrated at the bench —
+    // 1 M logical nodes fit in ~430 MB of heap / ~0.8 s under default node
+    // options (see bench/bench.ts, "memory scale" section).
     expect(v.maxNodes).toBe(1_000_000)
     expect(v.rootLabel).toBe("$")
   })
@@ -50,8 +50,8 @@ describe("validateConfig", () => {
   })
 
   it("attributes a ref to the LONGEST matching instance prefix", () => {
-    // `$.orders[*].lines[*]` est un préfixe plus long que `$.orders[*]` : la
-    // ref appartient à Line, pas à Order.
+    // `$.orders[*].lines[*]` is a longer prefix than `$.orders[*]`: the ref
+    // belongs to Line, not to Order.
     const v = validateConfig({
       ids: {
         Order: "$.orders[*].id",
@@ -95,8 +95,8 @@ describe("validateConfig", () => {
       ids: { Order: "$.orders[*].id" },
       refs: [{ from: "$.orders[*].customerId", to: "$.customers[*].id" }],
     })).toThrow(/declared id path/)
-    // Même ensemble d'instances mais autre champ : refusé aussi — viser un
-    // champ non-clé est hors scope v1 (porte laissée ouverte).
+    // Same instance set but a different field: rejected too — targeting a
+    // non-key field is out of scope for v1 (door left open).
     expect(() => validateConfig({
       ids: { Order: "$.orders[*].id", Customer: "$.customers[*].id" },
       refs: [{ from: "$.orders[*].customerId", to: "$.customers[*].name" }],

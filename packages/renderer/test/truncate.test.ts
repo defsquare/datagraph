@@ -43,14 +43,13 @@ describe("accord mesure / troncature", () => {
     expect(truncateToWidth("abc", 6, 6)).toBe("…");
   });
 
-  // Régression finding A (revue finale) : une clé d'environ 49+ caractères à
-  // `maxWidth` 340 consommait `inner` en entier, rendait `valueBudget`
-  // négatif, et `truncateToWidth` renvoyait "" pour la valeur — qui
-  // disparaissait silencieusement de la carte. Ce test reproduit exactement
-  // le calcul de `drawNode` (draw.ts, boucle des lignes) : la clé est
-  // d'abord tronquée à un budget plafonné à `inner - gapKeyValue - <largeur
-  // d'un caractère de valeur>`, avant que `valueBudget` ne soit dérivé de la
-  // largeur de la clé TRONQUÉE.
+  // Regression, finding A (final review): a key of roughly 49+ characters at
+  // `maxWidth` 340 ate up all of `inner`, made `valueBudget` negative, and
+  // `truncateToWidth` returned "" for the value — which then silently vanished
+  // from the card. This test reproduces `drawNode`'s computation exactly
+  // (draw.ts, the row loop): the key is first truncated to a budget capped at
+  // `inner - gapKeyValue - <width of one value character>`, before
+  // `valueBudget` is derived from the width of the TRUNCATED key.
   it("une cle tres longue (~60 caracteres) ne fait pas disparaitre la valeur", () => {
     const m = DEFAULT_METRICS;
     const inner = m.maxWidth - m.railWidth - 2 * m.paddingX;

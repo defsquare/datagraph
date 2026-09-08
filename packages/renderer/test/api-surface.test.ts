@@ -2,25 +2,24 @@ import { describe, it, expect } from "vitest";
 import * as index from "../src/index.js";
 
 /**
- * CE TEST EST LE CONTRAT du point d'entrée public du renderer (`.`, cf. le
- * champ `exports` de `package.json`). La liste ci-dessous n'est pas une
- * observation à rafraîchir quand elle rougit : elle dit ce que le paquet
- * promet. Toute modification doit donc être VOLONTAIRE — ajouter une ligne,
- * c'est s'engager à maintenir le symbole ; en retirer une, c'est assumer une
- * rupture pour les consommateurs.
+ * THIS TEST IS THE CONTRACT of the renderer's public entry point (`.`, see the
+ * `exports` field of `package.json`). The list below is not an observation to
+ * refresh whenever it turns red: it states what the package promises. Any change
+ * to it must therefore be DELIBERATE — adding a line commits you to maintaining
+ * the symbol; removing one means accepting a break for consumers.
  *
- * Il vaut ici plus encore que côté cœur : le dessin bas niveau (`draw.ts`), la
- * `Camera`, l'`Emitter` et la mesure de police restent exportés de LEURS
- * modules pour les tests de ce dossier, et rien n'empêche de les remonter
- * machinalement dans le barrel en croyant « exporter proprement ». Ce test le
- * refuse.
+ * It matters here even more than on the core side: low-level drawing
+ * (`draw.ts`), `Camera`, `Emitter` and font measurement stay exported from THEIR
+ * own modules for the tests in this folder, and nothing stops someone from
+ * mechanically hoisting them into the barrel under the impression of "exporting
+ * cleanly". This test refuses that.
  *
- * Seuls les exports d'EXÉCUTION sont vérifiables ainsi : les types
- * disparaissent à la compilation et n'apparaissent pas dans `Object.keys`.
+ * Only RUNTIME exports can be checked this way: types vanish at compile time and
+ * never show up in `Object.keys`.
  *
- * L'import passe par le CHEMIN SOURCE du point d'entrée et non par le nom du
- * paquet, pour rester dans le régime vitest du dossier ; c'est bien le même
- * fichier que `package.json` publie.
+ * The import goes through the entry point's SOURCE PATH rather than the package
+ * name, so as to stay within the folder's vitest regime; it is indeed the same
+ * file `package.json` publishes.
  */
 describe("api surface", () => {
   it("le point d'entrée `.` exporte exactement ces symboles d'exécution", () => {
