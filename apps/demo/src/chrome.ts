@@ -30,6 +30,10 @@ export interface ChromeHooks {
   /** Called when the search bar unfolds: the chrome does not know the input,
    * `search-ui.ts` is what gives it focus. */
   onSearchOpen(): void;
+  /** Called when the diagnostics link is activated. The chrome owns the LINK,
+   * not the panel: `main.ts` is what holds the detail panel and decides what
+   * the surface shows. */
+  onDiagnosticsOpen(): void;
 }
 
 export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
@@ -212,7 +216,11 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
   }
 
   statDiagEl.addEventListener("click", () => {
+    // The `console.warn` stays: in dev it is still the fastest way to read the
+    // whole batch, and the packaged binary has no devtools — which is exactly
+    // why the panel below had to exist.
     for (const d of graph.diagnostics()) console.warn(`[data-graph] ${d.code} @ ${d.path}: ${d.message}`);
+    hooks.onDiagnosticsOpen();
   });
 
   // --- Theme: the library and the DOM shell switch together.

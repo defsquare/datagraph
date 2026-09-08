@@ -92,7 +92,13 @@ window.__graph = graph;
 // The `onSearchOpen` callback references `search`, declared further down: it is
 // a closure, only called on the first click on the magnifier — long after this
 // module is evaluated.
-const chrome = createChrome(graph, { onSearchOpen: () => search.focus() });
+const chrome = createChrome(graph, {
+  onSearchOpen: () => search.focus(),
+  // Both hooks are read at CALL time, not at construction: `createChrome` runs
+  // before `createSearchUi` and `createDetailPanel` (it is what appends their
+  // DOM), so capturing either here would capture a binding not yet initialised.
+  onDiagnosticsOpen: () => detail.renderDiagnostics(graph.diagnostics()),
+});
 
 // The chrome is trimmed AFTER being built and BEFORE the modules below read it
 // back: a removed button makes `getElementById` return null, and every handler

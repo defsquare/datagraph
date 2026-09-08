@@ -161,6 +161,34 @@ html, body {
   word-break: break-all;
 }
 
+/* ---------- Diagnostics mode of the detail panel ---------- */
+
+/* A diagnostic entry is a BUTTON when it has a node to go to, and a plain div
+   otherwise: the affordance is the element, not a class, so the keyboard gets
+   the navigable entries for free and skips the inert ones. */
+.diag-entry {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: var(--space-1);
+  cursor: pointer;
+}
+
+.diag-entry:hover { background: var(--float-hover); }
+
+.diag-current { outline: 2px solid var(--ds-accent); outline-offset: -2px; }
+
+.diag-path {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ds-subtle);
+}
+
 /* ---------- Status (bottom left) ---------- */
 
 /* Bare text over the canvas: a halo in the background color lifts it off any
