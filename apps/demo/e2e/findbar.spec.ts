@@ -86,9 +86,23 @@ test("Cmd/Ctrl+F inside the open field does not fight the browser", async ({ pag
   await gotoReady(page)
   await page.click("#search-toggle")
   await page.fill("#search", "camille")
+  // Collapse the caret to a known interior offset. The normal open path calls
+  // `search.focus()`, which also does `select()` — so a SELECTED value after
+  // the shortcut would mean the exemption's early return was skipped and the
+  // ordinary open/refocus path ran instead. A still-collapsed caret is the
+  // only observable proof the early return actually fired.
+  await page.evaluate(() => {
+    const input = document.getElementById("search") as HTMLInputElement
+    input.setSelectionRange(3, 3)
+  })
   // Already open with the field focused: the shortcut is not ours to intercept,
   // so the field must keep its content and its focus.
   await page.keyboard.press("ControlOrMeta+f")
   await expect(page.locator("#search")).toBeFocused()
   await expect(page.locator("#search")).toHaveValue("camille")
+  const selection = await page.evaluate(() => {
+    const input = document.getElementById("search") as HTMLInputElement
+    return [input.selectionStart, input.selectionEnd]
+  })
+  expect(selection).toEqual([3, 3])
 })
