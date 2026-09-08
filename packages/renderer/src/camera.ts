@@ -190,6 +190,19 @@ export class Camera {
   private lastClientY = 0;
   /** The frame handle of a pan in flight, or `null`. */
   private panFrame: number | null = null;
+  /**
+   * The smallest scale the wheel may reach: the last framing's.
+   *
+   * Zooming out past the framing can only produce an empty canvas with the graph
+   * as a dot in it — a state with nothing to read and no obvious way back. The
+   * floor is the framing scale rather than a constant because it is the only
+   * value that means "the whole content, exactly": it follows every layout,
+   * every view switch and every `setData` for free, since each ends on a fit.
+   *
+   * Starts at `MIN_SCALE`, the absolute bound, so a camera that has never framed
+   * anything behaves as before.
+   */
+  private zoomFloor = MIN_SCALE;
 
   constructor(stage: Container, canvas: HTMLCanvasElement, options: CameraOptions = {}) {
     this.stage = stage;
@@ -210,6 +223,7 @@ export class Camera {
     let scale = Math.min(availableW / Math.max(bounds.width, 1), availableH / Math.max(bounds.height, 1));
     if (!Number.isFinite(scale) || scale <= 0) scale = 1;
     scale = clamp(scale, MIN_SCALE, MAX_FIT_SCALE);
+    this.zoomFloor = scale;
     this.applyScaleAndCenter(bounds, viewport, scale);
   }
 
@@ -221,6 +235,11 @@ export class Camera {
 
   scale(): number {
     return this.currentScale;
+  }
+
+  /** The scale the wheel cannot go below — see `zoomFloor`. */
+  zoomOutFloor(): number {
+    return this.zoomFloor;
   }
 
   /**
@@ -347,7 +366,9 @@ export class Camera {
     const pointerY = event.clientY - bounds.top;
 
     const zoomFactor = zoomFactorFor(dy);
-    const nextScale = clamp(this.currentScale * zoomFactor, MIN_SCALE, MAX_SCALE);
+    // The floor bites on the way OUT only: `MAX_SCALE` still governs the way in,
+    // where there is nothing to protect the user from.
+    const nextScale = clamp(this.currentScale * zoomFactor, this.zoomFloor, MAX_SCALE);
     if (nextScale === this.currentScale) return;
 
     // Keep the point under the cursor stationary on screen while zooming.

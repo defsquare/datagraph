@@ -113,6 +113,7 @@ function mountCamera(isBlocked: () => boolean = () => false) {
   const canvas = {
     addEventListener: record("canvas"),
     removeEventListener: () => {},
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: 1000, height: 800 }),
   } as unknown as HTMLCanvasElement;
   vi.stubGlobal("window", { addEventListener: record("window"), removeEventListener: () => {} });
 
@@ -124,6 +125,21 @@ function mountCamera(isBlocked: () => boolean = () => false) {
     down: (clientX: number, clientY: number) =>
       handlers.get("canvas:pointerdown")!({ button: 0, clientX, clientY }),
     move: (clientX: number, clientY: number) => handlers.get("window:pointermove")!({ clientX, clientY }),
+    // `handleWheel` reads `preventDefault`, the deltas, the modifiers and the
+    // cursor position — everything else is a plausible default a caller can
+    // override, the way a real `WheelEvent` would let `init` do.
+    wheel: (init: Partial<WheelSignal & { clientX: number; clientY: number }> = {}) =>
+      handlers.get("canvas:wheel")!({
+        preventDefault() {},
+        deltaX: 0,
+        deltaY: 0,
+        deltaMode: 0,
+        ctrlKey: false,
+        metaKey: false,
+        clientX: 500,
+        clientY: 400,
+        ...init,
+      }),
   };
 }
 
@@ -280,5 +296,44 @@ describe("revealPan", () => {
 
   it("returns null on an empty target list", () => {
     expect(revealPan(VIEW, [], 40)).toBeNull();
+  });
+});
+
+describe("zoom-out floor", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("starts at the absolute minimum before anything is framed", () => {
+    const { camera } = mountCamera();
+    expect(camera.zoomOutFloor()).toBeCloseTo(0.02);
+  });
+
+  it("takes the framing scale as its floor after a fit", () => {
+    const { camera } = mountCamera();
+    camera.fitTo({ x: 0, y: 0, width: 4000, height: 4000 }, { width: 1000, height: 800 });
+    const fitted = camera.scale();
+    expect(camera.zoomOutFloor()).toBeCloseTo(fitted);
+  });
+
+  it("refuses to zoom out past the framing", () => {
+    const { camera, wheel } = mountCamera();
+    camera.fitTo({ x: 0, y: 0, width: 4000, height: 4000 }, { width: 1000, height: 800 });
+    const fitted = camera.scale();
+    // Twenty notches out: without the floor this lands near MIN_SCALE and the
+    // whole graph becomes a dot lost in an empty canvas.
+    for (let i = 0; i < 20; i++) {
+      wheel({ deltaY: 100, ctrlKey: true });
+    }
+    expect(camera.scale()).toBeCloseTo(fitted);
+  });
+
+  it("leaves zooming IN untouched", () => {
+    const { camera, wheel } = mountCamera();
+    camera.fitTo({ x: 0, y: 0, width: 4000, height: 4000 }, { width: 1000, height: 800 });
+    for (let i = 0; i < 40; i++) {
+      wheel({ deltaY: -100, ctrlKey: true });
+    }
+    expect(camera.scale()).toBeCloseTo(3); // MAX_SCALE, unchanged
   });
 });
