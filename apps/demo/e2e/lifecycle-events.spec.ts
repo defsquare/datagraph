@@ -86,10 +86,14 @@ test("the visible counter follows an expand and a collapse, with no selection", 
   await gotoReady(page)
   const before = await page.locator("#stat-visible").textContent()
 
-  // `/categories` has no collapsible content in the demo dataset (a category
-  // carries no nested array), so expanding it never moves the counter — that
-  // would test nothing. `/customers/0` does (an order list nests under it,
-  // exercised the same way by the "deselect" test above).
+  // `/categories` is an elided array container (root-level arrays carry their
+  // row rather than a card of their own): `CollapseState`'s constructor
+  // auto-expands elided containers within the initial card budget, so it is
+  // already in the `expanded` set at load — `expand()` on it is a same-state
+  // no-op and moves nothing. `/customers/0` does: it reveals the customer's
+  // own nested `address` object (see `COST_CUSTOMER`'s breakdown below), not
+  // any order — orders only reference a customer by id, they do not nest
+  // under one.
   await page.evaluate(async () => { await (window as any).__graph.expand("/customers/0") })
   await expect(page.locator("#stat-visible")).not.toHaveText(before!)
 
