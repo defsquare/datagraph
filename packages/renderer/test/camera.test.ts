@@ -4,6 +4,7 @@ import {
   Camera,
   classifyWheel,
   normalizeWheelDelta,
+  revealPan,
   zoomFactorFor,
   type WheelSignal,
 } from "../src/camera.js";
@@ -207,5 +208,62 @@ describe("Camera — worldViewport", () => {
     const after = camera.worldViewport(VIEWPORT);
     expect(after.x).toBeCloseTo(before.x - 50, 6);
     expect(after.y).toBeCloseTo(before.y, 6);
+  });
+});
+
+/**
+ * Following revealed content is a DECISION before it is a motion, and the
+ * decision is the part worth proving: pan only when nothing new landed in
+ * frame, and pan by the least that brings some of it in. The motion itself is
+ * covered end to end in `apps/demo/e2e/reveal-camera.spec.ts`.
+ */
+describe("revealPan", () => {
+  const VIEW = { x: 0, y: 0, width: 1000, height: 800 };
+
+  it("does nothing when one of the targets is already in frame", () => {
+    // The user is looking at part of what just appeared: stealing the camera
+    // there would move a view they did not ask to move.
+    expect(revealPan(VIEW, [{ x: 900, y: 700, width: 200, height: 200 }], 40)).toBeNull();
+  });
+
+  it("does nothing when a target merely touches the edge", () => {
+    expect(revealPan(VIEW, [{ x: 1000, y: 0, width: 100, height: 100 }], 40)).toBeNull();
+  });
+
+  it("pans down by the least that brings content under the window into view", () => {
+    const pan = revealPan(VIEW, [{ x: 100, y: 900, width: 200, height: 100 }], 40);
+    // The block's top must land 40 above the view's bottom edge: view.y goes
+    // from 0 to 900 - (800 - 40) = 140.
+    expect(pan).toEqual({ dx: 0, dy: 140 });
+  });
+
+  it("pans up for content above the window", () => {
+    const pan = revealPan(VIEW, [{ x: 100, y: -300, width: 200, height: 100 }], 40);
+    // The block's bottom (-200) must land 40 below the view's top: view.y goes
+    // from 0 to -200 - 40 = -240.
+    expect(pan).toEqual({ dx: 0, dy: -240 });
+  });
+
+  it("pans on both axes when the content is off in both", () => {
+    const pan = revealPan(VIEW, [{ x: 1400, y: 900, width: 100, height: 100 }], 40);
+    expect(pan).toEqual({ dx: 1400 - (1000 - 40), dy: 900 - (800 - 40) });
+  });
+
+  it("frames the bounding box of several targets, not each one", () => {
+    const pan = revealPan(
+      VIEW,
+      [
+        { x: 100, y: 900, width: 100, height: 100 },
+        { x: 100, y: 1200, width: 100, height: 100 },
+      ],
+      40,
+    );
+    // The nearest edge of the box is what has to come in: same result as the
+    // first block alone.
+    expect(pan).toEqual({ dx: 0, dy: 140 });
+  });
+
+  it("returns null on an empty target list", () => {
+    expect(revealPan(VIEW, [], 40)).toBeNull();
   });
 });

@@ -52,7 +52,7 @@ export type { TwoLevelLayoutOptions };
 import { entityAccentMap, resolveTheme, type Theme, type ThemeOverride } from "./theme.js";
 import { pixiFontRegistry } from "./font-registry.js";
 import { fontsReady, measureFontMetrics } from "./font-metrics.js";
-import { Camera, type Size } from "./camera.js";
+import { Camera, revealPan, type Size } from "./camera.js";
 import {
   drawEdgeHitAreas,
   drawEdgeLabels,
@@ -2130,6 +2130,41 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   }
 
   /**
+   * Duration of the camera's follow. Deliberately longer than `TRANSITION_MS`
+   * (200 ms, the cards' own move): the two run together, and a camera arriving
+   * first would show an empty area for the rest of the cards' travel.
+   */
+  const REVEAL_PAN_MS = 320;
+  /** How far inside the edge revealed content must land, in world units. */
+  const REVEAL_MARGIN = 80;
+
+  /**
+   * Brings content that just appeared into frame — and only when NONE of it is
+   * already there. `revealPan` carries the whole decision; this function only
+   * gathers the rectangles, which it can do because `layoutResult` is already
+   * published by the time it runs.
+   */
+  function followRevealed(newIds: Iterable<NodeId>): void {
+    if (!camera) return;
+    const positions = activePositions();
+    if (!positions) return;
+    const targets: Rect[] = [];
+    for (const id of newIds) {
+      const rect = positions.get(id);
+      if (rect) targets.push(rect);
+    }
+    const pan = revealPan(camera.worldViewport(viewport()), targets, REVEAL_MARGIN);
+    if (pan) camera.panByWorld(pan.dx, pan.dy, REVEAL_PAN_MS);
+  }
+
+  /** The ids in `next` that `prev` did not carry. */
+  function difference(next: ReadonlySet<NodeId>, prev: ReadonlySet<NodeId>): NodeId[] {
+    const out: NodeId[] = [];
+    for (const id of next) if (!prev.has(id)) out.push(id);
+    return out;
+  }
+
+  /**
    * The index of the row under the pointer, or `null` if the pointer is on none:
    * outside LOD 0 (the only LOD that renders rows), in the header, or in the bottom
    * padding — where the click lands below the last row.
@@ -2204,6 +2239,10 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     if (!graph || !collapseState || !layoutResult || !engine) return;
     if (!graph.nodes.has(id) || collapseState.isExpanded(id)) return;
     const gen = ++opGen;
+    // Captured BEFORE the mutation: the diff against the post-layout set is what
+    // names the cards that appeared, and it is the only thing the camera follow
+    // needs to know.
+    const beforeVisible = collapseState.visibleNodeIds();
     collapseState.expand(id);
     const visible = collapseState.visibleNodeIds();
     const prevPositions = new Map(layoutResult.positions);
@@ -2231,6 +2270,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     layoutResult = next;
     rebuild();
     animatePositions(prevPositions, layoutResult.positions);
+    followRevealed(difference(collapseState.visibleNodeIds(), beforeVisible));
   }
 
   /**
@@ -2245,6 +2285,10 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     if (!graph || !collapseState || !layoutResult || !engine) return;
     if (!graph.nodes.has(parentId) || collapseState.revealedPages(parentId).has(page)) return;
     const gen = ++opGen;
+    // Captured BEFORE the mutation: the diff against the post-layout set is what
+    // names the cards that appeared, and it is the only thing the camera follow
+    // needs to know.
+    const beforeVisible = collapseState.visibleNodeIds();
     collapseState.revealPage(parentId, page);
     const visible = collapseState.visibleNodeIds();
     const prevPositions = new Map(layoutResult.positions);
@@ -2267,6 +2311,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     layoutResult = next;
     rebuild();
     animatePositions(prevPositions, layoutResult.positions);
+    followRevealed(difference(collapseState.visibleNodeIds(), beforeVisible));
   }
 
   function doCollapse(id: NodeId): void {

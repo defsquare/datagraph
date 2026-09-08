@@ -84,6 +84,76 @@ export function classifyWheel(event: WheelSignal): "zoom" | "pan" {
   return event.ctrlKey || event.metaKey ? "zoom" : "pan";
 }
 
+/** Do two intervals overlap, contact included? */
+function spansOverlap(aMin: number, aMax: number, bMin: number, bMax: number): boolean {
+  return aMin <= bMax && bMin <= aMax;
+}
+
+/**
+ * How far the view must travel, in WORLD units, for content that just appeared
+ * to come into frame — or `null` when it must not travel at all.
+ *
+ * Two rules, and the first is the important one: if ANY of the targets already
+ * shows, even partially, the camera does not move. Content appearing in frame is
+ * its own feedback, and a view that jumps anyway is a view stolen from whoever
+ * was reading it.
+ *
+ * When nothing shows, the displacement is the SMALLEST one that brings the
+ * targets' bounding box `margin` inside the offending edge — not a centring. The
+ * user asked to open something, not to be taken somewhere.
+ *
+ * Pure, and exported for that reason: the decision is proven in
+ * `camera.test.ts`, the motion in the demo's e2e suite.
+ */
+export function revealPan(
+  view: Rect,
+  targets: readonly Rect[],
+  margin: number,
+): { dx: number; dy: number } | null {
+  if (targets.length === 0) return null;
+
+  const viewRight = view.x + view.width;
+  const viewBottom = view.y + view.height;
+  for (const t of targets) {
+    if (
+      spansOverlap(view.x, viewRight, t.x, t.x + t.width) &&
+      spansOverlap(view.y, viewBottom, t.y, t.y + t.height)
+    ) {
+      return null;
+    }
+  }
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const t of targets) {
+    minX = Math.min(minX, t.x);
+    minY = Math.min(minY, t.y);
+    maxX = Math.max(maxX, t.x + t.width);
+    maxY = Math.max(maxY, t.y + t.height);
+  }
+
+  // `margin` is clamped to half the span so a block larger than the viewport
+  // still lands its NEAR edge in frame instead of overshooting past it.
+  const axis = (
+    boxMin: number,
+    boxMax: number,
+    viewMin: number,
+    viewSize: number,
+  ): number => {
+    const m = Math.min(margin, viewSize / 2);
+    if (boxMax < viewMin + m) return boxMax - (viewMin + m);
+    if (boxMin > viewMin + viewSize - m) return boxMin - (viewMin + viewSize - m);
+    return 0;
+  };
+
+  return {
+    dx: axis(minX, maxX, view.x, view.width),
+    dy: axis(minY, maxY, view.y, view.height),
+  };
+}
+
 export interface CameraOptions {
   /**
    * Consulted at every movement to know whether the pan must be handed over to someone
@@ -117,6 +187,8 @@ export class Camera {
   private dragging = false;
   private lastClientX = 0;
   private lastClientY = 0;
+  /** The frame handle of a pan in flight, or `null`. */
+  private panFrame: number | null = null;
 
   constructor(stage: Container, canvas: HTMLCanvasElement, options: CameraOptions = {}) {
     this.stage = stage;
@@ -171,7 +243,48 @@ export class Camera {
     };
   }
 
+  /**
+   * Slides the view by a WORLD translation, animated.
+   *
+   * A pan and nothing else: the scale is untouched. Zooming out to show what
+   * appeared would change the reading of everything else on screen to report one
+   * local event.
+   *
+   * Any user gesture cancels it — a camera that keeps travelling under a hand
+   * already moving it is a camera fighting its user.
+   */
+  panByWorld(dx: number, dy: number, durationMs: number): void {
+    this.cancelPan();
+    if (dx === 0 && dy === 0) return;
+    const startX = this.stage.position.x;
+    const startY = this.stage.position.y;
+    // Screen displacement is the world one scaled: the stage moves opposite the
+    // view, hence the minus.
+    const toX = startX - dx * this.currentScale;
+    const toY = startY - dy * this.currentScale;
+    const start = performance.now();
+    const step = (): void => {
+      const t = Math.min(1, (performance.now() - start) / durationMs);
+      const eased = 1 - (1 - t) * (1 - t);
+      this.stage.position.set(startX + (toX - startX) * eased, startY + (toY - startY) * eased);
+      if (t >= 1) {
+        this.panFrame = null;
+        return;
+      }
+      this.panFrame = requestAnimationFrame(step);
+    };
+    this.panFrame = requestAnimationFrame(step);
+  }
+
+  private cancelPan(): void {
+    if (this.panFrame !== null) {
+      cancelAnimationFrame(this.panFrame);
+      this.panFrame = null;
+    }
+  }
+
   dispose(): void {
+    this.cancelPan();
     this.canvas.removeEventListener("pointerdown", this.handlePointerDown);
     window.removeEventListener("pointermove", this.handlePointerMove);
     window.removeEventListener("pointerup", this.handlePointerUp);
@@ -188,6 +301,7 @@ export class Camera {
   }
 
   private readonly handlePointerDown = (event: PointerEvent): void => {
+    this.cancelPan();
     if (event.button !== 0) return;
     this.dragging = true;
     this.lastClientX = event.clientX;
@@ -216,6 +330,7 @@ export class Camera {
   };
 
   private readonly handleWheel = (event: WheelEvent): void => {
+    this.cancelPan();
     event.preventDefault();
 
     const dx = normalizeWheelDelta(event.deltaX, event.deltaMode);
