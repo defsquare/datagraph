@@ -1,5 +1,6 @@
 import type { Container } from "pixi.js";
 import type { Rect } from "@defsquare/data-graph-core";
+import { easeOutQuad } from "./animate.js";
 
 export interface Size {
   width: number;
@@ -265,7 +266,7 @@ export class Camera {
     const start = performance.now();
     const step = (): void => {
       const t = Math.min(1, (performance.now() - start) / durationMs);
-      const eased = 1 - (1 - t) * (1 - t);
+      const eased = easeOutQuad(t);
       this.stage.position.set(startX + (toX - startX) * eased, startY + (toY - startY) * eased);
       if (t >= 1) {
         this.panFrame = null;

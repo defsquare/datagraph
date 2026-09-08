@@ -230,6 +230,21 @@ describe("revealPan", () => {
     expect(revealPan(VIEW, [{ x: 1000, y: 0, width: 100, height: 100 }], 40)).toBeNull();
   });
 
+  it("does nothing when only ONE of several targets is in frame", () => {
+    // The off-screen one comes FIRST: a loop that returns a pan as soon as it
+    // sees a single non-overlapping target, instead of scanning the whole
+    // list for a visible one, would fail this and pass the others.
+    const pan = revealPan(
+      VIEW,
+      [
+        { x: 1400, y: 900, width: 100, height: 100 },
+        { x: 900, y: 700, width: 200, height: 200 },
+      ],
+      40,
+    );
+    expect(pan).toBeNull();
+  });
+
   it("pans down by the least that brings content under the window into view", () => {
     const pan = revealPan(VIEW, [{ x: 100, y: 900, width: 200, height: 100 }], 40);
     // The block's top must land 40 above the view's bottom edge: view.y goes

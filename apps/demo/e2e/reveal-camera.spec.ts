@@ -6,18 +6,6 @@ async function gotoReady(page: Page): Promise<void> {
   await page.evaluate(() => (window as any).__graph.ready)
 }
 
-/** The canvas transform, read off Pixi's stage through the public handle: the
- * camera exposes no position, and this is what actually moved. */
-async function stagePosition(page: Page): Promise<{ x: number; y: number }> {
-  return page.evaluate(() => {
-    const canvas = document.querySelector("canvas") as HTMLCanvasElement
-    // The stage is not public; the visible proxy is a card's screen position,
-    // which is the transform applied to a fixed world point.
-    const rect = canvas.getBoundingClientRect()
-    return { x: rect.x, y: rect.y }
-  })
-}
-
 test("expanding content that lands off screen moves the camera", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await gotoReady(page)
