@@ -334,9 +334,6 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
 
   fitBtn.addEventListener("click", () => graph.fit());
 
-  // `tidy()` is async (it redoes the full layout) but nothing here has to await
-  // its result: the promise is explicitly discarded, and the instance guards
-  // itself against concurrent operations.
   /**
    * Same treatment as the view toggle, and for the same reason made sharper by
    * scale: `tidy()` recomputes the WHOLE arrangement, which takes seconds on a
