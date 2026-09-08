@@ -79,6 +79,7 @@ import {
 import { attachDrag, TAP_THRESHOLD } from "./drag.js";
 import { clusterRelatedIds, DIM_ALPHA, relatedIds } from "./focus.js";
 import { attachHover, type HoverHandle } from "./hover.js";
+import { nearestInDirection } from "./keynav.js";
 import { createPositionAnimator } from "./animate.js";
 import { createSearchController } from "./search.js";
 import {
@@ -2544,9 +2545,18 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   }
 
   /**
-   * Escape deselects. The listener is set on `window` and not on the canvas: the
-   * canvas does not hold keyboard focus (it is not focusable), so a local listener
-   * would never see the key.
+   * The keyboard on the graph: Escape deselects, the arrows move the selection
+   * to the nearest visible neighbour, Enter folds or unfolds the selected card.
+   *
+   * The listener is set on `window` and not on the canvas: the canvas does not
+   * hold keyboard focus (it is not focusable), so a local listener would never
+   * see the key. That also makes it the LAST link in the chain — a host chrome
+   * handling Escape for its own overlays stops the event before it gets here
+   * (see the demo's `chrome.ts`), which is what gives the cascade "one level at
+   * a time".
+   *
+   * A key aimed at a text field is left alone: the arrows belong to the caret
+   * whenever one is where the user is typing.
    *
    * Set SYNCHRONOUSLY, at creation, and removed by `destroy()`: setting it in the
    * async initialization would let a `destroy()` called during that initialization
@@ -2555,8 +2565,60 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
    */
   const handleKeyDown = (event: KeyboardEvent): void => {
     if (destroyed) return;
-    if (event.key !== "Escape") return;
-    doDeselect();
+
+    const target = event.target as HTMLElement | null;
+    if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) {
+      return;
+    }
+
+    if (event.key === "Escape") {
+      doDeselect();
+      return;
+    }
+
+    const selected = selectedNodeId();
+    if (selected === null) return;
+
+    if (event.key === "Enter") {
+      // Structure view only: graph view collapses nothing, so the key would
+      // promise a gesture with no effect — the same policy the chevrons follow.
+      if (viewPolicy().foldable) {
+        event.preventDefault();
+        toggleExpand(selected);
+      }
+      return;
+    }
+
+    const direction =
+      event.key === "ArrowUp"
+        ? "up"
+        : event.key === "ArrowDown"
+          ? "down"
+          : event.key === "ArrowLeft"
+            ? "left"
+            : event.key === "ArrowRight"
+              ? "right"
+              : null;
+    if (direction === null) return;
+
+    const positions = activePositions();
+    const from = positions?.get(selected);
+    if (!positions || !from) return;
+    const visible = activeVisible();
+    // Only what is BOTH laid out and visible is a candidate: a position left
+    // over from a collapsed subtree would move the selection onto a card that
+    // is not drawn.
+    const candidates: [NodeId, Rect][] = [];
+    for (const [id, rect] of positions) {
+      if (id !== selected && visible.has(id) && !graph?.nodes.get(id)?.elided) {
+        candidates.push([id, rect]);
+      }
+    }
+    const next = nearestInDirection(from, candidates, direction);
+    if (next === null) return;
+    event.preventDefault();
+    doSelect(next);
+    void doFocus(next);
   };
   window.addEventListener("keydown", handleKeyDown);
 

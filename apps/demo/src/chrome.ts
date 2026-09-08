@@ -212,8 +212,14 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
 
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
-    // Escape closes one level at a time, the most recent one first.
+    // Escape closes one level at a time, the most recent one first. The renderer
+    // is the LAST level: it listens on `window`, which a bubbling `document`
+    // Escape reaches only after this handler runs. `stopPropagation` is therefore
+    // called ONLY inside the branches that actually consumed the key — a blanket
+    // call at the top would also swallow Escape when nothing here is open, and
+    // deselecting the graph would never happen.
     if (isOpen(menuEl)) {
+      event.stopPropagation();
       closeMenu();
       menuToggleBtn?.focus();
     } else if (isOpen(findbarEl)) {
@@ -222,6 +228,7 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
       // the old term while the field looked empty. Collapsing must cancel
       // nothing, so that clearing is held back.
       event.preventDefault();
+      event.stopPropagation();
       closeSearch();
       searchToggleBtn?.focus();
     }
