@@ -165,8 +165,12 @@ html, body {
 
 /* A diagnostic entry is a BUTTON when it has a node to go to, and a plain div
    otherwise: the affordance is the element, not a class, so the keyboard gets
-   the navigable entries for free and skips the inert ones. */
-.diag-entry {
+   the navigable entries for free and skips the inert ones.
+   Scoped under `#selection-rows`: the wrapper also carries the plain `.row`
+   class (`#selection-rows .row`, specificity with the id), which would
+   otherwise always win over a bare `.diag-entry`/`.diag-path` regardless of
+   source order and silently keep the row's flex layout and dd sizing. */
+#selection-rows .diag-entry {
   display: block;
   width: 100%;
   text-align: left;
@@ -179,11 +183,14 @@ html, body {
   cursor: pointer;
 }
 
-.diag-entry:hover { background: var(--float-hover); }
+#selection-rows .diag-entry:hover { background: var(--float-hover); }
 
+/* No scoping needed: `outline`/`outline-offset` are not touched by any
+   `#selection-rows` rule, so this class has nothing to lose a specificity
+   fight against. */
 .diag-current { outline: 2px solid var(--ds-accent); outline-offset: -2px; }
 
-.diag-path {
+#selection-rows .diag-path {
   font-family: var(--font-mono);
   font-size: 10px;
   color: var(--ds-subtle);

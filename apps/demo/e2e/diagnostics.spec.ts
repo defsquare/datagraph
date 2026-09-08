@@ -38,3 +38,42 @@ test("a later select re-renders the panel in detail mode", async ({ page }) => {
   await expect(page.locator("#selection-label")).toContainText("Customer #c1")
   await expect(page.locator("#selection-rows .diag-entry")).toHaveCount(0)
 })
+
+/**
+ * `unresolved-reference` is the one code whose `path` is a config declaration,
+ * not a node pointer (see the design note in the task brief and `Diagnostic`'s
+ * doc comment in `model.ts`): it must render as a plain, unclickable row.
+ *
+ * `A` has one instance and no `bId` field on it at all — not even `null` — which
+ * is what makes the declaration unsatisfied rather than merely dangling: per
+ * `buildGraph` (`packages/core/src/build.ts`), a row that EXISTS but resolves to
+ * nothing is `dangling-ref`; a declaration with no matching row anywhere, on a
+ * type that does have instances, is `unresolved-reference`.
+ */
+test("an unresolved-reference diagnostic renders as an inert, non-clickable entry", async ({ page }) => {
+  await gotoReady(page)
+  await page.evaluate(() =>
+    (window as any).__graph.setData(
+      { as: [{ id: "a1" }], bs: [{ id: "b1" }] },
+      { ids: { A: "$.as[*].id", B: "$.bs[*].id" }, refs: [{ from: "$.as[*].bId", to: "$.bs[*].id" }] },
+    ),
+  )
+
+  const diagnostics = await page.evaluate(() => (window as any).__graph.diagnostics())
+  expect(diagnostics).toEqual([
+    {
+      code: "unresolved-reference",
+      path: "$.as[*].bId",
+      message: 'Reference "$.as[*].bId" declared on A matches no row on any A',
+    },
+  ])
+
+  await page.click("#stat-diagnostics")
+  await expect(page.locator("#selection-rows .row")).toHaveCount(1)
+  await expect(page.locator("#selection-rows")).toContainText("unresolved-reference")
+  await expect(page.locator("#selection-rows")).toContainText("matches no row on any A")
+
+  // Readable, but inert: no button, no `.diag-entry` affordance.
+  await expect(page.locator("#selection-rows .diag-entry")).toHaveCount(0)
+  await expect(page.locator("#selection-rows button")).toHaveCount(0)
+})
