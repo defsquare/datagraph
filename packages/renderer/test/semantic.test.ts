@@ -720,6 +720,35 @@ describe("drawSemanticLabels", () => {
   });
 });
 
+describe("drawSemanticLabels — legibility floor", () => {
+  const tiny = [node({ id: "c67", label: "c67", count: 3, circle: { cx: 0, cy: 0, r: 6 } })];
+
+  it("keeps a small disc's label readable when zoomed out", () => {
+    // r * SEMANTIC_LABEL_RATIO = 1.2px of world type; at a camera scale of 0.1
+    // that is 0.12px on screen — a smudge. The floor is expressed on SCREEN, so
+    // it has to be divided back by the scale to become a world size.
+    const layer = drawSemanticLabels(tiny, theme, false, undefined, 0.1);
+    const label = partsOf(layer)[0]!;
+    // 9px on screen at scale 0.1 = 90px in the world; the scale factor is that
+    // over the theme's header size.
+    expect(label.scale.x).toBeCloseTo(90 / theme.typography.header.size, 3);
+  });
+
+  it("leaves a label alone when the disc is already large enough", () => {
+    const big = [node({ id: "big", label: "Boutique", count: 300, circle: { cx: 0, cy: 0, r: 400 } })];
+    const layer = drawSemanticLabels(big, theme, false, undefined, 1);
+    const label = partsOf(layer)[0]!;
+    expect(label.scale.x).toBeCloseTo((400 * 0.2) / theme.typography.header.size, 3);
+  });
+
+  it("defaults to a scale of 1, so existing callers are unaffected", () => {
+    const big = [node({ id: "big", label: "Boutique", count: 300, circle: { cx: 0, cy: 0, r: 400 } })];
+    const withoutArg = partsOf(drawSemanticLabels(big, theme, false))[0]!.scale.x;
+    const withDefault = partsOf(drawSemanticLabels(big, theme, false, undefined, 1))[0]!.scale.x;
+    expect(withoutArg).toBeCloseTo(withDefault, 5);
+  });
+});
+
 describe("drawSemanticEdges", () => {
   const edge = (weight: number, dim = false) => ({ x1: 0, y1: 0, x2: 100, y2: 0, weight, dim });
 

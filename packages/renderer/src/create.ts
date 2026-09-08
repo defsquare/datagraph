@@ -3,8 +3,10 @@ import {
   Application,
   Container,
   Graphics,
+  type BitmapText,
   type FederatedPointerEvent,
   type Rectangle,
+  type Text,
 } from "pixi.js";
 import ELK from "elkjs/lib/elk.bundled.js";
 import {
@@ -72,6 +74,7 @@ import {
   lodForScale,
   REMAINDER_TOKEN_GAP,
   REMAINDER_TOKEN_HEIGHT,
+  semanticLabelGeometry,
   type EdgeLabelPlacement,
   type Lod,
   TOKEN_HOVER_SHIFT,
@@ -1254,8 +1257,53 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     for (const child of semanticLabelLayer.removeChildren()) child.destroy({ children: true });
     if (viewPolicy().aggregates !== "disc") return;
     semanticLabelLayer.addChild(
-      drawSemanticLabels(semanticNodesFor(), theme, useBitmapText, metrics),
+      drawSemanticLabels(
+        semanticNodesFor(),
+        theme,
+        useBitmapText,
+        metrics,
+        camera ? camera.scale() : 1,
+      ),
     );
+  }
+
+  /**
+   * Keeps every semantic label's scale and position in step with the LIVE camera,
+   * without recreating anything.
+   *
+   * `SEMANTIC_LABEL_MIN_SCREEN_PX` (see `draw.ts`) is a SCREEN floor, so the world
+   * size it demands keeps changing as the camera zooms — and LOD 2 (the semantic
+   * regime) has no upper zoom-out bound: `refreshCards`'s `lodForScale(...) !==
+   * currentLod` check never fires again once inside it, so nothing else
+   * re-triggers `redrawSemanticLayers()` as the user keeps zooming further out.
+   * Without this, a label sized right at the LOD 2 threshold would fall back
+   * under the floor on any further zoom-out — reproducing exactly the smudge this
+   * whole floor exists to prevent.
+   *
+   * Cheap by construction, the same discipline as `repositionEdgeLabels`: it
+   * touches only `.scale`/`.position` on the Containers `drawSemanticLabels`
+   * already created — never the text (the truncation budget is NOT camera-scale
+   * dependent, see `drawSemanticLabels`/`semanticLabelGeometry`) nor the
+   * aggregated edges, which stay governed by `redrawSemanticEdges`'s own cadence.
+   */
+  function rescaleSemanticLabels(cameraScale: number): void {
+    // `children[0]`: the permanent layer holds a single child, the container
+    // `drawSemanticLabels` returns, whose direct children are the labeled groups
+    // (see `dragCluster`'s identical descent).
+    const layer = semanticLabelLayer.children[0];
+    if (!layer) return;
+    const nodesById = new Map(semanticNodesFor().map((n) => [n.id, n]));
+    for (const group of layer.children) {
+      const node = nodesById.get(group.label);
+      if (!node || !(node.circle.r > 0)) continue;
+      const [label, badge] = group.children as [Text | BitmapText, Text | BitmapText];
+      if (!label || !badge) continue;
+      const geo = semanticLabelGeometry(node.circle, label.text, badge.text, theme, metrics, cameraScale);
+      label.scale.set(geo.k);
+      badge.scale.set(geo.kBadge);
+      label.position.set(geo.labelX, geo.labelY);
+      badge.position.set(geo.badgeX, geo.badgeY);
+    }
   }
 
   /**
@@ -2766,12 +2814,29 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     let lastCameraScale = Number.NaN;
     let lastCameraX = Number.NaN;
     let lastCameraY = Number.NaN;
+    // Tracked SEPARATELY from `lastCameraScale` above: that one gates on position
+    // too (edge labels slide along their stroke), this one only cares about scale
+    // (see `rescaleSemanticLabels`), and the two features are independently
+    // absent/present (no aggregates vs. no outgoing reference on the selection).
+    let lastSemanticLabelScale = Number.NaN;
 
     app.ticker.add(() => {
       if (destroyed || !camera) return;
       // Rebuilds on a LOD change, materializes/reclaims otherwise. This is where
       // culling follows the camera, frame by frame.
       refreshCards();
+
+      // Outside the semantic regime the layer is empty (see `redrawSemanticLayers`)
+      // and this is a no-op; inside it, a continued zoom-out never crosses another
+      // LOD boundary, so THIS is what keeps the legibility floor honest past the
+      // first crossing (see `rescaleSemanticLabels`).
+      if (viewPolicy().aggregates === "disc") {
+        const scale = camera.scale();
+        if (scale !== lastSemanticLabelScale) {
+          lastSemanticLabelScale = scale;
+          rescaleSemanticLabels(scale);
+        }
+      }
 
       // No labels: no cost at rest, which is the most frequent state (nothing
       // selected, or a selection with no outgoing reference).

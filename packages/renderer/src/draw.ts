@@ -1561,6 +1561,21 @@ export const SEMANTIC_LABEL_RATIO = 0.2;
 export const SEMANTIC_BADGE_RATIO = 0.13;
 
 /**
+ * The smallest a semantic label may be ON SCREEN, in CSS pixels.
+ *
+ * `SEMANTIC_LABEL_RATIO` sizes a label from its disc, which is right as long as
+ * the disc is big: it keeps the label inside the circle it names. Zoomed out on
+ * a dense set, the small aggregates' labels fall to a fraction of a pixel and
+ * become a smudge that says nothing — the name is there, and unreadable, which
+ * is worse than absent.
+ *
+ * The floor is expressed on SCREEN and not in the world: it is a property of the
+ * eye, not of the layout, so it has to be divided back by the camera's scale to
+ * become a world size.
+ */
+export const SEMANTIC_LABEL_MIN_SCREEN_PX = 9;
+
+/**
  * A label's usable width, as a fraction of the radius — that is, 70% of the
  * diameter, which keeps the text inside the disc rather than on the longest chord,
  * where it would spill out top and bottom.
@@ -1710,6 +1725,66 @@ export function drawSemanticDiscs(nodes: SemanticNode[], theme: Theme): Graphics
 }
 
 /**
+ * The SCALE and POSITION of one disc's label and badge, given its world circle,
+ * the two texts already decided for it, and the LIVE camera scale.
+ *
+ * Pulled out of `drawSemanticLabels` for one reason: `SEMANTIC_LABEL_MIN_SCREEN_PX`
+ * is a SCREEN floor, so this geometry keeps changing as the camera keeps zooming —
+ * and LOD 2 (the semantic regime) has no upper zoom-out bound, so nothing re-triggers
+ * a `rebuild()` past the threshold that first entered it. `rescaleSemanticLabels` in
+ * `create.ts` calls this on every frame the camera moves, to keep the labels
+ * `drawSemanticLabels` already created in step with it, WITHOUT recreating them.
+ * Sharing the formula here is what keeps the two from drifting apart — the risk a
+ * hand-copied second implementation would carry.
+ */
+export function semanticLabelGeometry(
+  circle: { cx: number; cy: number; r: number },
+  text: string,
+  countText: string,
+  theme: Theme,
+  metrics: NodeMetrics,
+  cameraScale: number,
+): { k: number; kBadge: number; labelX: number; labelY: number; badgeX: number; badgeY: number } {
+  const { cx, cy, r } = circle;
+  // The floor is a screen size brought back into the world: below it, a label that
+  // keeps shrinking with its disc becomes an illegible smudge. It governs the
+  // RENDERED scale only — `drawSemanticLabels` derives the truncation budget from
+  // the NATURAL (unfloored) size instead, or it would collapse along with it on the
+  // very discs small enough to need flooring.
+  const size = Math.max(
+    r * SEMANTIC_LABEL_RATIO,
+    SEMANTIC_LABEL_MIN_SCREEN_PX / Math.max(cameraScale, 1e-6),
+  );
+  const k = size / theme.typography.header.size;
+  const kBadge = (r * SEMANTIC_BADGE_RATIO) / theme.typography.badge.size;
+
+  // Both boxes are BUDGETED from `metrics` and the typography, not measured on the
+  // rendered object. It is the same discipline as `measureNode` and `drawNode` on
+  // the cards — draw exactly what was budgeted — and it also has a practical
+  // consequence: reading a `Text`'s `.width`/`.height` triggers a canvas
+  // measurement, hence a `document`, which would make this function untestable
+  // outside a browser.
+  const labelWidth = text.length * charWidthFor("header", metrics) * k;
+  const labelHeight = theme.typography.header.size * k;
+  const badgeWidth = countText.length * charWidthFor("badge", metrics) * kBadge;
+  const badgeHeight = theme.typography.badge.size * kBadge;
+
+  // The "name + count" block is centered VERTICALLY on the disc, not laid on its
+  // center: a label whose baseline ran through the center would push the badge out
+  // of the circle on small aggregates.
+  const gap = size * SEMANTIC_LABEL_GAP_RATIO;
+  const top = cy - (labelHeight + gap + badgeHeight) / 2;
+  return {
+    k,
+    kBadge,
+    labelX: Math.round(cx - labelWidth / 2),
+    labelY: Math.round(top),
+    badgeX: Math.round(cx - badgeWidth / 2),
+    badgeY: Math.round(top + labelHeight + gap),
+  };
+}
+
+/**
  * Each aggregate's name and its member count, centered in its disc.
  *
  * The text is created at the theme's size then SCALED, instead of being created at
@@ -1717,8 +1792,11 @@ export function drawSemanticDiscs(nodes: SemanticNode[], theme: Theme): Graphics
  * installed for the cards. Creating 1,300 `BitmapText`s at 1,300 different sizes
  * would demand as many atlases.
  *
- * Depends NEITHER on hover NOR on anything that changes per frame — the caller only
- * calls it again on a rebuild or a change of selection.
+ * Depends NEITHER on hover NOR on anything that changes per frame in itself — the
+ * caller only calls THIS back on a rebuild or a change of selection. A live camera
+ * scale is instead followed cheaply by `rescaleSemanticLabels`, which reuses
+ * `semanticLabelGeometry` above to update the labels this function created without
+ * recreating them (see there for why that is necessary in LOD 2).
  *
  * Each label and its badge live in a sub-container LABELED with the aggregate's id
  * — the same convention as `array-token:<index>` on the cards. That is what lets
@@ -1730,6 +1808,7 @@ export function drawSemanticLabels(
   theme: Theme,
   useBitmapText: boolean,
   metrics: NodeMetrics = DEFAULT_METRICS,
+  cameraScale = 1,
 ): Container {
   const layer = new Container();
   // No label is a target: the disc underneath carries the click, the move and the
@@ -1738,49 +1817,37 @@ export function drawSemanticLabels(
   layer.eventMode = "none";
 
   for (const node of nodes) {
-    const { cx, cy, r } = node.circle;
+    const { r } = node.circle;
     if (!(r > 0)) continue;
-    const size = r * SEMANTIC_LABEL_RATIO;
-    // The scale leading from the theme's size to the one wanted for this disc.
-    const k = size / theme.typography.header.size;
-    if (!(k > 0)) continue;
+    // The NATURAL size, before any floor — `r * SEMANTIC_LABEL_RATIO` — is what
+    // fixes the truncation budget, not the floored one (computed inside
+    // `semanticLabelGeometry`, below). The radius cancels out between the usable
+    // width and this natural size (see `SEMANTIC_LABEL_WIDTH_RATIO`'s doc), which
+    // is what keeps the character budget the SAME for every disc regardless of
+    // size. Deriving the budget from the FLOORED size instead would shrink it
+    // towards zero on exactly the discs small enough to need flooring — the
+    // smaller the disc, the bigger the gap between its natural and floored size —
+    // and empty the label outright: the one outcome this floor exists to prevent.
+    const naturalK = (r * SEMANTIC_LABEL_RATIO) / theme.typography.header.size;
+    if (!(naturalK > 0)) continue;
     // The budget is expressed in the UNSCALED space, the one where `metrics`'s
-    // advances mean something: dividing the usable width by `k` is what keeps the
-    // truncation in agreement with the text actually painted.
-    const budget = (r * SEMANTIC_LABEL_WIDTH_RATIO) / k;
+    // advances mean something: dividing the usable width by `naturalK` is what
+    // keeps the truncation in agreement with the text actually painted, at the
+    // NATURAL scale — the floor changes how big the surviving text is rendered,
+    // not how much of it survives.
+    const budget = (r * SEMANTIC_LABEL_WIDTH_RATIO) / naturalK;
     const text = truncateMiddle(node.label, budget, charWidthFor("header", metrics));
     if (text.length === 0) continue;
 
-    const label = createLabel(text, theme, "header", theme.ink.primary, useBitmapText);
-    label.scale.set(k);
-
     const countText = String(node.count);
+    const label = createLabel(text, theme, "header", theme.ink.primary, useBitmapText);
     const badge = createLabel(countText, theme, "badge", theme.ink.muted, useBitmapText);
-    const kBadge = (r * SEMANTIC_BADGE_RATIO) / theme.typography.badge.size;
-    badge.scale.set(kBadge);
+    const geo = semanticLabelGeometry(node.circle, text, countText, theme, metrics, cameraScale);
+    label.scale.set(geo.k);
+    badge.scale.set(geo.kBadge);
+    label.position.set(geo.labelX, geo.labelY);
+    badge.position.set(geo.badgeX, geo.badgeY);
 
-    // The "name + count" block is centered VERTICALLY on the disc, not laid on its
-    // center: a label whose baseline ran through the center would push the badge
-    // out of the circle on small aggregates.
-    //
-    // Both boxes are BUDGETED from `metrics` and the typography, not measured on
-    // the rendered object. It is the same discipline as `measureNode` and
-    // `drawNode` on the cards — draw exactly what was budgeted — and it also has a
-    // practical consequence: reading a `Text`'s `.width`/`.height` triggers a
-    // canvas measurement, hence a `document`, which would make this function
-    // untestable outside a browser.
-    const labelWidth = text.length * charWidthFor("header", metrics) * k;
-    const labelHeight = theme.typography.header.size * k;
-    const badgeWidth = countText.length * charWidthFor("badge", metrics) * kBadge;
-    const badgeHeight = theme.typography.badge.size * kBadge;
-
-    const gap = size * SEMANTIC_LABEL_GAP_RATIO;
-    const top = cy - (labelHeight + gap + badgeHeight) / 2;
-    label.position.set(Math.round(cx - labelWidth / 2), Math.round(top));
-    badge.position.set(
-      Math.round(cx - badgeWidth / 2),
-      Math.round(top + labelHeight + gap),
-    );
     const group = new Container();
     group.label = node.id;
     group.addChild(label, badge);
