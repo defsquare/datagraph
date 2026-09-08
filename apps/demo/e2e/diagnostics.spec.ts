@@ -77,3 +77,34 @@ test("an unresolved-reference diagnostic renders as an inert, non-clickable entr
   await expect(page.locator("#selection-rows .diag-entry")).toHaveCount(0)
   await expect(page.locator("#selection-rows button")).toHaveCount(0)
 })
+
+test("the fixture still carries the dangling reference these tests rest on", async ({ page }) => {
+  await gotoReady(page)
+  // If this ever goes empty, the test below would pass for the wrong reason:
+  // no dangling edge means no `followRef` with `dangling: true` to react to.
+  const broken = await page.evaluate(() =>
+    (window as any).__graph.refEdges("/orders/1").filter((e: any) => e.dangling).length,
+  )
+  expect(broken).toBe(1)
+})
+
+test("the GHOST row on the card opens the diagnostics panel with its entry marked", async ({ page }) => {
+  await gotoReady(page)
+  await page.evaluate(() => (window as any).__graph.focus("/orders/1"))
+  await page.waitForTimeout(400)
+
+  // `focus` centres the CARD, not any particular row (`doFocus` → `camera.centerOn`
+  // on the full card rect from `anchorRectFor`). `#o2` has 8 rows (id, customerId,
+  // productId, quantity, total, status, payment, date) at `DEFAULT_METRICS`
+  // (`headerHeight: 30, rowHeight: 19, paddingBottom: 7`), so its card is
+  // 30 + 8*19 + 7 = 189px tall and its vertical centre sits at local y 94.5 from
+  // the card's top. `customerId` is row index 1, its band [49, 68) centred at
+  // 58.5 — 36px above the card's (and so the canvas's) centre. Row index 3
+  // (`quantity`, centred at 94.5) is what a plain centre click lands on instead,
+  // which is exactly what `culling.spec.ts` relies on to land on a non-ref row.
+  const box = (await page.locator("canvas").boundingBox())!
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2 - 36)
+
+  await expect(page.locator("#selection-label")).toHaveText("Diagnostics")
+  await expect(page.locator("#selection-rows .diag-current")).toHaveCount(1)
+})

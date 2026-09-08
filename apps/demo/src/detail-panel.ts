@@ -108,12 +108,15 @@ export function createDetailPanel(graph: DataGraph): DetailPanel {
    * same nodes, so the last call wins, and a `select` following a diagnostic
    * click simply hands the panel back to the detail view.
    *
-   * `highlight` is a `path`: the entry carrying it is marked `diag-current`. No
-   * caller passes it yet — the status-bar link's `onDiagnosticsOpen` always
-   * renders the whole list unhighlighted — but the parameter exists so that a
-   * later caller (e.g. a broken reference clicked on a card, wired through
-   * `main.ts`'s `followRef` handler) can point the list at its own line without
-   * a second rendering path.
+   * `highlight` is a `path`: the entry carrying it is marked `diag-current`.
+   * `main.ts`'s `followRef` handler passes `edge.from` when the click ran into a
+   * dangling reference — `edge.from` and the offending `dangling-ref`
+   * diagnostic's `path` are both `holder.id` (`packages/core/src/build.ts`), so
+   * the highlight lands on exactly the entry the click hit. The status-bar
+   * link's `onDiagnosticsOpen` still passes nothing and renders the whole list
+   * unhighlighted, browsing rather than pointing at one line. One rendering
+   * path serves both: a second one would let the two callers' views of what
+   * "the same panel" looks like drift apart.
    */
   function renderDiagnostics(diagnostics: Diagnostic[], highlight?: string): void {
     detailEl?.removeAttribute("hidden");

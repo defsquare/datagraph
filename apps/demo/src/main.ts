@@ -138,7 +138,13 @@ graph.on("statschange", () => {
 });
 
 graph.on("followRef", (edge) => {
-  if (edge.dangling) console.warn(`[demo] dangling ref: ${edge.field} -> ${edge.targetType}#${edge.targetId}`);
+  if (!edge.dangling) return;
+  // The warn stays useful in dev; it was never feedback. The panel is: the
+  // diagnostic the click just ran into is exactly the entry A1 already renders,
+  // so we open that list on it rather than inventing a transient state on the
+  // status bar.
+  console.warn(`[demo] dangling ref: ${edge.field} -> ${edge.targetType}#${edge.targetId}`);
+  detail.renderDiagnostics(graph.diagnostics(), edge.from);
 });
 
 // `setData()` resets the renderer's search and selection state; the shell takes
