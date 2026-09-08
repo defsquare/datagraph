@@ -1,35 +1,35 @@
 import { parseSelector, ConfigError, type PathSegment } from "./selector.js"
 
 /**
- * Contrat data-first : tout s'exprime en chemins.
+ * Data-first contract: everything is expressed as paths.
  *
- * - `ids` : nom → chemin de clé. Le préfixe (`$.customers[*]`) désigne
- *   l'ensemble d'instances, le dernier segment (`id`) le champ-clé. Le nom
- *   n'est qu'une poignée de présentation (libellés, couleurs, badges).
- * - `refs` : joins `{from, to}` — « la valeur à `from` égale la valeur de clé
- *   à `to` ». Un tableau, pas une map : deux refs peuvent partir du même
- *   chemin sans collision de clé.
- * - `groups` : les noms de `ids` qui ancrent le regroupement de la vue
- *   graphe. L'ordre est PORTEUR : il arbitre les égalités de distance (voir
- *   `buildAggregates`) et fixe l'ordre de peinture des enveloppes.
+ * - `ids`: name → key path. The prefix (`$.customers[*]`) designates the set of
+ *   instances, the last segment (`id`) the key field. The name is only a
+ *   presentation handle (labels, colors, badges).
+ * - `refs`: `{from, to}` joins — "the value at `from` equals the key value at
+ *   `to`". An array, not a map: two refs may start from the same path without
+ *   colliding on a key.
+ * - `groups`: the `ids` names that anchor the grouping of the graph view. The
+ *   order MATTERS: it breaks distance ties (see `buildAggregates`) and fixes the
+ *   paint order of the envelopes.
  */
 export interface DataGraphConfig {
   ids: Record<string, string>
   refs?: { from: string; to: string }[]
   groups?: string[]
   maxNodes?: number
-  /** Libellé du nœud racine. Défaut `"$"` — le symbole racine de la syntaxe
-   * de sélecteur que `ids` utilise déjà. Une chaîne vide est respectée. */
+  /** Label of the root node. Defaults to `"$"` — the root symbol of the selector
+   * syntax `ids` already uses. An empty string is honored. */
   rootLabel?: string
 }
 
 /**
- * Une référence déclarée, découpée en ce dont la construction a besoin : la
- * NAVIGATION depuis l'entité propriétaire (vide pour un champ direct) et la
- * clé de la ligne TERMINALE qui porte l'identifiant.
+ * A declared reference, split into what building needs: the NAVIGATION from the
+ * owning entity (empty for a direct field) and the key of the TERMINAL row that
+ * carries the identifier.
  *
- * `path` porte le `from` ABSOLU tel qu'écrit dans la config : c'est la
- * déclaration que l'auteur relira quand `unresolved-reference` la citera.
+ * `path` carries the ABSOLUTE `from` as written in the config: it is the
+ * declaration the author will re-read when `unresolved-reference` quotes it.
  */
 export interface ReferenceDecl {
   navigate: PathSegment[]
@@ -58,27 +58,27 @@ function segmentsEqual(a: PathSegment[], b: PathSegment[]): boolean {
 }
 
 /**
- * LA frontière de traduction du package, et la seule.
+ * THE package's translation boundary, and the only one.
  *
- * En entrée, le vocabulaire PUBLIC data-first : `ids` / `refs` / `groups`. En
- * sortie, le vocabulaire INTERNE du graphe : `entities` / `references` /
- * `aggregates`. Rien d'autre dans le package ne connaît le vocabulaire public —
- * ni `build.ts`, ni `aggregate.ts`, ni le renderer, qui ne voient jamais que le
- * `ValidatedConfig`. Corollaire : renommer un mot du contrat public ne doit
- * toucher que ce fichier (et `DataGraphConfig` ci-dessus).
+ * In, the PUBLIC data-first vocabulary: `ids` / `refs` / `groups`. Out, the
+ * graph's INTERNAL vocabulary: `entities` / `references` / `aggregates`. Nothing
+ * else in the package knows the public vocabulary — not `build.ts`, not
+ * `aggregate.ts`, not the renderer, which only ever see the `ValidatedConfig`.
+ * Corollary: renaming a word of the public contract must touch this file only
+ * (and `DataGraphConfig` above).
  */
 export function validateConfig(config: DataGraphConfig): ValidatedConfig {
-  // Une config chargée du disque (option `-c` de la CLI) peut être n'importe
-  // quel JSON : le type ne garantit rien, et un TypeError brut remonterait
-  // tel quel jusqu'à l'écran d'erreur de l'utilisateur final.
+  // A config loaded from disk (the CLI's `-c` option) can be any JSON: the type
+  // guarantees nothing, and a raw TypeError would bubble up as-is to the end
+  // user's error screen.
   if (typeof config.ids !== "object" || config.ids === null || Array.isArray(config.ids)) {
     throw new ConfigError("invalid-config", "Config must declare an ids object")
   }
 
-  // `ids` : chaque chemin se scinde en préfixe d'instances + champ-clé.
+  // `ids`: each path splits into an instance prefix + a key field.
   const entities = new Map<string, { segments: PathSegment[]; idField: string }>()
-  // Les segments COMPLETS (champ-clé inclus), pour comparer `refs[].to` en
-  // segments parsés plutôt qu'en chaînes brutes.
+  // The COMPLETE segments (key field included), so `refs[].to` is compared as
+  // parsed segments rather than raw strings.
   const idPathSegments = new Map<string, PathSegment[]>()
   for (const [name, idPath] of Object.entries(config.ids)) {
     if (typeof idPath !== "string") {
@@ -96,16 +96,16 @@ export function validateConfig(config: DataGraphConfig): ValidatedConfig {
     idPathSegments.set(name, segments)
   }
 
-  // `refs` : la cible doit être un chemin de `ids` (viser un champ non-clé
-  // est hors scope v1 — la porte reste ouverte sans être payée) ; la source
-  // doit étendre STRICTEMENT un préfixe d'instances, le plus long gagne (à
-  // longueur égale, l'ordre de déclaration de `ids` tranche — cas dégénéré
-  // de deux noms sur le même préfixe).
+  // `refs`: the target must be an `ids` path (aiming at a non-key field is out
+  // of v1 scope — the door stays open without being paid for); the source must
+  // STRICTLY extend an instance prefix, longest wins (on equal length, the
+  // declaration order of `ids` decides — degenerate case of two names on the
+  // same prefix).
   const references = new Map<string, ReferenceDecl[]>()
-  // Garde avant `for...of` : une config migrée depuis l'ancienne forme MAP
-  // (`references: {...}`) arrive ici en objet, et un objet n'est pas
-  // itérable (TypeError brut) — pareil pour `groups` plus bas, où une
-  // chaîne serait en plus silencieusement itérée caractère par caractère.
+  // Guard before `for...of`: a config migrated from the old MAP form
+  // (`references: {...}`) arrives here as an object, and an object is not
+  // iterable (raw TypeError) — same for `groups` below, where a string would in
+  // addition be silently iterated character by character.
   if (config.refs !== undefined && !Array.isArray(config.refs)) {
     throw new ConfigError("invalid-config", "Config 'refs' must be an array of {from, to} entries")
   }
@@ -146,7 +146,7 @@ export function validateConfig(config: DataGraphConfig): ValidatedConfig {
         `Ref source must extend a declared instance prefix: ${ref.from}`,
       )
     }
-    // `<` strict ci-dessus : le reste est non vide par construction.
+    // Strict `<` above: the remainder is non-empty by construction.
     const remainder = fromSegments.slice(ownerLen)
     const last = remainder[remainder.length - 1]!
     if (last.kind !== "key") {
@@ -166,7 +166,7 @@ export function validateConfig(config: DataGraphConfig): ValidatedConfig {
     else references.set(owner, [decl])
   }
 
-  // `groups` → `aggregates` interne, ordre conservé.
+  // `groups` → internal `aggregates`, order preserved.
   const aggregates: string[] = []
   if (config.groups !== undefined && !Array.isArray(config.groups)) {
     throw new ConfigError("invalid-config", "Config 'groups' must be an array of ids names")
@@ -178,17 +178,17 @@ export function validateConfig(config: DataGraphConfig): ValidatedConfig {
     aggregates.push(name)
   }
 
-  // Garde MÉMOIRE, plus garde de coût : la vue graphe borne elle-même ce qu'elle
-  // dispose, donc le plafond ne protège plus que buildGraph + buildSearchIndex,
-  // tous deux linéaires. Défaut calibré au bench (`pnpm bench`, section
-  // « échelle mémoire ») : 1 M nœuds logiques = ~430 Mo de heap (net ; ~479 Mo
-  // absolus, baseline du bench comprise — cf. `bench/bench.ts`), ~0,8 s de
-  // build+index sous les options node PAR DÉFAUT — la webview n'aura pas de
-  // `--max-old-space-size` non plus.
+  // A MEMORY guard, no longer a cost guard: the graph view bounds what it lays
+  // out itself, so the cap now only protects buildGraph + buildSearchIndex, both
+  // linear. Default calibrated at the bench (`pnpm bench`, "memory scale"
+  // section): 1M logical nodes = ~430 MB of heap (net; ~479 MB absolute, the
+  // bench baseline included — cf. `bench/bench.ts`), ~0.8 s of build+index under
+  // the DEFAULT node options — the webview won't have a `--max-old-space-size`
+  // either.
   const maxNodes = config.maxNodes ?? 1_000_000
 
-  // `??` et non `||` : une chaîne vide est un libellé valide que l'appelant a
-  // le droit de vouloir.
+  // `??` and not `||`: an empty string is a valid label the caller is entitled
+  // to want.
   const rootLabel = config.rootLabel ?? "$"
 
   return { entities, references, maxNodes, rootLabel, aggregates }

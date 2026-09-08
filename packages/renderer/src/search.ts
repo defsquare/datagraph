@@ -2,85 +2,85 @@ import type { NodeId, SearchIndex, SearchResult } from "@defsquare/data-graph-co
 
 export interface SearchHooks {
   /**
-   * L'index de recherche COURANT, relu à chaque requête et non capturé à la
-   * construction : `setData()` en installe un nouveau, et un index figé
-   * répondrait pour l'ancien graphe. `undefined` tant que le pipeline n'a pas
-   * publié le sien — `search()` rend alors un résultat vide plutôt que d'être
-   * un no-op silencieux.
+   * The CURRENT search index, re-read on every query and not captured at
+   * construction: `setData()` installs a new one, and a frozen index would answer
+   * for the old graph. `undefined` for as long as the pipeline has not published
+   * its own — `search()` then returns an empty result rather than being a silent
+   * no-op.
    */
   getIndex(): SearchIndex | undefined;
-  /** Les nœuds visibles de la vue courante. Relu à chaque repeint, jamais
-   * mémorisé : la visibilité change indépendamment de la recherche (un dépliage
-   * ailleurs, une bascule de vue). */
+  /** The visible nodes of the current view. Re-read on every repaint, never
+   * memoized: visibility changes independently of the search (an expansion
+   * elsewhere, a view toggle). */
   getActiveVisible(): ReadonlySet<NodeId>;
-  /** Le repeint du calque haut, seul endroit où le surlignage de recherche est
-   * peint. C'est lui qui rappelle `visibleMatchIds()`/`currentMatchId()`. */
+  /** The repaint of the top layer, the only place the search highlight gets
+   * painted. It is what calls `visibleMatchIds()`/`currentMatchId()` back. */
   redrawOverlay(): void;
-  /** Centre la vue sur un résultat, en dépliant le chemin qui y mène si besoin.
-   * Asynchrone chez l'appelant, délibérément ignoré ici : `nextMatch()` rend son
-   * résultat tout de suite, le cadrage suit. */
+  /** Centers the view on a result, expanding the path leading to it if needed.
+   * Asynchronous at the caller's, deliberately ignored here: `nextMatch()`
+   * returns its result right away, the framing follows. */
   focus(id: NodeId): void;
 }
 
 export interface SearchController {
   /**
-   * Interroge l'index, remet le curseur `nextMatch`/`prevMatch` à `-1` et
-   * repeint le surlignage. `query === ""` rend un ensemble vide (c'est le
-   * comportement propre de `SearchIndex.search`), ce qui efface surlignage et
-   * état par le même chemin de code — il n'y a donc rien à effacer à part.
+   * Queries the index, resets the `nextMatch`/`prevMatch` cursor to `-1` and repaints
+   * the highlight. `query === ""` returns an empty set (that is `SearchIndex.search`'s
+   * own behaviour), which clears highlight and state through the same code path — so
+   * there is nothing to clear separately.
    */
   search(query: string): SearchResult[];
   /**
-   * Partagé par `nextMatch` (`direction: 1`) et `prevMatch` (`direction: -1`) :
-   * avance le curseur circulaire, centre sur le résultat obtenu (dépliage
-   * automatique compris) et renforce son surlignage ; rend `null` sans bouger le
-   * curseur quand il n'y a aucun résultat.
+   * Shared by `nextMatch` (`direction: 1`) and `prevMatch` (`direction: -1`): advances
+   * the circular cursor, centers on the result obtained (automatic expansion included)
+   * and strengthens its highlight; returns `null` without moving the cursor when there
+   * is no result at all.
    *
-   * La sentinelle `-1` (aucun résultat courant) est traitée à part plutôt que
-   * pliée dans le calcul modulaire générique `(cursor + direction + count) %
-   * count` : cette formule voit `-1` comme « un cran avant 0 », donc un pas en
-   * arrière depuis là tomberait sur `count - 2` et non sur le dernier résultat —
-   * ce qui n'est pas le comportement voulu (« le premier `prevMatch` d'une
-   * recherche fraîche saute au dernier match »). Depuis `-1`, next va au premier
-   * (0) et prev au dernier (`count - 1`) ; depuis toute position réelle, le
-   * calcul modulaire s'applique tel quel.
+   * The `-1` sentinel (no current result) is handled apart rather than folded
+   * into the generic modular computation `(cursor + direction + count) % count`:
+   * that formula sees `-1` as "one notch before 0", so a step backwards from
+   * there would land on `count - 2` and not on the last result — which is not
+   * the intended behaviour ("the first `prevMatch` of a fresh search jumps to
+   * the last match"). From `-1`, next goes to the first (0) and prev to the last
+   * (`count - 1`); from any real position, the modular computation applies as
+   * is.
    */
   step(direction: 1 | -1): SearchResult | null;
   /**
-   * Les ids des résultats actuellement VISIBLES — l'ensemble sur lequel le
-   * surlignage est dessiné. Recalculé à chaque repeint plutôt que mémorisé : la
-   * visibilité peut changer sans que la recherche ne bouge.
+   * The ids of the results currently VISIBLE — the set the highlight is drawn on.
+   * Recomputed on every repaint rather than memoized: visibility can change without the
+   * search moving at all.
    */
   visibleMatchIds(): NodeId[];
-  /** L'id du résultat sous le curseur, ou `null` — c'est lui que le surlignage
-   * peint plus fort que les autres. */
+  /** The id of the result under the cursor, or `null` — it is the one the
+   * highlight paints stronger than the others. */
   currentMatchId(): NodeId | null;
   /**
-   * Remet la recherche à zéro SANS repeindre : le seul appelant (`setData`)
-   * remplace tout l'état de l'instance et finit sur un `rebuild()`, qui repeint
-   * déjà le calque haut. Repeindre ici le ferait deux fois, sur un graphe
-   * à moitié remplacé pour le premier.
+   * Resets the search WITHOUT repainting: the only caller (`setData`) replaces the
+   * whole state of the instance and finishes on a `rebuild()`, which already repaints
+   * the top layer. Repainting here would do it twice, on a half-replaced graph for the
+   * first one.
    */
   reset(): void;
 }
 
 /**
- * Le contrôleur de recherche d'une instance : il POSSÈDE les résultats courants
- * et le curseur qui les parcourt, et il est le seul à les lire.
+ * An instance's search controller: it OWNS the current results and the cursor that
+ * walks them, and it is the only one to read them.
  *
- * Ce module ne connaît ni Pixi, ni le graphe, ni la mise en page : il traduit
- * des requêtes en résultats et un curseur en id courant, puis redonne la main à
- * l'appelant par des rappels — même forme que `drag.ts`, `hover.ts` et
- * `focus.ts`, et c'est ce qui le rend testable sans canvas ni instance.
+ * This module knows neither Pixi, nor the graph, nor the layout: it turns queries into
+ * results and a cursor into a current id, then hands control back to the caller through
+ * callbacks — same shape as `drag.ts`, `hover.ts` and `focus.ts`, and that is what
+ * makes it testable without a canvas or an instance.
  *
- * Il n'importe RIEN de `create.ts`, y compris l'index : celui-ci est produit par
- * le pipeline de données et arrive par `getIndex()`. Un import dans ce sens
- * fermerait un cycle, `create.ts` étant le seul point d'orchestration.
+ * It imports NOTHING from `create.ts`, the index included: that one is produced by the
+ * data pipeline and arrives through `getIndex()`. An import in that direction would
+ * close a cycle, `create.ts` being the sole orchestration point.
  */
 export function createSearchController(hooks: SearchHooks): SearchController {
-  // Les résultats du dernier `search()`, et le curseur de `step()` dedans
-  // (`-1` = aucun résultat courant, c'est-à-dire juste après une recherche
-  // fraîche ou avant toute recherche).
+  // The results of the last `search()`, and `step()`'s cursor into them (`-1` = no
+  // current result, that is, just after a fresh search or before any search at
+  // all).
   let results: SearchResult[] = [];
   let cursor = -1;
 

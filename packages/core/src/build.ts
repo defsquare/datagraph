@@ -37,7 +37,7 @@ function scalarValueType(value: Scalar): ScalarRow["valueType"] {
   return typeof value as "string" | "number" | "boolean"
 }
 
-/** Libellé d'un nœud non racine : `tags[0]` sous un tableau, la clé sinon. */
+/** Label of a non-root node: `tags[0]` under an array, the key otherwise. */
 function labelFor(path: (string | number)[], parentNode: GraphNode | null): string {
   const key = path[path.length - 1]!
   return parentNode && parentNode.kind === "array" ? `${parentNode.label}[${key}]` : String(key)
@@ -75,10 +75,10 @@ export function buildGraph(data: unknown, config: DataGraphConfig): Graph {
   }
 
   /**
-   * `parentDrawn` dit si le parent porte une carte, donc s'il peut HÉBERGER la
-   * ligne d'un tableau enfant. C'est la seule information non locale dont
-   * l'élision a besoin, et la faire descendre coûte moins qu'une seconde passe
-   * sur le graphe fini.
+   * `parentDrawn` says whether the parent carries a card, hence whether it can
+   * HOST the row of a child array. That is the only non-local piece of
+   * information elision needs, and threading it down costs less than a second
+   * pass over the finished graph.
    */
   function visitValue(
     value: unknown,
@@ -89,11 +89,11 @@ export function buildGraph(data: unknown, config: DataGraphConfig): Graph {
   ): NodeId {
     const id = pointerOf(path)
 
-    // Une valeur scalaire atteint `visitValue` dans deux cas : le document
-    // racine, et chaque ÉLÉMENT d'un tableau — les éléments scalaires sont
-    // devenus des nœuds pour que déplier un tableau rende toujours des cartes,
-    // quel que soit son contenu. Les valeurs scalaires d'un OBJET, elles,
-    // restent des lignes et n'arrivent jamais ici (voir la boucle du bas).
+    // A scalar value reaches `visitValue` in two cases: the root document, and
+    // every ELEMENT of an array — scalar elements became nodes so that expanding
+    // an array always yields cards, whatever it contains. The scalar values of
+    // an OBJECT, on the other hand, stay rows and never get here (see the loop
+    // below).
     if (isScalar(value)) {
       const scalarNode: ObjectNode = {
         kind: "object",
@@ -115,9 +115,9 @@ export function buildGraph(data: unknown, config: DataGraphConfig): Graph {
     const isArray = Array.isArray(value)
     const entityMatch = !isArray ? findEntityMatch(path) : null
 
-    // Un tableau n'est élidé que si quelqu'un peut porter sa ligne. La racine
-    // n'a pas de parent, et un tableau sous un tableau déjà élidé n'a pas de
-    // carte parente : dans les deux cas il garde la sienne.
+    // An array is only elided if someone can carry its row. The root has no
+    // parent, and an array under an already elided array has no parent card: in
+    // both cases it keeps its own.
     const elided = isArray && parentDrawn
     const drawn = !elided
 
@@ -207,10 +207,10 @@ export function buildGraph(data: unknown, config: DataGraphConfig): Graph {
     }
 
     if (isArray) {
-      // TOUT élément devient un nœud, scalaire compris : c'est ce qui rend le
-      // dépliage uniforme — une carte par élément, quel que soit son contenu.
-      // Auparavant un élément scalaire était une ligne du tableau, et déplier
-      // un tableau de scalaires ne rendait donc qu'une seule carte.
+      // EVERY element becomes a node, scalars included: that is what makes
+      // expansion uniform — one card per element, whatever it contains.
+      // Previously a scalar element was a row of the array, so expanding an
+      // array of scalars yielded a single card.
       ;(value as unknown[]).forEach((item, index) => {
         const childId = visitValue(item, [...path, index], id, node, drawn)
         addArrayRowIfElided(node, String(index), item, childId, drawn)
@@ -230,8 +230,8 @@ export function buildGraph(data: unknown, config: DataGraphConfig): Graph {
     return id
   }
 
-  /** Rattache `child` à `parent` : arête de containment, `childIds`, et le
-   * compte de cartes que le chevron d'en-tête du parent révélera. */
+  /** Attaches `child` to `parent`: containment edge, `childIds`, and the card
+   * count the parent's header chevron will reveal. */
   function linkChild(parent: GraphNode | null, child: GraphNode): void {
     if (!parent) return
     graph.containEdges.push({ kind: "contain", from: parent.id, to: child.id })
@@ -240,13 +240,13 @@ export function buildGraph(data: unknown, config: DataGraphConfig): Graph {
   }
 
   /**
-   * Pose sur `node` la ligne qui représente un tableau enfant élidé. Appelée
-   * APRÈS la visite de l'enfant : la ligne prend ainsi sa place dans l'ordre
-   * de déclaration des clés, `tags` après `categoryId` et non en fin de carte.
+   * Places on `node` the row that represents an elided child array. Called AFTER
+   * visiting the child: the row thus takes its place in the declaration order of
+   * the keys, `tags` after `categoryId` and not at the bottom of the card.
    *
-   * Elle ne compte PAS comme un nœud logique — le nœud tableau qu'elle
-   * représente en a déjà compté un. C'est ce qui laisse `logicalNodeCount`
-   * inchangé par toute cette refonte.
+   * It does NOT count as a logical node — the array node it represents already
+   * counted one. That is what leaves `logicalNodeCount` unchanged by this whole
+   * rework.
    */
   function addArrayRowIfElided(
     node: GraphNode,
@@ -264,20 +264,20 @@ export function buildGraph(data: unknown, config: DataGraphConfig): Graph {
     })
   }
 
-  // La racine n'a pas de parent capable de porter une ligne : `parentDrawn`
-  // vaut false, donc un document qui est un tableau nu garde bien sa carte.
+  // The root has no parent able to carry a row: `parentDrawn` is false, so a
+  // document that is a bare array does keep its card.
   visitValue(data, [], null, null, false)
 
   /**
-   * Les nœuds atteints depuis `start` en descendant `navigate`, un segment à
-   * la fois, par le DERNIER élément du chemin de chaque enfant.
+   * The nodes reached from `start` by walking down `navigate`, one segment at a
+   * time, through the LAST element of each child's path.
    *
-   * Descendre par les enfants, et non filtrer tous les nœuds par `matchesPath`,
-   * est ce qui ancre le chemin sur l'INSTANCE : `lines[*]` doit désigner les
-   * lignes de ce panier-ci, pas celles de tous les paniers.
+   * Walking down through the children, rather than filtering every node with
+   * `matchesPath`, is what anchors the path on the INSTANCE: `lines[*]` must
+   * designate the lines of THIS cart, not those of every cart.
    *
-   * Un chemin sans navigation rend l'entité elle-même — le cas historique
-   * `customerId`, qui reste ainsi exactement le même parcours.
+   * A path with no navigation yields the entity itself — the historical
+   * `customerId` case, which thus remains exactly the same traversal.
    */
   function navigateFrom(start: GraphNode, navigate: PathSegment[]): GraphNode[] {
     let current: GraphNode[] = [start]
@@ -287,9 +287,9 @@ export function buildGraph(data: unknown, config: DataGraphConfig): Graph {
         for (const childId of node.childIds) {
           const child = graph.nodes.get(childId)
           if (!child) continue
-          // `matchesPath` sur le seul dernier élément : la comparaison
-          // clé/indice/joker doit rester celle des sélecteurs, pas une seconde
-          // implémentation qui lui ressemble.
+          // `matchesPath` on the last element alone: the key/index/wildcard
+          // comparison must stay the selectors' own, not a second
+          // implementation that merely resembles it.
           if (matchesPath([segment], child.path.slice(-1))) next.push(child)
         }
       }
@@ -299,9 +299,9 @@ export function buildGraph(data: unknown, config: DataGraphConfig): Graph {
     return current
   }
 
-  /** Les déclarations dont AUCUNE instance n'a exposé la ligne terminale, et
-   * les types dont au moins une instance existe : de quoi n'accuser une
-   * déclaration que lorsqu'il y avait matière à la satisfaire. */
+  /** The declarations whose terminal row NO instance exposed, and the types with
+   * at least one instance: enough to blame a declaration only when there was
+   * something to satisfy it with. */
   const unsatisfied = new Set<ReferenceDecl>()
   const typesSeen = new Set<string>()
   for (const decls of validated.references.values()) for (const d of decls) unsatisfied.add(d)
@@ -315,14 +315,14 @@ export function buildGraph(data: unknown, config: DataGraphConfig): Graph {
       for (const holder of navigateFrom(node, decl.navigate)) {
         const row = holder.rows.find((r) => r.key === decl.field)
         if (!row) continue
-        // La ligne EXISTE : la déclaration n'est pas une faute de frappe, même
-        // si sa valeur ne produit aucune arête (nulle, ou tableau). C'est ce
-        // qui distingue `unresolved-reference` d'un champ simplement vide.
+        // The row EXISTS: the declaration is not a typo, even if its value
+        // produces no edge (null, or an array). That is what distinguishes
+        // `unresolved-reference` from a merely empty field.
         unsatisfied.delete(decl)
-        // Une ligne de tableau est écartée explicitement : sa `value` est un
-        // NOMBRE D'ÉLÉMENTS, et la prendre pour un identifiant ferait pointer la
-        // référence sur « 3 ». Un champ déclaré comme référence mais porté par
-        // un tableau est une erreur de config, pas une référence à résoudre.
+        // An array row is discarded explicitly: its `value` is an ELEMENT COUNT,
+        // and taking it for an identifier would make the reference point at "3".
+        // A field declared as a reference but carried by an array is a config
+        // error, not a reference to resolve.
         if (row.valueType === "array" || row.value === null) continue
         const targetId = String(row.value)
         const to = graph.entityIndex.get(decl.targetType)?.get(targetId) ?? null
@@ -338,9 +338,9 @@ export function buildGraph(data: unknown, config: DataGraphConfig): Graph {
           dangling,
         })
         if (dangling) {
-          // Le diagnostic pointe le nœud QUI PORTE la ligne, pas l'entité : la
-          // croix de `drawNode` se pose contre la valeur fautive, et elle est
-          // sur la carte du value object.
+          // The diagnostic points at the node that CARRIES the row, not the
+          // entity: `drawNode`'s cross sits against the offending value, and
+          // that value is on the value object's card.
           graph.diagnostics.push({
             code: "dangling-ref",
             path: holder.id,
@@ -351,17 +351,17 @@ export function buildGraph(data: unknown, config: DataGraphConfig): Graph {
     }
   }
 
-  // Une déclaration jamais satisfaite alors que le type a des instances est
-  // presque toujours une faute de frappe — un silence, jusqu'ici. Aucune
-  // instance du type, en revanche, ne prouve rien sur la déclaration.
+  // A declaration never satisfied while the type does have instances is almost
+  // always a typo — silently, until now. Having no instance of the type, on the
+  // other hand, proves nothing about the declaration.
   for (const [sourceType, decls] of validated.references) {
     if (!typesSeen.has(sourceType)) continue
     for (const decl of decls) {
       if (!unsatisfied.has(decl)) continue
       graph.diagnostics.push({
         code: "unresolved-reference",
-        // `decl.path` est désormais le `from` absolu : le préfixer du type
-        // produirait « Order.$.orders[*]… ».
+        // `decl.path` is now the absolute `from`: prefixing it with the type
+        // would produce "Order.$.orders[*]…".
         path: decl.path,
         message: `Reference "${decl.path}" declared on ${sourceType} matches no row on any ${sourceType}`,
       })

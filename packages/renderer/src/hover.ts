@@ -2,20 +2,20 @@ import type { Container } from "pixi.js";
 import { easeOutQuad } from "./animate.js";
 
 /**
- * Durée de la montée comme de la descente du survol.
+ * Duration of both the rise and the fall of the hover.
  *
- * 120 ms, soit un peu plus de la moitié de la transition de dépliage
- * (`TRANSITION_MS`, 200 ms, dans `animate.ts`) : le survol doit se lire comme
- * une RÉPONSE au pointeur, pas comme une animation qu'on regarde. En dessous de
- * ~80 ms l'effet redevient un saut, au-delà de ~200 ms la main a déjà quitté la
- * carte que l'effet monte encore.
+ * 120 ms, a little over half the expansion transition (`TRANSITION_MS`, 200
+ * ms, in `animate.ts`): hover must read as a RESPONSE to the pointer, not as
+ * an animation one watches. Below ~80 ms the effect turns back into a jump,
+ * past ~200 ms the hand has already left the card while the effect is still
+ * rising.
  */
 export const HOVER_MS = 120;
 
 /**
- * Le minimum du `Ticker` de Pixi dont ce module a besoin. Le typer par cette
- * forme plutôt que par `Ticker` est ce qui laisse les tests piloter l'animation
- * image par image sans canvas — `app.ticker` la satisfait tel quel.
+ * The minimum of Pixi's `Ticker` this module needs. Typing it by that shape rather than
+ * by `Ticker` is what lets the tests drive the animation frame by frame without a
+ * canvas — `app.ticker` satisfies it as is.
  */
 export interface HoverTicker {
   add(fn: () => void): void;
@@ -25,62 +25,62 @@ export interface HoverTicker {
 export interface HoverHooks {
   ticker: HoverTicker;
   /**
-   * Reçoit l'intensité du survol, de 0 (au repos) à 1 (survolé), à chaque image
-   * de l'animation — et une dernière fois exactement sur la borne atteinte, pour
-   * que l'appelant n'ait jamais à deviner l'état final.
+   * Receives the hover intensity, from 0 (at rest) to 1 (hovered), on every frame of
+   * the animation — and one last time exactly on the bound reached, so that the caller
+   * never has to guess the final state.
    */
   onFrame(intensity: number): void;
   /**
-   * Relu à CHAQUE entrée du pointeur et non capturé à l'attache : ce qui inhibe
-   * le survol (un déplacement en cours) commence et finit bien après le câblage.
-   * Une entrée inhibée est perdue, pas différée — le pointeur repassera.
+   * Re-read at EVERY pointer entry and not captured at attach time: what inhibits hover
+   * (a drag in progress) starts and ends well after the wiring. An inhibited entry is
+   * lost, not deferred — the pointer will come back.
    */
   isBlocked?(): boolean;
 }
 
 export interface HoverHandle {
   /**
-   * Ramène l'intensité à 0 immédiatement, en la publiant une dernière fois, et
-   * coupe l'animation en vol. C'est la voie de sortie de l'appelant quand un
-   * autre geste prend la main sur la même cible (le début d'un déplacement de
-   * carte) : il n'a pas à défaire lui-même ce que `onFrame` a posé, il redemande
-   * le repos par le même chemin. Sans effet si l'intensité était déjà nulle.
+   * Brings the intensity back to 0 immediately, publishing it one last time, and cuts
+   * the animation in flight. It is the caller's way out when another gesture takes over
+   * the same target (the start of a card drag): it does not have to undo by itself what
+   * `onFrame` laid down, it asks for rest again through that same path. No effect if
+   * the intensity was already zero.
    */
   cancel(): void;
 }
 
 /**
- * Câble un container pour qu'il publie une intensité de survol animée : 0 → 1 à
- * l'entrée du pointeur, 1 → 0 à sa sortie, en `HOVER_MS` et en `easeOutQuad` —
- * littéralement la courbe de la transition de dépliage, empruntée à
- * `animate.ts`, pour que les deux mouvements de la vue aient le même grain.
+ * Wires a container so that it publishes an animated hover intensity: 0 → 1 when the
+ * pointer enters, 1 → 0 when it leaves, in `HOVER_MS` and in `easeOutQuad` — literally
+ * the curve of the expansion transition, borrowed from `animate.ts`, so that the two
+ * motions of the view have the same grain.
  *
- * Ce module ne connaît NI le modèle ni la scène, exactement comme `drag.ts` : il
- * traduit deux événements en une valeur et la remet à l'appelant, qui décide
- * seul de ce qu'elle peint (l'échelle d'une carte, l'alpha d'une enveloppe).
- * C'est ce qui le rend testable sans canvas.
+ * This module knows NEITHER the model nor the scene, exactly like `drag.ts`: it turns
+ * two events into a value and hands it back to the caller, who decides alone what it
+ * paints (a card's scale, an envelope's alpha). That is what makes it testable without
+ * a canvas.
  *
- * Un changement de sens en cours d'animation REPART DE LA VALEUR COURANTE et
- * non de la borne opposée : sortir à mi-montée redescend depuis là. Repartir de
- * 1 produirait un à-coup au moment précis où le pointeur quitte la carte, c'est
- *-à-dire là où l'œil est encore posé dessus.
+ * A change of direction mid-animation RESTARTS FROM THE CURRENT VALUE and not from the
+ * opposite bound: leaving halfway up comes back down from there. Restarting from 1
+ * would produce a jolt at the precise moment the pointer leaves the card, that is,
+ * right where the eye is still resting.
  *
- * La durée reste `HOVER_MS` quelle que soit la distance à parcourir. Une durée
- * proportionnelle serait plus « juste » physiquement, mais sur 120 ms la
- * différence ne se voit pas, et elle coûterait un état de plus à tenir.
+ * The duration stays `HOVER_MS` whatever the distance to cover. A proportional duration
+ * would be more "correct" physically, but over 120 ms the difference does not show, and
+ * it would cost one more piece of state to hold.
  */
 export function attachHover(target: Container, hooks: HoverHooks): HoverHandle {
   target.eventMode = "static";
 
-  // L'intensité PUBLIÉE en dernier : c'est elle, et non le temps écoulé, qui
-  // sert de point de départ au prochain changement de sens.
+  // The intensity PUBLISHED last: it, and not the elapsed time, is what the next change
+  // of direction starts from.
   let current = 0;
   let from = 0;
   let to = 0;
   let start = 0;
-  // Le rappel n'est inscrit au ticker que pendant une animation, et une seule
-  // fois : deux `pointerover` d'affilée (Pixi en émet un par sous-objet
-  // traversé) ne doivent pas doubler la cadence.
+  // The callback is registered on the ticker only during an animation, and only once:
+  // two `pointerover` in a row (Pixi emits one per traversed sub-object) must not
+  // double the pace.
   let running = false;
 
   const stop = (): void => {
@@ -90,24 +90,24 @@ export function attachHover(target: Container, hooks: HoverHooks): HoverHandle {
   };
 
   function tick(): void {
-    // Garde de vivacité, comme dans `animate.ts` : un `rebuild()` détruit
-    // les containers sans qu'aucun `pointerout` ne soit passé, et l'appelant
-    // écrirait alors sur une `.position` nulle. L'exception tomberait AVANT le
-    // retrait du ticker, donc elle se répéterait à chaque image pour toujours —
-    // d'où l'auto-retrait ici plutôt qu'un simple saut d'image.
+    // Liveness guard, as in `animate.ts`: a `rebuild()` destroys the containers without
+    // any `pointerout` having gone through, and the caller would then write onto a null
+    // `.position`. The exception would land BEFORE the ticker removal, so it would
+    // repeat on every frame forever — hence the self-removal here rather than a plain
+    // frame skip.
     if (target.destroyed) {
       stop();
       return;
     }
     const t = Math.min(1, (performance.now() - start) / HOVER_MS);
-    // La MÊME courbe que la transition de dépliage, importée et non recopiée :
-    // deux copies de la formule dériveraient au premier réglage de l'une, et les
-    // deux mouvements de la vue cesseraient d'avoir le même grain.
+    // The SAME curve as the expansion transition, imported and not copied over: two
+    // copies of the formula would drift at the first tuning of either, and the two
+    // motions of the view would stop having the same grain.
     const eased = easeOutQuad(t);
     current = from + (to - from) * eased;
     hooks.onFrame(current);
-    // `t >= 1` donne `current === to` exactement : la borne est atteinte, pas
-    // approchée, et l'appelant peut s'y fier pour son état de repos.
+    // `t >= 1` gives `current === to` exactly: the bound is reached, not approached,
+    // and the caller can rely on it for its resting state.
     if (t >= 1) stop();
   }
 
@@ -122,15 +122,15 @@ export function attachHover(target: Container, hooks: HoverHooks): HoverHandle {
 
   target.on("pointerover", () => {
     if (hooks.isBlocked?.()) return;
-    if (current === 1) return; // déjà au repos haut : rien à animer
+    if (current === 1) return; // already at the high rest: nothing to animate
     animateTo(1);
   });
 
   target.on("pointerout", () => {
-    // Pas de garde `isBlocked` ici : une sortie doit TOUJOURS pouvoir rendre la
-    // cible à son repos, sans quoi une carte survolée puis saisie resterait
-    // allumée. La garde d'intensité nulle suffit à ignorer la sortie qui suit
-    // une entrée inhibée.
+    // No `isBlocked` guard here: a departure must ALWAYS be able to return the target
+    // to its rest, failing which a card hovered and then grabbed would stay lit. The
+    // zero-intensity guard is enough to ignore the departure that follows an inhibited
+    // entry.
     if (current === 0) return;
     animateTo(0);
   });
@@ -140,8 +140,8 @@ export function attachHover(target: Container, hooks: HoverHooks): HoverHandle {
       stop();
       if (current === 0) return;
       current = from = to = 0;
-      // Publié, et pas seulement remis à zéro : l'appelant a peint le survol,
-      // c'est par ce même rappel qu'il le dépeint.
+      // Published, and not merely reset to zero: the caller painted the hover, it is
+      // through that same callback that it unpaints it.
       if (!target.destroyed) hooks.onFrame(0);
     },
   };

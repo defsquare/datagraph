@@ -1,54 +1,54 @@
 import type { NodeId, RefEdge } from "@defsquare/data-graph-core";
 
 /**
- * L'opacité d'une carte ou d'une arête SANS lien avec la sélection.
+ * The opacity of a card or an edge with NO link to the selection.
  *
- * 0,25 : assez bas pour que le voisinage de la sélection se détache d'un coup
- * d'œil au milieu de centaines de cartes, assez haut pour que le reste de la
- * mise en page reste lisible — l'estompage est un guide de lecture, pas un
- * masque. Les cartes estompées restent d'ailleurs cliquables : l'alpha ne
- * change rien au hit-testing de Pixi, qui est géométrique.
+ * 0.25: low enough for the selection's neighbourhood to stand out at a glance in
+ * the middle of hundreds of cards, high enough that the rest of the layout stays
+ * readable — dimming is a reading guide, not a mask. Dimmed cards do stay
+ * clickable, by the way: alpha changes nothing to Pixi's hit-testing, which is
+ * geometric.
  *
- * La constante vit ICI, dans un module que rien d'autre ne tire, parce qu'elle
- * est partagée par les trois parts de l'effet : les cartes (`applyFocusDim`,
- * dans `create.ts`), les arêtes et les enveloppes d'agrégats (`drawEdges` et
- * `drawClusters`, dans `draw.ts`). La poser dans l'un des deux obligerait
- * l'autre à l'importer — et `draw.ts` important `create.ts` fermerait un cycle,
- * puisque `create.ts` importe déjà `draw.ts`.
+ * The constant lives HERE, in a module nothing else pulls in, because it is shared by
+ * the three parts of the effect: the cards (`applyFocusDim`, in `create.ts`), the
+ * edges and the aggregate envelopes (`drawEdges` and `drawClusters`, in `draw.ts`).
+ * Putting it in either of the two would force the other to import it — and `draw.ts`
+ * importing `create.ts` would close a cycle, since `create.ts` already imports
+ * `draw.ts`.
  *
- * Le MÊME facteur partout, et pas un réglage par calque : c'est ce qui fait que
- * l'estompage se lit comme un seul recul du décor, et non comme trois effets
- * qui se ressemblent. Sur une enveloppe il MULTIPLIE des alphas déjà très bas
- * (0,08 de fond), ce qui la fait pratiquement disparaître — c'est voulu : un
- * disque translucide reste visible par son contour, et l'estomper à demi
- * laisserait le regard s'y accrocher.
+ * The SAME factor everywhere, and not a per-layer setting: that is what makes the
+ * dimming read as a single retreat of the backdrop rather than as three effects that
+ * merely look alike. On an envelope it MULTIPLIES alphas that are already very low
+ * (0.08 for the fill), which makes it practically disappear — and that is intended: a
+ * translucent disc stays visible through its outline, and dimming it halfway would
+ * leave the eye snagging on it.
  */
 export const DIM_ALPHA = 0.25;
 
 /**
- * L'ensemble des nœuds à garder à pleine opacité autour de `focusId` : lui-même,
- * les DEUX bouts de ses références (entrantes comme sortantes), son parent de
- * containment et ses enfants directs.
+ * The set of nodes to keep at full opacity around `focusId`: itself, BOTH ends of its
+ * references (incoming as well as outgoing), its containment parent and its direct
+ * children.
  *
- * `null` en retour signifie « aucun focus », et se lit autrement que l'ensemble
- * vide : vide dirait « personne n'est lié », donc « estompe tout », alors qu'il
- * ne faut alors rien estomper du tout. L'appelant traite les deux cas d'une
- * seule expression (`keep === null || keep.has(id)`), ce qui rend l'absence de
- * sélection impossible à confondre avec une sélection isolée.
+ * Returning `null` means "no focus", and reads differently from the empty set: empty
+ * would say "nobody is linked", hence "dim everything", whereas in that case nothing at
+ * all must be dimmed. The caller handles both cases with a single expression (`keep ===
+ * null || keep.has(id)`), which makes the absence of a selection impossible to confuse
+ * with an isolated selection.
  *
- * Le voisinage s'arrête à la DISTANCE 1. Suivre les chaînes plus loin ferait
- * grossir l'ensemble jusqu'à couvrir la plupart du graphe, et un estompage qui
- * ne distingue plus rien ne sert à rien.
+ * The neighbourhood stops at DISTANCE 1. Following the chains further would grow the
+ * set until it covered most of the graph, and a dimming that no longer tells anything
+ * apart is of no use.
  *
- * De la donnée NUE en entrée — un tableau d'arêtes, un parent, des enfants —
- * plutôt que le `Graph` et un `NodeId` : la fonction n'a besoin de rien
- * d'autre, et s'en tenir là la rend testable sans construire de graphe.
- * `to === null` (référence cassée) est ignoré : il n'y a personne au bout.
+ * BARE data as input — an array of edges, a parent, some children — rather than the
+ * `Graph` and a `NodeId`: the function needs nothing else, and sticking to that makes
+ * it testable without building a graph. `to === null` (broken reference) is ignored:
+ * there is nobody at the far end.
  *
- * Le bout SOURCE d'une référence est son entité déclarante (`fromEntity`) et
- * non le nœud qui porte la ligne : le voisinage se raisonne entre cartes de la
- * vue graphe, où un value object n'existe pas comme carte et où c'est bien
- * l'entité qui est « liée » à la cible.
+ * The SOURCE end of a reference is its declaring entity (`fromEntity`) and not the node
+ * carrying the row: the neighbourhood is reasoned about between cards of the graph
+ * view, where a value object does not exist as a card and where it really is the entity
+ * that is "linked" to the target.
  */
 export function relatedIds(
   refEdges: readonly RefEdge[],
@@ -69,25 +69,25 @@ export function relatedIds(
 }
 
 /**
- * L'ensemble des nœuds à garder à pleine opacité autour d'un AGRÉGAT
- * sélectionné : tous ses membres, plus toute carte extérieure qui a une
- * référence avec l'un d'eux, dans un sens ou dans l'autre.
+ * The set of nodes to keep at full opacity around a selected AGGREGATE: all of its
+ * members, plus any outside card that has a reference with one of them, in either
+ * direction.
  *
- * C'est le pendant de `relatedIds` pour l'autre unité de sélection de la vue
- * graphe, et il obéit à la même règle de distance 1 — sauf que la « distance »
- * se compte depuis le BLOC entier et non depuis une carte. L'agrégat étant ce
- * que la vue montre comme un objet, l'estompage doit répondre à la question
- * qu'on lui pose en le désignant : « qui parle à ce bloc ? »
+ * It is the counterpart of `relatedIds` for the graph view's other
+ * selection unit, and it obeys the same distance-1 rule — except that the
+ * "distance" is counted from the whole BLOCK and not from a card. The
+ * aggregate being what the view shows as an object, the dimming must
+ * answer the question one asks by pointing at it: "who talks to this
+ * block?"
  *
- * Pas de `null` en retour, à la différence de `relatedIds` : on n'appelle ceci
- * que lorsqu'un agrégat EST sélectionné. L'absence de sélection reste portée par
- * l'appelant, qui n'a alors aucune raison d'appeler.
+ * No `null` return, unlike `relatedIds`: this is only called when an aggregate IS
+ * selected. The absence of a selection stays carried by the caller, which then has no
+ * reason to call.
  *
- * Même donnée NUE en entrée : des arêtes et un ensemble d'ids, pas l'index
- * d'agrégats ni le graphe. `to === null` (référence cassée) est ignoré — il n'y
- * a personne au bout, donc personne à garder plein, et une référence cassée
- * n'est de toute façon plus tracée dans l'espace des arêtes : elle se signale
- * sur la carte de sa source.
+ * Same BARE data as input: edges and a set of ids, not the aggregate index nor the
+ * graph. `to === null` (broken reference) is ignored — there is nobody at the far end,
+ * hence nobody to keep full, and a broken reference is no longer traced in edge space
+ * anyway: it signals itself on its source card.
  */
 export function clusterRelatedIds(
   refEdges: readonly RefEdge[],
@@ -96,9 +96,9 @@ export function clusterRelatedIds(
   const keep = new Set<NodeId>(memberIds);
   for (const edge of refEdges) {
     if (edge.to === null) continue;
-    // `fromEntity` pour la même raison que `relatedIds` : les membres d'un
-    // agrégat sont des entités, et une référence portée par un value object
-    // parle au nom de la sienne.
+    // `fromEntity` for the same reason as in `relatedIds`: the members of an aggregate
+    // are entities, and a reference carried by a value object speaks on behalf of its
+    // own.
     if (memberIds.has(edge.fromEntity)) keep.add(edge.to);
     else if (memberIds.has(edge.to)) keep.add(edge.fromEntity);
   }
@@ -106,19 +106,19 @@ export function clusterRelatedIds(
 }
 
 /**
- * Faut-il estomper l'enveloppe d'un agrégat dont les membres sont `memberIds` ?
+ * Should the envelope of an aggregate whose members are `memberIds` be dimmed?
  *
- * Oui ssi AUCUN membre n'est dans l'ensemble à garder plein. La règle est celle
- * des cartes, remontée d'un cran : l'enveloppe est le contenant, elle recule
- * quand tout ce qu'elle contient a reculé — et un seul membre lié suffit à la
- * garder pleine, parce qu'elle est alors la seule chose qui montre OÙ ce membre
- * habite. L'enveloppe sélectionnée tombe dans ce cas sans qu'on ait à la traiter
- * à part : ses membres sont, par construction, dans l'ensemble.
+ * Yes iff NO member is in the set to keep full. The rule is the cards'
+ * one, raised a notch: the envelope is the container, it recedes when
+ * everything it holds has receded — and a single linked member is enough
+ * to keep it full, because it is then the only thing showing WHERE that
+ * member lives. The selected envelope falls into this case without
+ * having to be handled apart: its members are, by construction, in the
+ * set.
  *
- * `keep === null` (pas de sélection) rend `false` : rien à estomper, comme pour
- * les cartes et les arêtes. Même expression que chez les autres lecteurs, pour
- * que l'absence de sélection ne puisse pas se confondre avec une sélection dont
- * l'ensemble serait vide.
+ * `keep === null` (no selection) returns `false`: nothing to dim, as for cards and
+ * edges. Same expression as at the other readers', so that the absence of a selection
+ * cannot be confused with a selection whose set happens to be empty.
  */
 export function clusterDimmed(
   keep: ReadonlySet<NodeId> | null,

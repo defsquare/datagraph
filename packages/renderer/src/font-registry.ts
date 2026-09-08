@@ -5,11 +5,11 @@ export type TextRole = "header" | "badge" | "key" | "value";
 
 export const TEXT_ROLES: readonly TextRole[] = ["header", "badge", "key", "value"];
 
-// Résolution 2 : le texte reste net jusqu'à 2x de zoom au lieu de baver dès
-// que la caméra dépasse 1x.
+// Resolution 2: text stays crisp up to 2x zoom instead of smearing as soon as the
+// camera goes past 1x.
 const FONT_RESOLUTION = 2;
 
-/** Tout ce dont dépend l'apparence d'un atlas cuit. */
+/** Everything a baked atlas's appearance depends on. */
 export interface FontSpec {
   fontFamily: string;
   fontSize: number;
@@ -23,9 +23,9 @@ export function fontSpecFor(theme: Theme, role: TextRole): FontSpec {
     fontFamily: s.family === "body" ? theme.fonts.body : theme.fonts.mono,
     fontSize: s.size,
     fontWeight: s.weight,
-    // `letterSpacing` est cuit dans l'atlas, il fait donc partie de son
-    // identité : deux thèmes qui ne diffèrent que par `tracking` ne peuvent
-    // pas partager un atlas.
+    // `letterSpacing` is baked into the atlas, so it is part of its
+    // identity: two themes that differ only by `tracking` cannot share an
+    // atlas.
     letterSpacing: (s.tracking ?? 0) * s.size,
   };
 }
@@ -34,7 +34,7 @@ export function specKey(spec: FontSpec): string {
   return `${spec.fontFamily}|${spec.fontSize}|${spec.fontWeight}|${spec.letterSpacing}`;
 }
 
-/** Hash court et stable, pour que le nom d'atlas reste lisible au débogage. */
+/** Short, stable hash, so the atlas name stays readable while debugging. */
 function hash(text: string): string {
   let h = 2166136261;
   for (let i = 0; i < text.length; i++) {
@@ -45,13 +45,13 @@ function hash(text: string): string {
 }
 
 /**
- * Nom de l'atlas d'un rôle, fonction **pure** du thème.
+ * Atlas name for a role, a **pure** function of the theme.
  *
- * C'est ce qui permet à `drawNode` de retrouver l'atlas sans qu'on lui passe
- * quoi que ce soit : il dérive le même nom que celui que le bail a installé.
- * Auparavant le nom était fixe par rôle (`dg-header`…), si bien que deux
- * instances aux typographies différentes s'écrasaient mutuellement les atlas
- * à chaque rebuild.
+ * That is what lets `drawNode` find the atlas back without being
+ * handed anything: it derives the same name the lease installed. The
+ * name used to be fixed per role (`dg-header`…), so two instances with
+ * different typographies would overwrite each other's atlases on every
+ * rebuild.
  */
 export function fontNameFor(theme: Theme, role: TextRole): string {
   return `dg-${role}-${hash(specKey(fontSpecFor(theme, role)))}`;
@@ -62,12 +62,12 @@ export interface FontHooks {
   uninstall: (name: string) => void;
 }
 
-/** Un porteur d'atlas : une instance de DataGraph, typiquement. */
+/** An atlas holder: a DataGraph instance, typically. */
 export interface FontLease {
-  /** Installe (ou réutilise) les atlas dont `theme` a besoin, et libère ceux
-   * que ce bail portait et n'utilise plus. Idempotent. */
+  /** Installs (or reuses) the atlases `theme` needs, and releases those this
+   * lease held and no longer uses. Idempotent. */
   sync(theme: Theme): void;
-  /** Libère tous les atlas de ce bail. Idempotent. */
+  /** Releases every atlas of this lease. Idempotent. */
   dispose(): void;
 }
 
@@ -76,16 +76,16 @@ export interface FontRegistry {
 }
 
 /**
- * Registre d'atlas à comptage de références.
+ * Reference-counted atlas registry.
  *
- * Les atlas de Pixi sont enregistrés globalement par nom : ils sont donc
- * forcément partagés entre instances, et seul un comptage de références
- * permet de savoir quand désinstaller sans couper l'herbe sous le pied d'une
- * autre instance. Sans ce comptage, `destroy()` ne pouvait rien libérer du
- * tout et la mémoire de texture fuyait à chaque montage/démontage.
+ * Pixi's atlases are registered globally by name: they are therefore necessarily
+ * shared between instances, and only reference counting can tell when to uninstall
+ * without pulling the rug out from under another instance. Without that counting,
+ * `destroy()` could not release anything at all and texture memory leaked on every
+ * mount/unmount.
  *
- * Les hooks sont injectables pour que la logique de comptage soit testable
- * sans canvas ni WebGL.
+ * The hooks are injectable so the counting logic stays testable without a canvas or
+ * WebGL.
  */
 export function createFontRegistry(hooks: FontHooks): FontRegistry {
   const entries = new Map<string, { name: string; refs: number }>();
@@ -111,7 +111,7 @@ export function createFontRegistry(hooks: FontHooks): FontRegistry {
 
   return {
     lease(): FontLease {
-      // Rôle -> nom d'atlas actuellement porté par CE bail.
+      // Role -> atlas name currently held by THIS lease.
       const held = new Map<TextRole, string>();
 
       return {
@@ -122,9 +122,9 @@ export function createFontRegistry(hooks: FontHooks): FontRegistry {
             if (previous === name) continue;
             retain(name, fontSpecFor(theme, role));
             held.set(role, name);
-            // Libéré APRÈS avoir retenu le nouveau : si les deux partagent le
-            // même nom, on ne veut pas tomber à zéro et désinstaller un atlas
-            // qu'on est en train de réutiliser.
+            // Released AFTER retaining the new one: if both share the same name, we do
+            // not want to drop to zero and uninstall an atlas we are in the middle of
+            // reusing.
             if (previous) release(previous);
           }
         },
@@ -138,7 +138,7 @@ export function createFontRegistry(hooks: FontHooks): FontRegistry {
   };
 }
 
-/** Le registre adossé à Pixi, partagé par toutes les instances du processus. */
+/** The Pixi-backed registry, shared by every instance in the process. */
 export const pixiFontRegistry: FontRegistry = createFontRegistry({
   install(name, spec) {
     BitmapFont.install({

@@ -1,33 +1,33 @@
 import type { Graph, NodeId } from "./model.js"
 
 /**
- * Nombre d'enfants-cartes révélés d'un coup. La pagination existe parce qu'un
- * seul nœud peut porter des centaines de milliers d'enfants : mesurer, poser
- * et dessiner tout ça coûte plus que ce qu'un écran peut montrer.
+ * Number of card children revealed at once. Pagination exists because a single
+ * node can carry hundreds of thousands of children: measuring, laying out and
+ * drawing all that costs more than a screen can show.
  */
 export const PAGE_SIZE = 100
 
 /**
- * La page ALIGNÉE qui contient l'indice de carte donné : la page `p` couvre
- * exactement `[p * PAGE_SIZE, (p + 1) * PAGE_SIZE)`. L'alignement est ce qui
- * rend une page identifiable par un seul entier, donc révélable, annulable et
- * comparable sans mémoriser de bornes.
+ * The ALIGNED page containing the given card index: page `p` covers exactly
+ * `[p * PAGE_SIZE, (p + 1) * PAGE_SIZE)`. That alignment is what makes a page
+ * identifiable by a single integer, hence revealable, undoable and comparable
+ * without memorizing bounds.
  */
 export function pageOf(cardIndex: number): number {
   return Math.floor(cardIndex / PAGE_SIZE)
 }
 
 /**
- * Nombre de cartes que le dépliage initial s'autorise à « acheter ». Ce n'est
- * pas une limite de rendu mais une limite d'APERÇU : au-delà, ce qui s'ouvre
- * n'est plus lisible et le coût du layout devient celui du document entier.
+ * Number of cards the initial expansion allows itself to "buy". This is not a
+ * rendering limit but a PREVIEW limit: beyond it, what opens is no longer
+ * readable and the layout cost becomes that of the whole document.
  */
 export const INITIAL_CARD_BUDGET = 300
 
 /**
- * Une plage CONTIGUË d'enfants-cartes non révélés : de quoi dessiner un jeton
- * « … n de plus » à sa place dans l'ordre des enfants, et savoir quelle page
- * révéler quand on le clique.
+ * A CONTIGUOUS range of unrevealed card children: enough to draw a "… n more"
+ * token at its place in the child order, and to know which page to reveal when
+ * it is clicked.
  */
 export interface HiddenGap {
   fromIndex: number
@@ -43,26 +43,27 @@ export interface HiddenGap {
  * non-entity node encountered as expanded; descent stops at the first
  * entity node on each branch (entities start collapsed).
  *
- * Ce dépliage est en outre BORNÉ par un budget de cartes (`initialCardBudget`,
- * défaut `INITIAL_CARD_BUDGET`) : sans entités — le cas du mode CLI sans config
- * — la frontière d'entités ne freine rien et le BFS déplierait le document
- * entier. Le budget rend l'état initial un APERÇU des niveaux hauts ; ce qu'il
- * refuse reste visible, simplement replié.
+ * This expansion is further BOUNDED by a card budget (`initialCardBudget`,
+ * default `INITIAL_CARD_BUDGET`): with no entities — the CLI-without-config case
+ * — the entity boundary slows nothing down and the BFS would expand the whole
+ * document. The budget makes the initial state a PREVIEW of the top levels; what
+ * it turns down stays visible, simply collapsed.
  */
 export class CollapseState {
   private readonly graph: Graph
   private readonly expanded: Set<NodeId> = new Set()
   /**
-   * Pages d'enfants-cartes révélées, par nœud. L'ABSENCE d'entrée vaut `{0}` :
-   * le dépliage ordinaire n'écrit donc rien, et la pagination s'applique d'
-   * elle-même dès qu'un nœud dépasse `PAGE_SIZE` enfants-cartes — c'est ce qui
-   * garde le coût de l'état proportionnel aux pages ouvertes, pas au graphe.
-   * La PRÉSENCE d'une entrée fait foi, même vide : `unrevealPage(id, 0)` est un
-   * état légitime (« rien de révélé ») et non un retour au défaut.
+   * Revealed pages of card children, per node. The ABSENCE of an entry means
+   * `{0}`: ordinary expansion therefore writes nothing, and pagination kicks in
+   * by itself as soon as a node exceeds `PAGE_SIZE` card children — that is what
+   * keeps the cost of the state proportional to the open pages, not to the
+   * graph. The PRESENCE of an entry is authoritative, even when empty:
+   * `unrevealPage(id, 0)` is a legitimate state ("nothing revealed") and not a
+   * return to the default.
    *
-   * `collapse()` ne touche pas cette map : les pages révélées d'un nœud replié
-   * sont CONSERVÉES, même politique que l'ensemble `expanded` — re-déplier
-   * remontre ce qu'on avait révélé.
+   * `collapse()` does not touch this map: the revealed pages of a collapsed node
+   * are KEPT, same policy as the `expanded` set — re-expanding shows again what
+   * had been revealed.
    */
   private readonly revealed: Map<NodeId, Set<number>> = new Map()
   private static readonly DEFAULT_PAGES: ReadonlySet<number> = new Set([0])
@@ -71,13 +72,13 @@ export class CollapseState {
     this.graph = graph
     const budget = opts.initialCardBudget ?? INITIAL_CARD_BUDGET
 
-    // Le BFS historique dépliait tout jusqu'aux frontières d'entités — sans
-    // config il n'y a pas d'entités, donc aucun frein, et le document entier
-    // partait dans ELK en un appel (16 s à 50k nœuds). Le budget est le second
-    // frein : on cesse de MARQUER déplié dès qu'on a « acheté » assez de cartes
-    // visibles. Le BFS sert les niveaux hauts d'abord — c'est l'aperçu.
-    // Un nœud atteint mais non marqué reste une carte repliée visible.
-    let cards = 1 // la racine elle-même
+    // The historical BFS expanded everything down to the entity boundaries —
+    // without a config there are no entities, hence no brake, and the whole
+    // document went into ELK in one call (16 s at 50k nodes). The budget is the
+    // second brake: we stop MARKING nodes expanded once enough visible cards
+    // have been "bought". The BFS serves the top levels first — that is the
+    // preview. A node reached but not marked stays a visible collapsed card.
+    let cards = 1 // the root itself
     const queue: NodeId[] = [graph.rootId]
     while (queue.length > 0) {
       const id = queue.shift()!
@@ -88,9 +89,9 @@ export class CollapseState {
       // the entity-boundary rule below.
       if (node.kind === "entity" && id !== graph.rootId) continue
 
-      // Déplier `id` révèle sa première page d'enfants-cartes : c'est ce que ça
-      // coûte au budget. La racine est toujours dépliée — un document qui
-      // s'ouvre sur rien du tout n'est pas un aperçu.
+      // Expanding `id` reveals its first page of card children: that is what it
+      // costs the budget. The root is always expanded — a document that opens on
+      // nothing at all is not a preview.
       const cost = Math.min(this.cardChildren(id).length, PAGE_SIZE)
       if (id !== graph.rootId && cards + cost > budget) continue
       cards += cost
@@ -98,9 +99,9 @@ export class CollapseState {
       this.expanded.add(id)
       if (node.kind === "entity") continue // do not descend past an entity boundary
 
-      // N'enfiler que ce qui peut devenir visible : les élidés (toujours des
-      // lignes) et la PREMIÈRE page d'enfants-cartes. Enfiler au-delà ferait
-      // dépenser le budget à marquer déplié des nœuds que les pages cachent.
+      // Only enqueue what can become visible: the elided ones (always rows) and
+      // the FIRST page of card children. Enqueueing beyond that would spend the
+      // budget marking expanded nodes that the pages hide anyway.
       let cardIndex = 0
       for (const childId of node.childIds) {
         const child = graph.nodes.get(childId)
@@ -140,9 +141,9 @@ export class CollapseState {
   }
 
   /**
-   * L'ensemble modifiable des pages de `id`, matérialisé au premier écrit à
-   * partir du défaut. Copier `DEFAULT_PAGES` plutôt que la partager est vital :
-   * elle est statique, la muter paginerait tout le graphe d'un coup.
+   * The mutable page set of `id`, materialized from the default on first write.
+   * Copying `DEFAULT_PAGES` rather than sharing it is vital: it is static, and
+   * mutating it would repaginate the whole graph at once.
    */
   private mutablePages(id: NodeId): Set<number> {
     let pages = this.revealed.get(id)
@@ -154,9 +155,9 @@ export class CollapseState {
   }
 
   /**
-   * Les enfants de `id` qui sont des CARTES, dans l'ordre de `childIds`. Les
-   * élidés sont écartés parce qu'ils sont des lignes de la carte de `id` : ils
-   * ne se paginent pas, et les compter décalerait l'indice des vraies cartes.
+   * The children of `id` that are CARDS, in `childIds` order. The elided ones
+   * are discarded because they are rows of `id`'s card: they do not paginate,
+   * and counting them would shift the index of the real cards.
    */
   private cardChildren(id: NodeId): NodeId[] {
     const node = this.graph.nodes.get(id)
@@ -167,16 +168,16 @@ export class CollapseState {
     })
   }
 
-  /** Rang de `childId` parmi les enfants-cartes de `parentId` ; -1 si absent ou élidé. */
+  /** Rank of `childId` among `parentId`'s card children; -1 if absent or elided. */
   cardIndexOf(parentId: NodeId, childId: NodeId): number {
     return this.cardChildren(parentId).indexOf(childId)
   }
 
   /**
-   * Les plages d'enfants-cartes non révélées de `id`, en ordre d'indices
-   * croissants. Les pages non révélées consécutives sont FUSIONNÉES en une
-   * seule plage : elles se remplacent à l'écran par un jeton unique, et le
-   * révéler entame le trou par sa première page (`nextPage`).
+   * The unrevealed ranges of `id`'s card children, in increasing index order.
+   * Consecutive unrevealed pages are MERGED into a single range: on screen they
+   * are replaced by one token, and revealing it eats into the gap from its first
+   * page (`nextPage`).
    */
   hiddenGaps(id: NodeId): HiddenGap[] {
     const cards = this.cardChildren(id)
@@ -192,8 +193,8 @@ export class CollapseState {
       const start = page
       while (page < pageCount && !pages.has(page)) page++
       const fromIndex = start * PAGE_SIZE
-      // La dernière page est incomplète : borner sur le nombre réel de cartes,
-      // sinon le jeton annoncerait des enfants qui n'existent pas.
+      // The last page is incomplete: clamp on the real card count, or the token
+      // would announce children that do not exist.
       const count = Math.min(page * PAGE_SIZE, cards.length) - fromIndex
       gaps.push({ fromIndex, count, nextPage: start })
     }
@@ -205,16 +206,16 @@ export class CollapseState {
    * parent chain is all expanded), and we only descend through it if
    * it is itself expanded. Root is always expanded and always visible.
    *
-   * Un enfant ÉLIDÉ échappe à cette règle : il n'est pas une carte à révéler
-   * mais une LIGNE de la carte de son parent, donc il est là dès que cette
-   * carte l'est, sans attendre que le parent soit déplié. C'est ce qui rend le
-   * jeton `[ n items ]` visible sur une entité repliée — sinon le jeton serait
-   * dessiné (les lignes le sont toujours) alors que le nœud qu'il pilote
-   * n'existerait pas pour le pli, et le clic ne déplierait rien.
+   * An ELIDED child escapes that rule: it is not a card to reveal but a ROW of
+   * its parent's card, so it is there as soon as that card is, without waiting
+   * for the parent to be expanded. That is what makes the `[ n items ]` token
+   * visible on a collapsed entity — otherwise the token would be drawn (rows
+   * always are) while the node it drives would not exist as far as collapse is
+   * concerned, and the click would expand nothing.
    *
-   * Un enfant-CARTE, lui, ne suffit pas d'être atteint : sa page doit être
-   * révélée. L'indice de carte se tient au fil du parcours plutôt que par
-   * `cardIndexOf`, qui referait la liste filtrée pour chaque enfant.
+   * A CARD child, on the other hand, is not enough to be reached: its page must
+   * be revealed. The card index is tracked along the traversal rather than
+   * through `cardIndexOf`, which would rebuild the filtered list for each child.
    */
   visibleNodeIds(): Set<NodeId> {
     const visible = new Set<NodeId>()
@@ -246,10 +247,10 @@ export class CollapseState {
    * that were newly expanded by this call, in root-first order.
    * Idempotent: calling again with the same id returns [].
    *
-   * Révèle EN PLUS, à chaque maillon du chemin, la page qui contient l'enfant
-   * suivant : depuis la pagination, un ancêtre déplié ne garantit plus la
-   * visibilité de sa descendance. Ces révélations sont un effet de bord — elles
-   * n'entrent pas dans la valeur de retour, qui reste la liste des dépliages.
+   * ALSO reveals, at each link of the path, the page containing the next child:
+   * since pagination, an expanded ancestor no longer guarantees the visibility
+   * of its descendants. Those reveals are a side effect — they do not enter the
+   * return value, which stays the list of expansions.
    */
   expandPathTo(id: NodeId): NodeId[] {
     const ancestors: NodeId[] = []
@@ -270,12 +271,12 @@ export class CollapseState {
       }
     }
 
-    // Seconde passe sur la chaîne COMPLÈTE — pas seulement sur `newly` : un
-    // parent déjà déplié peut très bien avoir la mauvaise page révélée. On ne
-    // révèle que la page de l'enfant du chemin, jamais tout le préfixe, sinon
-    // atteindre `/orders/47312` paierait 47313 cartes. Un enfant élidé
-    // (`cardIndexOf` < 0) est une ligne de la carte de son parent : il est déjà
-    // visible, il n'a pas de page.
+    // Second pass over the COMPLETE chain — not just over `newly`: an already
+    // expanded parent may very well have the wrong page revealed. We reveal only
+    // the page of the path's child, never the whole prefix, or reaching
+    // `/orders/47312` would pay for 47313 cards. An elided child
+    // (`cardIndexOf` < 0) is a row of its parent's card: it is already visible,
+    // it has no page.
     let childId: NodeId = id
     for (let i = ancestors.length - 1; i >= 0; i--) {
       const parentId = ancestors[i]!

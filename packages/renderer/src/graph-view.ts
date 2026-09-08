@@ -11,18 +11,18 @@ import {
   type Rect,
   type RefEdge,
 } from "@defsquare/data-graph-core";
-// `import type` UNIQUEMENT : ce point d'entrée porte la vue graphe et ne doit
-// entrer dans le bundle que de qui y bascule réellement. Un import de type ne
-// produit aucun code à l'exécution ; le seul chemin d'exécution vers le moteur
-// est l'`import()` dynamique d'`ensureModule`, plus bas dans CE fichier.
-// `test/bundle-purity.test.ts` (côté renderer) garde ces deux lignes : le test
-// du cœur ne couvre que le `dist/` du cœur, pas ce fichier-ci.
+// `import type` ONLY: this entry point carries the graph view and
+// must only enter the bundle of whoever actually switches to it. A
+// type import produces no runtime code; the only runtime path to the
+// engine is `ensureModule`'s dynamic `import()`, further down in THIS
+// file. `test/bundle-purity.test.ts` (renderer side) guards these two
+// lines: the core's own test only covers the core's `dist/`, not this
+// file.
 //
-// Ce que ces deux lignes valent a changé d'échelle depuis le retrait de
-// l'ancien moteur : 3,58 ko gzip au lieu de 180,28. Elles restent parce
-// qu'elles tiennent la FORME — la vue graphe se charge à la demande par
-// construction — et non plus parce qu'elles tiennent un poids. Le raisonnement
-// complet est dans les deux tests de pureté.
+// What these two lines are worth has changed scale since the old engine was removed:
+// 3.58 kB gzip instead of 180.28. They stay because they hold the SHAPE — the graph view
+// loads on demand by construction — and no longer because they hold a weight. The full
+// reasoning is in the two purity tests.
 import type {
   ClusterShape,
   GraphLayoutEngine,
@@ -33,16 +33,16 @@ import type {
 import { clusterDimmed } from "./focus.js";
 
 /**
- * LE PROTOCOLE DU WORKER DE MISE EN PAGE, déclaré ici parce que c'est ici qu'il
- * est parlé : le worker (`graph-layout-worker.ts`) n'en importe que les types,
- * par un `import type` que le bundler efface. Aucun code ne traverse donc dans
- * ce sens-là — le worker ne tire que le cœur pur du layout.
+ * THE LAYOUT WORKER'S PROTOCOL, declared here because this is where it is spoken: the
+ * worker (`graph-layout-worker.ts`) imports only its types, through an `import type` the
+ * bundler erases. No code therefore crosses in that direction — the worker pulls in
+ * nothing but the pure layout core.
  *
- * `gen` est le NUMÉRO DE REQUÊTE, et le contrat est qu'une réponse ne vaut que
- * pour la requête qui porte le même. Un `setData`, un `setView` ou un `destroy`
- * peuvent atterrir pendant les secondes que dure un calcul ; sans ce numéro, une
- * réponse tardive serait indiscernable de celle qu'on attend et publierait des
- * positions calculées sur un graphe qui n'existe plus.
+ * `gen` is the REQUEST NUMBER, and the contract is that a response is only valid for the
+ * request carrying the same one. A `setData`, a `setView` or a `destroy` can land during
+ * the seconds a computation lasts; without that number, a late response would be
+ * indistinguishable from the one being awaited and would publish positions computed on a
+ * graph that no longer exists.
  */
 export interface GraphLayoutWorkerRequest {
   gen: number;
@@ -50,17 +50,17 @@ export interface GraphLayoutWorkerRequest {
 }
 
 /**
- * La réponse, dans une forme choisie pour le CLONAGE STRUCTURÉ et pas pour la
- * commodité de lecture.
+ * The response, in a shape chosen for STRUCTURED CLONING and not for reading
+ * convenience.
  *
- * `positions` est un tableau de tuples `[id, x, y, w, h]` et non une `Map` de
- * `Rect` : à 6 251 cartes, c'est un tableau plat de nombres au lieu de 6 251
- * petits objets à allouer et à cloner des deux côtés de la frontière. Le
- * contrôleur les réhydrate en `Rect` mutables (voir `hydrateLayout`).
+ * `positions` is an array of `[id, x, y, w, h]` tuples and not a `Map` of `Rect`: at
+ * 6,251 cards, that is a flat array of numbers instead of 6,251 small objects to
+ * allocate and clone on both sides of the boundary. The controller rehydrates them into
+ * mutable `Rect`s (see `hydrateLayout`).
  *
- * L'échec voyage comme un MESSAGE et pas comme une `Error` : une exception ne
- * traverse pas `postMessage`, et ce qui compte au retour est de savoir qu'il
- * faut se replier — le détail va dans le `console.warn` du repli.
+ * Failure travels as a MESSAGE and not as an `Error`: an exception does not cross
+ * `postMessage`, and what matters on the way back is knowing that a fallback is due —
+ * the detail goes into the fallback's `console.warn`.
  */
 export type GraphLayoutWorkerResponse =
   | {
@@ -71,26 +71,26 @@ export type GraphLayoutWorkerResponse =
     }
   | { gen: number; ok: false; message: string };
 
-/** Ce que le contrôleur fait d'un worker : lui poster une requête, et le
- * terminer. Le reste — la construction, l'URL, `new Worker` — appartient à
- * l'orchestrateur (`create.ts`), qui est le seul à connaître le DOM. */
+/** What the controller does with a worker: post it a request, and terminate
+ * it. The rest — the construction, the URL, `new Worker` — belongs to the
+ * orchestrator (`create.ts`), the only one that knows the DOM. */
 export interface GraphLayoutWorkerHandle {
   post(request: GraphLayoutWorkerRequest): void;
   terminate(): void;
 }
 
 /**
- * La fabrique de worker, injectée par l'appelant.
+ * The worker factory, injected by the caller.
  *
- * C'est une FONCTION et non une URL, pour que ce module reste ce qu'il a
- * toujours été : une machine de données, sans `new Worker` ni la moindre
- * hypothèse d'environnement. `create.ts` en construit une depuis
- * `DataGraphOptions.graphLayoutWorkerUrl` ; les tests en injectent une qui rend
- * un faux worker, ce qui rend le protocole testable sans navigateur.
+ * It is a FUNCTION and not a URL, so that this module stays what it has always been: a
+ * data machine, with no `new Worker` and not the slightest environment assumption.
+ * `create.ts` builds one from `DataGraphOptions.graphLayoutWorkerUrl`; the tests
+ * inject one that returns a fake worker, which makes the protocol testable without a
+ * browser.
  *
- * Elle a le droit de LEVER (URL injouable, `Worker` absent) : l'appel est gardé
- * et un échec de construction déclenche le même repli définitif qu'un échec de
- * calcul.
+ * It is allowed to THROW (unplayable URL, `Worker` missing): the call is guarded, and
+ * a construction failure triggers the same definitive fallback as a computation
+ * failure.
  */
 export type GraphLayoutWorkerSpawn = (
   onMessage: (data: unknown) => void,
@@ -98,26 +98,26 @@ export type GraphLayoutWorkerSpawn = (
 ) => GraphLayoutWorkerHandle;
 
 /**
- * Le namespace du point d'entrée `./graph-layout`, tel que l'`import()`
- * dynamique d'`ensureModule` le rend.
+ * The namespace of the `./graph-layout` entry point, as `ensureModule`'s dynamic
+ * `import()` returns it.
  *
- * `typeof import(…)` est une position de TYPE : elle n'émet aucun code, donc
- * elle ne rouvre pas la porte que les deux tests de pureté ferment. Il en faut
- * un nom parce que le contrôleur garde ce namespace en variable — le chemin
- * worker y prend `extractGraphLayoutInput`, le chemin en processus
- * `createTwoLevelLayoutEngine`, et les deux `TWO_LEVEL_LAYOUT_DEFAULTS`.
+ * `typeof import(…)` is a TYPE position: it emits no code, so it does not reopen the
+ * door the two purity tests close. It needs a name because the controller keeps that
+ * namespace in a variable — the worker path takes `extractGraphLayoutInput` from it, the
+ * in-process path `createTwoLevelLayoutEngine`, and both take
+ * `TWO_LEVEL_LAYOUT_DEFAULTS`.
  */
 type GraphLayoutModule = typeof import("@defsquare/data-graph-core/graph-layout");
 
 /**
- * Le lien entre DEUX AGRÉGATS, et le nombre de références qu'il résume.
+ * The link between TWO AGGREGATES, and the number of references it sums up.
  *
- * NON ORIENTÉ, `a` étant toujours le plus petit des deux ids : à l'échelle où
- * ces arêtes sont peintes — le régime sémantique, sous le seuil du LOD 2 — une
- * tête de flèche mesurerait une fraction de pixel. Garder le sens doublerait
- * donc le nombre de traits pour une distinction que personne ne peut voir. Ce
- * que la vue dézoomée montre est un COUPLAGE entre blocs ; la dépendance
- * dirigée se lit en zoomant, où les cartes et leurs flèches reviennent.
+ * UNDIRECTED, `a` always being the smaller of the two ids: at the scale these edges are
+ * painted — the semantic regime, below the LOD 2 threshold — an arrowhead would measure
+ * a fraction of a pixel. Keeping the direction would therefore double the number of
+ * strokes for a distinction nobody can see. What the zoomed-out view shows is a COUPLING
+ * between blocks; the directed dependency reads by zooming in, where the cards and their
+ * arrows come back.
  */
 export interface AggregateEdge {
   a: string;
@@ -126,34 +126,34 @@ export interface AggregateEdge {
 }
 
 /**
- * Replie les références du graphe sur les agrégats : une arête par PAIRE
- * d'agrégats reliés, pondérée par le nombre de références qu'elle résume.
+ * Folds the graph's references onto the aggregates: one edge per PAIR of linked
+ * aggregates, weighted by the number of references it sums up.
  *
- * Pure, et c'est ce qui la rend testable sans mise en page ni instance. Appelée
- * UNE fois par calcul de la vue graphe (`compute`), jamais par image : son
- * résultat ne dépend que du graphe et de l'index, dont aucun ne bouge entre deux
- * publications. Seules les POSITIONS des disques bougent — un déplacement les
- * mute en place — et elles ne sont résolues qu'au moment de peindre.
+ * Pure, and that is what makes it testable without a layout or an instance. Called ONCE
+ * per graph-view computation (`compute`), never per frame: its result depends only on
+ * the graph and the index, neither of which moves between two publications. Only the
+ * POSITIONS of the discs move — a drag mutates them in place — and they are resolved
+ * only at painting time.
  *
- * Trois exclusions, dans cet ordre :
- *  - une référence CASSÉE ou sans cible ne relie rien ;
- *  - une entité hors agrégat n'a pas de disque, donc pas de bout à relier — elle
- *    garde sa carte au régime sémantique, et sa référence n'y est pas montrée ;
- *  - une référence INTRA-agrégat est déjà dite par le disque lui-même : la
- *    tracer reviendrait à poser une boucle sur place.
+ * Three exclusions, in this order:
+ *  - a BROKEN reference, or one without a target, links nothing;
+ *  - an entity outside an aggregate has no disc, hence no end to link — it
+ *    keeps its card in the semantic regime, and its reference is not shown;
+ *  - an INTRA-aggregate reference is already told by the disc itself: tracing
+ *    it would amount to laying a loop in place.
  *
- * `fromEntity` et non `from` : une référence portée par un value object est
- * celle de l'entité qui le contient — c'est le niveau auquel l'appartenance
- * d'agrégat est définie, et `byNode` n'indexe que des entités.
+ * `fromEntity` and not `from`: a reference carried by a value object is the reference of
+ * the entity that contains it — that is the level at which aggregate membership is
+ * defined, and `byNode` only indexes entities.
  *
- * `byNode` est lue en `[0]`, comme le fait déjà le seul autre consommateur du
- * cœur : l'appartenance est une PARTITION (voir `AggregateIndex.byNode`), donc
- * chaque tableau tient exactement un id.
+ * `byNode` is read at `[0]`, as the core's only other consumer already does:
+ * membership is a PARTITION (see `AggregateIndex.byNode`), so each array holds exactly
+ * one id.
  *
- * L'ordre du résultat est celui de PREMIÈRE RENCONTRE dans `refEdges`, donc
- * entièrement déterminé par le graphe : deux appels sur le même graphe rendent
- * le même tableau dans le même ordre, ce dont dépend la stabilité du tracé d'une
- * publication à l'autre.
+ * The order of the result is that of FIRST ENCOUNTER in `refEdges`, hence entirely
+ * determined by the graph: two calls on the same graph return the same array in the
+ * same order, which the stability of the tracing from one publication to the next
+ * depends on.
  */
 export function aggregateRefEdges(
   refEdges: readonly RefEdge[],
@@ -169,10 +169,10 @@ export function aggregateRefEdges(
     if (from === to) continue;
     const a = from < to ? from : to;
     const b = from < to ? to : from;
-    // Le séparateur est un caractère de contrôle : un id d'agrégat vaut
-    // `${type}#${entityId}` et un id d'entité peut contenir n'importe quel
-    // caractère imprimable — un « # » ou un « | » rendraient deux paires
-    // distinctes confondables.
+    // The separator is a control character: an aggregate id is
+    // `${type}#${entityId}` and an entity id may contain any printable
+    // character — a "#" or a "|" would make two distinct pairs
+    // confusable.
     const key = `${a}\u0000${b}`;
     const known = index.get(key);
     if (known) {
@@ -187,52 +187,52 @@ export function aggregateRefEdges(
 }
 
 /**
- * La part des libellés qu'un préfixe doit couvrir pour être retiré.
+ * The share of labels a prefix must cover to be stripped.
  *
- * Une majorité NETTE et non l'unanimité, et c'est le jeu réel qui l'impose : ses
- * 1 300 agrégats comptent 1 277 packages sous `com.bnpparibas.bddf.fipro`, mais
- * aussi 18 MODULES (`bddf-fipro-domain`, `arch-audit`…) et cinq packages
- * étrangers (`com.axway.…`, un `x` isolé). Exiger que TOUS le portent revient à
- * ne rien retirer dès qu'un jeu mélange deux familles de noms — c'est-à-dire
- * dans le cas réel, où la configuration groupe presque toujours par plusieurs
- * types. Le seuil dit « ce préfixe est du bruit » plutôt que « ce préfixe est
- * universel ».
+ * A CLEAR majority and not unanimity, and it is the real data set that imposes it:
+ * its 1,300 aggregates count 1,277 packages under `com.bnpparibas.bddf.fipro`, but
+ * also 18 MODULES (`bddf-fipro-domain`, `arch-audit`…) and five foreign packages
+ * (`com.axway.…`, an isolated `x`). Requiring that ALL of them carry it amounts to
+ * stripping nothing as soon as a data set mixes two families of names — that is,
+ * in the real case, where the configuration almost always groups by several types.
+ * The threshold says "this prefix is noise" rather than "this prefix is
+ * universal".
  *
- * Les libellés qui ne le portent PAS gardent leur nom entier : ce sont les
- * exceptions du jeu, et les montrer en entier est justement ce qui les signale.
+ * The labels that do NOT carry it keep their whole name: they are the data set's
+ * exceptions, and showing them in full is precisely what flags them.
  */
 const DOMINANT_PREFIX_SHARE = 0.8;
 
 /**
- * Le plus long préfixe PAR SEGMENTS POINTÉS que partage la grande majorité de
- * `labels`, terminé par son point, ou la chaîne vide quand il n'y a rien à
- * retirer.
+ * The longest prefix BY DOTTED SEGMENTS that the great majority of `labels`
+ * shares, terminated by its dot, or the empty string when there is nothing to
+ * strip.
  *
- * Le problème est celui du jeu réel : un audit d'application n'a qu'un seul
- * arbre de packages, donc ses ~1 300 agrégats s'appellent presque tous
- * `com.bnpparibas.bddf.fipro.quelquechose`. Peint tel quel, chaque disque dépense
- * la moitié de son budget de caractères à répéter ce que ses 1 299 voisins disent
- * aussi — l'écran affiche mille fois la même chose et jamais ce qui distingue.
- * Retirer le préfixe rend ce budget à la QUEUE du chemin, qui est la seule partie
- * discriminante.
+ * The problem is the real data set's: an application audit has only one package tree,
+ * so its ~1,300 aggregates are almost all named
+ * `com.bnpparibas.bddf.fipro.something`. Painted as is, each disc spends half its
+ * character budget repeating what its 1,299 neighbours say too — the screen displays
+ * the same thing a thousand times and never what distinguishes. Stripping the prefix
+ * hands that budget back to the TAIL of the path, which is the only discriminating
+ * part.
  *
- * Par SEGMENTS et non par caractères : un préfixe coupé au milieu d'un segment
- * (`com.exemple.cre`) laisserait des libellés qui ne sont plus des chemins et ne
- * se recollent plus mentalement à leur racine.
+ * By SEGMENTS and not by characters: a prefix cut in the middle of a segment
+ * (`com.example.cre`) would leave labels that are no longer paths and no longer reattach
+ * mentally to their root.
  *
- * Trois cas rendent la chaîne vide, et tous disent « affiche les libellés
- * entiers » :
- *  - moins de deux agrégats — il n'y a alors aucune répétition à retirer, et le
- *    seul libellé présent perdrait son nom complet sans rien gagner ;
- *  - aucun préfixe d'au moins DEUX segments assez répandu — retirer `com.` ne
- *    rendrait presque rien et coûterait la racine du chemin ;
- *  - des noms sans hiérarchie (`k1`, `p1`), où il n'y a pas de préfixe du tout.
+ * Three cases return the empty string, and all of them say "show the whole
+ * labels":
+ *  - fewer than two aggregates — there is then no repetition to strip, and the
+ *    single label present would lose its full name for nothing;
+ *  - no prefix of at least TWO segments widespread enough — stripping `com.`
+ *    would give back almost nothing and would cost the root of the path;
+ *  - names without hierarchy (`k1`, `p1`), where there is no prefix at all.
  *
- * Un préfixe n'est compté que sur les libellés qui ont ENCORE un segment après
- * lui : c'est ce qui garantit qu'aucun disque ne devient anonyme — un jeu
- * `a.b.c` / `a.b.c.d` retient `a.b.` et non `a.b.c.`. Le plus long l'emporte, à
- * égalité le plus répandu, puis l'ordre alphabétique : le résultat ne dépend pas
- * de l'ordre dans lequel la mise en page a rendu ses agrégats.
+ * A prefix is only counted on the labels that STILL have a segment after it: that is
+ * what guarantees no disc becomes anonymous — a set of `a.b.c` / `a.b.c.d` retains
+ * `a.b.` and not `a.b.c.`. The longest wins, ties go to the most widespread, then to
+ * alphabetical order: the result does not depend on the order in which the layout
+ * returned its aggregates.
  */
 export function dominantSegmentPrefix(labels: readonly string[]): string {
   if (labels.length < 2) return "";
@@ -240,8 +240,8 @@ export function dominantSegmentPrefix(labels: readonly string[]): string {
   const counts = new Map<string, number>();
   for (const label of labels) {
     const segments = label.split(".");
-    // `n < segments.length` et non `<=` : un préfixe qui couvrirait le libellé
-    // entier ne laisserait rien à peindre sur le disque.
+    // `n < segments.length` and not `<=`: a prefix that covered the whole label would leave
+    // nothing to paint on the disc.
     for (let n = 2; n < segments.length; n++) {
       const prefix = segments.slice(0, n).join(".");
       counts.set(prefix, (counts.get(prefix) ?? 0) + 1);
@@ -264,41 +264,41 @@ export function dominantSegmentPrefix(labels: readonly string[]): string {
   return best === "" ? "" : `${best}.`;
 }
 
-/** L'état complet de la vue graphe, calculé d'un bloc puis publié d'un bloc :
- * l'index, la mise en page et les arêtes agrégées doivent toujours décrire le
- * même graphe. */
+/** The complete state of the graph view, computed in one block then published
+ * in one block: the index, the layout and the aggregated edges must always
+ * describe the same graph. */
 export interface GraphViewState {
   index: AggregateIndex;
   layout: GraphLayoutResult;
-  /** Les références repliées sur les agrégats. Calculées ICI et pas au dessin :
-   * c'est un balayage des références du graphe entier — 28 685 sur le jeu réel
-   * — qui n'a rien à faire dans une boucle d'image. */
+  /** The references folded onto the aggregates. Computed HERE and not at draw
+   * time: it is a sweep of the whole graph's references — 28,685 on the real
+   * data set — which has no business inside a frame loop. */
   semanticEdges: AggregateEdge[];
   /**
-   * Le libellé PRÊT À AFFICHER de chaque disque, indexé par id d'agrégat.
+   * The READY-TO-DISPLAY label of each disc, indexed by aggregate id.
    *
-   * Ici et pas dans `semanticNodesFor` pour deux raisons. La première tient à la
-   * NATURE du calcul : le préfixe commun retiré (voir `commonSegmentPrefix`) est
-   * une propriété de l'ENSEMBLE des libellés, pas de chacun — le résoudre dans
-   * une passe qui produit un disque à la fois mêlerait deux portées. La seconde
-   * est le rythme : `semanticNodesFor` est rappelée à chaque image d'un survol
-   * ou d'un déplacement d'agrégat (voir `redrawClusters` chez l'appelant), et
-   * refaire 1 300 découpes de chaîne par image pour un texte identique serait
-   * payer le régime sémantique en permanence.
+   * Here and not in `semanticNodesFor` for two reasons. The first has to do with the
+   * NATURE of the computation: the common prefix stripped (see
+   * `commonSegmentPrefix`) is a property of the SET of labels, not of each one —
+   * resolving it in a pass that produces one disc at a time would mix two scopes.
+   * The second is the rhythm: `semanticNodesFor` is called back on every frame of a
+   * hover or of an aggregate drag (see `redrawClusters` at the caller's), and
+   * redoing 1,300 string splits per frame for identical text would be paying for the
+   * semantic regime permanently.
    *
-   * L'id COMPLET reste celui de l'agrégat (`SemanticNodePaint.id`) : le panneau
-   * de détail, la sélection et la recherche continuent de travailler dessus —
-   * seul ce qui est PEINT sur le disque est raccourci.
+   * The FULL id stays the aggregate's (`SemanticNodePaint.id`): the detail panel, the
+   * selection and the search keep working on it — only what is PAINTED on the disc is
+   * shortened.
    */
   semanticLabels: Map<string, string>;
 }
 
 /**
- * Une enveloppe prête à peindre : la donnée NUE que `drawClusters` consomme.
+ * An envelope ready to paint: the BARE data `drawClusters` consumes.
  *
- * Ni agrégat, ni index, ni graphe — couleur, estompage et survol sont déjà
- * résolus ici. C'est ce qui garde `draw.ts` testable sans instance : la fonction
- * de dessin ne sait plus rien de ce qui a produit ces valeurs.
+ * No aggregate, no index, no graph — color, dimming and hover are already resolved here.
+ * That is what keeps `draw.ts` testable without an instance: the drawing function no
+ * longer knows anything about what produced these values.
  */
 export interface ClusterPaint {
   circle: { cx: number; cy: number; r: number };
@@ -308,39 +308,39 @@ export interface ClusterPaint {
 }
 
 /**
- * Un agrégat prêt à peindre COMME NŒUD : la même enveloppe, plus ce qu'il faut
- * pour l'étiqueter.
+ * An aggregate ready to paint AS A NODE: the same envelope, plus what it takes to label
+ * it.
  *
- * Le régime sémantique ne change pas la GÉOMÉTRIE des agrégats — c'est le même
- * `ClusterShape`, à la même place et au même rayon, calculé une fois par la mise
- * en page. Il change ce qu'on peint dessus : au lieu d'une région translucide
- * derrière des cartes, un disque qui EST l'objet, avec le nom de sa racine et le
- * compte de ses membres. D'où l'extension plutôt qu'un type parallèle : les
- * deux régimes lisent la même donnée, le second en demande simplement plus.
+ * The semantic regime does not change the GEOMETRY of the aggregates — it is the same
+ * `ClusterShape`, at the same place and the same radius, computed once by the layout. It
+ * changes what gets painted on it: instead of a translucent region behind cards, a disc
+ * that IS the object, with the name of its root and the count of its members. Hence the
+ * extension rather than a parallel type: both regimes read the same data, the second
+ * simply asks for more.
  */
 export interface SemanticNodePaint extends ClusterPaint {
-  /** L'id de l'AGRÉGAT — celui du clic, du survol et de la sélection. C'est par
-   * lui que l'appelant retrouve le libellé d'un disque saisi. */
+  /** The id of the AGGREGATE — the one for the click, the hover and the
+   * selection. It is through it that the caller finds a grabbed disc's label. */
   id: string;
-  /** L'id d'entité de la racine — le nom du package, pas le pointeur JSON, et
-   * sans le « # » que la carte met en en-tête : ce disque n'a pas de pastille de
-   * type à côté pour justifier le préfixe. */
+  /** The entity id of the root — the package name, not the JSON pointer, and
+   * without the "#" the card puts in its header: this disc has no type pill
+   * beside it to justify the prefix. */
   label: string;
-  /** Nombre de membres, racine comprise. */
+  /** Number of members, root included. */
   count: number;
 }
 
 /**
- * Une arête agrégée RÉSOLUE en géométrie : le segment déjà rogné aux bords des
- * deux disques, et le poids qu'il porte.
+ * An aggregated edge RESOLVED into geometry: the segment already clipped to the edges of
+ * both discs, and the weight it carries.
  *
- * Les bouts sont calculés ici, et pas au dessin, parce que le rognage demande
- * les RAYONS — que seul le contrôleur connaît. Ce qui arrive à `draw.ts` est
- * alors quatre nombres et un poids : de la donnée nue, sans agrégat ni forme.
+ * The ends are computed here, and not at draw time, because the clipping needs the RADII
+ * — which only the controller knows. What reaches `draw.ts` is then four numbers and a
+ * weight: bare data, without aggregate or shape.
  *
- * Recalculés à chaque repeint et non mémorisés : un déplacement de carte ou
- * d'agrégat mute les `ClusterShape` en place, et un segment gardé décrirait
- * l'image d'avant le geste.
+ * Recomputed on every repaint and not memoized: a card or aggregate drag mutates the
+ * `ClusterShape`s in place, and a kept segment would describe the picture from before
+ * the gesture.
  */
 export interface SemanticEdgeSegment {
   x1: number;
@@ -348,86 +348,86 @@ export interface SemanticEdgeSegment {
   x2: number;
   y2: number;
   weight: number;
-  /** Vrai quand ni l'un ni l'autre bout ne touche l'agrégat sélectionné. Même
-   * rôle que le `dim` d'une enveloppe, et même valeur par défaut : faux quand
-   * rien n'est sélectionné, donc le tracé au repos est celui d'avant
-   * l'estompage. */
+  /** True when neither one end nor the other touches the selected aggregate.
+   * Same role as an envelope's `dim`, and same default value: false when
+   * nothing is selected, so the tracing at rest is the one from before
+   * dimming. */
   dim: boolean;
 }
 
-/** Ce que l'appelant apporte à `clustersFor` : le graphe courant, la palette, et
- * les deux morceaux d'ÉTAT D'INTERFACE que le contrôleur ne possède pas — la
- * sélection et le survol. */
+/** What the caller brings to `clustersFor`: the current graph, the palette, and
+ * the two pieces of INTERFACE STATE the controller does not own — the selection
+ * and the hover. */
 export interface ClustersForArgs {
   graph: Graph;
-  /** La couleur d'accent du type d'une carte, comme pour les cartes elles-mêmes.
-   * Fournie par l'appelant : elle dépend du thème, pas de la vue. */
+  /** The accent color of a card's type, as for the cards themselves. Supplied
+   * by the caller: it depends on the theme, not on the view. */
   accentFor(node: GraphNode): string;
-  /** La couleur d'une enveloppe dont la racine manque au graphe. */
+  /** The color of an envelope whose root is missing from the graph. */
   fallbackColor: string;
   selectedAggregateId: string | null;
-  /** Les ids à garder pleins, ou `null` s'il n'y a rien à estomper. */
+  /** The ids to keep full, or `null` if there is nothing to dim. */
   keep: Set<NodeId> | null;
-  /** L'intensité de survol courante d'une enveloppe, de 0 à 1. */
+  /** The current hover intensity of an envelope, from 0 to 1. */
   hoverOf(aggregateId: string): number;
 }
 
 export interface GraphViewHooks {
   /**
-   * Les réglages passés à `createTwoLevelLayoutEngine` au PREMIER chargement du
-   * moteur. Une valeur simple et non un accesseur : le contrat public
-   * (`DataGraphOptions.graphLayoutOptions`) dit déjà que ces valeurs sont lues
-   * au premier passage en vue graphe et qu'en changer demande de recréer
-   * l'instance.
+   * The settings passed to `createTwoLevelLayoutEngine` at the FIRST load of the engine. A
+   * plain value and not an accessor: the public contract
+   * (`DataGraphOptions.graphLayoutOptions`) already says these values are read on the
+   * first switch to the graph view and that changing them requires recreating the
+   * instance.
    */
   layoutOptions: TwoLevelLayoutOptions | undefined;
   /**
-   * Les métriques de carte COURANTES, relues à chaque mise en page et non
-   * capturées à la construction. C'est une contrainte réelle : le contrôleur est
-   * construit avec l'instance, alors que les métriques ne sont mesurées qu'après
-   * `fontsReady` dans `ready` — les capturer figerait les valeurs par défaut
-   * pour toute la session, et la vue graphe mettrait en page des cartes d'une
-   * autre taille que celles qui sont peintes.
+   * The CURRENT card metrics, re-read at every layout and not captured at
+   * construction. It is a real constraint: the controller is built with the
+   * instance, whereas the metrics are only measured after `fontsReady` in `ready`
+   * — capturing them would freeze the default values for the whole session, and
+   * the graph view would lay out cards of a different size from the ones being
+   * painted.
    */
   getMetrics(): NodeMetrics;
   /**
-   * De quoi ouvrir le Web Worker de mise en page, ou `undefined` pour rester en
-   * processus.
+   * What it takes to open the layout Web Worker, or `undefined` to stay
+   * in-process.
    *
-   * `undefined` est le DÉFAUT et pas un mode dégradé : c'est ce que voient
-   * vitest, un hôte sans worker, et tout consommateur qui n'a pas fourni
-   * `graphLayoutWorkerUrl`. Le comportement y est exactement celui d'avant le
-   * worker — même moteur, même sortie, même thread.
+   * `undefined` is the DEFAULT and not a degraded mode: it is what vitest sees, what a
+   * host without workers sees, and what any consumer that did not supply
+   * `graphLayoutWorkerUrl` sees. The behaviour there is exactly the one from before the
+   * worker — same engine, same output, same thread.
    */
   spawnLayoutWorker?: GraphLayoutWorkerSpawn | undefined;
 }
 
 export interface GraphViewController {
   /**
-   * Calcule l'état de la vue graphe pour `target` **sans rien publier** :
-   * l'appelant garde sa garde de génération entre `compute` et `publish`, ce qui
-   * est exactement la discipline en vigueur. Sans cette séparation, un calcul
-   * lancé avant un `setData` et terminé après lui écraserait la mise en page du
-   * nouveau graphe par des positions calculées sur l'ancien — voire appellerait
-   * `layout()` sur une paire (graphe, index) dépareillée.
+   * Computes the graph view's state for `target` **without publishing
+   * anything**: the caller keeps its generation guard between `compute` and
+   * `publish`, which is exactly the discipline in force. Without that
+   * separation, a computation started before a `setData` and finished after
+   * it would overwrite the new graph's layout with positions computed on the
+   * old one — or would even call `layout()` on a mismatched (graph, index)
+   * pair.
    *
-   * `reuse` conserve l'index en place, qui ne dépend que du couple (graphe,
-   * config) et n'a donc pas à être recalculé d'une bascule de vue à l'autre ;
-   * un changement de données passe `false`, l'index étant indexé par id de
-   * nœud.
+   * `reuse` keeps the index in place, which depends only on the (graph, config) couple and
+   * therefore does not have to be recomputed from one view switch to the next; a change of
+   * data passes `false`, the index being indexed by node id.
    */
   compute(target: Graph, config: DataGraphConfig, reuse: boolean): Promise<GraphViewState>;
   /**
-   * `compute` avec son repli : un échec rend `null` au lieu de propager. Les
-   * trois appelants partagent la même règle — le moteur de la vue graphe est
-   * chargé dynamiquement, donc un import qui échoue ne doit jamais rejeter
-   * l'opération englobante — mais ce qu'ils FONT du `null` diffère (retomber en
-   * vue structure, ou renoncer à la bascule) et reste donc au point d'appel,
-   * comme les gardes de génération : le contrôleur rend `null`, il ne décide
-   * pas.
+   * `compute` with its fallback: a failure returns `null` instead of propagating.
+   * The three callers share the same rule — the graph view's engine is loaded
+   * dynamically, so an import that fails must never reject the enclosing
+   * operation — but what they DO with the `null` differs (fall back to the
+   * structure view, or give up on the switch) and therefore stays at the call
+   * site, like the generation guards: the controller returns `null`, it does not
+   * decide.
    *
-   * `context` n'est là que pour le débogage : il garde à chaque site son message
-   * d'avertissement d'origine.
+   * `context` is only there for debugging: it keeps each site its original warning
+   * message.
    */
   tryCompute(
     target: Graph,
@@ -435,216 +435,216 @@ export interface GraphViewController {
     reuse: boolean,
     context: string,
   ): Promise<GraphViewState | null>;
-  /** Publie en un seul geste l'état calculé par `compute`. */
+  /** Publishes in a single gesture the state computed by `compute`. */
   publish(state: GraphViewState): void;
-  /** Index et mise en page tombent ENSEMBLE : ils sont indexés par id de nœud et
-   * ne survivent pas à un changement de données. Les invalider séparément
-   * laisserait un couple dépareillé le temps d'une instruction. */
+  /** Index and layout fall TOGETHER: they are indexed by node id and do not
+   * survive a change of data. Invalidating them separately would leave a
+   * mismatched couple for the span of one statement. */
   invalidate(): void;
   /**
-   * Termine le worker de mise en page, s'il y en a un, et fait échouer les
-   * calculs encore en vol.
+   * Terminates the layout worker, if there is one, and fails the computations still in
+   * flight.
    *
-   * Distinct d'`invalidate()`, qui jette l'état PUBLIÉ et laisse le contrôleur
-   * utilisable : celui-ci est définitif, et c'est ce que `destroy()` côté
-   * instance appelle. Sans lui, un worker survivrait à l'instance qui l'a
-   * ouvert et continuerait à mouliner 4 s de mise en page pour personne.
+   * Distinct from `invalidate()`, which throws away the PUBLISHED state and leaves the
+   * controller usable: this one is definitive, and it is what `destroy()` on the instance
+   * side calls. Without it, a worker would outlive the instance that opened it and would
+   * keep grinding through 4 s of layout for nobody.
    *
-   * Les requêtes en vol sont REJETÉES plutôt que laissées en suspens : un
-   * `setView` qui attendait doit se terminer, pas geler son appelant (et le
-   * bouton qu'il a mis en attente). Le rejet ne déclenche PAS le repli en
-   * processus — rejouer 4 s de calcul pour une instance détruite serait
-   * exactement le gel qu'on vient de supprimer.
+   * The in-flight requests are REJECTED rather than left hanging: a `setView` that
+   * was waiting must terminate, not freeze its caller (and the button it put on
+   * hold). The rejection does NOT trigger the in-process fallback — replaying 4 s of
+   * computation for a destroyed instance would be exactly the freeze we have just
+   * removed.
    */
   destroy(): void;
 
-  /** Les positions publiées, `undefined` tant que rien ne l'a été. */
+  /** The published positions, `undefined` as long as nothing has been. */
   positions(): Map<NodeId, Rect> | undefined;
-  /** Toutes les entités de `target` : c'est exactement ce que montre la vue
-   * graphe, qui ne cache rien. Ne dépend d'aucun état publié — un appelant peut
-   * l'interroger avant même le premier calcul. */
+  /** All the entities of `target`: that is exactly what the graph view shows,
+   * which hides nothing. Depends on no published state — a caller can query it
+   * even before the first computation. */
   entityIds(target: Graph): Set<NodeId>;
-  /** Les enveloppes publiées, ou un tableau vide. Le tableau est celui du
-   * moteur, RENDU TEL QUEL et non recopié : c'est en mutant ces formes en place
-   * qu'un déplacement de carte ou d'agrégat met les disques à jour. */
+  /** The published envelopes, or an empty array. The array is the engine's own,
+   * RETURNED AS IS and not copied: it is by mutating these shapes in place that
+   * a card or aggregate drag updates the discs. */
   clusters(): ClusterShape[];
   /**
-   * L'agrégat d'`aggregateId`, résolu contre l'index COURANT, ou `undefined`.
+   * The aggregate for `aggregateId`, resolved against the CURRENT index, or
+   * `undefined`.
    *
-   * La résolution est refaite à chaque lecture plutôt que gardée chez
-   * l'appelant : un `setData` ou un échec de la vue graphe peuvent remplacer
-   * l'index sous une sélection qui le désignait, et un agrégat qui n'existe plus
-   * doit se lire comme « pas de sélection » — ce que fait `undefined` chez tous
-   * les appelants — plutôt que de laisser l'estompage tourner sur un fantôme.
+   * The resolution is redone on every read rather than kept at the caller's: a `setData`
+   * or a graph-view failure can replace the index under a selection that designated it,
+   * and an aggregate that no longer exists must read as "no selection" — which is what
+   * `undefined` does at every caller — rather than letting the dimming run on a ghost.
    */
   aggregateOf(aggregateId: string): Aggregate | undefined;
   /**
-   * L'enveloppe publiée dont l'agrégat contient `id`, avec les membres de cet
-   * agrégat — de quoi recalculer le disque quand une de ses cartes bouge.
+   * The published envelope whose aggregate contains `id`, together with that aggregate's
+   * members — what it takes to recompute the disc when one of its cards moves.
    *
-   * `undefined` pour une carte hors agrégat, ou tant que rien n'est publié.
+   * `undefined` for a card outside any aggregate, or as long as nothing is published.
    */
   memberIdsContaining(id: NodeId): { cluster: ClusterShape; memberIds: Set<NodeId> } | undefined;
   /**
-   * Étend `bounds` EN PLACE à toutes les enveloppes publiées : la contribution
-   * de la vue graphe au cadrage, qui rognerait les disques sans elle.
+   * Extends `bounds` IN PLACE to all the published envelopes: the graph view's
+   * contribution to the framing, which would clip the discs without it.
    *
-   * Mutation en place et non un nouveau rect : l'appelant compose les bornes des
-   * cartes puis celles-ci, et rendre une copie l'obligerait à réassigner un
-   * `Rect` que la caméra consomme juste après.
+   * Mutation in place and not a new rect: the caller composes the cards' bounds and then
+   * these, and returning a copy would force it to reassign a `Rect` the camera consumes
+   * right after.
    */
   extendBoundsToClusters(bounds: Rect): void;
   /**
-   * Les enveloppes prêtes à peindre, ou un tableau vide tant que rien n'est
-   * publié.
+   * The envelopes ready to paint, or an empty array as long as nothing is
+   * published.
    *
-   * Les résolutions vivent ici, et pas dans `drawClusters` : la fonction de
-   * dessin ne prend que de la donnée nue, donc elle se teste sans graphe ni
-   * index d'agrégats.
+   * The resolutions live here, and not in `drawClusters`: the drawing function
+   * takes nothing but bare data, so it tests itself without a graph or an aggregate
+   * index.
    */
   clustersFor(args: ClustersForArgs): ClusterPaint[];
   /**
-   * Les agrégats prêts à peindre COMME NŒUDS — le régime sémantique.
+   * The aggregates ready to paint AS NODES — the semantic regime.
    *
-   * Mêmes arguments et mêmes résolutions que `clustersFor`, dont c'est
-   * l'extension : le libellé et le compte de membres viennent s'ajouter à la
-   * couleur, à l'estompage et au survol déjà résolus là-bas. Deux méthodes et
-   * non une seule qui rendrait toujours le tout, parce que le régime des cartes
-   * appelle celle-ci une fois par image d'un survol : lui faire résoudre des
-   * libellés dont il ne fait rien serait payer le régime sémantique en
-   * permanence.
+   * Same arguments and same resolutions as `clustersFor`, of which this is the
+   * extension: the label and the member count come and add themselves to the
+   * color, the dimming and the hover already resolved over there. Two methods
+   * and not a single one that would always return the whole thing, because the
+   * card regime calls this one once per frame of a hover: making it resolve
+   * labels it does nothing with would be paying for the semantic regime
+   * permanently.
    */
   semanticNodesFor(args: ClustersForArgs): SemanticNodePaint[];
   /**
-   * Les arêtes agrégées publiées, résolues contre les positions COURANTES des
-   * disques et rognées à leurs bords.
+   * The published aggregated edges, resolved against the CURRENT positions of the discs
+   * and clipped to their edges.
    *
-   * Une paire dont l'un des disques a disparu de la mise en page, ou dont les
-   * deux se recouvrent au point qu'il ne reste aucun segment, est omise : il n'y
-   * a rien à tracer, et un segment de longueur nulle ou négative serait un trait
-   * retourné.
+   * A pair one of whose discs has disappeared from the layout, or whose two
+   * discs overlap to the point that no segment is left, is omitted: there is
+   * nothing to trace, and a segment of zero or negative length would be a
+   * reversed stroke.
    */
   semanticEdges(selectedAggregateId: string | null): SemanticEdgeSegment[];
   /**
-   * L'id de l'agrégat qui revendique `id` selon l'index publié, ou `undefined`
-   * pour une entité hors agrégat.
+   * The id of the aggregate that claims `id` according to the published index, or
+   * `undefined` for an entity outside any aggregate.
    *
-   * Lecture DIRECTE de `byNode`, en `[0]` : l'appartenance est une partition.
-   * Distincte de `memberIdsContaining`, qui balaie les ENVELOPPES pour en
-   * ramener une avec ses membres ; celle-ci répond à la seule question « cette
-   * carte est-elle déjà représentée par un disque ? », et le régime sémantique
-   * la pose une fois par entité à chaque reconstruction.
+   * DIRECT read of `byNode`, at `[0]`: membership is a partition. Distinct from
+   * `memberIdsContaining`, which sweeps the ENVELOPES to bring one back with its
+   * members; this one answers the single question "is this card already
+   * represented by a disc?", and the semantic regime asks it once per entity on
+   * every rebuild.
    */
   aggregateIdOf(id: NodeId): string | undefined;
   /**
-   * La marge d'enveloppe EFFECTIVE — celle avec laquelle le moteur a calculé les
-   * disques, et donc la seule avec laquelle on ait le droit de les recalculer
-   * quand une carte bouge.
+   * The EFFECTIVE hull padding — the one the engine computed the discs with, and
+   * therefore the only one we are allowed to recompute them with when a card
+   * moves.
    *
-   * Vaut 0 tant que le moteur n'a pas été chargé, et c'est sans conséquence :
-   * il n'y a de disques à recalculer qu'en vue graphe, c'est-à-dire exactement
-   * quand le moteur est déjà là.
+   * Worth 0 for as long as the engine has not been loaded, and that is without
+   * consequence: there are discs to recompute only in the graph view, that is, exactly
+   * when the engine is already there.
    */
   hullPadding(): number;
 }
 
 /**
- * L'état de la VUE GRAPHE d'une instance, et son cycle de vie : l'index
- * d'agrégats, la mise en page, le moteur chargé à la demande et la marge
- * d'enveloppe qui en sort. Le contrôleur en est le seul propriétaire.
+ * An instance's GRAPH VIEW state, and its life cycle: the aggregate index, the layout,
+ * the engine loaded on demand and the hull padding that comes out of it. The controller
+ * is its sole owner.
  *
- * Aucun import de Pixi, ici ni transitivement : c'est une machine de données,
- * testable sans canvas ni instance — même forme que `search.ts` et `animate.ts`,
- * et pour la même raison.
+ * No Pixi import, here or transitively: it is a data machine, testable without a
+ * canvas or an instance — same shape as `search.ts` and `animate.ts`, and for the same
+ * reason.
  *
- * Ce qui reste chez l'appelant, volontairement : `opGen` et toutes les gardes de
- * génération (la course traverse les deux vues, le compteur appartient à
- * l'orchestrateur — la séparation `compute`/`publish` est précisément ce qui le
- * permet), les trois politiques de repli sur un `null`, et la vue courante
- * elle-même.
+ * What stays at the caller's, deliberately: `opGen` and every generation
+ * guard (the race spans both views, the counter belongs to the
+ * orchestrator — the `compute`/`publish` split is precisely what allows
+ * it), the three fallback policies on a `null`, and the current view
+ * itself.
  */
 export function createGraphViewController(hooks: GraphViewHooks): GraphViewController {
-  // Tout reste `undefined` tant qu'on n'a pas basculé en vue graphe au moins une
-  // fois : un consommateur de la seule vue structure ne paie ni le calcul des
-  // agrégats ni le chargement du moteur.
+  // Everything stays `undefined` until the graph view has been switched to at least once:
+  // a consumer of the structure view alone pays for neither the aggregate computation nor
+  // the engine load.
   let aggregateIndex: AggregateIndex | undefined;
   let graphLayout: GraphLayoutResult | undefined;
-  // Le NAMESPACE du point d'entrée `./graph-layout`, gardé plutôt que le seul
-  // moteur : le chemin worker en tire aussi `extractGraphLayoutInput`, et le
-  // chemin en processus reste construit depuis lui.
+  // The NAMESPACE of the `./graph-layout` entry point, kept rather than the engine alone:
+  // the worker path also takes `extractGraphLayoutInput` out of it, and the in-process
+  // path stays built from it.
   let graphModule: GraphLayoutModule | undefined;
   let graphEngine: GraphLayoutEngine | undefined;
-  // Renseignée en même temps que le module, dont elle sort : le défaut vient du
-  // cœur (voir `ensureModule`), jamais d'une copie locale du nombre.
+  // Filled in at the same time as the module, which it comes out of: the default comes
+  // from the core (see `ensureModule`), never from a local copy of the number.
   let graphHullPadding = 0;
 
-  // --- Le worker de mise en page, et le peu d'état qu'il demande.
+  // --- The layout worker, and the little state it demands.
   let workerHandle: GraphLayoutWorkerHandle | null = null;
-  // Vrai dès le premier échec, et pour toute la session : voir `retireWorker`.
+  // True from the first failure, and for the whole session: see `retireWorker`.
   let workerRetired = false;
   let controllerDestroyed = false;
-  // Le numéro de la prochaine requête. Monotone et jamais réinitialisé, y
-  // compris après un `invalidate()` : deux requêtes de la même session ne
-  // doivent jamais partager un numéro, sans quoi la réponse de l'une pourrait
-  // résoudre l'autre.
+  // The number of the next request. Monotonic and never reset, including
+  // after an `invalidate()`: two requests of the same session must never
+  // share a number, failing which one's response could resolve the
+  // other.
   let workerGen = 0;
   const pendingByGen = new Map<
     number,
     { resolve: (result: GraphLayoutResult) => void; reject: (error: unknown) => void }
   >();
-  // Les références repliées sur les agrégats, publiées avec le reste.
+  // The references folded onto the aggregates, published with the rest.
   let semanticEdgeList: AggregateEdge[] = [];
-  // Les libellés prêts à peindre, publiés avec le reste : préfixe commun déjà
-  // retiré, donc identiques d'une image à l'autre tant que rien n'est republié.
+  // The labels ready to paint, published with the rest: common prefix already stripped,
+  // hence identical from one frame to the next until something is republished.
   let semanticLabelById = new Map<string, string>();
-  // Les enveloppes publiées, indexées par agrégat : c'est par là qu'une arête
-  // agrégée retrouve ses deux bouts. Construite à la PUBLICATION et non à chaque
-  // repeint — les `ClusterShape` sont mutés en place par les déplacements, donc
-  // la table reste juste sans être refaite.
+  // The published envelopes, indexed by aggregate: that is how an aggregated edge finds
+  // its two ends. Built at PUBLICATION time and not on every repaint — the
+  // `ClusterShape`s are mutated in place by drags, so the table stays right without being
+  // redone.
   let clusterById = new Map<string, ClusterShape>();
 
-  // Partagé plutôt qu'alloué à chaque lecture : `clusters()` est appelé à chaque
-  // repeint, donc à chaque image d'un déplacement, et le cas « rien de publié »
-  // n'a rien à distinguer d'un appel à l'autre.
+  // Shared rather than allocated on every read: `clusters()` is called on every repaint,
+  // hence on every frame of a drag, and the "nothing published" case has nothing to tell
+  // apart from one call to the next.
   const NO_CLUSTERS: ClusterShape[] = [];
 
   /**
-   * Charge le POINT D'ENTRÉE de la vue graphe à la demande — le namespace, pas
-   * seulement le moteur.
+   * Loads the graph view's ENTRY POINT on demand — the namespace, not just the
+   * engine.
    *
-   * Le namespace, parce qu'il y a désormais deux chemins qui en tirent des
-   * choses différentes : le chemin en processus prend `createTwoLevelLayoutEngine`
-   * (voir `ensureEngine`), le chemin worker prend `extractGraphLayoutInput` pour
-   * faire, ici, la seule moitié du calcul qui ait besoin du `Graph`. Les deux
-   * prennent `TWO_LEVEL_LAYOUT_DEFAULTS`.
+   * The namespace, because there are now two paths taking different things out of
+   * it: the in-process path takes `createTwoLevelLayoutEngine` (see
+   * `ensureEngine`), the worker path takes `extractGraphLayoutInput` to do, here,
+   * the one half of the computation that needs the `Graph`. Both take
+   * `TWO_LEVEL_LAYOUT_DEFAULTS`.
    *
-   * Le moteur, lui, c'est `createTwoLevelLayoutEngine` — packing en étagères intra-agrégat,
-   * puis simulation sur les agrégats devenus disques rigides —, et c'est le
-   * seul depuis le retrait de `createGraphLayoutEngine` (fcose +
-   * `separateOverlaps` + `separateClusters`) et de `cytoscape` avec lui. La
-   * sonde qui a motivé la bascule le mesurait ×11 à ×65 plus rapide et ×2 à
-   * ×5,4 plus dense, à garanties égales :
-   * `docs/superpowers/spikes/2026-09-01-two-level-layout.md`. Mesuré dans
-   * Chromium via l'e2e, sur le jeu étendu de la démo : `setView("graph")` est
-   * passé de 4 310–4 484 ms à 220–252 ms.
+   * The engine itself is `createTwoLevelLayoutEngine` — shelf packing inside each
+   * aggregate, then a simulation over the aggregates turned into rigid discs —,
+   * and it is the only one since `createGraphLayoutEngine` (fcose +
+   * `separateOverlaps` + `separateClusters`) was removed, and `cytoscape` with it.
+   * The spike that motivated the switch measured it ×11 to ×65 faster and ×2 to
+   * ×5.4 denser, at equal guarantees:
+   * `docs/superpowers/spikes/2026-09-01-two-level-layout.md`. Measured in Chromium
+   * through the e2e, on the demo's extended data set: `setView("graph")` went from
+   * 4,310–4,484 ms to 220–252 ms.
    *
-   * L'`import()` reste dynamique. Le chunk qu'émet le build Vite de production
-   * d'`apps/demo` ne pèse plus que **3,58 ko gzip** (7,80 ko bruts, contre
-   * 180,28 / 577,17 avant le retrait), donc ce n'est plus le poids qui justifie
-   * la paresse : c'est qu'elle est la forme par défaut de cette vue, et que
-   * `setView` est asynchrone pour cette raison. Les deux tests de pureté de
-   * bundle portent le raisonnement complet.
+   * The `import()` stays dynamic. The chunk `apps/demo`'s production Vite build emits
+   * now weighs no more than **3.58 kB gzip** (7.80 kB raw, against 180.28 / 577.17
+   * before the removal), so it is no longer the weight that justifies the laziness:
+   * it is that laziness is this view's default shape, and that `setView` is
+   * asynchronous for that reason. The two bundle purity tests carry the full
+   * reasoning.
    */
   async function ensureModule(): Promise<GraphLayoutModule> {
     if (!graphModule) {
       graphModule = await import("@defsquare/data-graph-core/graph-layout");
-      // C'est ici, et NULLE PART ailleurs, qu'on apprend la marge d'enveloppe
-      // par défaut : le namespace du module chargé la porte, donc le renderer
-      // la connaît sans en garder de copie et sans importer statiquement ce
-      // point d'entrée — ce que les deux tests de pureté interdisent. Le
-      // déplacement d'une carte en a besoin pour recalculer les disques comme
-      // le moteur les a calculés, et il n'y a de disques qu'en vue graphe,
-      // c'est-à-dire exactement quand ce module est déjà chargé.
+      // It is here, and NOWHERE else, that we learn the default hull padding: the
+      // loaded module's namespace carries it, so the renderer knows it without
+      // keeping a copy of it and without statically importing that entry point —
+      // which the two purity tests forbid. Dragging a card needs it in order to
+      // recompute the discs the way the engine computed them, and there are discs
+      // only in the graph view, that is, exactly when this module is already
+      // loaded.
       graphHullPadding =
         hooks.layoutOptions?.hullPadding ?? graphModule.TWO_LEVEL_LAYOUT_DEFAULTS.hullPadding;
     }
@@ -652,12 +652,12 @@ export function createGraphViewController(hooks: GraphViewHooks): GraphViewContr
   }
 
   /**
-   * Le moteur EN PROCESSUS, construit une fois sur le module déjà chargé.
+   * The IN-PROCESS engine, built once on the already loaded module.
    *
-   * Il reste le chemin par défaut (pas d'URL de worker : vitest, headless, hôte
-   * sans worker) ET le repli du worker. Le construire paresseusement ici plutôt
-   * qu'au chargement du module évite de l'allouer dans la session qui n'utilise
-   * que le worker et n'échoue jamais.
+   * It remains the default path (no worker URL: vitest, headless, host without
+   * workers) AND the worker's fallback. Building it lazily here rather than at module
+   * load avoids allocating it in the session that only uses the worker and never
+   * fails.
    */
   async function ensureEngine(): Promise<GraphLayoutEngine> {
     const mod = await ensureModule();
@@ -666,16 +666,16 @@ export function createGraphViewController(hooks: GraphViewHooks): GraphViewContr
   }
 
   /**
-   * Ouvre le worker au PREMIER besoin, et le garde pour la session.
+   * Opens the worker at FIRST need, and keeps it for the session.
    *
-   * Un seul worker, réutilisé : le démarrer coûte le chargement d'un module, et
-   * une bascule de vue peut se répéter. Il est ouvert à la première mise en page
-   * et non à la construction du contrôleur, pour la raison qui vaut déjà pour le
-   * moteur — un consommateur de la seule vue structure ne paie rien de la vue
-   * graphe.
+   * A single worker, reused: starting it costs a module load, and a view
+   * switch can repeat. It is opened at the first layout and not at
+   * controller construction, for the reason that already holds for the
+   * engine — a consumer of the structure view alone pays nothing of the
+   * graph view.
    *
-   * Rend `null` dès que le worker est hors jeu : pas d'URL fournie, ou repli
-   * définitif déjà déclenché.
+   * Returns `null` as soon as the worker is out of the game: no URL supplied, or
+   * definitive fallback already triggered.
    */
   function ensureWorker(): GraphLayoutWorkerHandle | null {
     if (workerRetired || !hooks.spawnLayoutWorker) return null;
@@ -683,8 +683,8 @@ export function createGraphViewController(hooks: GraphViewHooks): GraphViewContr
     try {
       workerHandle = hooks.spawnLayoutWorker(onWorkerMessage, onWorkerError);
     } catch (err) {
-      // Une construction qui lève (URL injouable, chunk absent, `Worker` absent)
-      // se traite exactement comme un calcul qui échoue.
+      // A construction that throws (unplayable URL, missing chunk, missing `Worker`) is
+      // handled exactly like a computation that fails.
       retireWorker(err);
       return null;
     }
@@ -692,19 +692,19 @@ export function createGraphViewController(hooks: GraphViewHooks): GraphViewContr
   }
 
   /**
-   * LE REPLI, et il est DÉFINITIF pour la session.
+   * THE FALLBACK, and it is DEFINITIVE for the session.
    *
-   * Même discipline que le repli d'`elkWorkerUrl` côté vue structure : au
-   * premier échec, on avertit une fois et on rejoue en processus, pour toujours.
-   * Pas de seconde chance et pas de délai d'attente arbitraire — les deux causes
-   * réelles (URL qui ne se charge pas, environnement sans worker utilisable) ne
-   * se réparent pas d'un essai à l'autre, et un `setTimeout` sur un calcul dont
-   * on sait qu'il dure des secondes ne mesurerait qu'une opinion sur la vitesse
-   * de la machine.
+   * Same discipline as `elkWorkerUrl`'s fallback on the structure view side:
+   * at the first failure, we warn once and replay in-process, forever. No
+   * second chance and no arbitrary timeout — the two real causes (a URL that
+   * does not load, an environment without a usable worker) do not repair
+   * themselves from one attempt to the next, and a `setTimeout` on a
+   * computation known to last seconds would only measure an opinion about the
+   * machine's speed.
    *
-   * Les requêtes encore en vol sont rejetées : leurs appelants se replieront
-   * chacun de leur côté, ce qui est exactement la bonne chose — elles portent
-   * des graphes potentiellement différents.
+   * The requests still in flight are rejected: their callers will each fall back on
+   * their own side, which is exactly the right thing — they carry potentially different
+   * graphs.
    */
   function retireWorker(reason: unknown): void {
     if (!workerRetired) {
@@ -714,7 +714,7 @@ export function createGraphViewController(hooks: GraphViewHooks): GraphViewContr
     closeWorker(new Error("[data-graph] graph layout worker retired"));
   }
 
-  /** Termine le worker et solde les requêtes en vol avec `reason`. */
+  /** Terminates the worker and settles the in-flight requests with `reason`. */
   function closeWorker(reason: Error): void {
     workerHandle?.terminate();
     workerHandle = null;
@@ -724,10 +724,10 @@ export function createGraphViewController(hooks: GraphViewHooks): GraphViewContr
   }
 
   /**
-   * L'arrivée d'une réponse. Toute la garde de génération tient dans la
-   * recherche : une réponse dont la génération n'a plus de requête en vol est
-   * JETÉE en silence — c'est le cas d'un worker qu'on vient de retirer ou de
-   * terminer, dont les messages déjà postés continuent d'arriver.
+   * The arrival of a response. The whole generation guard fits inside the lookup: a
+   * response whose generation no longer has a request in flight is DROPPED silently — that
+   * is the case of a worker just retired or terminated, whose already posted messages keep
+   * arriving.
    */
   function onWorkerMessage(data: unknown): void {
     const response = data as GraphLayoutWorkerResponse;
@@ -741,22 +741,22 @@ export function createGraphViewController(hooks: GraphViewHooks): GraphViewContr
     entry.resolve(hydrateLayout(response));
   }
 
-  /** Une erreur du worker lui-même (et non d'un calcul) : rien ne dit quelle
-   * requête elle concerne, donc elle condamne le worker. */
+  /** An error from the worker itself (and not from a computation): nothing says
+   * which request it concerns, so it condemns the worker. */
   function onWorkerError(error: unknown): void {
     retireWorker(error);
   }
 
   /**
-   * Reconstruit la mise en page depuis la réponse.
+   * Rebuilds the layout from the response.
    *
-   * Les `Rect` sont alloués ici et les `ClusterShape` viennent du clonage
-   * structuré : dans les deux cas ce sont des OBJETS ORDINAIRES ET MUTABLES, et
-   * ce n'est pas un détail. Le déplacement d'une carte ou d'un agrégat mute les
-   * enveloppes et les rects EN PLACE (`translateCluster`,
-   * `recomputeClusterCircle` chez l'appelant), et les calques sémantiques
-   * relisent ces mêmes objets à chaque image. Une structure figée ou un
-   * `Object.freeze` de confort casserait le déplacement, et seulement lui.
+   * The `Rect`s are allocated here and the `ClusterShape`s come from the
+   * structured cloning: in both cases these are ORDINARY, MUTABLE OBJECTS, and
+   * that is not a detail. Dragging a card or an aggregate mutates the envelopes
+   * and the rects IN PLACE (`translateCluster`, `recomputeClusterCircle` at the
+   * caller's), and the semantic layers re-read those very objects on every frame.
+   * A frozen structure or an `Object.freeze` for comfort would break dragging, and
+   * only dragging.
    */
   function hydrateLayout(response: GraphLayoutWorkerResponse & { ok: true }): GraphLayoutResult {
     const positions = new Map<NodeId, Rect>();
@@ -766,7 +766,7 @@ export function createGraphViewController(hooks: GraphViewHooks): GraphViewContr
     return { positions, clusters: response.clusters };
   }
 
-  /** Poste une requête et rend la promesse de SA réponse. */
+  /** Posts a request and returns the promise of ITS response. */
   function postToWorker(
     worker: GraphLayoutWorkerHandle,
     input: GraphLayoutInput,
@@ -777,8 +777,8 @@ export function createGraphViewController(hooks: GraphViewHooks): GraphViewContr
       try {
         worker.post({ gen, input });
       } catch (err) {
-        // Un `postMessage` qui lève (entrée non clonable) ne produira jamais de
-        // réponse : sans ce rattrapage la promesse resterait en suspens à vie.
+        // A `postMessage` that throws (non-cloneable input) will never produce a response:
+        // without this catch the promise would hang for life.
         pendingByGen.delete(gen);
         reject(err);
       }
@@ -786,14 +786,14 @@ export function createGraphViewController(hooks: GraphViewHooks): GraphViewContr
   }
 
   /**
-   * La mise en page, par le worker si l'hôte en a fourni un, en processus
-   * sinon — et en processus AUSSI au premier échec du worker.
+   * The layout, by the worker if the host supplied one, in-process otherwise — and
+   * in-process ALSO at the worker's first failure.
    *
-   * L'EXTRACTION reste ici, sur le thread principal, et c'est structurel : elle
-   * est la seule partie qui lise le `Graph`, qui ne traverse pas un
-   * `postMessage`. Ce qu'elle coûte est linéaire (une mesure de carte par
-   * entité, un balayage des références) ; ce qu'elle épargne est la simulation,
-   * qui est tout le temps mesuré.
+   * The EXTRACTION stays here, on the main thread, and that is structural: it is
+   * the only part that reads the `Graph`, which does not cross a `postMessage`.
+   * What it costs is linear (one card measurement per entity, one sweep of the
+   * references); what it saves is the simulation, which is all of the measured
+   * time.
    */
   async function layoutOf(target: Graph, index: AggregateIndex): Promise<GraphLayoutResult> {
     const mod = await ensureModule();
@@ -806,9 +806,9 @@ export function createGraphViewController(hooks: GraphViewHooks): GraphViewContr
       try {
         return await postToWorker(worker, input);
       } catch (err) {
-        // Une instance détruite ne se replie pas : rejouer en processus le
-        // calcul de plusieurs secondes qu'on vient d'abandonner est le contraire
-        // de ce que `destroy()` demande.
+        // A destroyed instance does not fall back: replaying in-process the multi-second
+        // computation we have just abandoned is the opposite of what `destroy()` asks
+        // for.
         if (controllerDestroyed) throw err;
         retireWorker(err);
       }
@@ -817,27 +817,27 @@ export function createGraphViewController(hooks: GraphViewHooks): GraphViewContr
     return (await ensureEngine()).layout(target, index, visible, metrics);
   }
 
-  /** Index d'agrégats pour `target`. */
+  /** Aggregate index for `target`. */
   function buildAggregateState(target: Graph, config: DataGraphConfig): { index: AggregateIndex } {
     return { index: buildAggregates(target, validateConfig(config)) };
   }
 
   /**
-   * Les libellés de disque, résolus puis DÉBARRASSÉS de leur préfixe commun.
+   * The disc labels, resolved and then STRIPPED of their common prefix.
    *
-   * L'id d'ENTITÉ et non le pointeur JSON : c'est le nom que l'utilisateur
-   * reconnaît (« com.exemple.credit.domain »), là où `rootId` est un chemin dans
-   * le document. Et sans le « # » que la carte met en en-tête : ce disque n'a pas
-   * de pastille de type à côté pour justifier le préfixe. Une racine qui manque
-   * au graphe garde son id d'agrégat plutôt qu'une case vide — mieux vaut un
-   * libellé technique qu'un disque anonyme.
+   * The ENTITY id and not the JSON pointer: it is the name the user recognizes
+   * ("com.example.credit.domain"), where `rootId` is a path inside the document.
+   * And without the "#" the card puts in its header: this disc has no type pill
+   * beside it to justify the prefix. A root missing from the graph keeps its
+   * aggregate id rather than an empty slot — better a technical label than an
+   * anonymous disc.
    *
-   * Le retrait du préfixe se fait sur l'ensemble complet, y compris ces libellés
-   * de repli : ils sont ce qu'on affichera, donc ils comptent dans ce qui est
-   * répandu. Le `startsWith` n'est pas une précaution mais la RÈGLE : le préfixe
-   * est dominant et non universel (voir `dominantSegmentPrefix`), donc les
-   * libellés d'une autre famille gardent leur nom entier. Un `slice` suffit pour
-   * les autres — le préfixe n'est retenu que s'il leur laisse un segment.
+   * The prefix stripping is done on the complete set, these fallback labels included: they
+   * are what will be displayed, so they count towards what is widespread. The `startsWith`
+   * is not a precaution but the RULE: the prefix is dominant and not universal (see
+   * `dominantSegmentPrefix`), so the labels of another family keep their whole name. A
+   * `slice` is enough for the others — the prefix is only retained if it leaves them a
+   * segment.
    */
   function semanticLabelsOf(target: Graph, clusters: readonly ClusterShape[]): Map<string, string> {
     const labels = new Map<string, string>();
@@ -864,23 +864,23 @@ export function createGraphViewController(hooks: GraphViewHooks): GraphViewContr
     return ids;
   }
 
-  // Nommée plutôt que méthode de l'objet rendu, et appelée telle quelle par
-  // `tryCompute` : passer par `this` ferait dépendre le repli de la façon dont
-  // l'appelant a obtenu la méthode (un `const { tryCompute } = controller`
-  // suffirait à le casser).
+  // Named rather than a method of the returned object, and called as such by
+  // `tryCompute`: going through `this` would make the fallback depend on how the caller
+  // obtained the method (a `const { tryCompute } = controller` would be enough to break
+  // it).
   async function compute(
     target: Graph,
     config: DataGraphConfig,
     reuse: boolean,
   ): Promise<GraphViewState> {
     const base = reuse && aggregateIndex ? { index: aggregateIndex } : buildAggregateState(target, config);
-    // `layoutOf` tranche worker / en processus et porte le repli : voir là-bas.
+    // `layoutOf` decides worker vs in-process and carries the fallback: see there.
     const layout = await layoutOf(target, base.index);
-    // Recalculé même quand l'index est réutilisé : c'est un seul balayage des
-    // références, sans commune mesure avec la mise en page qu'on vient
-    // d'attendre, et le mémoriser demanderait de savoir contre quel graphe il a
-    // été calculé — exactement l'appariement que la publication d'un bloc existe
-    // pour rendre impossible à rater.
+    // Recomputed even when the index is reused: it is a single sweep of the
+    // references, out of all proportion with the layout we have just awaited, and
+    // memoizing it would require knowing which graph it was computed against —
+    // exactly the pairing that publishing in one block exists to make impossible to
+    // get wrong.
     const semanticEdges = aggregateRefEdges(target.refEdges, base.index.byNode);
     return {
       ...base,
@@ -912,18 +912,18 @@ export function createGraphViewController(hooks: GraphViewHooks): GraphViewContr
       graphLayout = state.layout;
       semanticEdgeList = state.semanticEdges;
       semanticLabelById = state.semanticLabels;
-      // Reconstruite ici et nulle part ailleurs : elle indexe LES objets du
-      // moteur, ceux-là mêmes que les déplacements mutent en place.
+      // Rebuilt here and nowhere else: it indexes THE engine's objects, the very ones drags
+      // mutate in place.
       clusterById = new Map(state.layout.clusters.map((cluster) => [cluster.aggregateId, cluster]));
     },
 
     invalidate(): void {
       aggregateIndex = undefined;
       graphLayout = undefined;
-      // Les cinq tombent ENSEMBLE, pour la raison qui vaut déjà pour les deux
-      // premiers : ils sont indexés par id de nœud et d'agrégat, et n'ont aucun
-      // sens sur un autre graphe. Les libellés le sont doublement : le préfixe
-      // qu'on leur a retiré est celui de CE jeu d'agrégats.
+      // All five fall TOGETHER, for the reason that already holds for the first two:
+      // they are indexed by node and aggregate id, and make no sense on another
+      // graph. The labels doubly so: the prefix stripped from them is THIS aggregate
+      // set's.
       semanticEdgeList = [];
       semanticLabelById = new Map();
       clusterById = new Map();
@@ -939,9 +939,9 @@ export function createGraphViewController(hooks: GraphViewHooks): GraphViewContr
       return graphLayout?.positions;
     },
 
-    // L'index d'agrégats ne connaît que les entités rattachées à un agrégat,
-    // donc on balaie le graphe et pas l'index — sans quoi une entité isolée
-    // disparaîtrait de la vue.
+    // The aggregate index only knows the entities attached to an aggregate, so we sweep the
+    // graph and not the index — failing which an isolated entity would disappear from the
+    // view.
     entityIds: entityIdsOf,
 
     clusters(): ClusterShape[] {
@@ -958,16 +958,16 @@ export function createGraphViewController(hooks: GraphViewHooks): GraphViewContr
       for (const cluster of graphLayout.clusters) {
         const aggregate = aggregates.get(cluster.aggregateId);
         if (!aggregate?.memberIds.has(id)) continue;
-        // Les agrégats sont une PARTITION : une carte n'appartient qu'à un seul
-        // d'entre eux, il n'y a rien à chercher après celui-ci.
+        // Aggregates are a PARTITION: a card belongs to only one of them, there is nothing left
+        // to look for past this one.
         return { cluster, memberIds: aggregate.memberIds };
       }
       return undefined;
     },
 
     extendBoundsToClusters(bounds: Rect): void {
-      // Le disque déborde des cartes de sa marge ; sa boîte englobante est
-      // `cx ± r`, `cy ± r`, et c'est elle qu'on unit aux bornes des cartes.
+      // The disc overflows the cards by its padding; its bounding box is `cx ± r`, `cy ± r`,
+      // and it is that box we union with the cards' bounds.
       for (const cluster of graphLayout?.clusters ?? NO_CLUSTERS) {
         const right = bounds.x + bounds.width;
         const bottom = bounds.y + bounds.height;
@@ -988,14 +988,14 @@ export function createGraphViewController(hooks: GraphViewHooks): GraphViewContr
         return {
           ...paintOf(cluster, args),
           id: cluster.aggregateId,
-          // Simple lecture : le libellé a été résolu et raccourci à la
-          // publication (voir `semanticLabelsOf`), parce qu'il ne dépend que du
-          // couple (graphe, mise en page) et que cette méthode-ci tourne à
-          // chaque image d'un survol. Le repli sur l'id d'agrégat couvre l'état
-          // publié à la main par un test, sans table de libellés.
+          // A plain read: the label was resolved and shortened at publication time (see
+          // `semanticLabelsOf`), because it depends only on the (graph, layout) couple
+          // and because this method here runs on every frame of a hover. The fallback on
+          // the aggregate id covers state published by hand by a test, without a label
+          // table.
           label: semanticLabelById.get(cluster.aggregateId) ?? cluster.aggregateId,
-          // Le compte de MEMBRES, pas d'enfants : c'est ce que le disque
-          // remplace — les cartes qu'on ne dessine plus.
+          // The count of MEMBERS, not of children: that is what the disc replaces — the cards we
+          // no longer draw.
           count: aggregates?.get(cluster.aggregateId)?.memberIds.size ?? 0,
         };
       });
@@ -1010,17 +1010,17 @@ export function createGraphViewController(hooks: GraphViewHooks): GraphViewContr
         const dx = b.cx - a.cx;
         const dy = b.cy - a.cy;
         const len = Math.hypot(dx, dy);
-        // Deux disques concentriques (ou confondus) n'ont pas de direction : il
-        // n'existe alors aucun segment à rogner, et diviser par `len` rendrait
-        // des NaN que le renderer propagerait dans sa géométrie.
+        // Two concentric (or coincident) discs have no direction: there is then no segment to
+        // clip, and dividing by `len` would return NaNs that the renderer would propagate
+        // through its geometry.
         if (len === 0) continue;
         const ux = dx / len;
         const uy = dy / len;
-        // Le trait part du BORD de chaque disque et non de son centre : les
-        // disques du régime sémantique sont opaques et se peignent par-dessus,
-        // donc un trait qui les traverserait ne servirait qu'à épaissir leur
-        // contour par en dessous. Deux disques trop proches pour laisser un
-        // segment n'en produisent aucun.
+        // The stroke starts from the EDGE of each disc and not from its center:
+        // the discs of the semantic regime are opaque and paint themselves on
+        // top, so a stroke crossing them would only serve to thicken their
+        // outline from underneath. Two discs too close to leave a segment produce
+        // none.
         if (len <= a.r + b.r) continue;
         out.push({
           x1: a.cx + ux * a.r,
@@ -1028,9 +1028,9 @@ export function createGraphViewController(hooks: GraphViewHooks): GraphViewContr
           x2: b.cx - ux * b.r,
           y2: b.cy - uy * b.r,
           weight: edge.weight,
-          // Une arête reste pleine dès qu'elle TOUCHE l'agrégat sélectionné :
-          // même règle que `edgeFocusIds` côté cartes, où une arête traversant le
-          // bloc compte pour lui.
+          // An edge stays full as soon as it TOUCHES the selected aggregate: same rule as
+          // `edgeFocusIds` on the card side, where an edge crossing the block counts for
+          // it.
           dim: selectedAggregateId !== null && edge.a !== selectedAggregateId && edge.b !== selectedAggregateId,
         });
       }
@@ -1047,11 +1047,11 @@ export function createGraphViewController(hooks: GraphViewHooks): GraphViewContr
   };
 
   /**
-   * Ce que les deux régimes résolvent de la MÊME façon sur une enveloppe :
-   * couleur, estompage, intensité. Le régime sémantique n'y ajoute qu'un libellé
-   * et un compte — il ne redéfinit rien —, et c'est cette fonction partagée qui
-   * garantit qu'un disque et l'enveloppe qu'il remplace s'estompent et
-   * s'allument ensemble.
+   * What both regimes resolve the SAME way on an envelope: color,
+   * dimming, intensity. The semantic regime only adds a label and a count
+   * to it — it redefines nothing —, and it is this shared function that
+   * guarantees a disc and the envelope it replaces dim and light up
+   * together.
    */
   function paintOf(cluster: ClusterShape, args: ClustersForArgs): ClusterPaint {
     const root = args.graph.nodes.get(cluster.rootId);
@@ -1059,26 +1059,26 @@ export function createGraphViewController(hooks: GraphViewHooks): GraphViewContr
     return {
       circle: { cx: cluster.cx, cy: cluster.cy, r: cluster.r },
       color: root ? args.accentFor(root) : args.fallbackColor,
-      // Une enveloppe recule quand AUCUN de ses membres n'est lié à la
-      // sélection ; celle qui est sélectionnée reste donc pleine sans cas
-      // particulier (voir `clusterDimmed`).
+      // An envelope recedes when NONE of its members is linked to the selection; the one
+      // that is selected therefore stays full without a special case (see
+      // `clusterDimmed`).
       //
-      // Une enveloppe dont l'agrégat manque à l'index reste PLEINE plutôt que
-      // de s'estomper par défaut : on ne sait alors rien de ses membres, et le
-      // même raisonnement vaut ici que pour la sélection fantôme de
-      // `focusKeep()` — mieux vaut ne rien estomper que d'estomper sur une
-      // information qu'on n'a pas.
+      // An envelope whose aggregate is missing from the index stays FULL
+      // rather than dimming by default: we then know nothing of its members,
+      // and the same reasoning holds here as for `focusKeep()`'s ghost
+      // selection — better to dim nothing than to dim on information we do not
+      // have.
       dim: members ? clusterDimmed(args.keep, members) : false,
-      // Relayé et non stocké dans la forme : `clusters()` est la sortie du
-      // moteur, et y greffer un état d'interface la rendrait dépendante de
-      // qui la survole.
+      // Relayed and not stored in the shape: `clusters()` is the engine's output, and grafting
+      // interface state onto it would make it depend on who is hovering it.
       //
-      // La sélection d'un agrégat le peint à son intensité de survol PLEINE,
-      // et pas par un anneau de plus : l'enveloppe a déjà un état « allumé »
-      // que le survol fait connaître, et le réutiliser dit « celui-ci » sans
-      // ajouter de vocabulaire visuel. Le `max` est ce qui empêche le survol
-      // de FAIRE BAISSER l'enveloppe sélectionnée quand le pointeur la quitte
-      // (`attachHover` y écrit alors des valeurs décroissantes jusqu'à 0).
+      // Selecting an aggregate paints it at its FULL hover intensity,
+      // and not with one more ring: the envelope already has a "lit"
+      // state that hover makes known, and reusing it says "this one"
+      // without adding visual vocabulary. The `max` is what stops the
+      // hover from BRINGING DOWN the selected envelope when the pointer
+      // leaves it (`attachHover` then writes decreasing values into it,
+      // down to 0).
       hover: Math.max(
         args.hoverOf(cluster.aggregateId),
         cluster.aggregateId === args.selectedAggregateId ? 1 : 0,

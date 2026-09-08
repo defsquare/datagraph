@@ -8,29 +8,29 @@ export interface Size {
 
 const MIN_SCALE = 0.02;
 const MAX_SCALE = 3;
-// fitTo ne grossit jamais au-delà de la taille native : agrandir un atlas de
-// police cuit à sa taille nominale est exactement ce qui rendait le texte
-// cotonneux au premier rendu. Le zoom molette, lui, garde MAX_SCALE.
+// fitTo never enlarges past native size: blowing up a font atlas baked at its nominal
+// size is exactly what made text look cottony on the first render. Wheel zoom, for its
+// part, keeps MAX_SCALE.
 const MAX_FIT_SCALE = 1;
 const FIT_PADDING = 40;
 
-// Conversions de `deltaMode` vers des pixels. Sans elles, un même geste va de
-// « inutilisable » à « correct » selon le navigateur : Firefox rapporte les
-// crans de molette en lignes (deltaY = 3), Chrome les convertit lui-même en
-// ~100px. Tout le reste du calcul suppose des pixels.
+// Conversions from `deltaMode` to pixels. Without them, one and the same gesture goes
+// from "unusable" to "correct" depending on the browser: Firefox reports wheel notches
+// in lines (deltaY = 3), Chrome converts them to ~100px itself. Everything else in the
+// computation assumes pixels.
 const LINE_HEIGHT_PX = 16;
 const PAGE_HEIGHT_PX = 400;
 
-// Pincement et molette n'envoient pas la même échelle de deltas : quelques
-// pixels par image pour le premier, un cran franc de ~100px pour la seconde.
-// Plutôt que de deviner lequel des deux on tient — c'est précisément le pari
-// qui faisait zoomer les balayages trackpad — on prend le gain qui va au
-// pincement et on plafonne ce qu'un seul événement peut faire. Un gros delta
-// vient donc buter sur le plafond au lieu d'être interprété.
+// Pinch and wheel do not send deltas on the same scale: a few pixels per frame
+// for the former, a clean ~100px notch for the latter. Rather than guessing
+// which of the two we are holding — precisely the bet that made trackpad
+// swipes zoom — we take the gain that suits pinch and cap what a single event
+// can do. A large delta therefore runs into the cap instead of being
+// interpreted.
 //
-// exp(0.2) = 1.22x : c'est exactement ce que valait un cran de molette de
-// 100px avec l'ancien gain dédié, donc la molette garde son toucher (trois
-// crans pour doubler) sans qu'aucun code ait à la reconnaître.
+// exp(0.2) = 1.22x: exactly what a 100px wheel notch was worth under the old dedicated
+// gain, so the wheel keeps its feel (three notches to double) without any code having
+// to recognize it.
 const ZOOM_GAIN = 0.012;
 const MAX_ZOOM_STEP = 0.2;
 
@@ -38,7 +38,7 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-/** Les seuls champs de `WheelEvent` que la classification lit. */
+/** The only fields of `WheelEvent` the classification reads. */
 export interface WheelSignal {
   deltaX: number;
   deltaY: number;
@@ -47,7 +47,7 @@ export interface WheelSignal {
   metaKey: boolean;
 }
 
-/** Ramène un delta de molette en pixels, quel que soit le `deltaMode`. */
+/** Brings a wheel delta back to pixels, whatever the `deltaMode`. */
 export function normalizeWheelDelta(delta: number, deltaMode: number): number {
   if (deltaMode === 1) return delta * LINE_HEIGHT_PX;
   if (deltaMode === 2) return delta * PAGE_HEIGHT_PX;
@@ -55,30 +55,30 @@ export function normalizeWheelDelta(delta: number, deltaMode: number): number {
 }
 
 /**
- * Le facteur d'échelle qu'un seul événement de zoom applique, pour un delta
- * vertical déjà ramené en pixels. Plafonné : voir `MAX_ZOOM_STEP`.
+ * The scale factor a single zoom event applies, for a vertical delta already brought
+ * back to pixels. Capped: see `MAX_ZOOM_STEP`.
  */
 export function zoomFactorFor(dyPx: number): number {
   return Math.exp(clamp(-dyPx * ZOOM_GAIN, -MAX_ZOOM_STEP, MAX_ZOOM_STEP));
 }
 
 /**
- * Décide si un événement `wheel` doit zoomer ou déplacer.
+ * Decides whether a `wheel` event must zoom or pan.
  *
- * Seul un modificateur zoome. `ctrlKey` couvre les deux gestes de zoom qui
- * comptent : macOS le synthétise pour le pincement trackpad, et Ctrl+molette
- * est la convention navigateur universelle. `metaKey` ajoute Cmd+molette, le
- * réflexe macOS. Tout le reste — molette nue comprise — déplace.
+ * Only a modifier zooms. `ctrlKey` covers the two zoom gestures that matter: macOS
+ * synthesizes it for the trackpad pinch, and Ctrl+wheel is the universal browser
+ * convention. `metaKey` adds Cmd+wheel, the macOS reflex. Everything else — bare wheel
+ * included — pans.
  *
- * Il n'y a délibérément AUCUNE heuristique sur les deltas. La version
- * précédente traitait un événement entier, purement vertical et d'au moins
- * 40px comme une molette, donc un zoom ; or c'est aussi la signature d'un
- * balayage trackpad rapide (Chrome quantifie la composante horizontale d'un
- * geste presque vertical à exactement 0, et l'inertie envoie des deltas bien
- * au-delà du seuil). Résultat : la vue zoomait au milieu d'une navigation.
- * Aucun champ de `WheelEvent` ne sépare de façon fiable molette et trackpad,
- * donc on ne tente pas : le zoom demande un modificateur explicite, et le faux
- * positif devient structurellement impossible.
+ * There is deliberately NO heuristic on the deltas. The previous version
+ * treated an event with whole-number deltas, purely vertical and of at least
+ * 40px, as a wheel, hence as a zoom; but that is also the signature of a fast
+ * trackpad swipe (Chrome quantizes the horizontal component of an
+ * almost-vertical gesture to exactly 0, and inertia sends deltas well past the
+ * threshold). Result: the view zoomed in the middle of a navigation. No field
+ * of `WheelEvent` reliably separates wheel from trackpad, so we do not try:
+ * zoom demands an explicit modifier, and the false positive becomes
+ * structurally impossible.
  */
 export function classifyWheel(event: WheelSignal): "zoom" | "pan" {
   return event.ctrlKey || event.metaKey ? "zoom" : "pan";
@@ -86,19 +86,19 @@ export function classifyWheel(event: WheelSignal): "zoom" | "pan" {
 
 export interface CameraOptions {
   /**
-   * Consulté à chaque mouvement pour savoir si le déplacement doit être rendu
-   * à quelqu'un d'autre — en pratique : une carte est en cours de déplacement,
-   * et déplacer la toile en même temps ferait fuir la carte sous le curseur.
+   * Consulted at every movement to know whether the pan must be handed over to someone
+   * else — in practice: a card is being dragged, and panning the canvas at the same
+   * time would make the card flee from under the cursor.
    *
-   * C'est un prédicat, relu à chaque `pointermove`, et surtout PAS un test fait
-   * une fois au `pointerdown`. La raison est un ordre qu'on ne contrôle pas :
-   * le pan est câblé sur des écouteurs DOM natifs du canvas, le déplacement de
-   * carte sur les événements fédérés de Pixi, qui sont émis depuis le
-   * gestionnaire natif de Pixi lui-même. Qui voit le `pointerdown` en premier
-   * dépend de l'ordre d'enregistrement des deux, c'est-à-dire de l'ordre de
-   * construction dans `create.ts` — une dépendance invisible et qu'un
-   * réarrangement innocent casserait. Au MOVE, le drag de carte est déjà armé
-   * quel que soit cet ordre.
+   * It is a predicate, re-read on every `pointermove`, and most definitely NOT
+   * a test done once at `pointerdown`. The reason is an ordering we do not
+   * control: the pan is wired onto the canvas's native DOM listeners, the card
+   * drag onto Pixi's federated events, which are emitted from Pixi's own
+   * native handler. Which of the two sees the `pointerdown` first depends on
+   * the order the two were registered in, that is, on the construction order
+   * in `create.ts` — an invisible dependency that an innocent rearrangement
+   * would break. At MOVE time, the card drag is already armed whatever that
+   * order.
    */
   isBlocked?: () => boolean;
 }
@@ -151,15 +151,15 @@ export class Camera {
   }
 
   /**
-   * Le rectangle du MONDE actuellement visible dans `viewport`, c'est-à-dire
-   * l'inverse exact de la transformation que la caméra pose sur le stage
-   * (`applyScaleAndCenter`, pan et zoom molette compris : tous n'écrivent que
-   * `stage.scale` et `stage.position`).
+   * The WORLD rectangle currently visible in `viewport`, that is, the exact inverse of
+   * the transform the camera lays onto the stage (`applyScaleAndCenter`, pan and wheel
+   * zoom included: none of them writes anything but `stage.scale` and
+   * `stage.position`).
    *
-   * Existe pour ce qui doit se placer en coordonnées MONDE tout en tenant
-   * compte de ce qu'on regarde — les étiquettes d'arêtes, qui glissent le long
-   * de leur trait pour rester dans le cadre. Le calcul serait sinon refait
-   * chez l'appelant à partir d'internes de la caméra qu'il n'a pas à connaître.
+   * Exists for whatever has to place itself in WORLD coordinates while accounting for
+   * what is being looked at — edge labels, which slide along their stroke to stay in
+   * frame. The computation would otherwise be redone at the caller's, out of camera
+   * internals it has no business knowing.
    */
   worldViewport(viewport: Size): Rect {
     const s = this.currentScale;
@@ -197,9 +197,9 @@ export class Camera {
   private readonly handlePointerMove = (event: PointerEvent): void => {
     if (!this.dragging) return;
     if (this.isBlocked?.()) {
-      // On mémorise quand même la position : sans ça, tout le chemin parcouru
-      // pendant l'inhibition serait rattrapé d'un bond au premier mouvement
-      // libre — la toile sauterait au relâchement de la carte.
+      // We record the position anyway: without that, the whole path travelled during
+      // the inhibition would be caught up in one jump at the first free movement — the
+      // canvas would leap the moment the card is released.
       this.lastClientX = event.clientX;
       this.lastClientY = event.clientY;
       return;

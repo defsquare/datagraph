@@ -1,57 +1,56 @@
-// Le PACKING INTRA-AGRÉGAT — le niveau 1 du moteur de la vue graphe, extrait
-// de `graph-layout.ts` tel quel.
+// INTRA-AGGREGATE PACKING — level 1 of the graph view engine, extracted from
+// `graph-layout.ts` as-is.
 //
-// C'est un sous-système FERMÉ, et c'est la raison du découpage : il ne connaît
-// ni le `Graph`, ni les agrégats, ni les options du niveau 2. Il ne prend que
-// des tailles de cartes, une adjacence `childrenOf` déjà triée et un `gap`, et
-// rend des `Rect` locaux. Tout ce qu'il garantit — le non-recouvrement avec
-// marge `gap`, par construction — se démontre sans rien savoir de l'appelant ;
-// les preuves sont au-dessus de `packRadial` et de `packCluster`.
+// It is a CLOSED subsystem, and that is the reason for the split: it knows
+// neither the `Graph`, nor the aggregates, nor level 2's options. It takes only
+// card sizes, an already sorted `childrenOf` adjacency and a `gap`, and returns
+// local `Rect`s. Everything it guarantees — non-overlap with margin `gap`, by
+// construction — is proved without knowing anything about the caller; the proofs
+// sit above `packRadial` and `packCluster`.
 //
-// Ce module n'est importé QUE par `graph-layout.ts`. Il ne figure ni dans le
-// barrel `index.ts` ni dans les points d'entrée du package : il arrive dans le
-// chunk paresseux `./graph-layout` par résolution, et les deux tests de pureté
-// de bundle gardent cet invariant.
+// This module is imported ONLY by `graph-layout.ts`. It appears neither in the
+// `index.ts` barrel nor in the package entry points: it lands in the lazy
+// `./graph-layout` chunk through resolution, and the two bundle purity tests
+// guard that invariant.
 import type { NodeId } from "./model.js"
 import type { Rect } from "./structure-layout.js"
 
 /**
- * Rayon du disque englobant d'une carte : la demi-diagonale.
+ * Radius of a card's bounding disc: the half-diagonal.
  *
- * C'est la pièce qui rend la géométrie des anneaux traitable. Une carte est un
- * rectangle axis-aligned posé à un angle quelconque autour d'un centre ; tester
- * le recouvrement de deux rectangles ainsi disposés demande de raisonner sur
- * quatre projections et deux positions angulaires. En les remplaçant par leurs
- * disques englobants, la condition devient une seule inégalité de distance,
- * indépendante de l'angle : deux cartes dont les disques sont disjoints d'au
- * moins `gap` sont disjointes d'au moins `gap`.
+ * This is the piece that makes the ring geometry tractable. A card is an
+ * axis-aligned rectangle placed at an arbitrary angle around a center; testing
+ * whether two rectangles arranged that way overlap requires reasoning about four
+ * projections and two angular positions. Replacing them with their bounding
+ * discs turns the condition into a single distance inequality, independent of
+ * the angle: two cards whose discs are at least `gap` apart are themselves at
+ * least `gap` apart.
  *
- * C'est une condition SUFFISANTE, pas nécessaire — donc conservatrice. Ce
- * qu'elle coûte est borné et petit sur ces cartes : le disque déborde le
- * rectangle de `(diagonale − largeur) / 2`, soit 7,1 px pour une carte de
- * 340×100 et 4,6 px pour une de 140×49. Un test exact gagnerait ces quelques
- * pixels au prix d'une garantie qu'on ne saurait plus écrire en une ligne.
+ * It is a SUFFICIENT condition, not a necessary one — hence conservative. What
+ * it costs is bounded and small on these cards: the disc overshoots the
+ * rectangle by `(diagonal − width) / 2`, i.e. 7.1 px for a 340×100 card and
+ * 4.6 px for a 140×49 one. An exact test would win those few pixels at the price
+ * of a guarantee no longer writable in one line.
  */
 function discRadiusOf(size: { width: number; height: number }): number {
   return Math.hypot(size.width, size.height) / 2
 }
 
 /**
- * Distance de référence de chaque membre à la racine, par BFS local sur les
- * références INTRA-agrégat.
+ * Reference distance of each member to the root, by local BFS over the
+ * INTRA-aggregate references.
  *
- * Le parcours remonte de la CIBLE vers la SOURCE, comme `buildAggregates` : une
- * commande pointe vers son client, donc elle est à distance 1 de lui. C'est ce
- * qui fait coïncider la distance d'anneau avec la distance d'appartenance qui a
- * formé le cluster. Les listes d'adjacence étant triées, la file est
- * déterministe et les égalités sont départagées par id.
+ * The traversal walks from the TARGET back to the SOURCE, like
+ * `buildAggregates`: an order points at its customer, so it is at distance 1
+ * from it. That is what makes the ring distance coincide with the membership
+ * distance that formed the cluster. Since the adjacency lists are sorted, the
+ * queue is deterministic and ties are broken by id.
  *
- * Les membres NON ATTEINTS ne figurent pas dans `dist`. Ils existent :
- * l'appartenance se calcule sur le graphe entier, la mise en page sur les
- * entités VISIBLES, donc un maillon intermédiaire masqué détache tout ce qui
- * pendait dessous. Ils sont rendus à part parce que les deux consommateurs les
- * traitent différemment — le placement radial leur donne un anneau
- * supplémentaire, le CRITÈRE de choix les ignore.
+ * The UNREACHED members do not appear in `dist`. They exist: membership is
+ * computed over the whole graph, layout over the VISIBLE entities, so a hidden
+ * intermediate link detaches everything that hung below it. They are returned
+ * separately because the two consumers treat them differently — radial placement
+ * gives them an extra ring, the selection CRITERION ignores them.
  */
 function referenceDepths(
   memberIds: NodeId[],
@@ -82,21 +81,21 @@ function referenceDepths(
 }
 
 /**
- * Packing en ÉTAGÈRES : lignes remplies de gauche à droite jusqu'à une largeur
- * cible en √(aire totale), chaque ligne centrée.
+ * SHELF packing: rows filled left to right up to a target width of √(total
+ * area), each row centered.
  *
- * Trivial, déterministe, dense — et non-recouvrant par construction, la marge
- * `gap` étant posée entre deux voisins de ligne comme entre deux lignes. Les
- * lignes sont CENTRÉES et non alignées à gauche : un bloc centré donne un
- * cercle englobant plus serré, donc un disque plus petit à écarter au niveau 2.
+ * Trivial, deterministic, dense — and non-overlapping by construction, the `gap`
+ * margin being laid between two row neighbors as between two rows. The rows are
+ * CENTERED rather than left-aligned: a centered block yields a tighter enclosing
+ * circle, hence a smaller disc to push apart at level 2.
  *
- * La largeur cible en √(aire) vise un bloc à peu près carré ; `maxW` la borne
- * par le bas pour qu'une carte plus large que la cible ne parte jamais seule
- * sur une ligne débordante.
+ * The √(area) target width aims at a roughly square block; `maxW` bounds it from
+ * below so that a card wider than the target never goes off alone on an
+ * overflowing row.
  *
- * C'est le mode le plus DENSE des deux, et c'est sa seule raison d'être ici :
- * il ne dit rien de la connectivité, et pose la racine en tête de la première
- * ligne, donc dans un coin. Voir `packCluster` pour savoir quand il l'emporte.
+ * It is the DENSER of the two modes, and that is its only reason to be here: it
+ * says nothing about connectivity, and puts the root at the head of the first
+ * row, that is, in a corner. See `packCluster` for when it wins.
  */
 function packShelf(
   memberIds: NodeId[],
@@ -143,74 +142,72 @@ function packShelf(
 }
 
 /**
- * Placement RADIAL : la racine au centre, les autres membres sur des anneaux
- * concentriques, un anneau par distance de référence à la racine.
+ * RADIAL placement: the root at the center, the other members on concentric
+ * rings, one ring per reference distance to the root.
  *
- * Ce qu'il corrige, mesuré sur `deepAggregate()` — 41 cartes, quatre niveaux de
- * profondeur — contre le packing en étagères : la racine sortait **40e sur 41**
- * par proximité au centre de son propre disque, à 597,7 px de ce centre, et une
- * référence intra-agrégat mesurait 591,4 px en moyenne. Le tri par id posait la
- * racine en tête de la première ligne, c'est-à-dire dans un COIN du bloc — le
- * point le plus éloigné du centre du cercle englobant. En radial : racine 1re,
- * à 16,4 px du centre, référence moyenne 363,0 px et max 976,3 → 488,1 px.
+ * What it fixes, measured on `deepAggregate()` — 41 cards, four levels deep —
+ * against shelf packing: the root came out **40th out of 41** by proximity to
+ * the center of its own disc, 597.7 px from that center, and an intra-aggregate
+ * reference measured 591.4 px on average. Sorting by id put the root at the head
+ * of the first row, that is, in a CORNER of the block — the point farthest from
+ * the center of the enclosing circle. In radial: root 1st, 16.4 px from the
+ * center, average reference 363.0 px and max 976.3 → 488.1 px.
  *
- * ── LA GARANTIE ────────────────────────────────────────────────────────────
+ * ── THE GUARANTEE ──────────────────────────────────────────────────────────
  *
- * Non-recouvrement avec marge `gap`, par construction, en deux conditions
- * indépendantes. On raisonne sur les disques englobants (`discRadiusOf`), donc
- * sur des distances de centre à centre.
+ * Non-overlap with margin `gap`, by construction, from two independent
+ * conditions. We reason about the bounding discs (`discRadiusOf`), hence about
+ * center-to-center distances.
  *
- * **1. Entre deux cartes d'un même anneau.** Une carte de disque ρ posée à la
- * distance R du centre se voit allouer la largeur angulaire
+ * **1. Between two cards of the same ring.** A card with disc ρ placed at
+ * distance R from the center is allotted the angular width
  *
  *     α = 2·asin((ρ + gap/2) / R)
  *
- * qui est exactement l'angle sous lequel on voit, depuis le centre, un disque
- * de rayon `ρ + gap/2` centré à la distance R. Deux cartes consécutives i et j
- * sont posées à un écart angulaire d'au moins `α_i/2 + α_j/2`. Leur distance
- * de centre à centre est la corde `2R·sin(Δθ/2)`, et
+ * which is exactly the angle under which a disc of radius `ρ + gap/2` centered
+ * at distance R is seen from the center. Two consecutive cards i and j are
+ * placed at an angular gap of at least `α_i/2 + α_j/2`. Their center-to-center
+ * distance is the chord `2R·sin(Δθ/2)`, and
  *
- *     2R·sin((x + y)/2)  ≥  R·sin x + R·sin y     avec x = asin(a/R), y = asin(b/R)
+ *     2R·sin((x + y)/2)  ≥  R·sin x + R·sin y     with x = asin(a/R), y = asin(b/R)
  *
- * parce que `sin x + sin y = 2·sin((x+y)/2)·cos((x−y)/2)` et que le cosinus
- * vaut au plus 1. Le membre de droite vaut `a + b = ρ_i + ρ_j + gap`. La corde
- * est donc toujours au moins égale à la somme des rayons plus la marge. C'est
- * cette identité trigonométrique, et rien d'autre, qui porte la garantie
- * intra-anneau — elle vaut pour toute paire, pas seulement pour des voisines,
- * puisque l'écart angulaire ne fait que croître entre non-voisines.
+ * because `sin x + sin y = 2·sin((x+y)/2)·cos((x−y)/2)` and the cosine is at most
+ * 1. The right-hand side equals `a + b = ρ_i + ρ_j + gap`. The chord is
+ * therefore always at least the sum of the radii plus the margin. It is this
+ * trigonometric identity, and nothing else, that carries the intra-ring
+ * guarantee — it holds for every pair, not only for neighbors, since the angular
+ * gap only grows between non-neighbors.
  *
- * La condition de bouclage est donc `Σα_i ≤ 2π` : c'est elle qui garantit que
- * la DERNIÈRE carte et la PREMIÈRE, qui se rejoignent par l'autre côté, sont
- * elles aussi assez écartées.
+ * The wrap-around condition is therefore `Σα_i ≤ 2π`: it is what guarantees that
+ * the LAST card and the FIRST one, which meet on the other side, are far enough
+ * apart too.
  *
- * **2. Entre deux cartes d'anneaux différents.** Le rayon d'un anneau est posé
- * à `R_k = R_{k−1} + ρmax_{k−1} + ρmax_k + gap`. Deux cartes d'anneaux
- * différents sont donc distantes d'au moins `R_k − R_{k−1}` (le pire cas est
- * l'alignement radial), soit au moins `ρ_i + ρ_j + gap`. Les anneaux non
- * consécutifs le sont a fortiori, R croissant.
+ * **2. Between two cards of different rings.** A ring's radius is set to
+ * `R_k = R_{k−1} + ρmax_{k−1} + ρmax_k + gap`. Two cards of different rings are
+ * therefore at least `R_k − R_{k−1}` apart (the worst case is radial alignment),
+ * i.e. at least `ρ_i + ρ_j + gap`. Non-consecutive rings are so a fortiori,
+ * since R increases.
  *
- * ── SCISSION D'UN ANNEAU ───────────────────────────────────────────────────
+ * ── SPLITTING A RING ───────────────────────────────────────────────────────
  *
- * Un anneau de N cartes ne « déborde » jamais au sens où il échouerait : on
- * pourrait toujours grossir R jusqu'à ce que `Σα ≤ 2π`. Mais ce R croît
- * linéairement en N, alors que le scinder en deux demi-anneaux fait croître
- * deux rayons de N/2 chacun — et deux anneaux séparés par une hauteur de carte
- * coûtent bien moins que le double du rayon. On remplit donc l'anneau
- * GLOUTONNEMENT au rayon minimal autorisé par la condition 2, et ce qui ne
- * tient pas part sur un anneau suivant, à la MÊME distance logique. Les
- * sous-anneaux se comportent en tout point comme des anneaux pour la condition
- * 2, donc la garantie traverse la scission sans changement.
+ * A ring of N cards never "overflows" in the sense of failing: we could always
+ * grow R until `Σα ≤ 2π`. But that R grows linearly in N, whereas splitting it
+ * into two half-rings grows two radii by N/2 each — and two rings separated by
+ * one card height cost far less than twice the radius. So the ring is filled
+ * GREEDILY at the minimal radius condition 2 allows, and whatever does not fit
+ * goes onto a following ring, at the SAME logical distance. Sub-rings behave in
+ * every respect like rings for condition 2, so the guarantee crosses the split
+ * unchanged.
  *
- * Le remplissage se termine toujours : `α ≤ π` pour toute carte (l'`asin` est
- * borné par π/2), donc au moins une carte tient sur chaque sous-anneau.
+ * The filling always terminates: `α ≤ π` for every card (the `asin` is bounded
+ * by π/2), so at least one card fits on each sub-ring.
  *
- * ── ORDRE ──────────────────────────────────────────────────────────────────
+ * ── ORDER ──────────────────────────────────────────────────────────────────
  *
- * À l'intérieur d'un anneau, les cartes sont ordonnées par ANGLE DU PARENT puis
- * par id : un enfant se pose près de son parent, ce qui est ce qui raccourcit
- * les chaînes de références. Les ORPHELINS (voir `referenceDepths`) forment un
- * anneau supplémentaire au-delà du dernier ; ils n'ont pas de parent, retombent
- * sur l'angle 0, et leur id tranche.
+ * Inside a ring, cards are ordered by PARENT ANGLE then by id: a child lands
+ * near its parent, which is what shortens the reference chains. The ORPHANS (see
+ * `referenceDepths`) form an extra ring beyond the last one; they have no
+ * parent, fall back on angle 0, and their id decides.
  */
 function packRadial(
   memberIds: NodeId[],
@@ -254,9 +251,9 @@ function packRadial(
 
     let from = 0
     while (from < pending.length) {
-      // ρmax est pris sur tout ce qui RESTE à poser, et non sur ce qui tiendra
-      // sur ce sous-anneau : il faut R pour savoir ce qui tient, et ρmax pour
-      // savoir R. Prendre le max du reste est le choix conservateur, donc sûr.
+      // ρmax is taken over everything LEFT to place, not over what will fit on
+      // this sub-ring: you need R to know what fits, and ρmax to know R. Taking
+      // the max of the remainder is the conservative choice, hence a safe one.
       let maxRho = 0
       for (let i = from; i < pending.length; i++) {
         maxRho = Math.max(maxRho, discRadiusOf(sizes.get(pending[i]!)!))
@@ -275,15 +272,15 @@ function packRadial(
         to++
       }
 
-      // Le jeu restant est réparti également entre les N intervalles (les N−1
-      // internes plus celui du bouclage) : les cartes s'étalent au lieu de se
-      // tasser sur un arc en laissant un trou. Ça ne fait qu'AUGMENTER les
-      // écarts, donc la garantie est intacte.
+      // The leftover slack is spread evenly across the N intervals (the N−1
+      // internal ones plus the wrap-around): the cards spread out instead of
+      // bunching up on one arc and leaving a hole. This only INCREASES the gaps,
+      // so the guarantee is intact.
       const n = to - from
       const slack = (2 * Math.PI - sum) / n
 
-      // Rotation rigide de tout le sous-anneau pour que sa première carte se
-      // pose à l'angle de son parent. Rigide, donc sans effet sur la garantie.
+      // Rigid rotation of the whole sub-ring so its first card lands at its
+      // parent's angle. Rigid, hence with no effect on the guarantee.
       const firstParent = parent.get(pending[from]!)
       const offset = (firstParent !== undefined ? (angleOf.get(firstParent) ?? 0) : 0) - widths[0]! / 2
 
@@ -309,63 +306,60 @@ function packRadial(
 }
 
 /**
- * Aiguillage entre les deux modes de placement, par cluster.
+ * Switch between the two placement modes, per cluster.
  *
- * ── LE CRITÈRE : LA PROFONDEUR, PAS LE CARDINAL ────────────────────────────
+ * ── THE CRITERION: DEPTH, NOT CARDINALITY ──────────────────────────────────
  *
- * Radial si et seulement si **au moins un membre est à distance de référence
- * ≥ 2 de la racine**. Étagères sinon.
+ * Radial if and only if **at least one member is at reference distance ≥ 2 from
+ * the root**. Shelves otherwise.
  *
- * Ce que fait le radial, c'est ENCODER LA PROFONDEUR DE RÉFÉRENCE EN DISTANCE
- * AU CENTRE. À profondeur ≤ 1, il n'y a rien à encoder : tous les non-racines
- * sont à la même distance, ils se retrouvent sur un unique anneau, et la
- * structure lue par l'œil ne dit rien de plus que « ces cartes appartiennent à
- * cette racine » — ce que l'enveloppe disait déjà. Le radial n'y apporte que
- * son coût.
+ * What radial does is ENCODE REFERENCE DEPTH AS DISTANCE TO THE CENTER. At depth
+ * ≤ 1 there is nothing to encode: every non-root is at the same distance, they
+ * all end up on a single ring, and the structure the eye reads says nothing more
+ * than "these cards belong to this root" — which the envelope already said.
+ * Radial brings only its cost there.
  *
- * Et ce coût est mesuré. Le radial est moins dense partout, parce qu'un anneau
- * paie un diamètre de carte de rayon même s'il ne porte qu'une carte. Rayon du
- * disque, étagères → radial : 2 cartes 162 → 209 px (×1,29), 3 cartes 225 → 335
- * (×1,49), 5 cartes sur un anneau 258 → 371 (×1,44). Répercuté sur les jeux
- * réels, en radial partout : remplissage 12,3 → 7,8 % sur `bigShop(3000)` et
- * 15,1 → 10,9 % sur celui de la démo — pour zéro gain, leurs agrégats étant
- * tous plats.
+ * And that cost is measured. Radial is less dense everywhere, because a ring
+ * pays one card diameter of radius even when it carries a single card. Disc
+ * radius, shelves → radial: 2 cards 162 → 209 px (×1.29), 3 cards 225 → 335
+ * (×1.49), 5 cards on one ring 258 → 371 (×1.44). Carried over to the real
+ * datasets, with radial everywhere: fill rate 12.3 → 7.8% on `bigShop(3000)` and
+ * 15.1 → 10.9% on the demo's — for zero gain, their aggregates all being flat.
  *
- * Le critère ne mentionne AUCUNE taille, et c'est délibéré. Un seuil par
- * cardinal aurait été ajusté aux fixtures : celui qui annulait le coût sur les
- * jeux du dépôt valait exactement leur taille maximale d'agrégat (5), ce qui
- * n'est pas une raison mais une coïncidence qu'on aurait gravée. Le critère de
- * profondeur, lui, est ajusté à la RAISON D'ÊTRE du radial, et se prononce sans
- * rien savoir du nombre de cartes.
+ * The criterion mentions NO size, and that is deliberate. A cardinality
+ * threshold would have been fitted to the fixtures: the one that cancelled the
+ * cost on the repo's datasets was exactly their maximum aggregate size (5),
+ * which is not a reason but a coincidence we would have carved in. The depth
+ * criterion, on the other hand, is fitted to radial's REASON TO EXIST, and
+ * decides without knowing anything about the number of cards.
  *
- * ── LES ORPHELINS SONT EXCLUS DU CRITÈRE ───────────────────────────────────
+ * ── ORPHANS ARE EXCLUDED FROM THE CRITERION ────────────────────────────────
  *
- * Un membre non atteint par le BFS local (maillon intermédiaire masqué, voir
- * `referenceDepths`) reçoit en radial un anneau SYNTHÉTIQUE au-delà du dernier.
- * Cet anneau-là ne doit pas déclencher le radial : il ne traduit aucune
- * profondeur de référence, seulement une absence d'information. Sans cette
- * exclusion, un agrégat parfaitement plat dont une carte serait détachée
- * basculerait en radial et en paierait le prix pour rien. Le critère lit donc
- * `depths.dist`, qui ne contient que les membres réellement atteints.
+ * A member unreached by the local BFS (hidden intermediate link, see
+ * `referenceDepths`) receives in radial a SYNTHETIC ring beyond the last one.
+ * That ring must not trigger radial: it reflects no reference depth, only an
+ * absence of information. Without that exclusion, a perfectly flat aggregate
+ * with one detached card would flip to radial and pay its price for nothing. The
+ * criterion therefore reads `depths.dist`, which holds only the actually reached
+ * members.
  *
- * ── CE QUE LES DEUX MODES PARTAGENT ────────────────────────────────────────
+ * ── WHAT THE TWO MODES SHARE ───────────────────────────────────────────────
  *
- * La même signature, et la même garantie : non-recouvrement avec marge `gap`
- * par construction. Chacun l'obtient à sa manière — les étagères par des lignes
- * et des colonnes séparées de `gap`, le radial par la géométrie des cordes
- * démontrée au-dessus de `packRadial` —, et le reste du moteur n'a pas à savoir
- * lequel a répondu.
+ * The same signature, and the same guarantee: non-overlap with margin `gap` by
+ * construction. Each obtains it its own way — shelves through rows and columns
+ * separated by `gap`, radial through the chord geometry proved above
+ * `packRadial` — and the rest of the engine need not know which one answered.
  */
 export function packCluster(
   memberIds: NodeId[],
   sizes: Map<NodeId, { width: number; height: number }>,
   gap: number,
-  /** Membres du cluster référençant la clé — l'adjacence inverse, triée. */
+  /** Cluster members referencing the key — the reverse adjacency, sorted. */
   childrenOf: Map<NodeId, NodeId[]>,
 ): Map<NodeId, Rect> {
   if (memberIds.length === 1) {
-    // Une seule carte : les deux modes donnent le même résultat au recentrage
-    // près, et le BFS n'aurait rien à parcourir.
+    // A single card: both modes give the same result up to recentering, and the
+    // BFS would have nothing to traverse.
     const s = sizes.get(memberIds[0]!)!
     return new Map([[memberIds[0]!, { x: 0, y: 0, width: s.width, height: s.height }]])
   }

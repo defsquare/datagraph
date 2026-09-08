@@ -10,25 +10,25 @@ export interface NodeMetrics {
   rowHeight: number
   paddingX: number
   paddingBottom: number
-  /** Largeur de la bande d'accent AVANT que la bordure de la carte ne la
-   * recouvre : la bordure est centrée sur le tracé extérieur et repeint les
-   * `strokes.border` px les plus à gauche de cette bande, donc le rail
-   * effectivement visible mesure `railWidth - strokes.border`. */
+  /** Width of the accent band BEFORE the card's border covers it: the border is
+   * centered on the outer stroke and repaints the leftmost `strokes.border` px
+   * of that band, so the rail actually visible measures
+   * `railWidth - strokes.border`. */
   railWidth: number
   gapKeyValue: number
   chevronWidth: number
-  /** Avance moyenne du libellé d'en-tête (body 13px / 600). */
+  /** Average advance of the header label (body 13px / 600). */
   headerCharWidth: number
-  /** Avance moyenne de la pastille (body 9.5px / 600 + tracking). */
+  /** Average advance of the badge (body 9.5px / 600 + tracking). */
   badgeCharWidth: number
-  /** Avance moyenne d'une clé (body 12px). */
+  /** Average advance of a key (body 12px). */
   keyCharWidth: number
-  /** Avance d'une valeur (mono 12px — exacte pour Fira Code, 0.6em). */
+  /** Advance of a value (mono 12px — exact for Fira Code, 0.6em). */
   valueCharWidth: number
-  /** Marge intérieure horizontale de la pilule d'une ligne-tableau, de chaque
-   * côté du texte. */
+  /** Horizontal inner padding of an array row's pill, on each side of the
+   * text. */
   tokenPaddingX: number
-  /** Place réservée au chevron de la pilule, écart compris. */
+  /** Room reserved for the pill's chevron, gap included. */
   tokenChevronWidth: number
   minWidth: number
   maxWidth: number
@@ -53,18 +53,18 @@ export const DEFAULT_METRICS: NodeMetrics = {
 }
 
 /**
- * Texte d'une ligne-tableau : « 1 item », « 3 items ». Exporté pour la même
- * raison que `badgeTextFor` — le renderer doit dessiner EXACTEMENT ce que
- * `measureNode` a budgété, et deux formulations qui divergeraient rendraient
- * une pilule plus large que la place réservée.
+ * Text of an array row: "1 item", "3 items". Exported for the same reason as
+ * `badgeTextFor` — the renderer must draw EXACTLY what `measureNode` budgeted,
+ * and two wordings drifting apart would yield a pill wider than the room
+ * reserved for it.
  */
 export function arrayTokenTextFor(count: number): string {
   return count === 1 ? "1 item" : `${count} items`
 }
 
 /**
- * Largeur totale de la pilule d'une ligne-tableau, chrome compris.
- * Le texte est en police de valeur, comme toute valeur de ligne.
+ * Total width of an array row's pill, chrome included.
+ * The text uses the value font, like every row value.
  */
 export function arrayTokenWidth(count: number, metrics: NodeMetrics): number {
   return (
@@ -75,45 +75,43 @@ export function arrayTokenWidth(count: number, metrics: NodeMetrics): number {
 }
 
 /**
- * Largeur du fragment « valeur » d'une ligne, quelle que soit sa nature : le
- * texte pour une ligne scalaire, la pilule entière pour une ligne-tableau.
- * Partagé par la mesure et le dessin, comme `rowIndexAt` l'est par le clic et
- * le survol — deux arithmétiques séparées dériveraient, et la carte réserverait
- * alors une place que la pilule ne respecte pas.
+ * Width of a row's "value" fragment, whatever its nature: the text for a scalar
+ * row, the whole pill for an array row. Shared by measuring and drawing, the way
+ * `rowIndexAt` is shared by click and hover — two separate arithmetics would
+ * drift, and the card would then reserve room the pill does not honor.
  *
- * NON exporté : le partage en question est interne à ce module — `measureNode`
- * budgète, et le renderer dessine à partir de `arrayTokenWidth` et de
- * `valueCharWidth`, jamais de cette largeur composite. Aucun appelant hors de
- * ce fichier, tests compris.
+ * NOT exported: the sharing in question is internal to this module —
+ * `measureNode` budgets, and the renderer draws from `arrayTokenWidth` and
+ * `valueCharWidth`, never from this composite width. No caller outside this
+ * file, tests included.
  */
 function rowValueWidth(row: Row, metrics: NodeMetrics): number {
   if (row.valueType === "array") return arrayTokenWidth(row.value, metrics)
   return String(row.value).length * metrics.valueCharWidth
 }
 
-/** Une ligne dont la valeur SEULE fait le contenu : sa clé n'est pas dessinée,
- * donc elle ne consomme ni largeur de clé ni écart clé/valeur. */
+/** A row whose value ALONE is the content: its key is not drawn, so it consumes
+ * neither key width nor key/value gap. */
 export function isValueOnlyRow(row: Row): boolean {
   return row.key === VALUE_ONLY_KEY
 }
 
 /**
- * Texte de la pastille d'en-tête : le type d'entité en capitales pour un nœud
- * entité, le nombre d'enfants pour un conteneur qui en a, la chaîne vide
- * sinon. Exporté parce que le renderer doit dessiner exactement ce que
- * measureNode a budgété.
+ * Text of the header badge: the entity type in capitals for an entity node, the
+ * child count for a container that has any, the empty string otherwise.
+ * Exported because the renderer must draw exactly what measureNode budgeted.
  */
 export function badgeTextFor(node: GraphNode): string {
   if (node.kind === "entity") return node.entityType.toUpperCase()
-  // Les enfants ÉLIDÉS sont exclus : ils sont déjà là, en lignes, et les
-  // compter ferait annoncer par la pastille un dépliage qui ne rendrait rien.
+  // ELIDED children are excluded: they are already there, as rows, and counting
+  // them would have the badge announce an expansion that yields nothing.
   if (node.cardChildCount > 0) return String(node.cardChildCount)
   return ""
 }
 
 /**
- * Texte du libellé d'en-tête en LOD 0. Une entité affiche `#<id>` seul : son
- * `label` (« Order #o1 ») répète le type que la pastille porte déjà.
+ * Text of the header label at LOD 0. An entity shows `#<id>` alone: its `label`
+ * ("Order #o1") repeats the type the badge already carries.
  */
 export function headerTextFor(node: GraphNode): string {
   if (node.kind === "entity") return `#${node.entityId}`
@@ -121,11 +119,10 @@ export function headerTextFor(node: GraphNode): string {
 }
 
 /**
- * Calcule la taille d'un nœud sans accéder au DOM. La largeur est le max entre
- * l'en-tête et la plus large des lignes ; chaque fragment est budgété avec
- * l'avance de SA police, ce que l'ancienne implémentation ne faisait pas —
- * elle appliquait l'avance body aux valeurs rendues en mono et sous-estimait
- * leur largeur de ~17%.
+ * Computes a node's size without touching the DOM. The width is the max of the
+ * header and the widest row; each fragment is budgeted with the advance of ITS
+ * font, which the old implementation did not do — it applied the body advance to
+ * values rendered in mono and underestimated their width by ~17%.
  */
 export function measureNode(node: GraphNode, metrics: NodeMetrics = DEFAULT_METRICS): Size {
   const chrome = metrics.railWidth + 2 * metrics.paddingX

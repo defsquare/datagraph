@@ -1,20 +1,20 @@
 import type { NodeMetrics } from "@defsquare/data-graph-core";
 import type { Theme } from "./theme.js";
 
-// Échantillon représentatif du texte réellement affiché : minuscules,
-// majuscules, chiffres et ponctuation, dans les proportions d'un identifiant
-// ou d'un libellé de champ.
+// Sample representative of the text actually displayed: lowercase and uppercase
+// letters, digits and punctuation, in roughly the proportions they occur in an
+// identifier or a field label.
 const SAMPLE = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .,:-_#@/";
 
 /**
- * Mesure l'avance moyenne réelle des quatre rôles typographiques via un
- * contexte 2D hors écran, et renvoie une copie de `base` avec les
- * `*CharWidth` corrigés.
+ * Measures the real average character advance of each of the four typographic roles
+ * through an offscreen 2D context, and returns a copy of `base` with its `*CharWidth`
+ * fields corrected.
  *
- * Le core ne peut pas faire cette mesure : il tourne en Node, sans DOM. Ses
- * constantes par défaut restent donc des approximations déterministes, et le
- * renderer les affine quand il en a les moyens. Sans contexte disponible
- * (Node, test, jsdom sans canvas), `base` est renvoyé inchangé.
+ * The core cannot take that measurement: it runs in Node, without a DOM. Its default
+ * constants therefore remain deterministic approximations, and the renderer refines
+ * them when it has the means to. With no context available (Node, test, jsdom without a
+ * canvas), `base` is returned unchanged.
  */
 export function measureFontMetrics(theme: Theme, base: NodeMetrics): NodeMetrics {
   const ctx = createContext();
@@ -34,8 +34,8 @@ export function measureFontMetrics(theme: Theme, base: NodeMetrics): NodeMetrics
   const key = advance("key");
   const value = advance("value");
 
-  // Une seule mesure ratée invalide le lot : mélanger des avances mesurées et
-  // approximées produirait des cartes incohérentes entre elles.
+  // A single failed measurement invalidates the batch: mixing measured and approximated
+  // advances would produce cards inconsistent with one another.
   if (![header, badge, key, value].every((n) => Number.isFinite(n) && n > 0)) return { ...base };
 
   return {
@@ -57,30 +57,30 @@ function createContext(): CanvasRenderingContext2D | null {
 }
 
 /**
- * Attend que les polices web dont `theme` a besoin aient fini de charger (ou
- * `timeoutMs`, au premier des deux) avant de rendre la main. Sans DOM (Node,
- * test) ou sans `document.fonts`, résout immédiatement — il n'y a rien à
- * attendre. Le timeout borne l'attente : un service de polices lent ou
- * indisponible ne doit jamais bloquer indéfiniment l'initialisation.
+ * Waits until the web fonts `theme` needs have finished loading (or for `timeoutMs`,
+ * whichever comes first) before handing back control. Without a DOM (Node, test) or
+ * without `document.fonts`, resolves immediately — there is nothing to wait for. The
+ * timeout bounds the wait: a slow or unavailable font service must never block
+ * initialization indefinitely.
  *
- * `document.fonts.ready` seul ne suffit PAS : il ne règle que les
- * chargements déjà déclenchés par la page. Une famille déclarée en
- * `@font-face` mais qu'aucun nœud DOM rendu n'utilise encore n'est jamais
- * requise — `ready` se résout alors immédiatement et `measureFontMetrics`
- * mesure la pile de repli, silencieusement (c'est exactement le bug que
- * `fontsReady` existe pour empêcher). On force donc explicitement, via
- * `document.fonts.load()`, le chargement de chacun des quatre rôles
- * typographiques du thème ; un rejet de `load()` (police introuvable,
- * réseau) est toléré pour qu'une seule police manquante n'empoisonne pas le
- * lot.
+ * `document.fonts.ready` alone is NOT enough: it only settles the loads the
+ * page has already triggered. A family declared in `@font-face` but that no
+ * rendered DOM node uses yet is never requested — `ready` then resolves
+ * immediately and `measureFontMetrics` measures the fallback stack, silently
+ * (which is exactly the bug `fontsReady` exists to prevent). So we
+ * explicitly force, through `document.fonts.load()`, the loading of each of
+ * the theme's four typographic roles; a rejection from `load()` (font not
+ * found, network) is tolerated so that one missing font does not poison the
+ * batch.
  *
- * Le `Promise.all` des `load()` PUIS `ready` doivent courir ENSEMBLE contre
- * le timeout, dans un seul `Promise.race` — pas le timeout après eux. Un
- * `load()` dont la promesse ne se règle jamais (fetch de police bloqué,
- * connexion en rade) ferait sinon pendre le `Promise.all` indéfiniment, le
- * `race` ne serait jamais atteint, et l'initialisation de `createDataGraph`
- * bloquerait pour toujours — pire que l'absence de `load()` d'avant, qui
- * était toujours bornée par le timeout. C'est le piège que cette forme évite.
+ * The `Promise.all` of the `load()`s AND THEN `ready` must run TOGETHER
+ * against the timeout, in a single `Promise.race` — not the timeout after
+ * them. A `load()` whose promise never settles (blocked font fetch, dead
+ * connection) would otherwise leave the `Promise.all` hanging forever,
+ * the `race` would never be reached, and `createDataGraph`'s
+ * initialization would block forever — worse than the earlier absence of
+ * `load()`, which was always bounded by the timeout. That is the trap
+ * this shape avoids.
  */
 export async function fontsReady(theme: Theme, timeoutMs: number): Promise<void> {
   const fonts = (globalThis as { document?: { fonts?: FontFaceSet } }).document?.fonts;

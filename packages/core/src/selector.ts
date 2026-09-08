@@ -30,18 +30,17 @@ export function parseSelector(selector: string): PathSegment[] {
 }
 
 /**
- * Un chemin RELATIF, dans la même grammaire que `parseSelector` mais ancré sur
- * un nœud au lieu de la racine : `lines[*].productRef` plutôt que
+ * A RELATIVE path, in the same grammar as `parseSelector` but anchored on a node
+ * instead of the root: `lines[*].productRef` rather than
  * `$.lines[*].productRef`.
  *
- * Implémenté en réancrant la chaîne sur `$` plutôt qu'en dupliquant la boucle
- * de tokens : les deux grammaires doivent rester la MÊME, sans quoi une forme
- * accepterait ce que l'autre rejette. Le `$.` n'est ajouté que si le chemin ne
- * commence pas déjà par un token (`.foo`, `[0]`), pour que les deux écritures
- * soient acceptées.
+ * Implemented by re-anchoring the string on `$` rather than duplicating the
+ * token loop: the two grammars must stay the SAME, or one form would accept what
+ * the other rejects. The `$.` is only prepended when the path does not already
+ * start with a token (`.foo`, `[0]`), so both spellings are accepted.
  *
- * L'erreur est reformulée sur le chemin ORIGINAL : citer la forme réancrée
- * ferait apparaître dans le message un `$` que l'appelant n'a jamais écrit.
+ * The error is restated on the ORIGINAL path: quoting the re-anchored form would
+ * surface a `$` in the message that the caller never wrote.
  */
 export function parseRelativePath(path: string): PathSegment[] {
   const anchored = path.startsWith(".") || path.startsWith("[") ? `$${path}` : `$.${path}`

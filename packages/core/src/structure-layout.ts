@@ -10,7 +10,7 @@ export interface Rect {
   height: number
 }
 
-/** La bande occupée par la ligne d'indice `rowIndex` dans la carte `card`. */
+/** The band occupied by the row at index `rowIndex` in card `card`. */
 export function rowRectFor(card: Rect, rowIndex: number, metrics: NodeMetrics): Rect {
   return {
     x: card.x,
@@ -21,18 +21,18 @@ export function rowRectFor(card: Rect, rowIndex: number, metrics: NodeMetrics): 
 }
 
 /**
- * Le rect qui ANCRE `id` : sa carte s'il en a une, la bande de la ligne qui le
- * représente sur la carte de son parent s'il est élidé.
+ * The rect that ANCHORS `id`: its card if it has one, the band of the row that
+ * represents it on its parent's card if it is elided.
  *
- * C'est le seul point où l'élision entre dans la mise en page incrémentale.
- * `layoutAfterExpand` place le sous-arbre à `anchor.x + anchor.width + 48` :
- * pour un tableau élidé, `anchor` est la bande de sa ligne, dont la largeur
- * est celle de la carte parente — les cartes d'éléments atterrissent donc 48 px
- * à droite de cette carte, à la HAUTEUR de la ligne, ce qui fait lire le
- * dépliage comme sortant du jeton.
+ * This is the only point where elision enters the incremental layout.
+ * `layoutAfterExpand` places the subtree at `anchor.x + anchor.width + 48`: for
+ * an elided array, `anchor` is the band of its row, whose width is the parent
+ * card's — the element cards therefore land 48 px to the right of that card, at
+ * the HEIGHT of the row, which makes the expansion read as coming out of the
+ * token.
  *
- * Le parent d'un nœud élidé est dessiné par construction (`buildGraph` n'élide
- * que sous un parent qui a une carte), donc son rect se lit directement dans
+ * The parent of an elided node is drawn by construction (`buildGraph` only
+ * elides under a parent that has a card), so its rect reads directly from
  * `positions`.
  */
 export function anchorRectFor(
@@ -57,28 +57,27 @@ export function anchorRectFor(
 }
 
 /**
- * La CARTE qui représente `id` à l'écran : la sienne si elle est dessinée,
- * sinon celle de son plus proche ancêtre qui en a une.
+ * The CARD that represents `id` on screen: its own if it is drawn, otherwise
+ * that of its nearest ancestor that has one.
  *
- * Un nœud élidé, replié, ou simplement absent de la vue courante n'est JAMAIS
- * dans `positions` : remonter `parentId` jusqu'au premier id qui s'y trouve
- * suffit donc à désigner la carte que la vue montre effectivement de lui — la
- * carte du value object si elle est dépliée, celle de l'entité hôte sinon.
- * `undefined` ne subsiste que si rien de la lignée n'est à l'écran, et l'arête
- * n'a alors effectivement aucun départ à montrer.
+ * An elided, collapsed, or simply out-of-view node is NEVER in `positions`:
+ * walking up `parentId` to the first id found there is therefore enough to name
+ * the card the view actually shows of it — the value object's card if it is
+ * expanded, the host entity's otherwise. `undefined` only remains when nothing
+ * in the lineage is on screen, and the edge then really has no origin to show.
  *
- * Pourquoi la CARTE et non la bande de la ligne qui porte le nœud caché : faire
- * partir l'arête de la bande était un DEMI-SIGNAL. La bande dit « ça sort d'ici »
- * mais pas d'où exactement, et rien ne distinguait une arête hissée depuis un
- * value object caché d'une référence portée en propre par l'entité — les deux
- * quittaient la même carte, l'une un peu plus bas que l'autre. Le détail est
- * passé à la SÉLECTION, qui étiquette chaque arête sortante du chemin instancié
- * (`lines[0].productRef` contre `customerId`) : la vue au repos reste sobre, et
- * qui veut savoir sélectionne. Voir `drawEdgeLabels` côté renderer.
+ * Why the CARD and not the band of the row that carries the hidden node: making
+ * the edge start from the band was a HALF-SIGNAL. The band says "this comes out
+ * of here" but not from exactly where, and nothing distinguished an edge lifted
+ * from a hidden value object from a reference carried by the entity itself —
+ * both left the same card, one slightly lower than the other. The detail moved
+ * to SELECTION, which labels each outgoing edge with the instantiated path
+ * (`lines[0].productRef` versus `customerId`): the resting view stays sober, and
+ * whoever wants to know selects. See `drawEdgeLabels` on the renderer side.
  *
- * La passe de CONTAINMENT, elle, garde `anchorRectFor` : déplier un tableau doit
- * continuer à se lire comme sortant de son jeton, ce qui est un signal ENTIER —
- * la ligne dépliée est précisément ce que le dépliage montre.
+ * The CONTAINMENT pass, on the other hand, keeps `anchorRectFor`: expanding an
+ * array must keep reading as coming out of its token, which is a WHOLE signal —
+ * the expanded row is precisely what the expansion shows.
  */
 export function nearestCardRectFor(
   graph: Graph,
@@ -97,10 +96,10 @@ export function nearestCardRectFor(
 }
 
 /**
- * Les arêtes de containment vues par ELK : chaque extrémité élidée est
- * résolue vers son plus proche ancêtre DESSINÉ. L'arête `#p1 → tags` devient
- * une boucle sur `#p1` et disparaît ; l'arête `tags → tags[0]` devient
- * `#p1 → tags[0]`, ce qui fait poser les cartes d'éléments à droite de `#p1`.
+ * The containment edges as ELK sees them: every elided endpoint is resolved to
+ * its nearest DRAWN ancestor. The edge `#p1 → tags` becomes a self-loop on `#p1`
+ * and disappears; the edge `tags → tags[0]` becomes `#p1 → tags[0]`, which lays
+ * the element cards out to the right of `#p1`.
  */
 function drawnContainEdges(graph: Graph, visible: Set<NodeId>): ElkExtendedEdge[] {
   const edges: ElkExtendedEdge[] = []
@@ -114,7 +113,7 @@ function drawnContainEdges(graph: Graph, visible: Set<NodeId>): ElkExtendedEdge[
   return edges
 }
 
-/** Les boîtes ELK des nœuds visibles, un nœud élidé n'en ayant aucune. */
+/** The ELK boxes of the visible nodes, an elided node having none. */
 function drawnBoxes(graph: Graph, ids: Iterable<NodeId>, metrics: NodeMetrics): ElkNode[] {
   const children: ElkNode[] = []
   for (const id of ids) {
@@ -130,16 +129,15 @@ export interface LayoutResult {
   positions: Map<NodeId, Rect>
 }
 
-/** L'écart vertical entre deux cartes, aligné sur `elk.spacing.nodeNode`. */
+/** The vertical gap between two cards, aligned on `elk.spacing.nodeNode`. */
 const NODE_GAP = 24
 
 /**
- * Les ids que `visible` ajoute par rapport à `prev` : ce qu'il reste à POSER.
+ * The ids `visible` adds relative to `prev`: what is left to LAY OUT.
  *
- * Les nœuds élidés n'ont jamais de rect, donc `!prev.has(id)` les déclarerait
- * « nouvellement visibles » à CHAQUE appel. Ils sont écartés ici, sans quoi la
- * mise en page incrémentale croirait avoir un bloc à placer alors qu'il n'y a
- * rien à dessiner.
+ * Elided nodes never have a rect, so `!prev.has(id)` would declare them "newly
+ * visible" on EVERY call. They are discarded here, or the incremental layout
+ * would believe it has a block to place when there is nothing to draw.
  */
 function newlyVisibleIds(graph: Graph, prev: Map<NodeId, Rect>, visible: Set<NodeId>): NodeId[] {
   return [...visible].filter((id) => {
@@ -148,7 +146,7 @@ function newlyVisibleIds(graph: Graph, prev: Map<NodeId, Rect>, visible: Set<Nod
   })
 }
 
-/** Un bloc posé en isolation : ses rects bruts, son coin haut-gauche, sa hauteur. */
+/** A block laid out in isolation: its raw rects, its top-left corner, its height. */
 interface IsolatedBlock {
   rects: Map<NodeId, Rect>
   minX: number
@@ -157,17 +155,17 @@ interface IsolatedBlock {
 }
 
 /**
- * Pose `newlyVisible` en ISOLATION (mise en page ELK dédiée, arêtes remappées
- * dans le périmètre du bloc), et rend le bloc brut avec sa bbox — sans décider
- * où il atterrit.
+ * Lays `newlyVisible` out in ISOLATION (dedicated ELK layout, edges remapped
+ * within the block's scope), and returns the raw block with its bbox — without
+ * deciding where it lands.
  *
- * Partagé par `layoutAfterExpand` et `layoutAfterReveal` : les deux ne diffèrent
- * que par le POINT D'ANCRAGE et la règle de décalage, jamais par la façon de
- * calculer le bloc. Garder cette mécanique unique est ce qui empêche les deux
- * chemins incrémentaux de diverger silencieusement.
+ * Shared by `layoutAfterExpand` and `layoutAfterReveal`: the two differ only in
+ * their ANCHOR POINT and shifting rule, never in how the block is computed.
+ * Keeping this mechanism single is what stops the two incremental paths from
+ * drifting apart silently.
  *
- * `options` n'existe que pour le packing des composantes (voir
- * `COLUMN_BLOCK_OPTIONS`) : tout le reste de la config est commun.
+ * `options` exists only for component packing (see `COLUMN_BLOCK_OPTIONS`): all
+ * the rest of the config is common.
  */
 async function layoutIsolatedBlock(
   elkFactory: ElkFactory,
@@ -179,11 +177,10 @@ async function layoutIsolatedBlock(
 ): Promise<IsolatedBlock> {
   const elk = elkFactory()
 
-  // Le bloc est mis en page en isolation, donc son remappage d'arêtes doit se
-  // faire dans SON périmètre : un tableau élidé du bloc y résout vers un ancêtre
-  // qui, lui, n'en fait pas partie. Les nœuds élidés sont ajoutés au périmètre
-  // pour que `nearestDrawn` puisse les traverser, mais `drawnBoxes` ne leur
-  // donne pas de boîte.
+  // The block is laid out in isolation, so its edge remapping must happen within
+  // ITS scope: an elided array of the block resolves there to an ancestor that
+  // is not part of it. Elided nodes are added to the scope so `nearestDrawn` can
+  // traverse them, but `drawnBoxes` gives them no box.
   const scope = new Set(newlyVisible)
   for (const id of visible) {
     const node = graph.nodes.get(id)
@@ -222,9 +219,9 @@ async function layoutIsolatedBlock(
 }
 
 /**
- * Écrit le bloc dans `into`, son coin haut-gauche amené sur `(x, y)`. Le bloc
- * sort d'ELK avec une origine arbitraire : c'est ici, et nulle part ailleurs,
- * que l'ancrage choisi par chaque chemin incrémental devient des positions.
+ * Writes the block into `into`, its top-left corner brought onto `(x, y)`. The
+ * block comes out of ELK with an arbitrary origin: this is where, and nowhere
+ * else, the anchor each incremental path chose becomes positions.
  */
 function placeBlock(into: Map<NodeId, Rect>, block: IsolatedBlock, x: number, y: number): void {
   const offsetX = x - block.minX
@@ -240,12 +237,12 @@ function placeBlock(into: Map<NodeId, Rect>, block: IsolatedBlock, x: number, y:
 }
 
 /**
- * Les enfants de `parentId` qui sont des CARTES, dans l'ordre de `childIds`.
+ * The children of `parentId` that are CARDS, in `childIds` order.
  *
- * Les élidés sont écartés : ils sont des lignes de la carte du parent, ils ne
- * portent pas de rang dans la colonne des enfants. C'est le même ordre que
- * celui de la pagination (`CollapseState.cardIndexOf`) — le moteur le recalcule
- * depuis le graphe plutôt que de dépendre de l'état de pli, dont il reste libre.
+ * The elided ones are discarded: they are rows of the parent's card, they carry
+ * no rank in the children's column. This is the same order as pagination's
+ * (`CollapseState.cardIndexOf`) — the engine recomputes it from the graph rather
+ * than depending on the collapse state, of which it stays independent.
  */
 function cardChildrenOf(graph: Graph, parentId: NodeId): NodeId[] {
   const parent = graph.nodes.get(parentId)
@@ -256,7 +253,7 @@ function cardChildrenOf(graph: Graph, parentId: NodeId): NodeId[] {
   })
 }
 
-/** Où insérer un bloc révélé : colonne, sommet du bloc, seuil de décalage. */
+/** Where to insert a revealed block: column, block top, shift threshold. */
 interface Insertion {
   colX: number
   blockTopY: number
@@ -264,16 +261,16 @@ interface Insertion {
 }
 
 /**
- * Le point d'insertion d'un bloc de cartes révélées dans la colonne des enfants
- * de `parentId`, déduit du VOISINAGE du bloc dans l'ordre des enfants-cartes.
+ * The insertion point of a block of revealed cards in `parentId`'s children
+ * column, deduced from the block's NEIGHBORHOOD in the card-children order.
  *
- * Une page révélée n'est pas un dépliage : ses cartes appartiennent à une suite
- * déjà posée, donc elles doivent tomber DANS cette suite, à leur rang, et non à
- * côté du parent. D'où l'ordre des préférences :
- *  - un voisin posé AVANT le bloc : on se pose sous lui, même colonne ;
- *  - sinon un voisin posé APRÈS : on prend sa place et on le pousse vers le bas ;
- *  - sinon rien n'est posé de cette fratrie : on retombe sur la pose latérale de
- *    `layoutAfterExpand`, seul repère restant.
+ * A revealed page is not an expansion: its cards belong to an already laid out
+ * sequence, so they must fall WITHIN that sequence, at their rank, and not
+ * beside the parent. Hence the order of preference:
+ *  - a sibling laid out BEFORE the block: we land under it, same column;
+ *  - failing that, a sibling laid out AFTER: we take its place and push it down;
+ *  - failing that, nothing of this sibling group is laid out: we fall back to
+ *    `layoutAfterExpand`'s lateral placement, the only landmark left.
  */
 function insertionPointFor(
   graph: Graph,
@@ -288,8 +285,8 @@ function insertionPointFor(
   if (firstNew >= 0) {
     for (let i = firstNew - 1; i >= 0; i--) {
       const rect = positions.get(cards[i]!)
-      // Le dernier posé AVANT le bloc : le bloc s'ouvre juste sous lui, et lui
-      // ne bouge pas (son `y` est strictement au-dessus du seuil).
+      // The last one laid out BEFORE the block: the block opens right under it,
+      // and it does not move (its `y` is strictly above the threshold).
       if (rect) {
         const y = rect.y + rect.height + NODE_GAP
         return { colX: rect.x, blockTopY: y, thresholdY: y }
@@ -297,17 +294,17 @@ function insertionPointFor(
     }
     for (let i = firstNew + 1; i < cards.length; i++) {
       const rect = positions.get(cards[i]!)
-      // Le premier posé APRÈS : le bloc prend son sommet, lui-même et tout ce
-      // qui le suit descendent (seuil inclusif, il est pile dessus).
+      // The first one laid out AFTER: the block takes its top, and it plus
+      // everything below descends (inclusive threshold, it sits exactly on it).
       if (rect) return { colX: rect.x, blockTopY: rect.y, thresholdY: rect.y }
     }
   }
 
   const anchor = anchorRectFor(graph, positions, parentId, metrics)
   if (!anchor) return undefined
-  // Aucune fratrie posée : pose latérale, comme un dépliage. Le seuil reste la
-  // médiane de l'ancre — celui de `layoutAfterExpand` — sans quoi l'ancre
-  // elle-même, dont le sommet est à `blockTopY`, descendrait avec le reste.
+  // No sibling laid out: lateral placement, like an expansion. The threshold
+  // stays the anchor's midline — `layoutAfterExpand`'s — or the anchor itself,
+  // whose top is at `blockTopY`, would descend with the rest.
   return {
     colX: anchor.x + anchor.width + 48,
     blockTopY: anchor.y,
@@ -327,9 +324,9 @@ export interface StructureLayoutEngine {
     metrics?: NodeMetrics,
   ): Promise<LayoutResult>
   /**
-   * Insère les cartes d'une page fraîchement révélée sous `parentId`, DANS la
-   * colonne de ses enfants déjà posés — contrairement à `layoutAfterExpand`,
-   * qui ouvre un sous-arbre à CÔTÉ de son ancre.
+   * Inserts the cards of a freshly revealed page under `parentId`, WITHIN the
+   * column of its already laid out children — unlike `layoutAfterExpand`, which
+   * opens a subtree BESIDE its anchor.
    */
   layoutAfterReveal(
     prev: LayoutResult,
@@ -354,15 +351,15 @@ const LAYOUT_OPTIONS = {
 }
 
 /**
- * La config du bloc RÉVÉLÉ. Une page révélée est une tranche d'une fratrie que
- * la mise en page globale rangerait en UNE colonne — mais dans le bloc isolé le
- * parent manque, donc chaque carte est une composante connexe à elle seule et
- * ELK les empaquette côte à côte pour équilibrer le ratio. Le bloc sortirait en
- * grille, là où la page précédente est une colonne : refuser la séparation des
- * composantes rend à la fratrie l'alignement qu'elle aurait eu.
+ * The config of the REVEALED block. A revealed page is a slice of a sibling
+ * group that the global layout would arrange in ONE column — but in the isolated
+ * block the parent is missing, so each card is a connected component of its own
+ * and ELK packs them side by side to balance the aspect ratio. The block would
+ * come out as a grid, where the previous page is a column: refusing component
+ * separation gives the sibling group back the alignment it would have had.
  *
- * `layoutAfterExpand` garde `LAYOUT_OPTIONS` : son bloc est un SOUS-ARBRE ouvert
- * de côté, dont l'empaquetage est la géométrie établie de la vue.
+ * `layoutAfterExpand` keeps `LAYOUT_OPTIONS`: its block is a SUBTREE opened to
+ * the side, whose packing is the view's established geometry.
  */
 const COLUMN_BLOCK_OPTIONS = {
   ...LAYOUT_OPTIONS,
@@ -389,11 +386,11 @@ export function createStructureLayoutEngine(opts?: { elkFactory?: ElkFactory }):
       visible: Set<NodeId>,
       metrics: NodeMetrics = DEFAULT_METRICS,
     ): Promise<LayoutResult> {
-      // Une mise en page globale rebat toutes les positions : les décalages
-      // mémorisés décrivent des `y` qui n'existent plus, et les annuler à un
-      // repli ultérieur remonterait des cartes sans raison. La mémoire des
-      // deltas ne vaut que pour la suite d'opérations incrémentales dont elle
-      // est née — ce layout en ouvre une nouvelle.
+      // A global layout reshuffles every position: the memorized shifts describe
+      // `y` values that no longer exist, and undoing them on a later collapse
+      // would raise cards for no reason. The delta memory is only valid for the
+      // sequence of incremental operations it was born in — this layout opens a
+      // new one.
       expansionDeltas.clear()
 
       const elk = elkFactory()
@@ -485,10 +482,10 @@ export function createStructureLayoutEngine(opts?: { elkFactory?: ElkFactory }):
       for (const [id, rect] of prev.positions) positions.set(id, { ...rect })
 
       const newlyVisible = newlyVisibleIds(graph, prev.positions, visible)
-      // Révéler une page d'un nœud replié, ou re-révéler une page déjà posée,
-      // n'ajoute rien à dessiner : ne RIEN poser et ne RIEN décaler, comme la
-      // branche no-op de `layoutAfterExpand`. Décaler ici creuserait un trou
-      // qu'aucun repli ne saurait refermer.
+      // Revealing a page of a collapsed node, or re-revealing an already laid
+      // out page, adds nothing to draw: lay out NOTHING and shift NOTHING, like
+      // `layoutAfterExpand`'s no-op branch. Shifting here would dig a hole no
+      // collapse could ever close.
       if (newlyVisible.length === 0) return { positions }
 
       const insertion = insertionPointFor(
@@ -502,9 +499,9 @@ export function createStructureLayoutEngine(opts?: { elkFactory?: ElkFactory }):
 
       placeBlock(positions, block, insertion.colX, insertion.blockTopY)
 
-      // Le bloc s'INSÈRE : tout ce qui commence au point d'insertion ou plus bas
-      // lui cède la place, de sa hauteur plus l'écart inter-cartes. Le seuil est
-      // inclusif parce que la carte suivante est exactement dessus.
+      // The block is INSERTED: everything starting at the insertion point or
+      // below makes room for it, by its height plus the inter-card gap. The
+      // threshold is inclusive because the next card sits exactly on it.
       const delta = block.height + NODE_GAP
       for (const [id, rect] of prev.positions) {
         if (rect.y >= insertion.thresholdY) {
@@ -512,14 +509,14 @@ export function createStructureLayoutEngine(opts?: { elkFactory?: ElkFactory }):
         }
       }
 
-      // Le décalage est mémorisé sous `parentId` — la clé du repli qui le
-      // défera — et ACCUMULÉ : plusieurs pages peuvent être révélées avant le
-      // moindre repli, et écraser l'entrée laisserait les décalages précédents
-      // orphelins sur des cartes qui, elles, ne reviendraient jamais en place.
-      // Sommer les deltas et garder le seuil le plus haut est une approximation
-      // assumée — la même famille que celle documentée en tête de
-      // `layoutAfterCollapse` : elle défait trop largement quand les blocs
-      // insérés ne se recouvrent pas exactement, et c'est `tidy()` qui répare.
+      // The shift is memorized under `parentId` — the key of the collapse that
+      // will undo it — and ACCUMULATED: several pages can be revealed before any
+      // collapse, and overwriting the entry would leave the previous shifts
+      // orphaned on cards that would then never return to their place. Summing
+      // the deltas and keeping the highest threshold is an accepted
+      // approximation — the same family as the one documented at the top of
+      // `layoutAfterCollapse`: it undoes too broadly when the inserted blocks do
+      // not overlap exactly, and `tidy()` is what repairs it.
       const previous = expansionDeltas.get(parentId)
       expansionDeltas.set(
         parentId,

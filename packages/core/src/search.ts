@@ -84,11 +84,11 @@ export function buildSearchIndex(graph: Graph): SearchIndex {
         lower: row.key.toLowerCase(),
       })
 
-      // La VALEUR d'une ligne-tableau n'est pas indexée : c'est un nombre
-      // d'éléments rendu « 3 items », pas une donnée du document. L'indexer
-      // ferait correspondre tous les tableaux du document à « items », et
-      // « 3 » à tout tableau de trois éléments. Le contenu réel du tableau est
-      // indexé là où il vit désormais, sur les nœuds de ses éléments.
+      // The VALUE of an array row is not indexed: it is an element count
+      // rendered as "3 items", not data from the document. Indexing it would
+      // match every array in the document against "items", and "3" against
+      // every three-element array. The array's real content is indexed where it
+      // now lives, on the nodes of its elements.
       if (row.valueType === "array") continue
 
       // Add row value with field set to row key (same dedup bucket as key)

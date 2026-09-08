@@ -7,12 +7,11 @@ export interface ScalarRow {
 }
 
 /**
- * La ligne qui REPRÉSENTE un tableau enfant élidé sur la carte de son parent.
- * `value` porte le nombre d'éléments, et `arrayId` désigne le nœud tableau —
- * c'est lui, et non le parent, qui reste l'unité de pli : garder cet
- * identifiant ici est ce qui permet à `CollapseState`, `expandPathTo` et
- * l'auto-dépliage de la recherche de continuer à travailler par id de nœud,
- * sans connaître la notion de ligne.
+ * The row that REPRESENTS an elided child array on its parent's card. `value`
+ * carries the element count, and `arrayId` designates the array node — it, and
+ * not the parent, remains the unit of collapse: keeping that identifier here is
+ * what lets `CollapseState`, `expandPathTo` and search auto-expansion keep
+ * working by node id, without knowing anything about rows.
  */
 export interface ArrayRow {
   key: string
@@ -24,10 +23,10 @@ export interface ArrayRow {
 export type Row = ScalarRow | ArrayRow
 
 /**
- * Clé d'une ligne dont la VALEUR SEULE fait le contenu : le document racine
- * quand il est scalaire, et chaque élément scalaire d'un tableau. Le rendu
- * omet la clé pour ces lignes — répéter `tags[0]` en en-tête puis en clé
- * n'apprendrait rien.
+ * Key of a row whose VALUE ALONE is the content: the root document when it is
+ * scalar, and every scalar element of an array. Rendering omits the key for
+ * those rows — repeating `tags[0]` in the header and then as the key would
+ * teach nothing.
  */
 export const VALUE_ONLY_KEY = "$value"
 
@@ -39,30 +38,28 @@ export interface BaseNode {
   parentId: NodeId | null
   childIds: NodeId[]
   /**
-   * Le nœud est représenté par une LIGNE sur la carte de son parent, et non
-   * par une carte à lui : ni boîte dans la mise en page, ni rect dans
-   * `positions`, ni carte dessinée. Il reste un nœud à part entière, avec un
-   * id, des enfants et un état de pli — c'est ce qui laisse `CollapseState`,
-   * `expandPathTo` et l'auto-dépliage de la recherche travailler par id, sans
-   * connaître la notion de ligne.
+   * The node is represented by a ROW on its parent's card, not by a card of its
+   * own: no box in the layout, no rect in `positions`, no card drawn. It stays a
+   * full-fledged node, with an id, children and a collapse state — that is what
+   * lets `CollapseState`, `expandPathTo` and search auto-expansion work by id,
+   * without knowing anything about rows.
    *
-   * Décidé une fois par `buildGraph` et STOCKÉ plutôt que recalculé, parce que
-   * l'élision n'est pas une propriété locale : elle demande un parent DESSINÉ
-   * pour porter la ligne. Un tableau dont le parent est lui-même élidé garde
-   * donc sa carte, et le document racine n'est jamais élidé — sans quoi un
-   * document qui est un tableau nu n'aurait aucune carte du tout.
+   * Decided once by `buildGraph` and STORED rather than recomputed, because
+   * elision is not a local property: it requires a DRAWN parent to carry the
+   * row. An array whose parent is itself elided therefore keeps its card, and
+   * the root document is never elided — otherwise a document that is a bare
+   * array would have no card at all.
    */
   elided: boolean
   /**
-   * Combien d'enfants apparaissent comme des CARTES, c'est-à-dire ce que le
-   * chevron d'en-tête révèle réellement. Distinct de `childIds.length` depuis
-   * l'élision : une entité dont les seuls enfants sont des tableaux n'a rien à
-   * déplier par son en-tête — ses tableaux sont déjà là, en lignes — et
-   * afficher un chevron et une pastille « 2 » lui promettrait un geste sans
-   * effet.
+   * How many children appear as CARDS, that is, what the header chevron
+   * actually reveals. Distinct from `childIds.length` since elision: an entity
+   * whose only children are arrays has nothing to expand from its header — its
+   * arrays are already there, as rows — and showing a chevron and a "2" badge
+   * would promise it a gesture with no effect.
    *
-   * Stocké parce que `badgeTextFor` et `measureNode` ne reçoivent que le nœud,
-   * jamais le graphe : le calculer demanderait de résoudre chaque enfant.
+   * Stored because `badgeTextFor` and `measureNode` only receive the node, never
+   * the graph: computing it would require resolving every child.
    */
   cardChildCount: number
 }
@@ -85,10 +82,10 @@ export interface ArrayNode extends BaseNode {
 export type GraphNode = EntityNode | ObjectNode | ArrayNode
 
 /**
- * Le plus proche ancêtre DESSINÉ de `id`, `id` lui-même s'il est dessiné, ou
- * `null` si la chaîne casse. Remonte tant que les nœuds sont élidés, et non
- * d'un seul cran : un tableau imbriqué dans un tableau élidé demande plusieurs
- * remontées, et c'est le cas qu'une résolution à un niveau rate.
+ * The nearest DRAWN ancestor of `id`, `id` itself if it is drawn, or `null` if
+ * the chain breaks. Walks up as long as nodes are elided, not by a single step:
+ * an array nested inside an elided array needs several hops, and that is the
+ * case a one-level resolution gets wrong.
  */
 export function nearestDrawn(graph: Graph, id: NodeId): NodeId | null {
   let current: NodeId | null = id
@@ -110,19 +107,19 @@ export interface ContainEdge {
 export interface RefEdge {
   kind: "ref"
   /**
-   * Le nœud qui PORTE la ligne : l'entité pour `customerId`, le value object
-   * pour `lines[*].productRef`. L'invariant « `field` est une clé de ligne de
-   * `from` » tient donc dans les deux cas, et tout ce qui travaille à la ligne
-   * (teinte de la valeur, croix de référence cassée, `refEdges(from)`, panneau
-   * de détail) continue de lire `from` sans rien savoir des value objects.
+   * The node that CARRIES the row: the entity for `customerId`, the value object
+   * for `lines[*].productRef`. The invariant "`field` is a row key of `from`"
+   * therefore holds in both cases, and everything that works at row level (value
+   * tint, broken-reference cross, `refEdges(from)`, detail panel) keeps reading
+   * `from` without knowing anything about value objects.
    */
   from: NodeId
   /**
-   * L'ENTITÉ qui a déclaré la référence — `from` lui-même quand le chemin n'a
-   * aucune navigation. C'est le niveau auquel la relation existe : un value
-   * object n'a pas d'identité propre, sa référence est celle de son entité.
-   * D'où sa lecture par l'appartenance d'agrégat, la mise en page deux niveaux
-   * et l'estompage, qui raisonnent tous en entités.
+   * The ENTITY that declared the reference — `from` itself when the path has no
+   * navigation. That is the level at which the relation exists: a value object
+   * has no identity of its own, its reference is its entity's. Hence its use by
+   * aggregate membership, the two-level layout and dimming, which all reason in
+   * terms of entities.
    */
   fromEntity: NodeId
   to: NodeId | null
@@ -134,9 +131,9 @@ export interface RefEdge {
 
 export interface Diagnostic {
   /**
-   * `unresolved-reference` porte sur une DÉCLARATION, pas sur un nœud : son
-   * `path` est la clé écrite dans la config (`Cart.lines[*].productRef`) et non
-   * un pointeur, puisque justement aucun nœud ne l'a satisfaite.
+   * `unresolved-reference` is about a DECLARATION, not a node: its `path` is the
+   * key written in the config (`Cart.lines[*].productRef`) and not a pointer,
+   * precisely because no node satisfied it.
    */
   code: "dangling-ref" | "duplicate-id" | "missing-id" | "unresolved-reference"
   path: string
@@ -155,8 +152,8 @@ export interface Graph {
 
 export class GraphTooLargeError extends Error {
   constructor(public count: number, public max: number) {
-    // Le plafond est délibérément relevable : le message doit nommer le levier,
-    // sinon l'utilisateur bloqué n'a aucune issue depuis la CLI.
+    // The cap is deliberately raisable: the message must name the lever, or the
+    // blocked user has no way out from the CLI.
     super(`Graph exceeds maxNodes: ${count} > ${max} — relevez "maxNodes" dans la config (option -c de la CLI)`)
     this.name = "GraphTooLargeError"
   }

@@ -12,9 +12,9 @@ interface Point {
 }
 
 /**
- * Tolérance de l'appartenance au cercle. Un point de support est, par
- * construction, exactement sur le bord ; sans marge, l'arrondi flottant le
- * rejetterait à l'itération suivante et relancerait une recherche déjà faite.
+ * Tolerance of circle membership. A support point sits, by construction, exactly
+ * on the boundary; without slack, floating-point rounding would reject it on the
+ * next iteration and restart a search already done.
  */
 const EPSILON = 1e-9
 
@@ -25,7 +25,7 @@ function contains(c: Circle, p: Point): boolean {
   return dx * dx + dy * dy <= bound * bound
 }
 
-/** Cercle de diamètre `[a, b]`. */
+/** Circle with `[a, b]` as diameter. */
 function fromTwo(a: Point, b: Point): Circle {
   return {
     cx: (a.x + b.x) / 2,
@@ -35,9 +35,8 @@ function fromTwo(a: Point, b: Point): Circle {
 }
 
 /**
- * Cercle circonscrit à trois points. S'ils sont colinéaires il n'en existe
- * pas : le plus grand des trois cercles sur diamètre les contient tous les
- * trois et fait l'affaire.
+ * Circle circumscribed about three points. If they are collinear none exists:
+ * the largest of the three diameter circles contains all three and does the job.
  */
 function fromThree(a: Point, b: Point, c: Point): Circle {
   const d = 2 * (a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y))
@@ -57,42 +56,42 @@ function fromThree(a: Point, b: Point, c: Point): Circle {
 }
 
 /**
- * Algorithme de Welzl, dans sa forme itérative à trois boucles imbriquées : on
- * ajoute les points un à un, et dès qu'un point sort du cercle courant on
- * refait la recherche en le forçant sur le bord (puis deux points sur le bord,
- * puis trois — un cercle minimal est déterminé par deux ou trois points de
- * support).
+ * Welzl's algorithm, in its iterative three-nested-loop form: points are added
+ * one at a time, and as soon as a point falls outside the current circle the
+ * search is redone with that point forced onto the boundary (then two points on
+ * the boundary, then three — a minimal circle is determined by two or three
+ * support points).
  *
- * **L'entrée n'est PAS mélangée**, et c'est délibéré. La borne linéaire en
- * espérance de Welzl repose sur une permutation aléatoire des points ; sans
- * elle, le pire cas est cubique. Mais ce dépôt exige un déterminisme au BIT
- * (voir l'amorçage FNV-1a de `graph-layout.ts` et les tests de déterminisme
- * de la mise en page), et un mélange — même à graine fixe — est une pièce mobile
- * de plus sur ce chemin. Les tailles en jeu rendent l'arbitrage facile : un
- * cluster est ici un agrégat, soit 4 points pour le cas courant (une seule
- * carte) et 20 pour le plus gros mesuré sur le jeu de la démo (5 cartes).
+ * **The input is NOT shuffled**, and that is deliberate. Welzl's expected-linear
+ * bound rests on a random permutation of the points; without it, the worst case
+ * is cubic. But this repo demands BIT-level determinism (see the FNV-1a seeding
+ * in `graph-layout.ts` and the layout determinism tests), and a shuffle — even
+ * with a fixed seed — is one more moving part on that path. The sizes at stake
+ * make the trade-off easy: a cluster is an aggregate here, so 4 points for the
+ * common case (a single card) and 20 for the largest measured on the demo
+ * dataset (5 cards).
  *
- * « Il cesserait de l'être sur des agrégats de plusieurs centaines de cartes »,
- * disait cette note sans l'avoir mesuré. C'est maintenant chiffré, et c'est
- * juste — avec une nuance qui compte depuis que le placement intra-agrégat est
- * RADIAL (`graph-layout.ts`). Le radial pose les cartes SUR DES CERCLES,
- * donc une grande part des coins se retrouve près du bord du cercle englobant :
- * c'est le cas adverse de Welzl non mélangé, celui qui force le plus de
- * reconstructions du jeu de support. Mesuré, par appel, étagères → radial :
+ * "It would stop being so on aggregates of several hundred cards", this note used
+ * to say, without having measured it. It is now quantified, and it is right —
+ * with one nuance that matters since intra-aggregate placement became RADIAL
+ * (`graph-layout.ts`). Radial places cards ON CIRCLES, so a large share of the
+ * corners ends up near the boundary of the enclosing circle: that is unshuffled
+ * Welzl's adversarial case, the one that forces the most rebuilds of the support
+ * set. Measured, per call, shelves → radial:
  *
- *    41 cartes (164 coins)    0,0187 → 0,0352 ms
- *    66 cartes (264 coins)    0,0261 → 0,0686 ms
- *   157 cartes (628 coins)    0,0673 → 0,2834 ms
- *   297 cartes (1188 coins)   0,2158 → 1,6732 ms
+ *    41 cards (164 corners)    0.0187 → 0.0352 ms
+ *    66 cards (264 corners)    0.0261 → 0.0686 ms
+ *   157 cards (628 corners)    0.0673 → 0.2834 ms
+ *   297 cards (1188 corners)   0.2158 → 1.6732 ms
  *
- * La croissance est bien superlinéaire sous radial (×7,2 en cartes → ×48 en
- * temps), donc l'avertissement tient et arrive plus tôt qu'avant. Mais
- * l'ARBITRAGE ne change pas : à l'échelle visée — 60 cartes dans le plus gros
- * agrégat de test — c'est 0,07 ms par appel, et même à 297 cartes ces 1,7 ms
- * pèsent 21 % d'un layout de 7,8 ms, très loin derrière la simulation O(k²) du
- * niveau 2 (169 ms à 167 disques). Rien ici ne justifie d'introduire un mélange,
- * donc l'ordre reste fixe. Ce qui justifierait de rouvrir la question : un
- * agrégat unique de plusieurs centaines de cartes dans un jeu réel.
+ * Growth is indeed superlinear under radial (×7.2 in cards → ×48 in time), so
+ * the warning holds and comes sooner than before. But the TRADE-OFF does not
+ * change: at the intended scale — 60 cards in the largest test aggregate — that
+ * is 0.07 ms per call, and even at 297 cards those 1.7 ms account for 21% of a
+ * 7.8 ms layout, far behind level 2's O(k²) simulation (169 ms at 167 discs).
+ * Nothing here justifies introducing a shuffle, so the order stays fixed. What
+ * would justify reopening the question: a single aggregate of several hundred
+ * cards in a real dataset.
  */
 function welzl(points: Point[]): Circle {
   let circle: Circle = { cx: points[0]!.x, cy: points[0]!.y, r: 0 }
@@ -112,17 +111,17 @@ function welzl(points: Point[]): Circle {
 }
 
 /**
- * Cercle englobant **minimal** des coins des rectangles, son rayon augmenté de
+ * **Minimal** enclosing circle of the rectangles' corners, its radius grown by
  * `padding`.
  *
- * Gonfler le rayon en sortie plutôt que les rectangles en entrée est ici exact
- * — contrairement au cas polygonal — parce que dilater un cercle de `padding`
- * revient exactement à ajouter `padding` à son rayon : la marge est la même
- * dans toutes les directions, sans bissectrice ni coin rentrant à traiter.
+ * Inflating the radius on the way out rather than the rectangles on the way in
+ * is exact here — unlike the polygonal case — because dilating a circle by
+ * `padding` amounts exactly to adding `padding` to its radius: the margin is the
+ * same in every direction, with no bisector or reflex corner to handle.
  *
- * Cas dégénérés : entrée vide (cercle nul à l'origine), un seul rectangle (son
- * cercle circonscrit), rectangles identiques empilés (idem), centres
- * colinéaires (cf. `fromThree`), rectangle de taille nulle (un point).
+ * Degenerate cases: empty input (null circle at the origin), a single rectangle
+ * (its circumscribed circle), identical stacked rectangles (same), collinear
+ * centers (cf. `fromThree`), zero-size rectangle (a point).
  */
 export function enclosingCircle(rects: Rect[], padding: number): Circle {
   if (rects.length === 0) return { cx: 0, cy: 0, r: 0 }

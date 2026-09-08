@@ -1,36 +1,36 @@
 /**
- * Point d'entrée public du cœur. Ce fichier est un CONTRAT, pas un index
- * exhaustif : n'y figure que ce qu'un consommateur hors du paquet utilise
- * réellement (le renderer, ses tests, la démo, la doc) plus ce qui est
- * nécessaire pour NOMMER les types de cette API. Tout le reste reste exporté
- * de son module — les tests du cœur importent `../src/<module>.js` — sans
- * pour autant devenir de la surface publique à maintenir.
+ * Public entry point of the core. This file is a CONTRACT, not an exhaustive
+ * index: only what a consumer outside the package actually uses appears here
+ * (the renderer, its tests, the demo, the docs) plus what is needed to NAME the
+ * types of that API. Everything else stays exported from its own module — the
+ * core's tests import `../src/<module>.js` — without thereby becoming public
+ * surface to maintain.
  *
- * `test/api-surface.test.ts` fige la liste des exports d'exécution : toute
- * modification ici doit y être répercutée volontairement.
+ * `test/api-surface.test.ts` freezes the list of runtime exports: any change
+ * here must be mirrored there deliberately.
  */
 
 export const VERSION = "0.1.0"
 
-// `parseSelector`, `parseRelativePath`, `matchesPath` et `PathSegment` sont
-// l'implémentation de la grammaire de sélecteurs, consommée par `config.ts` et
-// `build.ts` seuls : la config publique se déclare en chaînes, pas en segments.
+// `parseSelector`, `parseRelativePath`, `matchesPath` and `PathSegment` are the
+// implementation of the selector grammar, consumed by `config.ts` and `build.ts`
+// alone: the public config is declared in strings, not in segments.
 export { ConfigError } from "./selector.js"
 export {
   validateConfig,
   type DataGraphConfig,
-  // Type de retour de `validateConfig` ; `ReferenceDecl` type l'un de ses
-  // champs, il ne peut donc pas rester hors du contrat.
+  // Return type of `validateConfig`; `ReferenceDecl` types one of its fields,
+  // so it cannot stay outside the contract.
   type ValidatedConfig,
   type ReferenceDecl,
 } from "./config.js"
 
 export { buildGraph } from "./build.js"
-// `PAGE_SIZE` et `pageOf` sortent avec `CollapseState` parce que la pagination
-// n'est pas un détail interne : le renderer dessine les jetons de trous et doit
-// nommer les mêmes pages que l'état de pli. `INITIAL_CARD_BUDGET` sort pour la
-// même raison : c'est le défaut qu'un appelant surcharge par `opts`, et le
-// nommer évite qu'il soit recopié en littéral hors du cœur.
+// `PAGE_SIZE` and `pageOf` go out with `CollapseState` because pagination is not
+// an internal detail: the renderer draws the gap tokens and must name the same
+// pages as the collapse state. `INITIAL_CARD_BUDGET` goes out for the same
+// reason: it is the default a caller overrides through `opts`, and naming it
+// keeps it from being copied as a literal outside the core.
 export {
   CollapseState,
   PAGE_SIZE,
@@ -40,11 +40,11 @@ export {
 } from "./collapse.js"
 export { buildAggregates, type Aggregate, type AggregateIndex } from "./aggregate.js"
 export { enclosingCircle, type Circle } from "./hull.js"
-// `SearchIndex` est relayé en TYPE seul : un index ne s'obtient que de
-// `buildSearchIndex`, et son constructeur prend une entrée dénormalisée
-// (`SearchEntry`, avec son champ `lower`) qui est un détail d'implémentation.
-// Exporter la classe comme valeur promettait donc un `new` que personne ne
-// peut écrire ; le renderer ne s'en sert d'ailleurs qu'en position de type.
+// `SearchIndex` is relayed as a TYPE only: an index is only ever obtained from
+// `buildSearchIndex`, and its constructor takes a denormalized input
+// (`SearchEntry`, with its `lower` field) that is an implementation detail.
+// Exporting the class as a value therefore promised a `new` nobody can write;
+// the renderer only uses it in type position anyway.
 export { buildSearchIndex, type SearchIndex, type SearchResult } from "./search.js"
 export {
   measureNode,
@@ -59,20 +59,20 @@ export {
 } from "./measure.js"
 export {
   createStructureLayoutEngine,
-  // `rowRectFor` sert à `packages/renderer/test/edges.test.ts`, qui importe le
-  // cœur par le nom du paquet — donc par ce barrel.
+  // `rowRectFor` is used by `packages/renderer/test/edges.test.ts`, which
+  // imports the core by package name — hence through this barrel.
   rowRectFor,
   anchorRectFor,
   nearestCardRectFor,
   type Rect,
   type LayoutResult,
   type StructureLayoutEngine,
-  // Dans les options de `createStructureLayoutEngine`.
+  // In the options of `createStructureLayoutEngine`.
   type ElkFactory,
 } from "./structure-layout.js"
-// `nearestDrawn` et `VALUE_ONLY_KEY` restent internes : le premier est un
-// détail du calcul de layout, le second la clé conventionnelle d'une ligne
-// « valeur seule », que `isValueOnlyRow` expose déjà sous forme de prédicat.
+// `nearestDrawn` and `VALUE_ONLY_KEY` stay internal: the first is a detail of
+// the layout computation, the second the conventional key of a "value only"
+// row, which `isValueOnlyRow` already exposes as a predicate.
 export {
   GraphTooLargeError,
   type NodeId,

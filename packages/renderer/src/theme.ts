@@ -8,23 +8,23 @@ import {
 } from "@defsquare/data-graph-tokens";
 
 /**
- * Les valeurs viennent toutes du paquet de tokens, source de vérité partagée
- * avec les variables CSS du shell de la démo — un token corrigé là-bas doit se
- * voir ici sans recopie. En revanche les TYPES (`Theme`, `TypeStyle`,
- * `ThemeOverride`) restent définis ici : ils forment l'API publique du
- * renderer, que ses consommateurs ne doivent pas payer d'une dépendance de
- * types vers le paquet de tokens.
+ * The values all come from the tokens package, the source of truth shared with
+ * the CSS variables of the demo shell — a token fixed over there must show up
+ * here without any recopying. The TYPES (`Theme`, `TypeStyle`, `ThemeOverride`),
+ * on the other hand, stay defined here: they form the renderer's public API, and
+ * its consumers must not pay for it with a type dependency on the tokens
+ * package.
  *
- * Les groupes sont recopiés par étalement (`{ ...defsquare.light.surface }`)
- * plutôt que référencés : les tokens sont partagés entre les deux sorties, et
- * un thème résolu ne doit jamais pouvoir muter la source.
+ * Groups are copied by spreading (`{ ...defsquare.light.surface }`) rather than
+ * referenced: tokens are shared between both outputs, and a resolved theme must never
+ * be able to mutate the source.
  */
 
 export interface TypeStyle {
   family: "body" | "mono";
   size: number;
   weight: number;
-  /** Interlettrage en em. Absent = 0. */
+  /** Letter spacing in em. Absent = 0. */
   tracking?: number;
 }
 
@@ -33,7 +33,7 @@ export interface Theme {
   surface: { canvas: string; card: string; cardMuted: string };
   ink: { primary: string; muted: string; subtle: string };
   accent: {
-    /** Rail de repli quand `entityPalette` est vide. */
+    /** Fallback rail when `entityPalette` is empty. */
     entity: string;
     selection: string;
     match: string;
@@ -55,7 +55,7 @@ export interface Theme {
     match: number;
     matchCurrent: number;
   };
-  /** Couleurs de rail, assignées par ordre de déclaration des types d'entité. */
+  /** Rail colors, assigned in declaration order of the entity types. */
   entityPalette: string[];
   byEntityType?: Record<string, { accent: string }>;
 }
@@ -66,15 +66,15 @@ export type ThemeOverride = DeepPartial<Omit<Theme, "entityPalette" | "byEntityT
   byEntityType?: Theme["byEntityType"];
 };
 
-// `fonts.title` du paquet de tokens n'est pas repris : il n'existe que pour le
-// shell DOM, le canvas Pixi ne dessine jamais de titre.
+// The tokens package's `fonts.title` is not carried over: it exists only for the DOM
+// shell, the Pixi canvas never draws a title.
 const DEFSQUARE_FONTS = {
   body: pixiFontStack(defsquare.fonts.body),
   mono: pixiFontStack(defsquare.fonts.mono),
 };
 
-// Commune aux deux thèmes defsquare : ces couleurs ne servent qu'en rail de
-// 3px et en pastille, elles tiennent donc sur fond clair comme sombre.
+// Shared by both defsquare themes: these colors only ever serve as a 3px rail or a
+// pill, so they hold up on light and dark backgrounds alike.
 const DEFSQUARE_PALETTE = [...defsquare.entityPalette];
 
 const TYPOGRAPHY: Theme["typography"] = {
@@ -84,8 +84,8 @@ const TYPOGRAPHY: Theme["typography"] = {
   value: { ...tokenTypography.value },
 };
 
-// Le canvas ne connaît qu'un rayon, celui des cartes ; les autres échelons de
-// `radii` ne servent qu'au shell DOM.
+// The canvas knows a single radius, the cards'; the other rungs of `radii` serve the
+// DOM shell only.
 const RADII: Theme["radii"] = { card: tokenRadii.card };
 
 const STROKES: Theme["strokes"] = { ...tokenStrokes };
@@ -149,9 +149,9 @@ function mergeStyle(base: TypeStyle, over?: DeepPartial<TypeStyle>): TypeStyle {
 }
 
 /**
- * Fusionne une surcharge partielle sur `base` (défaut `defsquareLight`).
- * La fusion est profonde d'exactement un niveau par groupe — les groupes sont
- * plats, sauf `typography` dont chaque entrée est elle-même un objet.
+ * Merges a partial override onto `base` (default `defsquareLight`). The merge is deep
+ * by exactly one level per group — groups are flat, except `typography`, whose every
+ * entry is itself an object.
  */
 export function resolveTheme(partial?: ThemeOverride, base: Theme = defsquareLight): Theme {
   return {
@@ -178,10 +178,10 @@ export function resolveTheme(partial?: ThemeOverride, base: Theme = defsquareLig
 }
 
 /**
- * Associe chaque type d'entité à une couleur de rail. L'assignation suit
- * l'ordre de `entityTypes` — que l'appelant tire de l'ordre de déclaration
- * des clés de `config.ids`, pas de l'ordre d'apparition dans les
- * données, pour rester déterministe et sous contrôle de l'auteur.
+ * Maps each entity type to a rail color. The assignment follows the order of
+ * `entityTypes` — which the caller derives from the declaration order of the keys of
+ * `config.ids`, not from the order of appearance in the data, so it stays deterministic
+ * and under the author's control.
  */
 export function entityAccentMap(entityTypes: string[], theme: Theme): Map<string, string> {
   const map = new Map<string, string>();

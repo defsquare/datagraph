@@ -1,184 +1,172 @@
-// Point d'entrée `./graph-layout` : la vue graphe entière, moteur et contrat.
-// Il est volontairement tenu HORS du barrel `index.ts` pour que le chunk reste
-// séparé et le chargement de la vue graphe paresseux par construction — le
-// renderer ne l'atteint que par `import()` dynamique. `test/bundle-purity.test.ts`,
-// ici comme dans le renderer, garde cet invariant.
+// The `./graph-layout` entry point: the whole graph view, engine and contract.
+// It is deliberately kept OUT of the `index.ts` barrel so the chunk stays
+// separate and the graph view's loading stays lazy by construction — the
+// renderer only reaches it through a dynamic `import()`.
+// `test/bundle-purity.test.ts`, here as in the renderer, guards that invariant.
 //
-// Moteur de mise en page de la vue graphe à DEUX NIVEAUX, et le seul.
+// The TWO-LEVEL graph view layout engine, and the only one.
 //
-// IL EST SCINDÉ EN DEUX, et cette scission est la structure du fichier :
-// `extractGraphLayoutInput` (la seule fonction qui lise le `Graph`) produit un
-// `GraphLayoutInput` PLAT, `layoutFromInput` fait tout le calcul sans jamais
-// toucher au graphe ni à un DOM. `createTwoLevelLayoutEngine` n'est que leur
-// composition, à la signature inchangée. Le pourquoi tient en une mesure : sur
-// un audit réel de 6 251 entités le calcul dure ~4,4 s, ce qui n'est tolérable
-// que hors du thread principal — et un `Graph` ne traverse pas un
-// `postMessage`. Le contrat complet est au-dessus de `GraphLayoutInput`, et
-// l'invariant « la scission ne change aucun bit » dans
+// IT IS SPLIT IN TWO, and that split is the structure of the file:
+// `extractGraphLayoutInput` (the only function that reads the `Graph`) produces
+// a FLAT `GraphLayoutInput`, `layoutFromInput` does all the computation without
+// ever touching the graph or a DOM. `createTwoLevelLayoutEngine` is nothing but
+// their composition, with an unchanged signature. The why fits in one
+// measurement: on a real audit of 6,251 entities the computation takes ~4.4 s,
+// which is only tolerable off the main thread — and a `Graph` does not cross a
+// `postMessage`. The full contract sits above `GraphLayoutInput`, and the
+// invariant "the split changes no bit" in
 // `test/graph-layout-identity.test.ts`.
 //
-// Il a remplacé un pipeline global corrigé — `createGraphLayoutEngine`, qui
-// demandait à fcose une mise en page de toutes les cartes puis la réparait par
-// deux passes de relaxation, `separateOverlaps` (cartes) puis
-// `separateClusters` (enveloppes). Ces trois modules ont été RETIRÉS du dépôt
-// avec `cytoscape` et `cytoscape-fcose`. Les nombreux renvois ci-dessous les
-// nomment encore parce que c'est ce contre quoi les choix d'ici ont été
-// mesurés ; leur code vit dans l'historique git, et le doc de sonde cité
-// ci-dessous garde les mesures.
+// It replaced a globally-then-repaired pipeline — `createGraphLayoutEngine`,
+// which asked fcose for a layout of all the cards then patched it with two
+// relaxation passes, `separateOverlaps` (cards) then `separateClusters`
+// (envelopes). Those three modules were REMOVED from the repo along with
+// `cytoscape` and `cytoscape-fcose`. The many references below still name them
+// because that is what the choices here were measured against; their code lives
+// in the git history, and the probe doc cited below keeps the measurements.
 //
-// Porté depuis la sonde (`bench/layout-two-level.ts`, retirée elle aussi) —
-// voir `docs/superpowers/spikes/2026-09-01-two-level-layout.md` pour les
-// mesures complètes. L'algorithme est repris à l'identique sur le fond ;
-// l'enveloppe change (factory + `layout()` async, pour respecter
-// `GraphLayoutEngine`, déclaré plus bas dans ce fichier), et
-// deux constantes de la passe dure finale sont resserrées — voir la
-// documentation de `hardSeparation` (`disc-simulation.ts`), qui donne les
-// mesures et ce qu'elles coûtent. Ces
-// deux écarts ne changent rien à la structure ; ils font tenir à toute échelle
-// l'invariant que la sonde n'assurait qu'à 1e-3 près et qu'au-delà de ~200
-// disques elle rompait silencieusement.
+// Ported from the probe (`bench/layout-two-level.ts`, removed as well) — see
+// `docs/superpowers/spikes/2026-09-01-two-level-layout.md` for the complete
+// measurements. The algorithm is carried over identically in substance; the
+// envelope changes (factory + async `layout()`, to honor `GraphLayoutEngine`,
+// declared further down in this file), and two constants of the final hard pass
+// are tightened — see the documentation of `hardSeparation`
+// (`disc-simulation.ts`), which gives the measurements and what they cost. These
+// two departures change nothing structurally; they make the invariant hold at
+// every scale, where the probe only ensured it to within 1e-3 and silently broke
+// it beyond ~200 discs.
 //
-// Le principe tient à une propriété du modèle : l'appartenance à un agrégat est
-// une PARTITION stricte (voir `aggregate.ts`), donc le problème se décompose
-// sans recouvrement de responsabilités.
+// The principle rests on a property of the model: aggregate membership is a
+// strict PARTITION (see `aggregate.ts`), so the problem decomposes with no
+// overlap of responsibilities.
 //
-//   1. INTRA-agrégat — chaque agrégat est packé indépendamment des autres, en
-//      RADIAL (racine au centre, un anneau par distance de référence) s'il a de
-//      la profondeur, en ÉTAGÈRES (lignes centrées) sinon ; l'aiguillage et sa
-//      justification sont au-dessus de `packCluster` (`graph-pack.ts`). Dans
-//      les deux cas la
-//      marge `cardGap` est INCLUSE dans le placement, donc le non-recouvrement
-//      des cartes d'un même agrégat est acquis par construction et pas par
-//      relaxation.
-//   2. INTER-agrégat — chaque agrégat devient un disque rigide : le cercle
-//      englobant minimal de ses cartes plus `hullPadding`, c'est-à-dire
-//      exactement la forme que le renderer peint. Une entité hors agrégat est
-//      un disque singleton, comme dans le `separateClusters` retiré. Les
-//      références inter-agrégats sont agrégées en ressorts pondérés ; une petite
-//      simulation pose les disques, et une passe dure finale fait de
-//      dist ≥ r₁ + r₂ + `clusterGap` un INVARIANT DE SORTIE, pas un espoir de
-//      convergence.
+//   1. INTRA-aggregate — each aggregate is packed independently of the others,
+//      RADIALLY (root at the center, one ring per reference distance) if it has
+//      depth, in SHELVES (centered rows) otherwise; the switch and its
+//      justification sit above `packCluster` (`graph-pack.ts`). In both cases the
+//      `cardGap` margin is INCLUDED in the placement, so non-overlap of the cards
+//      of one aggregate is acquired by construction and not by relaxation.
+//   2. INTER-aggregate — each aggregate becomes a rigid disc: the minimal
+//      enclosing circle of its cards plus `hullPadding`, that is, exactly the
+//      shape the renderer paints. An entity outside any aggregate is a singleton
+//      disc, as in the removed `separateClusters`. Inter-aggregate references are
+//      aggregated into weighted springs; a small simulation places the discs, and
+//      a final hard pass makes dist ≥ r₁ + r₂ + `clusterGap` an EXIT INVARIANT,
+//      not a hope of convergence.
 //
-// Conséquence structurelle : il n'existe plus aucune passe de séparation de
-// cartes. Deux cartes d'agrégats différents ne peuvent pas se recouvrir
-// puisque leurs disques ne se touchent pas, et deux cartes du même agrégat
-// sont packées avec marge. Le coût ne suit donc plus le nombre de CARTES mais
-// le nombre d'AGRÉGATS : k disques × itérations, plus un packing linéaire. Ce
-// fut O(k² · itérations) jusqu'à ce que la collision passe par une grille
-// spatiale — voir la réserve levée en bas de cet en-tête.
+// Structural consequence: there is no card separation pass any more. Two cards
+// of different aggregates cannot overlap since their discs do not touch, and two
+// cards of the same aggregate are packed with a margin. The cost therefore no
+// longer follows the number of CARDS but the number of AGGREGATES: k discs ×
+// iterations, plus a linear packing. It was O(k² · iterations) until collision
+// went through a spatial grid — see the caveat lifted at the bottom of this
+// header.
 //
-// Mesuré par la sonde (médiane de 3 runs, `clusterGap: 160` et
-// `hullPadding: 18` des deux côtés, donc à garanties égales) :
+// Measured by the probe (median of 3 runs, `clusterGap: 160` and
+// `hullPadding: 18` on both sides, hence at equal guarantees):
 //
-//   bigShop(3000) du cœur — 334 entités, 167 agrégats, 0 réf. inter-agrégat
-//     temps        1 624 ms → 143 ms (×11)
-//     bbox         8 370×8 418 → 6 026×5 929 (aire ÷2,0)
-//     remplissage  6,2 % → 12,3 %
-//     paires de cartes sous 16 px : 28 → 0
+//   the core's bigShop(3000) — 334 entities, 167 aggregates, 0 inter-agg. ref.
+//     time         1,624 ms → 143 ms (×11)
+//     bbox         8,370×8,418 → 6,026×5,929 (area ÷2.0)
+//     fill rate    6.2% → 12.3%
+//     card pairs under 16 px: 28 → 0
 //
-//   bigShop(4000) de la démo — 350 entités, 108 agrégats + 8 singletons,
-//   264 références inter-agrégats (le jeu des ~4,2 s de `setView("graph")`)
-//     temps        4 138 ms → 64 ms (×65)
-//     bbox         18 714×19 984 → 8 083×8 437 (aire ÷5,5)
-//     remplissage  2,8 % → 15,1 %
-//     longueur moyenne d'une réf. inter-agrégat : 6 104 px → 1 364 px (÷4,5)
+//   the demo's bigShop(4000) — 350 entities, 108 aggregates + 8 singletons,
+//   264 inter-aggregate references (the dataset behind the ~4.2 s of
+//   `setView("graph")`)
+//     time         4,138 ms → 64 ms (×65)
+//     bbox         18,714×19,984 → 8,083×8,437 (area ÷5.5)
+//     fill rate    2.8% → 15.1%
+//     average length of an inter-agg. ref.: 6,104 px → 1,364 px (÷4.5)
 //
-// Pourquoi le remplissage double à quintuple, et ce n'est pas un réglage : dans
-// le pipeline retiré, fcose éparpillait les membres d'un agrégat, donc le
-// cercle englobant gonflait, donc `separateClusters` écartait de GRANDS cercles
-// presque vides. Ici le cercle est minimal par construction — les cartes sont
-// packées AVANT que le cercle existe — donc tout l'écartement est du couloir
-// utile.
+// Why the fill rate doubles to quintuples, and it is not a tuning knob: in the
+// removed pipeline, fcose scattered an aggregate's members, so the enclosing
+// circle inflated, so `separateClusters` pushed apart LARGE nearly empty circles.
+// Here the circle is minimal by construction — the cards are packed BEFORE the
+// circle exists — so all the separation is useful corridor.
 //
-// Ce moteur n'importe NI cytoscape NI elkjs : il ne dépend que du cœur pur
-// (`hull.ts`, `measure.ts`) et de ses deux niveaux, `graph-pack.ts` (packing
-// intra-agrégat) et `disc-simulation.ts` (écartement des disques), qui ne sont
-// importés que d'ici. Voir l'en-tête ci-dessus pour le canal d'exposition.
+// This engine imports NEITHER cytoscape NOR elkjs: it depends only on the pure
+// core (`hull.ts`, `measure.ts`) and on its two levels, `graph-pack.ts`
+// (intra-aggregate packing) and `disc-simulation.ts` (disc separation), which are
+// imported from here alone. See the header above for the exposure channel.
 //
-// CE QUE CE MOTEUR NE TRANCHE PAS (réserves de la sonde ; celles qui ont été
-// levées depuis le disent, et disent par quoi) :
+// WHAT THIS ENGINE DOES NOT SETTLE (the probe's caveats; those lifted since say
+// so, and say by what):
 //
-//   - RÉSERVE LEVÉE. Le packing intra-agrégat ignorait les arêtes ; il existe
-//     désormais en DEUX MODES, et le choix se fait par cluster sur la
-//     PROFONDEUR de références — voir l'exposé du critère au-dessus de
-//     `packCluster` (`graph-pack.ts`), qui est l'endroit où cette histoire est
-//     racontée en entier.
+//   - CAVEAT LIFTED. Intra-aggregate packing ignored the edges; it now exists in
+//     TWO MODES, and the choice is made per cluster on reference DEPTH — see the
+//     exposition of the criterion above `packCluster` (`graph-pack.ts`), which is
+//     where that story is told in full.
 //
-//     En deux lignes : le radial (racine au centre, un anneau par distance)
-//     encode la profondeur en distance au centre, ce qui n'a de sens que s'il
-//     y a une profondeur à encoder ; les étagères, plus denses, prennent tout
-//     le reste. Mesuré sur `deepAggregate()` — 41 cartes, 4 niveaux :
-//     référence intra-agrégat moyenne 591,4 → 363,0 px, max 976,3 → 488,1 px,
-//     racine du 40e au 1er rang par proximité au centre (597,7 → 16,4 px). Et
-//     sur les deux jeux réels du dépôt, dont tous les agrégats sont plats, le
-//     remplissage ne bouge pas d'un dixième — 12,3 % (cœur) et 15,1 % (démo) —
-//     parce qu'ils restent en étagères.
-//   - RÉSERVE LEVÉE. « O(k²) sur les agrégats […] à ne faire que si ce cardinal
-//     devient réel » : il l'est devenu. Un audit d'architecture réel — 6 251
-//     entités, ~1 300 agrégats — mettait **55,4 s** à se poser, et la même
-//     configuration sans groupes, où chaque entité est son propre disque
-//     (6 251 disques, un régime que le moteur sert légitimement), **23,5
-//     minutes**. La collision passe donc par une GRILLE SPATIALE uniforme,
-//     reconstruite à chaque passe ; l'exposé complet — dimensionnement de la
-//     maille, exhaustivité de la fenêtre, déterminisme, et surtout pourquoi
-//     l'invariant de sortie reste PROUVÉ avec un index qui se périme en cours
-//     de passe — est au-dessus de `collisionPass` (`disc-simulation.ts`), qui
-//     est l'endroit où cette histoire est racontée en entier.
+//     In two lines: radial (root at the center, one ring per distance) encodes
+//     depth as distance to the center, which only makes sense if there is depth
+//     to encode; shelves, denser, take everything else. Measured on
+//     `deepAggregate()` — 41 cards, 4 levels: average intra-aggregate reference
+//     591.4 → 363.0 px, max 976.3 → 488.1 px, root from 40th to 1st by proximity
+//     to the center (597.7 → 16.4 px). And on the repo's two real datasets, whose
+//     aggregates are all flat, the fill rate does not move by a tenth — 12.3%
+//     (core) and 15.1% (demo) — because they stay in shelves.
+//   - CAVEAT LIFTED. "O(k²) over the aggregates […] only worth doing if that
+//     cardinality becomes real": it became real. A real architecture audit —
+//     6,251 entities, ~1,300 aggregates — took **55.4 s** to lay out, and the same
+//     configuration without groups, where each entity is its own disc (6,251
+//     discs, a regime the engine legitimately serves), **23.5 minutes**. Collision
+//     therefore goes through a uniform SPATIAL GRID, rebuilt on every pass; the
+//     complete exposition — cell sizing, window exhaustiveness, determinism, and
+//     above all why the exit invariant stays PROVED with an index that goes stale
+//     mid-pass — sits above `collisionPass` (`disc-simulation.ts`), which is where
+//     that story is told in full.
 //
-//     Mesuré sur cet audit, `layout()` complet, avant → après :
+//     Measured on that audit, full `layout()`, before → after:
 //
-//       agrégats (le régime que la vue graphe exerce)
-//         774 entités / 197 disques        283 ms →   120 ms   (×2,4)
-//       1 147 entités / 238 disques        448 ms →   184 ms   (×2,4)
-//       1 955 entités / 372 disques      1 537 ms →   512 ms   (×3,0)
-//       6 251 entités / 1 300 disques   55 410 ms → 6 065 ms   (×9,1)
+//       aggregates (the regime the graph view exercises)
+//         774 entities / 197 discs         283 ms →   120 ms   (×2.4)
+//       1,147 entities / 238 discs         448 ms →   184 ms   (×2.4)
+//       1,955 entities / 372 discs       1,537 ms →   512 ms   (×3.0)
+//       6,251 entities / 1,300 discs    55,410 ms → 6,065 ms   (×9.1)
 //
-//       sans groupes (un disque par entité)
-//         774 disques                   14 053 ms →   653 ms   (×22)
-//       1 147 disques                   39 606 ms → 1 639 ms   (×24)
-//       1 955 disques                  141 633 ms → 3 738 ms   (×38)
-//       6 251 disques                1 411 453 ms → 21 037 ms  (×67)
+//       without groups (one disc per entity)
+//         774 discs                     14,053 ms →   653 ms   (×22)
+//       1,147 discs                     39,606 ms → 1,639 ms   (×24)
+//       1,955 discs                    141,633 ms → 3,738 ms   (×38)
+//       6,251 discs                  1,411,453 ms → 21,037 ms  (×67)
 //
-//     La colonne « après » ci-dessus date de la grille NUE. Elle a été creusée
-//     depuis par un élagage cellule par cellule — la fenêtre reste dimensionnée
-//     sur le rayon max GLOBAL, mais chaque cellule visitée est filtrée sur le
-//     rayon max qu'elle abrite RÉELLEMENT, ce qui empêche un unique disque géant
-//     d'imposer sa portée à tout le monde. Les deux lignes re-mesurées (médiane
-//     de 3 runs, même machine, grille nue → grille + élagage) :
+//     The "after" column above dates from the BARE grid. It has been dug deeper
+//     since by a cell-by-cell pruning — the window stays sized on the GLOBAL max
+//     radius, but each visited cell is filtered on the max radius it ACTUALLY
+//     hosts, which stops a single giant disc from imposing its reach on everyone.
+//     The two re-measured lines (median of 3 runs, same machine, bare grid → grid
+//     + pruning):
 //
-//       6 251 entités / 1 300 disques    6 096 ms → 4 224 ms   (−31 %)
-//       6 251 disques sans groupes      21 416 ms → 21 626 ms  (+1 %)
+//       6,251 entities / 1,300 discs     6,096 ms → 4,224 ms   (−31%)
+//       6,251 discs without groups      21,416 ms → 21,626 ms  (+1%)
 //
-//     Le second régime, aux rayons quasi uniformes, n'a pas de géant à
-//     contourner : on lui demande seulement de ne rien perdre. Les six autres
-//     lignes n'ont pas été re-mesurées. Détail et preuve d'exhaustivité au-dessus
-//     de `collisionPass`.
+//     The second regime, with near-uniform radii, has no giant to route around:
+//     all we ask of it is to lose nothing. The other six lines were not
+//     re-measured. Detail and exhaustiveness proof above `collisionPass`.
 //
-//     Une piste a par ailleurs été essayée et RETIRÉE — ne poursuivre, d'une
-//     passe dure à l'autre, que les paires dont un bout a bougé. Le jeu « sale »
-//     ne se vide jamais sur un empilement dense (~1 291 disques sur 1 300 pendant
-//     90 % des passes), donc l'alternance coûtait plus qu'elle ne rapportait ;
-//     l'argumentaire chiffré est au-dessus de `hardSeparation`.
+//     A lead was also tried and DROPPED — following, from one hard pass to the
+//     next, only the pairs one end of which moved. The "dirty" set never empties
+//     on a dense pile (~1,291 discs out of 1,300 during 90% of the passes), so the
+//     alternation cost more than it returned; the quantified case sits above
+//     `hardSeparation`.
 //
-//     La PARTIE ressorts de la réserve, elle, tombe pour une autre raison : elle
-//     n'avait pas lieu d'être. Barnes-Hut accélère une répulsion TOUTES PAIRES,
-//     et ce moteur n'en a pas — il n'a que la collision (désormais indexée) et
-//     une gravité vers l'origine, linéaire par construction. Le coût des
-//     ressorts suit le nombre de ressorts AGRÉGÉS, c'est-à-dire les références
-//     inter-agrégats dédoublonnées : linéaire, et ce n'était déjà pas le point
-//     chaud.
+//     The springs PART of the caveat falls for a different reason: it had no
+//     grounds. Barnes-Hut accelerates an ALL-PAIRS repulsion, and this engine has
+//     none — it has only collision (now indexed) and a gravity toward the origin,
+//     linear by construction. The cost of the springs follows the number of
+//     AGGREGATED springs, that is, the deduplicated inter-aggregate references:
+//     linear, and it was not the hot spot to begin with.
 //
-//     Ce qui RESTE quadratique, et qui devient le prochain plafond : le nombre
-//     de passes dures nécessaires croît linéairement avec les disques, si bien
-//     que `MAX_HARD_PASSES` (5000) est saturé au-delà de ~1 700 disques et que
-//     l'invariant d'écart cesse alors d'en être un. Mesures et arbitrage
-//     au-dessus de `hardSeparation`.
-//   - La passe dure finale peut défaire un ressort : la garantie d'écart prime
-//     sur la longueur d'arête. À 264 références sur 116 disques ça ne se voit
-//     pas ; un graphe inter-agrégat très dense pourrait se dégrader — non
-//     sondé.
-//   - L'esthétique est régulière, pas organique (pavage quasi hexagonal sur les
-//     agrégats sans arêtes). Assumé, mais c'est un choix de produit.
+//     What REMAINS quadratic, and becomes the next ceiling: the number of hard
+//     passes needed grows linearly with the discs, so that `MAX_HARD_PASSES`
+//     (5000) saturates beyond ~1,700 discs and the separation invariant then stops
+//     being one. Measurements and trade-off above `hardSeparation`.
+//   - The final hard pass can undo a spring: the separation guarantee takes
+//     precedence over edge length. At 264 references over 116 discs it does not
+//     show; a very dense inter-aggregate graph could degrade — not probed.
+//   - The aesthetic is regular, not organic (near-hexagonal tiling on
+//     aggregates without edges). Accepted, but it is a product choice.
 import type { AggregateIndex } from "./aggregate.js"
 import type { Graph, NodeId } from "./model.js"
 import type { LayoutResult, Rect } from "./structure-layout.js"

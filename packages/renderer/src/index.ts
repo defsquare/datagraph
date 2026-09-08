@@ -1,13 +1,13 @@
 /**
- * Point d'entrée public du renderer. Ce fichier est un CONTRAT, pas un index
- * exhaustif : n'y figure que ce que le README documente et que la démo (ou un
- * hôte) consomme. Le dessin bas niveau de `draw.ts`, la `Camera`, l'`Emitter`
- * et la mesure de police sont les rouages internes de `createDataGraph` —
- * chacun reste exporté de son module pour `test/*.test.ts`, qui importe
- * `../src/*.js`, mais aucun n'est de la surface publique.
+ * Public entry point of the renderer. This file is a CONTRACT, not an exhaustive index:
+ * only what the README documents and what the demo (or a host) consumes appears here.
+ * The low-level drawing in `draw.ts`, the `Camera`, the `Emitter` and font measurement
+ * are internal machinery of `createDataGraph` — each stays exported from its own module
+ * for `test/*.test.ts`, which imports `../src/*.js`, but none of them is public
+ * surface.
  *
- * `test/api-surface.test.ts` fige la liste des exports d'exécution : toute
- * modification ici doit y être répercutée volontairement.
+ * `test/api-surface.test.ts` freezes the list of runtime exports: any change here must
+ * be mirrored there deliberately.
  */
 
 export {
@@ -26,18 +26,18 @@ export type {
   DataGraphOptions,
   DataGraphEvent,
   DataGraphView,
-  // Relayé par `create.ts` et non réexporté directement depuis
-  // `@defsquare/data-graph-core/graph-layout` : `test/bundle-purity.test.ts`
-  // interdit toute forme `export … from` vers ce specifier, y compris
-  // type-only. Passer par `create.ts`, qui en fait déjà un `import type`,
-  // donne le type aux consommateurs sans toucher à cette garde.
+  // Relayed by `create.ts` and not re-exported directly from
+  // `@defsquare/data-graph-core/graph-layout`: `test/bundle-purity.test.ts` forbids any
+  // `export … from` form towards that specifier, type-only included. Going through
+  // `create.ts`, which already makes it an `import type`, hands consumers the type
+  // without touching that guard.
   //
-  // Remplace `GraphLayoutOptions`, qui ne type plus rien de cette API depuis
-  // que la vue graphe tourne sur le moteur à deux niveaux (voir
-  // `DataGraphOptions.graphLayoutOptions`). Le cœur l'exporte toujours, pour
-  // qui instancierait l'ancien moteur directement ; ce paquet-ci ne le relaie
-  // plus, parce qu'un type relayé qui n'est le type d'aucun de ses champs est
-  // une invitation à l'erreur.
+  // Replaces `GraphLayoutOptions`, which no longer types anything in this API now
+  // that the graph view runs on the two-level engine (see
+  // `DataGraphOptions.graphLayoutOptions`). The core still exports it, for whoever
+  // instantiates the old engine directly; this package no longer relays it,
+  // because a relayed type that types none of its own fields is an invitation to
+  // error.
   TwoLevelLayoutOptions,
 } from "./create.js";
 
@@ -54,7 +54,7 @@ export type {
   SearchResult,
 } from "@defsquare/data-graph-core";
 
-// Un hôte qui rend lui-même les lignes d'un nœud (panneau de détail) a besoin
-// de formuler une ligne-tableau comme la carte le fait : « 3 items » et non
-// « 3 », qu'on lirait comme la valeur du champ.
+// A host that renders a node's rows itself (a detail panel) needs to phrase an array
+// row the way the card does: "3 items" and not "3", which would read as the field's
+// value.
 export { arrayTokenTextFor } from "@defsquare/data-graph-core";
