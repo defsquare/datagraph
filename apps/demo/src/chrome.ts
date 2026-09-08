@@ -337,7 +337,25 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
   // `tidy()` is async (it redoes the full layout) but nothing here has to await
   // its result: the promise is explicitly discarded, and the instance guards
   // itself against concurrent operations.
-  tidyBtn.addEventListener("click", () => void graph.tidy());
+  /**
+   * Same treatment as the view toggle, and for the same reason made sharper by
+   * scale: `tidy()` recomputes the WHOLE arrangement, which takes seconds on a
+   * large dataset while the page stays perfectly responsive. Without the busy
+   * state, a button that answers instantly and changes nothing reads as a lost
+   * click, and the user clicks again — queueing a second global layout.
+   */
+  tidyBtn.addEventListener("click", () => {
+    void (async () => {
+      tidyBtn.disabled = true;
+      tidyBtn.setAttribute("aria-busy", "true");
+      try {
+        await graph.tidy();
+      } finally {
+        tidyBtn.removeAttribute("aria-busy");
+        tidyBtn.disabled = false;
+      }
+    })();
+  });
 
   return { updateStatus, applyTheme, syncViewButton, setSearchActive };
 }
