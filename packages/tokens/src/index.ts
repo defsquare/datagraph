@@ -187,6 +187,14 @@ export const motion = {
 
 export interface ChromeTokens {
   fg: string;
+  /**
+   * The status bar's link — the only chrome text sitting DIRECTLY on the canvas,
+   * with no floating surface under it. It is therefore the only one whose
+   * contrast is computable (see `contrast.ts`) and the only one that had to
+   * leave `accent.selection`: the brand red reads ~2.75:1 on the light canvas,
+   * well under the 4.5:1 AA floor at 11px (see `test/contrast.test.ts`).
+   */
+  link: string;
   /** Translucent floating surfaces laid over the canvas. */
   float: { bg: string; border: string; hover: string };
   shadow: string;
@@ -199,6 +207,13 @@ export interface ChromeTokens {
 export const chrome: { light: ChromeTokens; dark: ChromeTokens } = {
   light: {
     fg: "#070f19",
+    // Darkened from the brand accent #f65e5e (~2.75:1 on #eef0f3) until it
+    // clears 4.5:1 on BOTH light canvases this token is shared by: #eef0f3
+    // (defsquare, 4.76:1) and #f4f4f5 (neutral, 4.95:1) — the tighter of the
+    // two, so it is the binding constraint. Kept as close to the brand red
+    // as AA allows rather than darkened further — see `test/contrast.test.ts`
+    // for the floor this holds to.
+    link: "#c0392b",
     float: {
       bg: "rgb(255 255 255 / 0.82)",
       border: "rgb(23 39 65 / 0.1)",
@@ -208,6 +223,9 @@ export const chrome: { light: ChromeTokens; dark: ChromeTokens } = {
   },
   dark: {
     fg: "#f0f5fc",
+    // Unchanged: the brand accent already clears 4.5:1 on both dark canvases
+    // (5.48:1 on #161a2c, 5.64:1 on #18181b).
+    link: "#f65e5e",
     float: {
       bg: "rgb(30 35 53 / 0.82)",
       border: "rgb(240 245 252 / 0.1)",

@@ -9,6 +9,7 @@
   --ds-surface-muted: #f7f7f8;
   --ds-ink: #172741;
   --ds-fg: #070f19;
+  --ds-link: #c0392b;
   --ds-muted: #4b5563;
   --ds-subtle: #9ca3af;
   --ds-accent: #f65e5e;
@@ -48,6 +49,7 @@ html[data-theme="dark"] {
   --ds-surface-muted: #1a1f30;
   --ds-ink: #f0f5fc;
   --ds-fg: #f0f5fc;
+  --ds-link: #f65e5e;
   --ds-muted: #9bb2d9;
   --ds-subtle: #6b7794;
   --ds-primary: #3573c3;

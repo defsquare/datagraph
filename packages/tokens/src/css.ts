@@ -42,6 +42,7 @@ function colorDecls(colors: ColorTokens, ui: ChromeTokens, withAccent: boolean):
     // `--ds-fg` comes from the chrome, not from the ink: the shell's text is
     // more contrasted than that of the canvas cards.
     decl("ds-fg", ui.fg),
+    decl("ds-link", ui.link),
     decl("ds-muted", colors.ink.muted),
     decl("ds-subtle", colors.ink.subtle),
     ...(withAccent ? [decl("ds-accent", colors.accent.selection)] : []),

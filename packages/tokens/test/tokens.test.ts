@@ -44,11 +44,13 @@ describe("shared scales", () => {
 });
 
 describe("tokens chrome (DOM only)", () => {
-  it("carries fg, floating surfaces and shadows", () => {
+  it("carries fg, link, floating surfaces and shadows", () => {
     expect(chrome.light.fg).toBe("#070f19");
+    expect(chrome.light.link).toBe("#c0392b");
     expect(chrome.light.float).toEqual({ bg: "rgb(255 255 255 / 0.82)", border: "rgb(23 39 65 / 0.1)", hover: "rgb(23 39 65 / 0.06)" });
     expect(chrome.light.shadow).toBe("0 1px 2px rgb(15 23 42 / 0.06), 0 10px 28px -10px rgb(15 23 42 / 0.22)");
     expect(chrome.dark.fg).toBe("#f0f5fc");
+    expect(chrome.dark.link).toBe("#f65e5e");
     expect(chrome.dark.float).toEqual({ bg: "rgb(30 35 53 / 0.82)", border: "rgb(240 245 252 / 0.1)", hover: "rgb(240 245 252 / 0.08)" });
     expect(chrome.dark.shadow).toBe("0 1px 2px rgb(0 0 0 / 0.35), 0 12px 30px -10px rgb(0 0 0 / 0.6)");
   });
