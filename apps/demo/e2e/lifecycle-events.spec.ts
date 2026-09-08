@@ -64,3 +64,35 @@ test("the event names are the four the contract promises", async ({ page }) => {
   })
   expect(ok).toBe(true)
 })
+
+test("the detail panel closes when the selection returns to rest", async ({ page }) => {
+  await gotoReady(page)
+  await page.evaluate(() => (window as any).__graph.select("/customers/0"))
+  await expect(page.locator("#selection-label")).toContainText("Customer #c1")
+
+  await page.keyboard.press("Escape")
+  await expect(page.locator("#detail")).toBeHidden()
+  // `#selection-empty` is a DESCENDANT of `#detail` (index.html), and
+  // `#detail[hidden] { display: none }` (style.css) collapses its whole
+  // subtree — so the empty message can never be Playwright-"visible" while
+  // the panel itself is hidden, whatever `clear()` does to its own `hidden`
+  // attribute. Asserting the attribute directly is what is actually
+  // checkable: that `clear()` did reset the internal empty-state, ready for
+  // the next time the panel opens.
+  await expect(page.locator("#selection-empty")).not.toHaveAttribute("hidden")
+})
+
+test("the visible counter follows an expand and a collapse, with no selection", async ({ page }) => {
+  await gotoReady(page)
+  const before = await page.locator("#stat-visible").textContent()
+
+  // `/categories` has no collapsible content in the demo dataset (a category
+  // carries no nested array), so expanding it never moves the counter — that
+  // would test nothing. `/customers/0` does (an order list nests under it,
+  // exercised the same way by the "deselect" test above).
+  await page.evaluate(async () => { await (window as any).__graph.expand("/customers/0") })
+  await expect(page.locator("#stat-visible")).not.toHaveText(before!)
+
+  await page.evaluate(() => (window as any).__graph.collapse("/customers/0"))
+  await expect(page.locator("#stat-visible")).toHaveText(before!)
+})

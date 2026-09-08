@@ -114,6 +114,20 @@ const search = createSearchUi(graph);
 
 graph.on("select", (node: GraphNode) => {
   detail.render(node);
+});
+
+// The panel describes a selection: when there is none left it has nothing to
+// say, and leaving it open would keep describing a node the canvas no longer
+// designates.
+graph.on("deselect", () => {
+  detail.clear();
+});
+
+// The single refresh point for the status bar. It replaces the manual calls
+// scattered over `select`, the view toggle and the dataset toggle: any operation
+// changing the visible set now updates the counter without this file having to
+// know it exists.
+graph.on("statschange", () => {
   chrome.updateStatus();
 });
 
@@ -126,7 +140,6 @@ graph.on("followRef", (edge) => {
 demo?.setupDatasetToggle(graph, () => {
   search.reset();
   detail.clear();
-  chrome.updateStatus();
 });
 
 void (async () => {

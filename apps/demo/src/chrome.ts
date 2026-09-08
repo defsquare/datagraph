@@ -285,10 +285,6 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
         // moved, and an icon set from `next` would announce a view that is not on
         // screen.
         syncViewButton();
-        // Toggling changes the number of nodes displayed (the whole tree on one
-        // side, entities only on the other): without this refresh the status bar
-        // counter would stay on the other view's value.
-        updateStatus();
       } finally {
         setViewBusy(false);
         toggleViewBtn.disabled = false;
