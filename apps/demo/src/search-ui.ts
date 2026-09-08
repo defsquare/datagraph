@@ -27,15 +27,39 @@ export function createSearchUi(graph: DataGraph): SearchUi {
   let matchTotal = 0;
   let matchCursor = -1;
 
+  /**
+   * Three resting states, and the distinction between the last two is the point:
+   * an empty field has nothing to report, whereas a query that matches nothing
+   * must SAY it — that silence was read as "the search did not run".
+   */
   function updateMatchCounter(): void {
     if (!matchCounterEl) return;
-    matchCounterEl.textContent = matchTotal > 0 ? `${matchCursor + 1}/${matchTotal}` : "";
+    if (matchTotal > 0) {
+      matchCounterEl.textContent = `${matchCursor + 1}/${matchTotal}`;
+      return;
+    }
+    matchCounterEl.textContent = (searchInput?.value ?? "") === "" ? "" : "0 résultat";
   }
 
+  /**
+   * Runs the query, then LANDS on the first result — the resting state of every
+   * standard findbar. Without this the counter read "0/3" and the camera had not
+   * moved, so a search that had worked looked like one that had not.
+   *
+   * The debounce handle is cleared BEFORE stepping: `goToNextMatch` starts by
+   * flushing a pending search, and this call is that search — leaving the handle
+   * set would run the query a second time and reset the cursor it just moved.
+   */
   function runSearch(query: string): void {
     const results = graph.search(query);
     matchTotal = results.length;
     matchCursor = -1;
+    if (matchTotal > 0) {
+      clearTimeout(debounceHandle);
+      debounceHandle = undefined;
+      goToNextMatch();
+      return;
+    }
     updateMatchCounter();
   }
 
