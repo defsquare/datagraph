@@ -59,3 +59,24 @@
 
 .ibtn-sm { width: 24px; height: 24px; border-radius: 6px; }
 .ibtn-sm svg { width: 13px; height: 13px; }
+
+/* The "something is still active behind this button" dot.
+
+   A pseudo-element and not a child node: the state is set by the application
+   with one attribute (`data-badge`), and a child would make the factory produce
+   DOM for a state it must not decide — same rule as `disabled` and `aria-busy`. */
+.ibtn[data-badge="true"] { position: relative; }
+
+.ibtn[data-badge="true"]::after {
+  content: "";
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--ds-accent);
+  /* A ring in the surface colour detaches the dot from the icon underneath,
+     whatever the icon happens to be. */
+  box-shadow: 0 0 0 1.5px var(--float-bg);
+}

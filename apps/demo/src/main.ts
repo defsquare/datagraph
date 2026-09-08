@@ -116,7 +116,9 @@ if (launch.mode === "file") {
 }
 
 const detail = createDetailPanel(graph);
-const search = createSearchUi(graph);
+const search = createSearchUi(graph, {
+  onQueryChange: (hasQuery) => chrome.setSearchActive(hasQuery),
+});
 
 graph.on("select", (node: GraphNode) => {
   detail.render(node);

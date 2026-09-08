@@ -52,3 +52,21 @@ test("Enter pressed inside the debounce window steps once, not twice", async ({ 
   })
   await expect(page.locator("#match-counter")).toHaveText(/^1\/\d+$/)
 })
+
+test("the magnifier carries a badge while a query survives the fold", async ({ page }) => {
+  await gotoReady(page)
+  await openSearch(page)
+  await page.fill("#search", "camille")
+  await expect(page.locator("#match-counter")).toHaveText(/^1\//)
+
+  // Escape folds the bar without cancelling anything: the highlights stay on
+  // screen, which is the assumed behaviour — so the magnifier has to say so.
+  await page.keyboard.press("Escape")
+  await expect(page.locator("#findbar")).toBeHidden()
+  await expect(page.locator("#search-toggle")).toHaveAttribute("data-badge", "true")
+
+  await openSearch(page)
+  await page.fill("#search", "")
+  await page.keyboard.press("Escape")
+  await expect(page.locator("#search-toggle")).not.toHaveAttribute("data-badge", "true")
+})

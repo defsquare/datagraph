@@ -24,6 +24,10 @@ export interface Chrome {
   applyTheme(): void;
   /** Aligns the toggle button on the view that is ACTUALLY active. */
   syncViewButton(): void;
+  /** Marks the magnifier as carrying a live query. Folding the findbar cancels
+   * nothing — the highlights stay on the canvas — so the button has to say that
+   * something is still running behind it. */
+  setSearchActive(active: boolean): void;
 }
 
 export interface ChromeHooks {
@@ -135,14 +139,30 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
     return panel !== null && !panel.hasAttribute("hidden");
   }
 
+  let searchActive = false;
+
+  function syncSearchBadge(): void {
+    // The badge only shows on the FOLDED bar: with the bar open the query is
+    // right there, and a dot would repeat it.
+    if (searchActive && !isOpen(findbarEl)) searchToggleBtn.dataset.badge = "true";
+    else delete searchToggleBtn.dataset.badge;
+  }
+
+  function setSearchActive(active: boolean): void {
+    searchActive = active;
+    syncSearchBadge();
+  }
+
   function openSearch(): void {
     setExpanded(findbarEl, searchToggleBtn, true);
     // Unfolding without giving focus would force a second click before typing.
     hooks.onSearchOpen();
+    syncSearchBadge();
   }
 
   function closeSearch(): void {
     setExpanded(findbarEl, searchToggleBtn, false);
+    syncSearchBadge();
   }
 
   function closeMenu(): void {
@@ -307,5 +327,5 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
   // itself against concurrent operations.
   tidyBtn.addEventListener("click", () => void graph.tidy());
 
-  return { updateStatus, applyTheme, syncViewButton };
+  return { updateStatus, applyTheme, syncViewButton, setSearchActive };
 }

@@ -17,7 +17,14 @@ export interface SearchUi {
   focus(): void;
 }
 
-export function createSearchUi(graph: DataGraph): SearchUi {
+export interface SearchUiHooks {
+  /** Called whenever the field goes from empty to filled or back. The search UI
+   * owns the input; the chrome owns the button that has to reflect it, and
+   * neither reaches into the other's DOM. */
+  onQueryChange(hasQuery: boolean): void;
+}
+
+export function createSearchUi(graph: DataGraph, hooks: SearchUiHooks): SearchUi {
   const searchInput = document.getElementById("search") as HTMLInputElement | null;
   const matchCounterEl = document.getElementById("match-counter");
   const prevMatchBtn = document.getElementById("prev-match");
@@ -92,6 +99,7 @@ export function createSearchUi(graph: DataGraph): SearchUi {
     searchInput.addEventListener("input", () => {
       clearTimeout(debounceHandle);
       const value = searchInput.value;
+      hooks.onQueryChange(value !== "");
       debounceHandle = setTimeout(() => {
         debounceHandle = undefined;
         runSearch(value, true);
@@ -114,6 +122,7 @@ export function createSearchUi(graph: DataGraph): SearchUi {
       if (searchInput) searchInput.value = "";
       matchTotal = 0;
       matchCursor = -1;
+      hooks.onQueryChange(false);
       updateMatchCounter();
     },
     focus(): void {

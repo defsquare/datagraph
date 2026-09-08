@@ -38,4 +38,11 @@ describe("createIconButton", () => {
     expect(b.disabled).toBe(false);
     expect(b.hasAttribute("aria-busy")).toBe(false);
   });
+
+  it("carries no badge attribute at construction", () => {
+    // `data-badge` is a RUNTIME state, like `disabled` and `aria-busy`: the
+    // factory produces inert DOM and must not invent one.
+    const button = createIconButton({ icon: "search", label: "Rechercher" });
+    expect(button.hasAttribute("data-badge")).toBe(false);
+  });
 });
