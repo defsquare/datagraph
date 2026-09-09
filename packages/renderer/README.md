@@ -137,6 +137,15 @@ it has to be deliberate.
 | Click on an aggregate envelope (graph view) | Select the whole aggregate |
 | Click on the empty background | Clear the selection |
 | <kbd>Esc</kbd> | Clear the selection |
+| <kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd> | Move the selection to the nearest visible neighbour in that direction |
+| <kbd>Enter</kbd> | Fold or unfold the selected card (structure view) |
+
+The arrows and <kbd>Enter</kbd> only apply when the key is aimed at the graph:
+with one of the host's own controls focused, the key belongs to that control —
+<kbd>Enter</kbd> on a focused button IS the browser's activation gesture, and
+intercepting it would make every button of a chrome dead to the keyboard.
+<kbd>Esc</kbd> is the exception: it clears the selection from wherever focus
+sits, being the last level of a host's Escape cascade.
 
 Dragging a card works in both views. The gesture splits from a plain click at
 4 px of pointer travel: below that the click still selects, folds or follows a

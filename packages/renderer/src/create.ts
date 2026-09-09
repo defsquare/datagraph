@@ -2666,6 +2666,36 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   }
 
   /**
+   * Is this key aimed at the GRAPH, or at something the host has focused?
+   *
+   * Enter on a focused `<button>` IS the browser's activation gesture: the
+   * `preventDefault()` further down cancels it, and with it the keyboard
+   * activation of every control of a host's chrome — in the demo `#fit`, `#tidy`,
+   * `#toggle-view`, the menu and its items, `#detail-close`, the panel's reference
+   * buttons, the diagnostics rows. That is the regression this predicate exists
+   * for. The guard it completes enumerated `INPUT|TEXTAREA|SELECT`, and
+   * enumerating tag names is precisely what let `<button>` through: the list can
+   * only ever run behind the host's markup.
+   *
+   * Hence an ALLOWLIST on the only DOM this instance owns, `container` — which
+   * holds nothing but the canvas — plus `document.body`, the target when nothing
+   * is focused, the normal case for someone driving the canvas. Everything else on
+   * the page belongs to the host, present or future, without this file knowing its
+   * markup. The second clause covers the host that overlays its own controls
+   * INSIDE the container: a focused control owns its keys wherever it sits.
+   *
+   * Escape is deliberately NOT subjected to this: it is the cascade's last level
+   * (see below) and must still clear the selection from wherever focus happens to
+   * be — the demo's own Escape handler moves focus onto a toolbar button before
+   * the next Escape reaches here.
+   */
+  function keyAimedAtGraph(target: HTMLElement | null): boolean {
+    if (!target) return true;
+    if (target !== document.body && !container.contains(target)) return false;
+    return target.closest("button, a[href], input, textarea, select, [tabindex], [contenteditable]") === null;
+  }
+
+  /**
    * The keyboard on the graph: Escape deselects, the arrows move the selection
    * to the nearest visible neighbour, Enter folds or unfolds the selected card.
    *
@@ -2696,6 +2726,10 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       doDeselect();
       return;
     }
+
+    // Enter and the arrows, from here on: keys the focused element may already
+    // own. See `keyAimedAtGraph`.
+    if (!keyAimedAtGraph(target)) return;
 
     const selected = selectedNodeId();
     if (selected === null) return;

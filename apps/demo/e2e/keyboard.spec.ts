@@ -54,6 +54,48 @@ test("Escape closes the menu first, the findbar next, and only then deselects", 
   await expect(page.locator("#detail")).toBeHidden()
 })
 
+/**
+ * The renderer listens for Enter on `window` and calls `preventDefault()`, which
+ * is what turns Enter on a focused button into a dead key: the browser's
+ * Enter→click activation is exactly what that cancels. Every control of the
+ * chrome is concerned — `#fit`, `#tidy`, `#toggle-view`, the menu and its items,
+ * `#detail-close`, the panel's reference buttons, the diagnostics entries — and
+ * `#tidy` is the one whose activation is observable without moving anything else.
+ *
+ * Two assertions, and both are needed: the button must fire AND the graph must
+ * not have folded the selection underneath.
+ */
+test("Enter on a focused toolbar button activates it and folds nothing", async ({ page }) => {
+  await gotoReady(page)
+  await page.evaluate(() => (window as any).__graph.select("/customers/0"))
+  const before = await page.locator("#stat-visible").textContent()
+  await page.evaluate(() => {
+    ;(window as any).__tidyClicked = false
+    document
+      .getElementById("tidy")!
+      .addEventListener("click", () => ((window as any).__tidyClicked = true))
+  })
+
+  await page.focus("#tidy")
+  await page.keyboard.press("Enter")
+
+  await expect.poll(() => page.evaluate(() => (window as any).__tidyClicked)).toBe(true)
+  // `tidy` relays out the same nodes: the counter is a witness of the FOLD not
+  // having happened, not of the tidy itself.
+  await expect(page.locator("#stat-visible")).toHaveText(before!)
+})
+
+test("arrows leave a focused toolbar button alone", async ({ page }) => {
+  await gotoReady(page)
+  await page.evaluate(() => (window as any).__graph.select("/orders/0"))
+  const before = await page.locator("#selection-path").textContent()
+
+  await page.focus("#tidy")
+  await page.keyboard.press("ArrowDown")
+
+  await expect(page.locator("#selection-path")).toHaveText(before!)
+})
+
 test("Enter on a selected container toggles it", async ({ page }) => {
   await gotoReady(page)
   const before = await page.locator("#stat-visible").textContent()
