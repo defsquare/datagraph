@@ -78,6 +78,49 @@ test("an unresolved-reference diagnostic renders as an inert, non-clickable entr
   await expect(page.locator("#selection-rows button")).toHaveCount(0)
 })
 
+/**
+ * The two kinds in ONE list, which is the only configuration where an
+ * inconsistency between them shows. The navigable entries used to carry the
+ * layout (and to lose the divider) on their own `.diag-entry` class, while the
+ * inert ones kept the detail rows' three-column flex: one list, two shapes.
+ *
+ * `cs` declares a `bId` that points at nothing (`dangling-ref`, navigable — the
+ * path is a node), `as` declares one no row carries at all
+ * (`unresolved-reference`, inert — the path is a config declaration).
+ */
+test("both diagnostic kinds share one entry shape", async ({ page }) => {
+  await gotoReady(page)
+  await page.evaluate(() =>
+    (window as any).__graph.setData(
+      { as: [{ id: "a1" }], bs: [{ id: "b1" }], cs: [{ id: "c1", bId: "ghost" }] },
+      {
+        ids: { A: "$.as[*].id", B: "$.bs[*].id", C: "$.cs[*].id" },
+        refs: [
+          { from: "$.as[*].bId", to: "$.bs[*].id" },
+          { from: "$.cs[*].bId", to: "$.bs[*].id" },
+        ],
+      },
+    ),
+  )
+  const codes = await page.evaluate(() =>
+    (window as any).__graph.diagnostics().map((d: any) => d.code).sort(),
+  )
+  expect(codes).toEqual(["dangling-ref", "unresolved-reference"])
+
+  await page.click("#stat-diagnostics")
+  await expect(page.locator("#selection-rows .row")).toHaveCount(2)
+  // The layout class is worn by BOTH; only one of them is a button.
+  await expect(page.locator("#selection-rows .diag-body")).toHaveCount(2)
+  await expect(page.locator("#selection-rows .diag-entry")).toHaveCount(1)
+  await expect(page.locator("#selection-rows button")).toHaveCount(1)
+
+  // The `dl`'s content model: `dt`, `dd` and `div` only — never a `button`.
+  const children = await page.evaluate(() =>
+    [...document.querySelectorAll("#selection-rows > *")].map((el) => el.tagName),
+  )
+  expect(children).toEqual(["DIV", "DIV"])
+})
+
 test("the fixture still carries the dangling reference these tests rest on", async ({ page }) => {
   await gotoReady(page)
   // If this ever goes empty, the test below would pass for the wrong reason:

@@ -134,22 +134,37 @@ export function createDetailPanel(graph: DataGraph): DetailPanel {
         // has no node to go to, so its entry stays readable and inert rather
         // than offering a gesture that would land nowhere.
         const navigable = d.code !== "unresolved-reference";
-        const wrapper = document.createElement(navigable ? "button" : "div");
-        wrapper.className = navigable ? "row diag-entry" : "row";
-        if (navigable) (wrapper as HTMLButtonElement).type = "button";
-        if (highlight !== undefined && d.path === highlight) wrapper.classList.add("diag-current");
 
-        const dt = document.createElement("dt");
-        dt.textContent = d.code;
-        const dd = document.createElement("dd");
-        dd.textContent = d.message;
-        const path = document.createElement("dd");
-        path.className = "diag-path";
-        path.textContent = d.path;
-        wrapper.append(dt, dd, path);
+        // A `dl` admits only `dt`, `dd` and `div` as children, and a `button`
+        // admits only phrasing content: an entry is therefore a `div.row` — the
+        // `dl`'s child, exactly like a detail row — holding the control, and its
+        // three fields are spans. The previous shape (a `button` child of the
+        // `dl`, filled with `dt`/`dd`) broke the description list at both ends.
+        const row = document.createElement("div");
+        row.className = "row diag-row";
+        if (highlight !== undefined && d.path === highlight) row.classList.add("diag-current");
+
+        // `.diag-body` carries the LAYOUT and is worn by every entry; `.diag-entry`
+        // carries nothing but the button-ness. Splitting them is what keeps a list
+        // mixing the two diagnostic kinds from showing two different shapes — the
+        // navigable entries used to lose the divider and the columns that the
+        // inert ones kept.
+        const body = document.createElement(navigable ? "button" : "div");
+        body.className = navigable ? "diag-body diag-entry" : "diag-body";
+
+        const field = (className: string, text: string): HTMLSpanElement => {
+          const el = document.createElement("span");
+          el.className = className;
+          el.textContent = text;
+          return el;
+        };
+        body.append(field("diag-code", d.code), field("diag-message", d.message), field("diag-path", d.path));
 
         if (navigable) {
-          wrapper.addEventListener("click", () => {
+          const button = body as HTMLButtonElement;
+          button.type = "button";
+          button.title = `Aller à ${d.path}`;
+          button.addEventListener("click", () => {
             // Same gesture as the panel's reference buttons: select then frame.
             // Both are safe no-ops on an id the graph does not carry, which is
             // what makes the `navigable` test above a readability rule and not a
@@ -158,7 +173,9 @@ export function createDetailPanel(graph: DataGraph): DetailPanel {
             graph.focus(d.path);
           });
         }
-        return wrapper;
+
+        row.append(body);
+        return row;
       }),
     );
   }
