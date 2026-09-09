@@ -688,9 +688,12 @@ describe("drawSemanticLabels", () => {
   it("gives the SAME character budget to every disc, whatever its size", () => {
     // The radius cancels out between the usable width and the font size: that is
     // what makes a disc's size read as a quantity of members and not as a quantity
-    // of text.
+    // of text. True only ABOVE the legibility floor's threshold (r >=
+    // SEMANTIC_LABEL_MIN_SCREEN_PX / SEMANTIC_LABEL_RATIO = 45 at the default
+    // camera scale): both radii below stay clear of it on purpose, so the floor
+    // itself — covered separately below — cannot confound this invariant.
     const long = "com.exemple.credit.domain.model.request";
-    const small = drawSemanticLabels([node({ label: long, circle: { cx: 0, cy: 0, r: 40 } })], theme, false);
+    const small = drawSemanticLabels([node({ label: long, circle: { cx: 0, cy: 0, r: 200 } })], theme, false);
     const big = drawSemanticLabels([node({ label: long, circle: { cx: 0, cy: 0, r: 900 } })], theme, false);
     const textOf = (layer: Container): string => partsOf(layer)[0]!.text;
     expect(textOf(small)).toBe(textOf(big));
@@ -721,17 +724,21 @@ describe("drawSemanticLabels", () => {
 });
 
 describe("drawSemanticLabels — legibility floor", () => {
-  const tiny = [node({ id: "c67", label: "c67", count: 3, circle: { cx: 0, cy: 0, r: 6 } })];
-
-  it("keeps a small disc's label readable when zoomed out", () => {
-    // r * SEMANTIC_LABEL_RATIO = 1.2px of world type; at a camera scale of 0.1
-    // that is 0.12px on screen — a smudge. The floor is expressed on SCREEN, so
-    // it has to be divided back by the scale to become a world size.
-    const layer = drawSemanticLabels(tiny, theme, false, undefined, 0.1);
+  it("raises a disc genuinely helped by the floor to the screen minimum, and keeps it truncated to match", () => {
+    // r=40 at the default camera scale: r * SEMANTIC_LABEL_RATIO = 8px of world
+    // type, below the 9px screen floor, so the floor is the one deciding the
+    // rendered size — not SEMANTIC_LABEL_RATIO. The whole point of restoring the
+    // budget to the RENDERED (floored) k rather than a natural one: "Boutique" at
+    // this k still fits inside its own truncation budget, i.e. still comes out
+    // whole and inside the disc, rather than surviving untruncated at a size the
+    // budget never accounted for (see `semanticLabelScale`'s doc in draw.ts).
+    const big = [node({ id: "big", label: "Boutique", count: 300, circle: { cx: 0, cy: 0, r: 40 } })];
+    const layer = drawSemanticLabels(big, theme, false, undefined, 1);
     const label = partsOf(layer)[0]!;
-    // 9px on screen at scale 0.1 = 90px in the world; the scale factor is that
-    // over the theme's header size.
-    expect(label.scale.x).toBeCloseTo(90 / theme.typography.header.size, 3);
+    expect(label.text).toBe("Boutique");
+    // 9px on screen at scale 1 is already 9 world px — the scale factor is that
+    // over the theme's header size, NOT `(40 * SEMANTIC_LABEL_RATIO) / header.size`.
+    expect(label.scale.x).toBeCloseTo(9 / theme.typography.header.size, 3);
   });
 
   it("leaves a label alone when the disc is already large enough", () => {
@@ -746,6 +753,20 @@ describe("drawSemanticLabels — legibility floor", () => {
     const withoutArg = partsOf(drawSemanticLabels(big, theme, false))[0]!.scale.x;
     const withDefault = partsOf(drawSemanticLabels(big, theme, false, undefined, 1))[0]!.scale.x;
     expect(withoutArg).toBeCloseTo(withDefault, 5);
+  });
+
+  it("drops the label entirely on a disc too small to carry a legible name, rather than painting a smudge or an empty group", () => {
+    // r=6 at a camera scale of 0.1: the floor pulls the rendered size up to 90
+    // world px (9 screen px / 0.1), so the RENDERED k is huge relative to the
+    // disc — and per the invariant restored above, the budget is measured at
+    // that same k, collapsing to under one character. `truncateMiddle` then
+    // returns "", and the node is skipped outright (`if (text.length === 0)
+    // continue`): no group, no child — not a group holding empty/undefined
+    // parts. A 9px name floating over a 1.2px-wide dot would be noise, not
+    // legibility; dropping it is the honest outcome, not a defect.
+    const tiny = [node({ id: "c67", label: "c67", count: 3, circle: { cx: 0, cy: 0, r: 6 } })];
+    const layer = drawSemanticLabels(tiny, theme, false, undefined, 0.1);
+    expect(layer.children).toHaveLength(0);
   });
 });
 

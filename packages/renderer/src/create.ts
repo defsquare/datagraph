@@ -767,6 +767,15 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   // rebuild 1,300 texts per frame for an identical rendering. Same split as the
   // edges and their `edgeHitLayer`.
   const semanticLabelLayer = new Container();
+  // The id -> circle lookup `rescaleSemanticLabels` needs on every scale-changed
+  // frame, cached at the point `redrawSemanticLayers` already walks
+  // `semanticNodesFor()` once. Rebuilding it per frame instead — the first cut of
+  // this feature did, via `semanticNodesFor()` plus a fresh `Map` — means
+  // reconstructing the full ~1,300-aggregate PAINT list (color/dim/hover per
+  // aggregate, see `semanticNodesFor`'s doc) on essentially every tick of a
+  // continuous wheel zoom, to keep three numbers. `null` outside the semantic
+  // regime, where `rescaleSemanticLabels` has nothing to update anyway.
+  let semanticLabelCircles: Map<string, { cx: number; cy: number; r: number }> | null = null;
   // The envelopes' grab targets, just ABOVE their visual and UNDER everything else.
   // Depth is what settles the arbitration between gestures: Pixi's hit-testing goes
   // top to bottom, so a card, an edge hit area or the overlay catches the pointer
@@ -1255,16 +1264,18 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   function redrawSemanticLayers(): void {
     redrawSemanticEdges();
     for (const child of semanticLabelLayer.removeChildren()) child.destroy({ children: true });
-    if (viewPolicy().aggregates !== "disc") return;
+    if (viewPolicy().aggregates !== "disc") {
+      semanticLabelCircles = null;
+      return;
+    }
+    const nodes = semanticNodesFor();
     semanticLabelLayer.addChild(
-      drawSemanticLabels(
-        semanticNodesFor(),
-        theme,
-        useBitmapText,
-        metrics,
-        camera ? camera.scale() : 1,
-      ),
+      drawSemanticLabels(nodes, theme, useBitmapText, metrics, camera ? camera.scale() : 1),
     );
+    // Built ONCE here, off the same `nodes` just walked to paint the labels —
+    // `rescaleSemanticLabels` reads this instead of calling `semanticNodesFor()`
+    // and rebuilding the Map itself on every scale-changed frame.
+    semanticLabelCircles = new Map(nodes.map((n) => [n.id, n.circle]));
   }
 
   /**
@@ -1282,23 +1293,32 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
    *
    * Cheap by construction, the same discipline as `repositionEdgeLabels`: it
    * touches only `.scale`/`.position` on the Containers `drawSemanticLabels`
-   * already created — never the text (the truncation budget is NOT camera-scale
-   * dependent, see `drawSemanticLabels`/`semanticLabelGeometry`) nor the
+   * already created — never the text. The truncation stays the one decided at the
+   * last rebuild's camera scale (rescaling only changes how BIG that surviving
+   * text paints, not how much of it survives — see `semanticLabelScale`'s doc in
+   * draw.ts for why the two must nonetheless agree at rebuild time) — nor the
    * aggregated edges, which stay governed by `redrawSemanticEdges`'s own cadence.
+   *
+   * Reads `semanticLabelCircles`, cached once per rebuild by
+   * `redrawSemanticLayers`, instead of calling `semanticNodesFor()` and building a
+   * fresh `Map` here: this runs on every scale-changed ticker frame during a
+   * continuous wheel zoom, and `semanticNodesFor()` rebuilds the FULL paint list —
+   * color, dim, hover, one new object per aggregate — for the ~1,300 aggregates of
+   * the real dataset, to extract three numbers already sitting in the cache. See
+   * `repositionEdgeLabels` for the same discipline applied to edge labels.
    */
   function rescaleSemanticLabels(cameraScale: number): void {
     // `children[0]`: the permanent layer holds a single child, the container
     // `drawSemanticLabels` returns, whose direct children are the labeled groups
     // (see `dragCluster`'s identical descent).
     const layer = semanticLabelLayer.children[0];
-    if (!layer) return;
-    const nodesById = new Map(semanticNodesFor().map((n) => [n.id, n]));
+    if (!layer || !semanticLabelCircles) return;
     for (const group of layer.children) {
-      const node = nodesById.get(group.label);
-      if (!node || !(node.circle.r > 0)) continue;
+      const circle = semanticLabelCircles.get(group.label);
+      if (!circle || !(circle.r > 0)) continue;
       const [label, badge] = group.children as [Text | BitmapText, Text | BitmapText];
       if (!label || !badge) continue;
-      const geo = semanticLabelGeometry(node.circle, label.text, badge.text, theme, metrics, cameraScale);
+      const geo = semanticLabelGeometry(circle, label.text, badge.text, theme, metrics, cameraScale);
       label.scale.set(geo.k);
       badge.scale.set(geo.kBadge);
       label.position.set(geo.labelX, geo.labelY);
@@ -2399,11 +2419,28 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   function redrawSelection(): void {
     if (view === "graph") {
       redrawClusters();
-      // The aggregated edges and the labels carry dimming too: without this pass,
-      // selecting an aggregate would light its disc while leaving its neighbors at
-      // full intensity. No effect outside the semantic regime, where both layers
-      // are empty.
-      redrawSemanticLayers();
+      // The aggregated edges carry dimming too: without this pass, selecting an
+      // aggregate would light its disc while leaving its neighbors' edges at full
+      // intensity. No effect outside the semantic regime, where the layer is empty.
+      //
+      // `redrawSemanticEdges()` ALONE, deliberately NOT the combined
+      // `redrawSemanticLayers()`: `drawSemanticLabels` never reads `dim`/`hover`
+      // (see `SemanticNode`'s doc in draw.ts — labels stay in `theme.ink.primary`
+      // regardless of selection), so rebuilding them here paints the exact same
+      // pixels as before, at the cost of RE-TRUNCATING every label from scratch at
+      // the CURRENT `camera.scale()`. That silently breaks the invariant Fix 1
+      // restored the moment the current scale has drifted from the scale
+      // `redrawSemanticLayers` last ran at (LOD-2 entry): `rescaleSemanticLabels`
+      // had been carrying the ORIGINAL (entry-scale) text at a CONTINUOUSLY
+      // rescaled size ever since, so a selection-triggered redraw here would
+      // recompute a DIFFERENT budget and hand back shorter or longer text for
+      // labels having nothing to do with the selection — a visible flicker on
+      // every click/Escape, confirmed by screenshot diff. Since labels render
+      // identically either way, skipping their rebuild here removes the only
+      // other caller of `redrawSemanticLayers()` besides `rebuild()` itself
+      // (a real LOD transition, where the entry scale IS the current scale by
+      // construction) — the source of the drift, not a workaround for it.
+      redrawSemanticEdges();
     }
     redrawOverlay();
     // The edges carry half of the dimming: they are repainted with the new
