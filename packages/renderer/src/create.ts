@@ -2681,18 +2681,27 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
    * holds nothing but the canvas — plus `document.body`, the target when nothing
    * is focused, the normal case for someone driving the canvas. Everything else on
    * the page belongs to the host, present or future, without this file knowing its
-   * markup. The second clause covers the host that overlays its own controls
-   * INSIDE the container: a focused control owns its keys wherever it sits.
+   * markup. The walk then covers the host that overlays its own controls INSIDE
+   * the container: a focused control owns its keys wherever it sits. That walk
+   * STOPS at the container instead of using `closest()`, so a host that makes the
+   * container itself focusable (`tabindex`, a legitimate a11y move) does not
+   * thereby kill every key of the graph.
    *
    * Escape is deliberately NOT subjected to this: it is the cascade's last level
    * (see below) and must still clear the selection from wherever focus happens to
    * be — the demo's own Escape handler moves focus onto a toolbar button before
    * the next Escape reaches here.
    */
+  const INTERACTIVE_SELECTOR = "button, a[href], input, textarea, select, [tabindex], [contenteditable]";
+
   function keyAimedAtGraph(target: HTMLElement | null): boolean {
     if (!target) return true;
-    if (target !== document.body && !container.contains(target)) return false;
-    return target.closest("button, a[href], input, textarea, select, [tabindex], [contenteditable]") === null;
+    if (target === document.body || target === container) return true;
+    if (!container.contains(target)) return false;
+    for (let el: HTMLElement | null = target; el !== null && el !== container; el = el.parentElement) {
+      if (el.matches(INTERACTIVE_SELECTOR)) return false;
+    }
+    return true;
   }
 
   /**
