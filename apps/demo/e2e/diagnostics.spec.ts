@@ -114,6 +114,18 @@ test("both diagnostic kinds share one entry shape", async ({ page }) => {
   await expect(page.locator("#selection-rows .diag-entry")).toHaveCount(1)
   await expect(page.locator("#selection-rows button")).toHaveCount(1)
 
+  // What the reader actually sees: the two entries must RENDER the same — same
+  // layout, same padding, same divider. Class counts alone would not have caught
+  // the defect, which was two different computed layouts in one list.
+  const shapes = await page.evaluate(() =>
+    [...document.querySelectorAll("#selection-rows .diag-body")].map((el) => {
+      const body = getComputedStyle(el)
+      const row = getComputedStyle(el.parentElement!)
+      return [body.display, body.padding, body.textAlign, row.display, row.borderTopWidth].join("|")
+    }),
+  )
+  expect(new Set(shapes).size).toBe(1)
+
   // The `dl`'s content model: `dt`, `dd` and `div` only — never a `button`.
   const children = await page.evaluate(() =>
     [...document.querySelectorAll("#selection-rows > *")].map((el) => el.tagName),
