@@ -3197,12 +3197,25 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
         // Graph view only knows entities: carry the selection over to the enclosing
         // entity rather than losing it.
         if (selection?.kind === "node") {
-          const nearest = nearestEntityAncestor(current, selection.id);
+          const from = selection.id;
+          const nearest = nearestEntityAncestor(current, from);
           selection = nearest === null ? null : { kind: "node", id: nearest };
-          // No enclosing entity: the selection is GONE, not carried. The host is
-          // told, exactly as on a background click — otherwise its panel keeps
-          // describing a node the view no longer designates.
+          // BOTH outcomes are announced, because both change what the canvas
+          // designates and the host's panel has to follow either way.
+          //
+          // No enclosing entity: the selection is GONE, not carried — same event
+          // as a background click. Carried over to another node: `select` on THAT
+          // node, otherwise the panel goes on describing the node the user chose
+          // while the canvas rings the entity that encloses it.
+          //
+          // `nearest === from` (the selected node IS an entity) emits nothing:
+          // nothing moved, and re-announcing it would wake the host on every
+          // toggle.
           if (nearest === null) emitter.emit("deselect", undefined);
+          else if (nearest !== from) {
+            const node = current.nodes.get(nearest);
+            if (node) emitter.emit("select", node);
+          }
         }
       } else if (selection?.kind === "cluster") {
         // Symmetric, and with no carry-over possible: an aggregate selection only

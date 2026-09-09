@@ -23,6 +23,14 @@ Two events are added to the public contract, both WITHOUT payload:
 - `deselect`, emitted by `doDeselect()` and by `setView()` when the carry-over to
   the nearest entity ancestor finds none. It only fires when a selection actually
   existed, so a host never sees a phantom event at boot.
+
+  A view switch announces BOTH of its outcomes: the carry-over that finds no
+  enclosing entity emits `deselect`, and the one that SUCCEEDS emits `select` on
+  the node it landed on. Without that second emission the selection silently
+  became a different node and the host's panel went on describing the one the
+  canvas no longer designates — the very failure this pair of events exists to
+  remove. A carry-over that lands on the node already selected (it was itself an
+  entity) emits nothing: nothing moved.
 - `statschange`, emitted from `rebuild()` — the single point every operation that
   changes the visible set ends on — and deduplicated against the last announced
   counters, so a repaint that changes no count (LOD flip, `setTheme`) stays
@@ -52,6 +60,16 @@ shape.
 - `rebuild()` now has an observable side effect. Anything added to it that could
   reach back into the host must account for re-entrancy — the emission is the
   last statement of the function precisely so the scene is fully published first.
-- `apps/demo` drops its manual `updateStatus()` calls in favour of the event
-  (see `main.ts`), which removes the class of bug where a new operation is added
-  and its counter refresh forgotten.
+- `apps/demo` drops its PER-OPERATION manual `updateStatus()` calls in favour of
+  the event (see `main.ts`), which removes the class of bug where a new operation
+  is added and its counter refresh forgotten. One boot-time call remains, and
+  correctly so: `rebuild()` returns before the emission as long as no layout has
+  been published, so nothing announces the very first counters.
+- A known asymmetry stays: `deselect` fires when a CLUSTER selection is cleared
+  (`doDeselect` only tests that a selection existed, whatever its kind), while
+  `doSelectCluster` never emits `select` — an aggregate is not a `GraphNode`, see
+  its doc comment. A host therefore sees a departure it never saw arrive. It is
+  harmless for a panel driven by `select` (it has nothing open on the aggregate,
+  so it clears what is already clear) and inventing an aggregate event to make
+  the pair symmetric would grow the API for a gesture no host has asked to be
+  notified of.
