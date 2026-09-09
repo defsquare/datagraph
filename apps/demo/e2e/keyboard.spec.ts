@@ -96,6 +96,27 @@ test("arrows leave a focused toolbar button alone", async ({ page }) => {
   await expect(page.locator("#selection-path")).toHaveText(before!)
 })
 
+/**
+ * The MENU branch of the same cascade (`chrome.ts`, Escape handler). Its two
+ * siblings — findbar open, nothing open — are covered by the test above; this one
+ * pins the first branch, whose `stopPropagation` is the only thing keeping the
+ * renderer's window-level Escape from deselecting underneath a menu that was all
+ * the user meant to close.
+ */
+test("Escape closes the menu and leaves the selection standing", async ({ page }) => {
+  await gotoReady(page)
+  await page.evaluate(() => (window as any).__graph.select("/customers/0"))
+  await page.click("#menu-toggle")
+  await expect(page.locator("#menu")).toBeVisible()
+
+  await page.keyboard.press("Escape")
+
+  await expect(page.locator("#menu")).toBeHidden()
+  // Same reasoning as above for asserting on `#detail`'s hidden attribute rather
+  // than on the label's text, which `clear()` never blanks.
+  await expect(page.locator("#detail")).toBeVisible()
+})
+
 test("Enter on a selected container toggles it", async ({ page }) => {
   await gotoReady(page)
   const before = await page.locator("#stat-visible").textContent()

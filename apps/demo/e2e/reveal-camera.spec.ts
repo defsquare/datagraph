@@ -8,6 +8,8 @@ async function gotoReady(page: Page): Promise<void> {
 
 test("expanding content that lands off screen moves the camera", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
+  const errors: string[] = []
+  page.on("pageerror", (e) => errors.push(String(e)))
   await gotoReady(page)
 
   // Zoom in hard so an expansion is guaranteed to land outside the window.
@@ -32,9 +34,12 @@ test("expanding content that lands off screen moves the camera", async ({ page }
   const after = await page.evaluate(() => JSON.stringify((window as any).__graph.stats()))
 
   // The counter proves the expansion happened; the absence of a page error
-  // proves the pan ran. A pixel assertion on the transform would be brittle
-  // across the zoom path above.
+  // proves the pan ran to its end rather than throwing on the way (the
+  // `requestAnimationFrame` loop of `panByWorld` runs after this expansion
+  // resolves, so a throw inside it lands here and nowhere else). A pixel
+  // assertion on the transform would be brittle across the zoom path above.
   expect(after).not.toBe(before)
+  expect(errors).toEqual([])
 })
 
 test("expanding content already in frame leaves the camera alone", async ({ page }) => {
