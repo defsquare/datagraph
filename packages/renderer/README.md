@@ -215,9 +215,17 @@ reference's click area or an envelope), or press <kbd>Esc</kbd>. Either gesture
 emits `deselect` — but only when a selection actually existed, so pressing
 <kbd>Esc</kbd> into the void or clicking the background at boot stays silent.
 
-Zoom is bounded to `[0.02, 3]`. `fit()` never scales past `1` — magnifying a
-bitmap-font atlas baked at its nominal size is what made text look soft — so a
-graph smaller than the viewport is centred rather than blown up.
+Scale is bounded to `[0.02, 3]`, and the **wheel's way out stops earlier**: it
+cannot go below a quarter of the scale at which the content is framed — far
+enough for an ordinary zoom-out (about seven notches), not far enough to leave
+the graph as a dot lost in an empty canvas. That floor is a property of the
+content, not a snapshot: it is recomputed on every rebuild, so an expansion can
+always be zoomed out to. `fit()` and `focus()` keep the absolute bounds — a
+framing the host asks for is the host's call.
+
+`fit()` never scales past `1` — magnifying a bitmap-font atlas baked at its
+nominal size is what made text look soft — so a graph smaller than the viewport
+is centred rather than blown up.
 
 ## Structure view
 

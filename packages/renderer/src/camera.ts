@@ -35,6 +35,26 @@ const PAGE_HEIGHT_PX = 400;
 const ZOOM_GAIN = 0.012;
 const MAX_ZOOM_STEP = 0.2;
 
+/**
+ * How far BELOW the content's framing the wheel may still go — the zoom-out
+ * floor is that framing divided by this factor.
+ *
+ * A floor exactly at the framing (what the first version of this rule did) is a
+ * floor that forbids the very first notch out, since every dataset starts on a
+ * fit: zoom-out was dead on arrival. Some headroom is therefore part of the rule,
+ * not a tolerance added to it.
+ *
+ * 4, for two convergent reasons. Geometrically: at the floor the content still
+ * spans a quarter of the viewport's tighter dimension — unmistakably a graph one
+ * can aim at, which is what "not a dot lost in an empty canvas" means. In
+ * gestures: exp(0.2) = 1.22 per notch and 1.22^7 = 4.06, so the floor sits about
+ * seven wheel notches below the fit — an ordinary zoom-out, not a token one. It
+ * also puts the floor under `draw.ts`'s LOD1 threshold (0.5) for any content
+ * framed below 2.0, so the semantic regimes stay reachable where they mean
+ * something.
+ */
+const ZOOM_OUT_HEADROOM = 4;
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
@@ -178,7 +198,12 @@ export interface CameraOptions {
  * Owns pan/zoom for the world `stage` container: drag-to-pan via pointer
  * events, two-finger swipe and bare mouse wheel to pan, pinch and
  * Ctrl/Cmd+wheel to zoom centered on the cursor, and programmatic fit/center
- * helpers. Bounds scale to [0.02, 3].
+ * helpers.
+ *
+ * Scale is bounded to [0.02, 3] — and the WHEEL's way out stops earlier still, at
+ * the content-dependent `zoomFloor`. The programmatic helpers (`fitTo`,
+ * `centerOn`) keep the absolute bounds: a framing asked for by the host is the
+ * host's call.
  */
 export class Camera {
   private readonly stage: Container;
@@ -191,13 +216,18 @@ export class Camera {
   /** The frame handle of a pan in flight, or `null`. */
   private panFrame: number | null = null;
   /**
-   * The smallest scale the wheel may reach: the last framing's.
+   * The smallest scale the wheel may reach: the content's framing, `ZOOM_OUT_HEADROOM`
+   * times further out.
    *
-   * Zooming out past the framing can only produce an empty canvas with the graph
-   * as a dot in it — a state with nothing to read and no obvious way back. The
-   * floor is the framing scale rather than a constant because it is the only
-   * value that means "the whole content, exactly": it follows every layout,
-   * every view switch and every `setData` for free, since each ends on a fit.
+   * Zooming out far past the framing can only produce an empty canvas with the
+   * graph as a dot in it — a state with nothing to read and no obvious way back.
+   * The floor is derived from the framing rather than being a constant because it
+   * is the only value that means "the whole content, exactly", whatever the
+   * dataset's world extent.
+   *
+   * It is a property of the CONTENT, not a snapshot of the last `fitTo`:
+   * `updateZoomOutFloor` recomputes it whenever the extent moves, so an expansion
+   * can always be zoomed out to.
    *
    * Starts at `MIN_SCALE`, the absolute bound, so a camera that has never framed
    * anything behaves as before.
@@ -216,15 +246,47 @@ export class Camera {
     this.canvas.addEventListener("wheel", this.handleWheel, { passive: false });
   }
 
-  /** Scales+positions the stage so `bounds` fits entirely within `viewport`, centered. */
-  fitTo(bounds: Rect, viewport: Size): void {
+  /**
+   * The scale at which `bounds` exactly fills `viewport` minus its padding, BEFORE
+   * `MAX_FIT_SCALE` caps it. Raw, that is: for content smaller than the viewport it
+   * is greater than 1, which is precisely what the cap exists to refuse.
+   */
+  private rawFitScale(bounds: Rect, viewport: Size): number {
     const availableW = Math.max(1, viewport.width - FIT_PADDING * 2);
     const availableH = Math.max(1, viewport.height - FIT_PADDING * 2);
-    let scale = Math.min(availableW / Math.max(bounds.width, 1), availableH / Math.max(bounds.height, 1));
-    if (!Number.isFinite(scale) || scale <= 0) scale = 1;
-    scale = clamp(scale, MIN_SCALE, MAX_FIT_SCALE);
-    this.zoomFloor = scale;
-    this.applyScaleAndCenter(bounds, viewport, scale);
+    const scale = Math.min(availableW / Math.max(bounds.width, 1), availableH / Math.max(bounds.height, 1));
+    return Number.isFinite(scale) && scale > 0 ? scale : 1;
+  }
+
+  /** Scales+positions the stage so `bounds` fits entirely within `viewport`, centered. */
+  fitTo(bounds: Rect, viewport: Size): void {
+    this.updateZoomOutFloor(bounds, viewport);
+    this.applyScaleAndCenter(bounds, viewport, clamp(this.rawFitScale(bounds, viewport), MIN_SCALE, MAX_FIT_SCALE));
+  }
+
+  /**
+   * Recomputes the zoom-out floor from the content's CURRENT extent, without
+   * touching the view.
+   *
+   * Exists because the extent moves without any reframing: an expansion or a
+   * revealed page ends on a `rebuild()`, never on a `doFit()` — reframing under a
+   * local gesture would be worse than the stale floor. A floor computed only
+   * inside `fitTo` therefore stayed on the pre-expansion content and forbade
+   * zooming out to see what had just been revealed.
+   *
+   * The framing the floor is taken on is the one `fitTo` really APPLIES, cap
+   * included — hence `Math.min(raw, MAX_FIT_SCALE)`. The cap does not bound how
+   * far out one may zoom (it is divided by the headroom right after); it keeps the
+   * floor from landing ABOVE the scale the content is shown at. For a one-card
+   * document the raw ratio is ~9, and a floor at 9 / 4 = 2.25 would leave a user
+   * who zoomed in unable to zoom back out even to the framing they booted on — the
+   * same dead gesture this floor is being fixed for.
+   */
+  updateZoomOutFloor(bounds: Rect, viewport: Size): void {
+    const framing = Math.min(this.rawFitScale(bounds, viewport), MAX_FIT_SCALE);
+    // No upper clamp: the quotient can never approach MAX_SCALE, `MAX_FIT_SCALE`
+    // being 1 and the headroom greater than 1.
+    this.zoomFloor = Math.max(MIN_SCALE, framing / ZOOM_OUT_HEADROOM);
   }
 
   /** Scales+positions the stage so `rect` is centered in `viewport`, at `scale` (or the current scale). */
@@ -368,7 +430,14 @@ export class Camera {
     const zoomFactor = zoomFactorFor(dy);
     // The floor bites on the way OUT only: `MAX_SCALE` still governs the way in,
     // where there is nothing to protect the user from.
-    const nextScale = clamp(this.currentScale * zoomFactor, this.zoomFloor, MAX_SCALE);
+    //
+    // `Math.min` with the current scale: the content can SHRINK (a collapse), which
+    // raises the floor above where the view already stands. Clamping to the bare
+    // floor there would answer a zoom-out gesture with a zoom-in — the camera
+    // jumping forward under a hand asking it to step back. Blocking is the right
+    // answer; snapping is not.
+    const floor = Math.min(this.zoomFloor, this.currentScale);
+    const nextScale = clamp(this.currentScale * zoomFactor, floor, MAX_SCALE);
     if (nextScale === this.currentScale) return;
 
     // Keep the point under the cursor stationary on screen while zooming.

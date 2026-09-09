@@ -309,14 +309,16 @@ describe("zoom-out floor", () => {
     expect(camera.zoomOutFloor()).toBeCloseTo(0.02);
   });
 
-  it("takes the framing scale as its floor after a fit", () => {
+  it("sits one headroom factor below the framing after a fit", () => {
     const { camera } = mountCamera();
     camera.fitTo({ x: 0, y: 0, width: 4000, height: 4000 }, { width: 1000, height: 800 });
     const fitted = camera.scale();
-    expect(camera.zoomOutFloor()).toBeCloseTo(fitted);
+    // ZOOM_OUT_HEADROOM = 4. A floor exactly AT the framing would forbid the very
+    // first notch out, the fit being where every dataset starts.
+    expect(camera.zoomOutFloor()).toBeCloseTo(fitted / 4);
   });
 
-  it("refuses to zoom out past the framing", () => {
+  it("refuses to zoom out past one headroom factor below the framing", () => {
     const { camera, wheel } = mountCamera();
     camera.fitTo({ x: 0, y: 0, width: 4000, height: 4000 }, { width: 1000, height: 800 });
     const fitted = camera.scale();
@@ -325,7 +327,61 @@ describe("zoom-out floor", () => {
     for (let i = 0; i < 20; i++) {
       wheel({ deltaY: 100, ctrlKey: true });
     }
-    expect(camera.scale()).toBeCloseTo(fitted);
+    expect(camera.scale()).toBeCloseTo(fitted / 4);
+    // The floor is what stopped the descent, not MIN_SCALE: it still bites.
+    expect(camera.scale()).toBeGreaterThan(0.02 * 2);
+  });
+
+  it("still zooms out on content that FITS the viewport", () => {
+    // The regression this case exists for: the floor used to be the framing scale
+    // AFTER MAX_FIT_SCALE (= 1) capped it, and `fitTo` applies that same capped
+    // value — so for any content small enough to be framed at 1, floor ===
+    // currentScale and `handleWheel`'s `nextScale === currentScale` early return
+    // made zoom-out a complete no-op. The demo's own dataset is in that regime.
+    const { camera, wheel } = mountCamera();
+    camera.fitTo({ x: 0, y: 0, width: 400, height: 300 }, { width: 1000, height: 800 });
+    const fitted = camera.scale();
+    expect(fitted).toBeCloseTo(1); // capped by MAX_FIT_SCALE, as before
+    wheel({ deltaY: 100, ctrlKey: true });
+    expect(camera.scale()).toBeLessThan(fitted);
+  });
+
+  it("keeps a usable floor on content FAR smaller than the viewport", () => {
+    // A one-card document: the raw fit ratio is ~9, well past the headroom factor.
+    // Deriving the floor from that raw ratio alone would put it at 9/4 = 2.25 —
+    // ABOVE the scale `fitTo` actually applies (1, capped), so the user could not
+    // even zoom back out to the framing they booted on. The floor is therefore
+    // taken on the framing the camera really shows.
+    const { camera, wheel } = mountCamera();
+    camera.fitTo({ x: 0, y: 0, width: 100, height: 80 }, { width: 1000, height: 800 });
+    const fitted = camera.scale();
+    expect(camera.zoomOutFloor()).toBeLessThan(fitted);
+    wheel({ deltaY: 100, ctrlKey: true });
+    expect(camera.scale()).toBeLessThan(fitted);
+  });
+
+  it("follows the content's extent, not only the last fit", () => {
+    // An expansion grows the content without reframing it (`doExpand` ends on
+    // `rebuild()`, never on `doFit`): a floor refreshed only inside `fitTo` would
+    // keep the pre-expansion value and forbid zooming out to see what was just
+    // revealed.
+    const { camera } = mountCamera();
+    camera.fitTo({ x: 0, y: 0, width: 1000, height: 800 }, { width: 1000, height: 800 });
+    const before = camera.zoomOutFloor();
+    camera.updateZoomOutFloor({ x: 0, y: 0, width: 4000, height: 3200 }, { width: 1000, height: 800 });
+    expect(camera.zoomOutFloor()).toBeLessThan(before);
+  });
+
+  it("never drags the view back IN when the floor rises above the current scale", () => {
+    // Symmetric case: a collapse shrinks the content, so the floor goes UP. The
+    // clamp must block the zoom-out, not answer it with a zoom-in.
+    const { camera, wheel } = mountCamera();
+    camera.fitTo({ x: 0, y: 0, width: 4000, height: 3200 }, { width: 1000, height: 800 });
+    const zoomedOut = camera.scale();
+    camera.updateZoomOutFloor({ x: 0, y: 0, width: 400, height: 320 }, { width: 1000, height: 800 });
+    expect(camera.zoomOutFloor()).toBeGreaterThan(zoomedOut);
+    wheel({ deltaY: 100, ctrlKey: true });
+    expect(camera.scale()).toBeCloseTo(zoomedOut);
   });
 
   it("leaves zooming IN untouched", () => {

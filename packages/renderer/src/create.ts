@@ -1808,6 +1808,10 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     // materialized later. The function stays, for changes of selection, which do
     // have to pass again over the cards ALREADY drawn.
 
+    // The content's extent may have just moved (an expansion, a collapse, a
+    // revealed page): the camera's zoom-out floor is derived from it, not from the
+    // last framing.
+    refreshZoomFloor();
     emitStatsIfChanged();
   }
 
@@ -2193,15 +2197,41 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     else syncCards();
   }
 
-  function doFit(): void {
+  /**
+   * The content's WORLD extent, or `null` before anything is laid out.
+   *
+   * The envelopes overflow the cards: include them, otherwise a framing taken on
+   * this box would clip them. The controller does nothing until something is
+   * published, which is what the guard on layout used to say.
+   */
+  function contentBounds(): Rect | null {
     const positions = activePositions();
-    if (!camera || !positions) return;
+    if (!positions) return null;
     const bounds = boundsOf(positions);
-    // The envelopes overflow the cards: include them, otherwise the framing would
-    // clip them. The controller does nothing until something is published, which is
-    // what the guard on layout used to say.
     if (view === "graph") graphView.extendBoundsToClusters(bounds);
+    return bounds;
+  }
+
+  function doFit(): void {
+    const bounds = contentBounds();
+    if (!camera || !bounds) return;
     camera.fitTo(bounds, viewport());
+  }
+
+  /**
+   * Hands the camera the content's current extent so its zoom-out floor follows it.
+   *
+   * Called from `rebuild()`, and from there only: it is the single point every
+   * operation changing the visible set ends on — the same argument ADR-0030 makes
+   * for `statschange`. An expansion or a revealed page grows the content WITHOUT
+   * reframing (they end on `rebuild()` + an animation, never on `doFit()`), so a
+   * floor refreshed inside `fitTo` alone would go on forbidding the zoom-out that
+   * shows what was just revealed.
+   */
+  function refreshZoomFloor(): void {
+    const bounds = contentBounds();
+    if (!camera || !bounds) return;
+    camera.updateZoomOutFloor(bounds, viewport());
   }
 
   /**
