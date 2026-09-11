@@ -49,9 +49,11 @@ const MAX_ZOOM_STEP = 0.2;
  * can aim at, which is what "not a dot lost in an empty canvas" means. In
  * gestures: exp(0.2) = 1.22 per notch and 1.22^7 = 4.06, so the floor sits about
  * seven wheel notches below the fit — an ordinary zoom-out, not a token one. It
- * also puts the floor under `draw.ts`'s LOD1 threshold (0.5) for any content
- * framed below 2.0, so the semantic regimes stay reachable where they mean
- * something.
+ * also puts the floor under `draw.ts`'s `LOD0_MIN_SCALE` (0.85) for any content
+ * framed below 3.4, so the semantic regimes stay reachable where they mean
+ * something. `MAX_FIT_SCALE` caps a framing at 1, so that condition holds for
+ * every dataset — the naming of the threshold aside, the property is unchanged
+ * by its move from 0.5 to 0.85, which only widens the margin.
  */
 const ZOOM_OUT_HEADROOM = 4;
 

@@ -25,9 +25,20 @@ export type { TextRole };
 
 export type Lod = 0 | 1 | 2;
 
-/** scale >= LOD0_MIN: full card (header + rows). LOD1_MIN <= scale < LOD0_MIN:
- * card + rail + label. scale < LOD1_MIN: solid rectangle. */
-export const LOD0_MIN_SCALE = 0.5;
+/**
+ * scale >= LOD0_MIN: full card (header + rows). LOD1_MIN <= scale < LOD0_MIN:
+ * card + rail + label. scale < LOD1_MIN: solid rectangle.
+ *
+ * The full card appears only once its ROWS are legible, which is what fixes the
+ * upper threshold: a key/value row is typeset at 12, so 0.85 is where it reaches
+ * ~10 CSS pixels — the floor `CARD_LABEL_MIN_SCREEN_PX` holds for the label.
+ *
+ * It was 0.5, which opened a band where the card drew its whole content at 6
+ * pixels. Nothing can be done for those rows — `rowHeight` is fixed, so a floor
+ * on their type would spill them out of the card — so the band goes back to
+ * LOD 1, whose label DOES hold a screen floor.
+ */
+export const LOD0_MIN_SCALE = 0.85;
 export const LOD1_MIN_SCALE = 0.15;
 
 export function lodForScale(scale: number): Lod {
@@ -99,6 +110,271 @@ export function truncateMiddle(text: string, maxWidth: number, charWidth: number
   return tail === 0
     ? `${text.slice(0, head)}…`
     : `${text.slice(0, head)}…${text.slice(text.length - tail)}`;
+}
+
+// --------------------------------------------------------------------------
+// A LOD 1 card's label
+//
+// At LOD 1 the card carries NOTHING but its name, and that name used to be
+// typeset at the theme's world size — so zoomed out it reached the screen at a
+// few pixels inside a card a hundred wide. Same failure
+// `SEMANTIC_LABEL_MIN_SCREEN_PX` fixes for the semantic regime's discs, same fix
+// in kind: a floor expressed on SCREEN, divided back by the camera's scale.
+//
+// Two things differ from the discs, both because a card is a card:
+//
+//  - it has a FIXED width and height, where a disc grows with its member count.
+//    Magnifying costs characters per line, and past a point asks for a font
+//    taller than the card. Hence the wrap onto several lines — LOD 1 leaves the
+//    card mostly empty, the room is there — and the cap by the card's height;
+//  - the floor is QUANTIZED. `rescaleSemanticLabels` follows the scale
+//    continuously because it only touches a label's scale and position; here the
+//    wrap and the truncation change with the size, so a continuous floor would
+//    recreate every visible card's text on every wheel frame. Stepping turns that
+//    into a handful of rebuilds, through the trigger `currentLod` already uses.
+// --------------------------------------------------------------------------
+
+/**
+ * The smallest a card's LOD 1 label may be ON SCREEN, in CSS pixels.
+ *
+ * A notch above the discs' 9: a disc's label sits on an empty ground and is the
+ * only thing to read there, whereas a card's competes with its own border, its
+ * rail and the edges crossing behind it.
+ */
+export const CARD_LABEL_MIN_SCREEN_PX = 10;
+
+/**
+ * The magnifications the label may take, as multiples of the theme's header size.
+ *
+ * A √2 ratchet whose span is not free: the first step must be exactly 1, so that
+ * ordinary zoom draws what it always drew, and the last must still reach the
+ * floor at `LOD1_MIN_SCALE`. `test/card-label.test.ts` asserts that coverage
+ * against both LOD constants, so widening the band without extending this list
+ * fails there rather than quietly bringing the unreadable label back.
+ */
+export const CARD_LABEL_STEPS: readonly number[] = [1, 1.4, 2, 2.8, 4, 5.6];
+
+/**
+ * The fraction of the card's height the label block may occupy, so a magnified
+ * label never touches the card's border, where it would read as overflow.
+ *
+ * 0.9 and not a rounder 0.8: the line box already carries its own leading
+ * (`CARD_LABEL_LINE_HEIGHT_RATIO`) and the block is centred, so the glyphs never
+ * reach the block's edges anyway — and every unit reserved here is one the
+ * descent may need, since a block half a unit too tall costs a whole rung.
+ */
+export const CARD_LABEL_HEIGHT_RATIO = 0.9;
+
+/** One line's box, as a multiple of the font size. */
+export const CARD_LABEL_LINE_HEIGHT_RATIO = 1.25;
+
+/**
+ * The quantized magnification the cards must be BUILT with at a camera scale —
+ * the LOD 1 label's counterpart to `lodForScale`, and like it a pure scale → band
+ * classifier, which is what lets `refreshCards` compare it against the step a
+ * rebuild last stored.
+ *
+ * Pinned to 1 outside LOD 1, and `lodForScale` is consulted HERE rather than at
+ * the call site so the pinning is part of the classifier and provable with it.
+ * That confines the extra rebuilds to the band that needs them: LOD 0 typesets
+ * its header at the theme's size — which IS step 1 — and LOD 2 draws no text.
+ *
+ * Takes the header SIZE rather than the theme, which is overridable
+ * (`ThemeOverride` reaches `typography`): a bare number keeps the rebuild trigger
+ * trivially testable.
+ */
+export function cardLabelStepForScale(scale: number, headerSize: number): number {
+  if (lodForScale(scale) !== 1) return 1;
+  const wanted = CARD_LABEL_MIN_SCREEN_PX / (Math.max(scale, 1e-6) * headerSize);
+  for (const step of CARD_LABEL_STEPS) if (step >= wanted) return step;
+  return CARD_LABEL_STEPS[CARD_LABEL_STEPS.length - 1]!;
+}
+
+/**
+ * The characters a line may break AFTER.
+ *
+ * Cards carry identifiers, not prose — `analyst_form_v2_financing_plan`, not a
+ * sentence — so the separators that matter are the ones a schema uses to compose
+ * a name. Breaking there keeps each line a whole segment, which is what lets the
+ * eye reassemble the name across the lines; breaking mid-segment would give
+ * `analyst_fo` / `rm_v2` and cost the reader the word.
+ */
+const CARD_LABEL_BREAK_AFTER = new Set([" ", "_", "-", ".", "/", ":"]);
+
+/**
+ * `#` breaks BEFORE itself, where every other separator breaks after, and the
+ * asymmetry is the point: `#` opens an identifier rather than closing a segment
+ * (`Order #o200`), so it belongs with what FOLLOWS. Breaking after it gave
+ * `Order #` / `o200`, the `#` dangling at a line's end and the id it introduces
+ * orphaned on the next. Breaking before gives `Order` / `#o200`.
+ */
+const CARD_LABEL_BREAK_BEFORE = "#";
+
+/** The label split at every break point, each piece keeping its own separator so
+ * that reassembling the pieces reproduces the label exactly. */
+function chunkLabel(label: string): string[] {
+  const chunks: string[] = [];
+  let start = 0;
+  for (let i = 0; i < label.length; i += 1) {
+    if (label[i] === CARD_LABEL_BREAK_BEFORE) {
+      if (i > start) chunks.push(label.slice(start, i));
+      start = i;
+    } else if (CARD_LABEL_BREAK_AFTER.has(label[i]!)) {
+      chunks.push(label.slice(start, i + 1));
+      start = i + 1;
+    }
+  }
+  if (start < label.length) chunks.push(label.slice(start));
+  return chunks;
+}
+
+export interface CardLabelLayout {
+  /** The factor to apply to a text created at the theme's header size — the same
+   * trick `drawSemanticLabels` uses, and for the same reason: one atlas shared by
+   * every label, instead of one atlas per size. */
+  k: number;
+  /** The lines to paint, top to bottom, already fitted to the card. */
+  lines: string[];
+  /** One line's box height, in world units. */
+  lineHeight: number;
+}
+
+/**
+ * How a LOD 1 label fits into its card at ONE step — and, through `clipped`,
+ * whether it had to sacrifice part of the name to get there: a line dropped for
+ * want of height, or a word cut in half for want of width. `cardLabelLayout` reads
+ * that flag to decide whether a smaller step would do better.
+ *
+ * The size is the step's, capped by the card's height — a step alone would ask
+ * 72.8 world units of a card 56 tall, a name that does not fit in the thing it
+ * names. That cap is also what makes the block self-consistent: since
+ * `size <= usableHeight / CARD_LABEL_LINE_HEIGHT_RATIO`, one line always fits, so
+ * `maxLines` is never 0 and the block never exceeds the card.
+ *
+ * Everything is BUDGETED from `metrics`'s advances, never measured on the
+ * rendered object — the same discipline as `measureNode`/`drawNode` and
+ * `semanticLabelGeometry`, and the same practical consequence: no canvas, hence
+ * no `document`, hence testable outside a browser.
+ */
+function cardLabelAtStep(
+  label: string,
+  innerWidth: number,
+  cardHeight: number,
+  step: number,
+  headerSize: number,
+  headerCharWidth: number,
+): { layout: CardLabelLayout; clipped: boolean } {
+  const usableHeight = cardHeight * CARD_LABEL_HEIGHT_RATIO;
+  // The cap may drop BELOW the theme's size, and must: a card shorter than one
+  // line box still has to get one line, which is what makes `maxLines >= 1` below.
+  const size = Math.min(
+    headerSize * Math.max(step, 1),
+    usableHeight / CARD_LABEL_LINE_HEIGHT_RATIO,
+  );
+  const k = size / headerSize;
+  const lineHeight = size * CARD_LABEL_LINE_HEIGHT_RATIO;
+  const nothing = { layout: { k, lines: [], lineHeight }, clipped: false };
+  if (label.length === 0 || !(size > 0) || !(innerWidth > 0)) return nothing;
+
+  // The budget is counted in CHARACTERS at the rendered advance: `k` is already
+  // folded into `charWidth`, so a line that respects `maxChars` respects
+  // `innerWidth` once painted at `k`. Computing the budget at the UNFLOORED size
+  // and painting at the floored one is precisely the overflow
+  // `semanticLabelScale` documents next door.
+  const charWidth = headerCharWidth * k;
+  const maxChars = Math.floor(innerWidth / charWidth);
+  if (maxChars <= 0) return nothing;
+  const maxLines = Math.max(1, Math.floor(usableHeight / lineHeight));
+
+  // A line is measured ELAGUED of its trailing separator, because that is how it
+  // is painted (see the trim below): a space at a line's end takes no ink, so
+  // charging it to the budget forces a break the rendered line did not need. The
+  // rule any line breaker applies to trailing whitespace, extended to the
+  // separators this one breaks on.
+  const fits = (line: string): boolean => line.trimEnd().length <= maxChars;
+
+  const lines: string[] = [];
+  let hardBroken = false;
+  let current = "";
+  for (const chunk of chunkLabel(label)) {
+    if (current.length > 0 && !fits(current + chunk)) {
+      lines.push(current);
+      current = chunk;
+    } else {
+      current += chunk;
+    }
+    // A single segment wider than the whole line: there is no break point to
+    // honour, so cut it. Overflowing the card is the one thing that is never an
+    // option — but the cut costs the reader the word, so it is reported as a
+    // sacrifice and `cardLabelLayout` will try a smaller step before accepting it.
+    while (!fits(current)) {
+      hardBroken = true;
+      lines.push(current.slice(0, maxChars));
+      current = current.slice(maxChars);
+    }
+  }
+  if (current.length > 0) lines.push(current);
+
+  // A trailing separator is invisible at the end of a line but was paid for in
+  // the budget — trimming it can only shorten the line, never break the width
+  // invariant. A line left EMPTY by that trim (a run of spaces) is dropped: it
+  // would otherwise spend a whole line box saying nothing.
+  const kept = lines.slice(0, maxLines).map((line) => line.trimEnd());
+  if (lines.length > maxLines) {
+    // Height ran out before the label did. The ellipsis is not decoration: a name
+    // silently amputated reads as a DIFFERENT name, which is worse than an
+    // obviously incomplete one.
+    const last = kept[maxLines - 1] ?? "";
+    kept[maxLines - 1] = last.length < maxChars ? `${last}…` : `${last.slice(0, maxChars - 1)}…`;
+  }
+  return {
+    layout: { k, lines: kept.filter((line) => line.length > 0), lineHeight },
+    clipped: hardBroken || lines.length > maxLines,
+  };
+}
+
+/**
+ * How a LOD 1 label fits into its card: the magnification finally applied, the
+ * lines to paint, and the line box they sit in.
+ *
+ * Walks DOWN `CARD_LABEL_STEPS` from the step the camera asked for and takes the
+ * first one that costs the name nothing. Legibility yields to completeness here,
+ * and only here: on the demo's `Order` cards at scale 0.20 (140 wide, 113 tall)
+ * the requested step held one line where the name needed two, and gave `Orde…` —
+ * a legible fragment of a name is not a name, a smaller complete one is.
+ *
+ * The ladder is reused rather than a continuous fit being solved for. That keeps
+ * the descent to at most six cheap string passes over a short label, and keeps
+ * every size drawn one of the six the rebuild trigger already knows about.
+ *
+ * When no step fits — a name far too long for its card — the SMALLEST is returned:
+ * it shows the most of the name before the ellipsis, and is exactly what LOD 1
+ * drew before any of this existed.
+ */
+export function cardLabelLayout(
+  label: string,
+  innerWidth: number,
+  cardHeight: number,
+  step: number,
+  headerSize: number,
+  headerCharWidth: number,
+): CardLabelLayout {
+  const descending = CARD_LABEL_STEPS.filter((candidate) => candidate <= step).reverse();
+  const candidates = descending.length > 0 ? descending : [1];
+  let smallest: CardLabelLayout | null = null;
+  for (const candidate of candidates) {
+    const attempt = cardLabelAtStep(
+      label,
+      innerWidth,
+      cardHeight,
+      candidate,
+      headerSize,
+      headerCharWidth,
+    );
+    if (!attempt.clipped) return attempt.layout;
+    smallest = attempt.layout;
+  }
+  return smallest!;
 }
 
 // Installing the atlases belongs to `font-registry.ts`, which reference-counts
@@ -397,6 +673,11 @@ export function drawNode(
   refFields: ReadonlySet<string> = NO_REF_FIELDS,
   danglingFields: ReadonlySet<string> = NO_REF_FIELDS,
   expandedArrays: ReadonlySet<NodeId> | null = null,
+  // The LOD 1 label's magnification, from `cardLabelStepForScale`. Last and
+  // defaulted rather than beside `lod`, where it would read better: inserting it
+  // there would rewrite every call site and test for a cosmetic gain. Ignored
+  // outside LOD 1 — LOD 0 typesets its header at the theme's size, LOD 2 has no text.
+  labelScale = 1,
 ): Container {
   // The atlases are installed by the lease `create.ts` holds, before any call
   // here. `fontNameFor` derives the name from the theme alone.
@@ -446,10 +727,32 @@ export function drawNode(
   const inner = contentRight - contentX;
 
   if (lod === 1) {
-    const label = truncateToWidth(node.label, inner, charWidthFor("header", metrics));
-    const text = createLabel(label, theme, "header", theme.ink.primary, useBitmapText);
-    text.position.set(contentX, Math.round(rect.height / 2 - text.height / 2));
-    container.addChild(text);
+    const layout = cardLabelLayout(
+      node.label,
+      inner,
+      rect.height,
+      labelScale,
+      theme.typography.header.size,
+      charWidthFor("header", metrics),
+    );
+    // One Text PER LINE, placed on `layout.lineHeight`, rather than a single Text
+    // holding "\n"s: Pixi would then space the lines on the font's own metrics,
+    // which are not the metric the block's height was budgeted on — the vertical
+    // centering would drift by whatever the two disagree on. The line count is
+    // bounded by the card's height, so this stays a handful of objects per card.
+    const size = layout.k * theme.typography.header.size;
+    const top = rect.height / 2 - (layout.lines.length * layout.lineHeight) / 2;
+    // Left-aligned on `contentX`, the abscissa LOD 0 gives its header: crossing the
+    // threshold then moves the name vertically at most, never sideways.
+    layout.lines.forEach((line, index) => {
+      const text = createLabel(line, theme, "header", theme.ink.primary, useBitmapText);
+      text.scale.set(layout.k);
+      text.position.set(
+        contentX,
+        Math.round(top + index * layout.lineHeight + (layout.lineHeight - size) / 2),
+      );
+      container.addChild(text);
+    });
     return container;
   }
 

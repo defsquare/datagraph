@@ -56,6 +56,7 @@ import { pixiFontRegistry } from "./font-registry.js";
 import { fontsReady, measureFontMetrics } from "./font-metrics.js";
 import { Camera, revealPan, type Size } from "./camera.js";
 import {
+  cardLabelStepForScale,
   drawEdgeHitAreas,
   drawEdgeLabels,
   drawEdges,
@@ -862,6 +863,16 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   // without a config keeps whatever the *previous* setData installed.
   let currentConfig: DataGraphConfig = options.config;
   let currentLod: Lod = 0;
+  /**
+   * The LOD 1 label magnification the drawn cards were built with — `currentLod`'s
+   * companion, and a rebuild trigger on exactly the same footing: when it changes,
+   * every card's label changes its wrap and its truncation, so the cards on screen
+   * no longer describe the camera.
+   *
+   * `cardLabelStepForScale` pins it to 1 outside LOD 1, which is what keeps it
+   * inert at the other two levels: it can then never provoke a rebuild there.
+   */
+  let currentLabelStep = 1;
   let selection: Selection | null = null;
   let destroyed = false;
   // The media query watching the device pixel ratio, and its handler. Both are
@@ -1727,7 +1738,9 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     // LOD change) would leave the camera's pan inhibited for the rest of the
     // session.
     contentDragging = false;
-    currentLod = lodForScale(camera ? camera.scale() : 1);
+    const scale = camera ? camera.scale() : 1;
+    currentLod = lodForScale(scale);
+    currentLabelStep = cardLabelStepForScale(scale, theme.typography.header.size);
 
     for (const child of nodesLayer.removeChildren()) child.destroy({ children: true });
     nodeViews.clear();
@@ -1943,6 +1956,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       // `null` where the view collapses nothing: the tokens stay readable but inert
       // there, like the header chevron.
       policy.expandedArrays ? expandedArrays : null,
+      currentLabelStep,
     );
     nodeView.position.set(rect.x, rect.y);
     attachTap(nodeView, (event) => handleNodeTap(node, nodeView, event));
@@ -2185,15 +2199,23 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
 
   /**
    * Brings the cards back into agreement with the camera: a COMPLETE rebuild if the
-   * LOD changed — every card then changes shape — a mere window update otherwise.
+   * LOD changed — every card then changes shape — or if the LOD 1 label crossed a
+   * magnification step, which rewraps and re-truncates every label. A mere window
+   * update otherwise.
    *
    * The only place that decides between the two. Having it at a single point is what
    * guarantees a camera movement never produces more than ONE rebuild: the ticker,
    * `fit()` and `doFocus` all go through here.
+   *
+   * `theme` is read LIVE on each call rather than closed over: `setTheme` can
+   * replace the typography (`ThemeOverride` reaches it), and a step computed from
+   * a stale header size would fit the label to a font it is no longer drawn in.
    */
   function refreshCards(): void {
     if (!camera) return;
-    if (lodForScale(camera.scale()) !== currentLod) rebuild();
+    const scale = camera.scale();
+    const step = cardLabelStepForScale(scale, theme.typography.header.size);
+    if (lodForScale(scale) !== currentLod || step !== currentLabelStep) rebuild();
     else syncCards();
   }
 
