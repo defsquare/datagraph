@@ -187,6 +187,12 @@ function iconButtonSection(): HTMLElement {
     "L'unique commande du chrome : 30px, sans fond au repos, l'icône en --ds-muted. Chaque case ci-dessous est un vrai bouton — les états ne sont pas simulés, il faut les provoquer. Les deux derniers, eux, tiennent à un attribut et se lisent au repos.",
   );
 
+  // `data-badge` is a runtime state too, exactly like `disabled` and
+  // `aria-busy` above: not a `createIconButton` option, set here the way the
+  // demo sets it on the magnifier once a query survives the findbar's fold.
+  const badged = createIconButton({ icon: "search", label: "Rechercher" });
+  badged.dataset.badge = "true";
+
   row.append(
     cell("repos", loneButton({ icon: "search", label: "Rechercher" })),
     cell(
@@ -222,6 +228,10 @@ function iconButtonSection(): HTMLElement {
       createCluster(
         createIconButton({ icon: ["graph", "structure"], label: "Vue graphe" }),
       ),
+    ),
+    cell(
+      "<code>data-badge=\"true\"</code> — un point tenant à un pseudo-élément : quelque chose tourne encore derrière le bouton replié. Comme <code>disabled</code> et <code>aria-busy</code>, ce n'est pas un argument de <code>createIconButton</code> — c'est la démo qui le pose, sur la loupe, quand une recherche survit au repli de la barre.",
+      createCluster(badged),
     ),
   );
 

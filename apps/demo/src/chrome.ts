@@ -24,12 +24,20 @@ export interface Chrome {
   applyTheme(): void;
   /** Aligns the toggle button on the view that is ACTUALLY active. */
   syncViewButton(): void;
+  /** Marks the magnifier as carrying a live query. Folding the findbar cancels
+   * nothing — the highlights stay on the canvas — so the button has to say that
+   * something is still running behind it. */
+  setSearchActive(active: boolean): void;
 }
 
 export interface ChromeHooks {
   /** Called when the search bar unfolds: the chrome does not know the input,
    * `search-ui.ts` is what gives it focus. */
   onSearchOpen(): void;
+  /** Called when the diagnostics link is activated. The chrome owns the LINK,
+   * not the panel: `main.ts` is what holds the detail panel and decides what
+   * the surface shows. */
+  onDiagnosticsOpen(): void;
 }
 
 export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
@@ -131,14 +139,30 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
     return panel !== null && !panel.hasAttribute("hidden");
   }
 
+  let searchActive = false;
+
+  function syncSearchBadge(): void {
+    // The badge only shows on the FOLDED bar: with the bar open the query is
+    // right there, and a dot would repeat it.
+    if (searchActive && !isOpen(findbarEl)) searchToggleBtn.dataset.badge = "true";
+    else delete searchToggleBtn.dataset.badge;
+  }
+
+  function setSearchActive(active: boolean): void {
+    searchActive = active;
+    syncSearchBadge();
+  }
+
   function openSearch(): void {
     setExpanded(findbarEl, searchToggleBtn, true);
     // Unfolding without giving focus would force a second click before typing.
     hooks.onSearchOpen();
+    syncSearchBadge();
   }
 
   function closeSearch(): void {
     setExpanded(findbarEl, searchToggleBtn, false);
+    syncSearchBadge();
   }
 
   function closeMenu(): void {
@@ -175,9 +199,27 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
   );
 
   document.addEventListener("keydown", (event) => {
+    if (event.key !== "f" && event.key !== "F") return;
+    if (!event.ctrlKey && !event.metaKey) return;
+    // Hands the shortcut back to the browser when the findbar is already open
+    // with the field focused: at that point the user is asking for the PAGE's
+    // find, not for ours, and stealing it would be a dead key.
+    const focused = document.activeElement;
+    if (isOpen(findbarEl) && focused instanceof HTMLElement && findbarEl?.contains(focused)) return;
+    event.preventDefault();
+    openSearch();
+  });
+
+  document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
-    // Escape closes one level at a time, the most recent one first.
+    // Escape closes one level at a time, the most recent one first. The renderer
+    // is the LAST level: it listens on `window`, which a bubbling `document`
+    // Escape reaches only after this handler runs. `stopPropagation` is therefore
+    // called ONLY inside the branches that actually consumed the key — a blanket
+    // call at the top would also swallow Escape when nothing here is open, and
+    // deselecting the graph would never happen.
     if (isOpen(menuEl)) {
+      event.stopPropagation();
       closeMenu();
       menuToggleBtn?.focus();
     } else if (isOpen(findbarEl)) {
@@ -186,6 +228,7 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
       // the old term while the field looked empty. Collapsing must cancel
       // nothing, so that clearing is held back.
       event.preventDefault();
+      event.stopPropagation();
       closeSearch();
       searchToggleBtn?.focus();
     }
@@ -212,7 +255,11 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
   }
 
   statDiagEl.addEventListener("click", () => {
+    // The `console.warn` stays: in dev it is still the fastest way to read the
+    // whole batch, and the packaged binary has no devtools — which is exactly
+    // why the panel below had to exist.
     for (const d of graph.diagnostics()) console.warn(`[data-graph] ${d.code} @ ${d.path}: ${d.message}`);
+    hooks.onDiagnosticsOpen();
   });
 
   // --- Theme: the library and the DOM shell switch together.
@@ -285,10 +332,6 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
         // moved, and an icon set from `next` would announce a view that is not on
         // screen.
         syncViewButton();
-        // Toggling changes the number of nodes displayed (the whole tree on one
-        // side, entities only on the other): without this refresh the status bar
-        // counter would stay on the other view's value.
-        updateStatus();
       } finally {
         setViewBusy(false);
         toggleViewBtn.disabled = false;
@@ -298,10 +341,25 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
 
   fitBtn.addEventListener("click", () => graph.fit());
 
-  // `tidy()` is async (it redoes the full layout) but nothing here has to await
-  // its result: the promise is explicitly discarded, and the instance guards
-  // itself against concurrent operations.
-  tidyBtn.addEventListener("click", () => void graph.tidy());
+  /**
+   * Same treatment as the view toggle, and for the same reason made sharper by
+   * scale: `tidy()` recomputes the WHOLE arrangement, which takes seconds on a
+   * large dataset while the page stays perfectly responsive. Without the busy
+   * state, a button that answers instantly and changes nothing reads as a lost
+   * click, and the user clicks again — queueing a second global layout.
+   */
+  tidyBtn.addEventListener("click", () => {
+    void (async () => {
+      tidyBtn.disabled = true;
+      tidyBtn.setAttribute("aria-busy", "true");
+      try {
+        await graph.tidy();
+      } finally {
+        tidyBtn.removeAttribute("aria-busy");
+        tidyBtn.disabled = false;
+      }
+    })();
+  });
 
-  return { updateStatus, applyTheme, syncViewButton };
+  return { updateStatus, applyTheme, syncViewButton, setSearchActive };
 }

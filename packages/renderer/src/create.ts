@@ -3,8 +3,10 @@ import {
   Application,
   Container,
   Graphics,
+  type BitmapText,
   type FederatedPointerEvent,
   type Rectangle,
+  type Text,
 } from "pixi.js";
 import ELK from "elkjs/lib/elk.bundled.js";
 import {
@@ -52,7 +54,7 @@ export type { TwoLevelLayoutOptions };
 import { entityAccentMap, resolveTheme, type Theme, type ThemeOverride } from "./theme.js";
 import { pixiFontRegistry } from "./font-registry.js";
 import { fontsReady, measureFontMetrics } from "./font-metrics.js";
-import { Camera, type Size } from "./camera.js";
+import { Camera, revealPan, type Size } from "./camera.js";
 import {
   drawEdgeHitAreas,
   drawEdgeLabels,
@@ -72,6 +74,7 @@ import {
   lodForScale,
   REMAINDER_TOKEN_GAP,
   REMAINDER_TOKEN_HEIGHT,
+  semanticLabelGeometry,
   type EdgeLabelPlacement,
   type Lod,
   TOKEN_HOVER_SHIFT,
@@ -79,6 +82,7 @@ import {
 import { attachDrag, TAP_THRESHOLD } from "./drag.js";
 import { clusterRelatedIds, DIM_ALPHA, relatedIds } from "./focus.js";
 import { attachHover, type HoverHandle } from "./hover.js";
+import { nearestInDirection } from "./keynav.js";
 import { createPositionAnimator } from "./animate.js";
 import { createSearchController } from "./search.js";
 import {
@@ -239,11 +243,17 @@ export interface DataGraphOptions {
   graphLayoutWorkerUrl?: string | URL;
 }
 
-export type DataGraphEvent = "select" | "followRef";
+export type DataGraphEvent = "select" | "followRef" | "deselect" | "statschange";
 
 type DataGraphEvents = {
   select: GraphNode;
   followRef: RefEdge;
+  /** The selection returned to rest. No payload: there is nothing left to
+   * describe, and the host's own state is what it has to undo. */
+  deselect: void;
+  /** What `stats()` reports has changed. No payload either — the host re-reads
+   * `stats()`, so a counter added there needs no new event shape. */
+  statschange: void;
 };
 
 export interface DataGraph {
@@ -757,6 +767,15 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   // rebuild 1,300 texts per frame for an identical rendering. Same split as the
   // edges and their `edgeHitLayer`.
   const semanticLabelLayer = new Container();
+  // The id -> circle lookup `rescaleSemanticLabels` needs on every scale-changed
+  // frame, cached at the point `redrawSemanticLayers` already walks
+  // `semanticNodesFor()` once. Rebuilding it per frame instead — the first cut of
+  // this feature did, via `semanticNodesFor()` plus a fresh `Map` — means
+  // reconstructing the full ~1,300-aggregate PAINT list (color/dim/hover per
+  // aggregate, see `semanticNodesFor`'s doc) on essentially every tick of a
+  // continuous wheel zoom, to keep three numbers. `null` outside the semantic
+  // regime, where `rescaleSemanticLabels` has nothing to update anyway.
+  let semanticLabelCircles: Map<string, { cx: number; cy: number; r: number }> | null = null;
   // The envelopes' grab targets, just ABOVE their visual and UNDER everything else.
   // Depth is what settles the arbitration between gestures: Pixi's hit-testing goes
   // top to bottom, so a card, an edge hit area or the overlay catches the pointer
@@ -845,6 +864,12 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   let currentLod: Lod = 0;
   let selection: Selection | null = null;
   let destroyed = false;
+  // The media query watching the device pixel ratio, and its handler. Both are
+  // rebuilt on each change (the threshold depends on the current ratio) and both
+  // must be released by `destroy()` — they are the only listeners the async
+  // initialization installs.
+  let dprQuery: MediaQueryList | null = null;
+  let onDprChange: () => void = () => {};
   // Bumped by every mutating operation (doExpand/doCollapse/doFocus's expand
   // cascade) before it awaits a layout; after each await the operation
   // compares its captured value against the current counter and bails if
@@ -1239,10 +1264,66 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   function redrawSemanticLayers(): void {
     redrawSemanticEdges();
     for (const child of semanticLabelLayer.removeChildren()) child.destroy({ children: true });
-    if (viewPolicy().aggregates !== "disc") return;
+    if (viewPolicy().aggregates !== "disc") {
+      semanticLabelCircles = null;
+      return;
+    }
+    const nodes = semanticNodesFor();
     semanticLabelLayer.addChild(
-      drawSemanticLabels(semanticNodesFor(), theme, useBitmapText, metrics),
+      drawSemanticLabels(nodes, theme, useBitmapText, metrics, camera ? camera.scale() : 1),
     );
+    // Built ONCE here, off the same `nodes` just walked to paint the labels —
+    // `rescaleSemanticLabels` reads this instead of calling `semanticNodesFor()`
+    // and rebuilding the Map itself on every scale-changed frame.
+    semanticLabelCircles = new Map(nodes.map((n) => [n.id, n.circle]));
+  }
+
+  /**
+   * Keeps every semantic label's scale and position in step with the LIVE camera,
+   * without recreating anything.
+   *
+   * `SEMANTIC_LABEL_MIN_SCREEN_PX` (see `draw.ts`) is a SCREEN floor, so the world
+   * size it demands keeps changing as the camera zooms — and LOD 2 (the semantic
+   * regime) has no upper zoom-out bound: `refreshCards`'s `lodForScale(...) !==
+   * currentLod` check never fires again once inside it, so nothing else
+   * re-triggers `redrawSemanticLayers()` as the user keeps zooming further out.
+   * Without this, a label sized right at the LOD 2 threshold would fall back
+   * under the floor on any further zoom-out — reproducing exactly the smudge this
+   * whole floor exists to prevent.
+   *
+   * Cheap by construction, the same discipline as `repositionEdgeLabels`: it
+   * touches only `.scale`/`.position` on the Containers `drawSemanticLabels`
+   * already created — never the text. The truncation stays the one decided at the
+   * last rebuild's camera scale (rescaling only changes how BIG that surviving
+   * text paints, not how much of it survives — see `semanticLabelScale`'s doc in
+   * draw.ts for why the two must nonetheless agree at rebuild time) — nor the
+   * aggregated edges, which stay governed by `redrawSemanticEdges`'s own cadence.
+   *
+   * Reads `semanticLabelCircles`, cached once per rebuild by
+   * `redrawSemanticLayers`, instead of calling `semanticNodesFor()` and building a
+   * fresh `Map` here: this runs on every scale-changed ticker frame during a
+   * continuous wheel zoom, and `semanticNodesFor()` rebuilds the FULL paint list —
+   * color, dim, hover, one new object per aggregate — for the ~1,300 aggregates of
+   * the real dataset, to extract three numbers already sitting in the cache. See
+   * `repositionEdgeLabels` for the same discipline applied to edge labels.
+   */
+  function rescaleSemanticLabels(cameraScale: number): void {
+    // `children[0]`: the permanent layer holds a single child, the container
+    // `drawSemanticLabels` returns, whose direct children are the labeled groups
+    // (see `dragCluster`'s identical descent).
+    const layer = semanticLabelLayer.children[0];
+    if (!layer || !semanticLabelCircles) return;
+    for (const group of layer.children) {
+      const circle = semanticLabelCircles.get(group.label);
+      if (!circle || !(circle.r > 0)) continue;
+      const [label, badge] = group.children as [Text | BitmapText, Text | BitmapText];
+      if (!label || !badge) continue;
+      const geo = semanticLabelGeometry(circle, label.text, badge.text, theme, metrics, cameraScale);
+      label.scale.set(geo.k);
+      badge.scale.set(geo.kBadge);
+      label.position.set(geo.labelX, geo.labelY);
+      badge.position.set(geo.badgeX, geo.badgeY);
+    }
   }
 
   /**
@@ -1603,6 +1684,36 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     redrawOverlay();
   }
 
+  /**
+   * The last counters announced through `"statschange"`, so a rebuild that
+   * changes no count stays silent.
+   *
+   * `rebuild()` is the single emission point — every operation that changes the
+   * visible set ends there, and an operation abandoned by the `opGen` guard never
+   * reaches it, which is what keeps a cancelled expansion from announcing a
+   * layout it rolled back. But `rebuild()` also runs on a LOD flip and on
+   * `setTheme`, where nothing counted has moved: without this memo the host would
+   * be woken on every zoom notch.
+   *
+   * `-1` is unreachable for both counters, so the FIRST rebuild always emits.
+   */
+  let announcedStats = { logicalNodeCount: -1, visibleNodeCount: -1 };
+
+  function emitStatsIfChanged(): void {
+    const next = {
+      logicalNodeCount: graph?.logicalNodeCount ?? 0,
+      visibleNodeCount: drawnVisibleCount(),
+    };
+    if (
+      next.logicalNodeCount === announcedStats.logicalNodeCount &&
+      next.visibleNodeCount === announcedStats.visibleNodeCount
+    ) {
+      return;
+    }
+    announcedStats = next;
+    emitter.emit("statschange", undefined);
+  }
+
   function rebuild(): void {
     const positions = activePositions();
     if (!graph || !positions) return;
@@ -1696,6 +1807,12 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     // creation (`createCard`), which is the only way to hold dimming for a card
     // materialized later. The function stays, for changes of selection, which do
     // have to pass again over the cards ALREADY drawn.
+
+    // The content's extent may have just moved (an expansion, a collapse, a
+    // revealed page): the camera's zoom-out floor is derived from it, not from the
+    // last framing.
+    refreshZoomFloor();
+    emitStatsIfChanged();
   }
 
   /**
@@ -2080,15 +2197,76 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     else syncCards();
   }
 
-  function doFit(): void {
+  /**
+   * The content's WORLD extent, or `null` before anything is laid out.
+   *
+   * The envelopes overflow the cards: include them, otherwise a framing taken on
+   * this box would clip them. The controller does nothing until something is
+   * published, which is what the guard on layout used to say.
+   */
+  function contentBounds(): Rect | null {
     const positions = activePositions();
-    if (!camera || !positions) return;
+    if (!positions) return null;
     const bounds = boundsOf(positions);
-    // The envelopes overflow the cards: include them, otherwise the framing would
-    // clip them. The controller does nothing until something is published, which is
-    // what the guard on layout used to say.
     if (view === "graph") graphView.extendBoundsToClusters(bounds);
+    return bounds;
+  }
+
+  function doFit(): void {
+    const bounds = contentBounds();
+    if (!camera || !bounds) return;
     camera.fitTo(bounds, viewport());
+  }
+
+  /**
+   * Hands the camera the content's current extent so its zoom-out floor follows it.
+   *
+   * Called from `rebuild()`, and from there only: it is the single point every
+   * operation changing the visible set ends on — the same argument ADR-0030 makes
+   * for `statschange`. An expansion or a revealed page grows the content WITHOUT
+   * reframing (they end on `rebuild()` + an animation, never on `doFit()`), so a
+   * floor refreshed inside `fitTo` alone would go on forbidding the zoom-out that
+   * shows what was just revealed.
+   */
+  function refreshZoomFloor(): void {
+    const bounds = contentBounds();
+    if (!camera || !bounds) return;
+    camera.updateZoomOutFloor(bounds, viewport());
+  }
+
+  /**
+   * Duration of the camera's follow. Deliberately longer than `TRANSITION_MS`
+   * (200 ms, the cards' own move): the two run together, and a camera arriving
+   * first would show an empty area for the rest of the cards' travel.
+   */
+  const REVEAL_PAN_MS = 320;
+  /** How far inside the edge revealed content must land, in world units. */
+  const REVEAL_MARGIN = 80;
+
+  /**
+   * Brings content that just appeared into frame — and only when NONE of it is
+   * already there. `revealPan` carries the whole decision; this function only
+   * gathers the rectangles, which it can do because `layoutResult` is already
+   * published by the time it runs.
+   */
+  function followRevealed(newIds: Iterable<NodeId>): void {
+    if (!camera) return;
+    const positions = activePositions();
+    if (!positions) return;
+    const targets: Rect[] = [];
+    for (const id of newIds) {
+      const rect = positions.get(id);
+      if (rect) targets.push(rect);
+    }
+    const pan = revealPan(camera.worldViewport(viewport()), targets, REVEAL_MARGIN);
+    if (pan) camera.panByWorld(pan.dx, pan.dy, REVEAL_PAN_MS);
+  }
+
+  /** The ids in `next` that `prev` did not carry. */
+  function difference(next: ReadonlySet<NodeId>, prev: ReadonlySet<NodeId>): NodeId[] {
+    const out: NodeId[] = [];
+    for (const id of next) if (!prev.has(id)) out.push(id);
+    return out;
   }
 
   /**
@@ -2166,6 +2344,10 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     if (!graph || !collapseState || !layoutResult || !engine) return;
     if (!graph.nodes.has(id) || collapseState.isExpanded(id)) return;
     const gen = ++opGen;
+    // Captured BEFORE the mutation: the diff against the post-layout set is what
+    // names the cards that appeared, and it is the only thing the camera follow
+    // needs to know.
+    const beforeVisible = collapseState.visibleNodeIds();
     collapseState.expand(id);
     const visible = collapseState.visibleNodeIds();
     const prevPositions = new Map(layoutResult.positions);
@@ -2193,6 +2375,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     layoutResult = next;
     rebuild();
     animatePositions(prevPositions, layoutResult.positions);
+    followRevealed(difference(collapseState.visibleNodeIds(), beforeVisible));
   }
 
   /**
@@ -2207,6 +2390,10 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     if (!graph || !collapseState || !layoutResult || !engine) return;
     if (!graph.nodes.has(parentId) || collapseState.revealedPages(parentId).has(page)) return;
     const gen = ++opGen;
+    // Captured BEFORE the mutation: the diff against the post-layout set is what
+    // names the cards that appeared, and it is the only thing the camera follow
+    // needs to know.
+    const beforeVisible = collapseState.visibleNodeIds();
     collapseState.revealPage(parentId, page);
     const visible = collapseState.visibleNodeIds();
     const prevPositions = new Map(layoutResult.positions);
@@ -2229,6 +2416,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     layoutResult = next;
     rebuild();
     animatePositions(prevPositions, layoutResult.positions);
+    followRevealed(difference(collapseState.visibleNodeIds(), beforeVisible));
   }
 
   function doCollapse(id: NodeId): void {
@@ -2261,11 +2449,28 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   function redrawSelection(): void {
     if (view === "graph") {
       redrawClusters();
-      // The aggregated edges and the labels carry dimming too: without this pass,
-      // selecting an aggregate would light its disc while leaving its neighbors at
-      // full intensity. No effect outside the semantic regime, where both layers
-      // are empty.
-      redrawSemanticLayers();
+      // The aggregated edges carry dimming too: without this pass, selecting an
+      // aggregate would light its disc while leaving its neighbors' edges at full
+      // intensity. No effect outside the semantic regime, where the layer is empty.
+      //
+      // `redrawSemanticEdges()` ALONE, deliberately NOT the combined
+      // `redrawSemanticLayers()`: `drawSemanticLabels` never reads `dim`/`hover`
+      // (see `SemanticNode`'s doc in draw.ts — labels stay in `theme.ink.primary`
+      // regardless of selection), so rebuilding them here paints the exact same
+      // pixels as before, at the cost of RE-TRUNCATING every label from scratch at
+      // the CURRENT `camera.scale()`. That silently breaks the invariant Fix 1
+      // restored the moment the current scale has drifted from the scale
+      // `redrawSemanticLayers` last ran at (LOD-2 entry): `rescaleSemanticLabels`
+      // had been carrying the ORIGINAL (entry-scale) text at a CONTINUOUSLY
+      // rescaled size ever since, so a selection-triggered redraw here would
+      // recompute a DIFFERENT budget and hand back shorter or longer text for
+      // labels having nothing to do with the selection — a visible flicker on
+      // every click/Escape, confirmed by screenshot diff. Since labels render
+      // identically either way, skipping their rebuild here removes the only
+      // other caller of `redrawSemanticLayers()` besides `rebuild()` itself
+      // (a real LOD transition, where the entry scale IS the current scale by
+      // construction) — the source of the drift, not a workaround for it.
+      redrawSemanticEdges();
     }
     redrawOverlay();
     // The edges carry half of the dimming: they are repainted with the new
@@ -2313,15 +2518,17 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
    * Clears the selection and undoes everything it had set: the overlay's ring and
    * highlighted references, the cards' dimming, the edges', the lit envelope.
    *
-   * No public event: the selection is state the host reads through `"select"`, and
-   * inventing a `"deselect"` here would grow the API for a gesture that merely
-   * returns to rest. With no selection there is nothing to undo — hence the immediate
-   * return, which avoids several repaints per Escape key pressed into the void.
+   * Emits `"deselect"` — the host has a panel open on the node that was selected,
+   * and `"select"` alone never tells it when to close. The early return is what
+   * keeps that event honest: with no selection there is nothing to undo, so a
+   * host wiring a panel onto it never sees a phantom event at boot or on an
+   * Escape pressed into the void.
    */
   function doDeselect(): void {
     if (selection === null) return;
     selection = null;
     redrawSelection();
+    emitter.emit("deselect", undefined);
   }
 
   /** Always emits "followRef" (even for a dangling edge, so a host can show
@@ -2459,9 +2666,57 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   }
 
   /**
-   * Escape deselects. The listener is set on `window` and not on the canvas: the
-   * canvas does not hold keyboard focus (it is not focusable), so a local listener
-   * would never see the key.
+   * Is this key aimed at the GRAPH, or at something the host has focused?
+   *
+   * Enter on a focused `<button>` IS the browser's activation gesture: the
+   * `preventDefault()` further down cancels it, and with it the keyboard
+   * activation of every control of a host's chrome — in the demo `#fit`, `#tidy`,
+   * `#toggle-view`, the menu and its items, `#detail-close`, the panel's reference
+   * buttons, the diagnostics rows. That is the regression this predicate exists
+   * for. The guard it completes enumerated `INPUT|TEXTAREA|SELECT`, and
+   * enumerating tag names is precisely what let `<button>` through: the list can
+   * only ever run behind the host's markup.
+   *
+   * Hence an ALLOWLIST on the only DOM this instance owns, `container` — which
+   * holds nothing but the canvas — plus `document.body`, the target when nothing
+   * is focused, the normal case for someone driving the canvas. Everything else on
+   * the page belongs to the host, present or future, without this file knowing its
+   * markup. The walk then covers the host that overlays its own controls INSIDE
+   * the container: a focused control owns its keys wherever it sits. That walk
+   * STOPS at the container instead of using `closest()`, so a host that makes the
+   * container itself focusable (`tabindex`, a legitimate a11y move) does not
+   * thereby kill every key of the graph.
+   *
+   * Escape is deliberately NOT subjected to this: it is the cascade's last level
+   * (see below) and must still clear the selection from wherever focus happens to
+   * be — the demo's own Escape handler moves focus onto a toolbar button before
+   * the next Escape reaches here.
+   */
+  const INTERACTIVE_SELECTOR = "button, a[href], input, textarea, select, [tabindex], [contenteditable]";
+
+  function keyAimedAtGraph(target: HTMLElement | null): boolean {
+    if (!target) return true;
+    if (target === document.body || target === container) return true;
+    if (!container.contains(target)) return false;
+    for (let el: HTMLElement | null = target; el !== null && el !== container; el = el.parentElement) {
+      if (el.matches(INTERACTIVE_SELECTOR)) return false;
+    }
+    return true;
+  }
+
+  /**
+   * The keyboard on the graph: Escape deselects, the arrows move the selection
+   * to the nearest visible neighbour, Enter folds or unfolds the selected card.
+   *
+   * The listener is set on `window` and not on the canvas: the canvas does not
+   * hold keyboard focus (it is not focusable), so a local listener would never
+   * see the key. That also makes it the LAST link in the chain — a host chrome
+   * handling Escape for its own overlays stops the event before it gets here
+   * (see the demo's `chrome.ts`), which is what gives the cascade "one level at
+   * a time".
+   *
+   * A key aimed at a text field is left alone: the arrows belong to the caret
+   * whenever one is where the user is typing.
    *
    * Set SYNCHRONOUSLY, at creation, and removed by `destroy()`: setting it in the
    * async initialization would let a `destroy()` called during that initialization
@@ -2470,8 +2725,64 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
    */
   const handleKeyDown = (event: KeyboardEvent): void => {
     if (destroyed) return;
-    if (event.key !== "Escape") return;
-    doDeselect();
+
+    const target = event.target as HTMLElement | null;
+    if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) {
+      return;
+    }
+
+    if (event.key === "Escape") {
+      doDeselect();
+      return;
+    }
+
+    // Enter and the arrows, from here on: keys the focused element may already
+    // own. See `keyAimedAtGraph`.
+    if (!keyAimedAtGraph(target)) return;
+
+    const selected = selectedNodeId();
+    if (selected === null) return;
+
+    if (event.key === "Enter") {
+      // Structure view only: graph view collapses nothing, so the key would
+      // promise a gesture with no effect — the same policy the chevrons follow.
+      if (viewPolicy().foldable) {
+        event.preventDefault();
+        toggleExpand(selected);
+      }
+      return;
+    }
+
+    const direction =
+      event.key === "ArrowUp"
+        ? "up"
+        : event.key === "ArrowDown"
+          ? "down"
+          : event.key === "ArrowLeft"
+            ? "left"
+            : event.key === "ArrowRight"
+              ? "right"
+              : null;
+    if (direction === null) return;
+
+    const positions = activePositions();
+    const from = positions?.get(selected);
+    if (!positions || !from) return;
+    const visible = activeVisible();
+    // Only what is BOTH laid out and visible is a candidate: a position left
+    // over from a collapsed subtree would move the selection onto a card that
+    // is not drawn.
+    const candidates: [NodeId, Rect][] = [];
+    for (const [id, rect] of positions) {
+      if (id !== selected && visible.has(id) && !graph?.nodes.get(id)?.elided) {
+        candidates.push([id, rect]);
+      }
+    }
+    const next = nearestInDirection(from, candidates, direction);
+    if (next === null) return;
+    event.preventDefault();
+    doSelect(next);
+    void doFocus(next);
   };
   window.addEventListener("keydown", handleKeyDown);
 
@@ -2494,6 +2805,40 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       app.destroy(true, { children: true });
       return;
     }
+
+    // `resolution` is decided once, at init — and `devicePixelRatio` is not a
+    // constant: a browser zoom, or a window dragged onto a screen of a different
+    // density, changes it under a canvas that keeps rendering at the old one.
+    // The result is a permanently soft render that nothing in the app explains.
+    //
+    // `matchMedia` on `resolution` and not a `resize` listener: the query fires
+    // exactly on the transition we care about, and it re-arms itself because the
+    // threshold is rebuilt from the NEW ratio each time.
+    const watchDpr = (): void => {
+      if (destroyed || !app.renderer) return;
+      const dpr = globalThis.devicePixelRatio ?? 1;
+      const query = globalThis.matchMedia?.(`(resolution: ${dpr}dppx)`);
+      if (!query) return;
+      dprQuery?.removeEventListener("change", onDprChange);
+      dprQuery = query;
+      dprQuery.addEventListener("change", onDprChange, { once: true });
+    };
+    onDprChange = (): void => {
+      if (destroyed || !app.renderer) return;
+      app.renderer.resolution = Math.min(globalThis.devicePixelRatio ?? 1, 2);
+      // Pixi's `resolution` setter already cascades into a full backing-store
+      // resize (ViewSystem's setter calls into CanvasSource.resize with the
+      // CURRENT screen size, which rewrites canvas.width/height at the NEW
+      // resolution — traced through pixi.js's ViewSystem/CanvasSource/
+      // TextureSource). This call is belt-and-suspenders: it re-asserts the
+      // current screen size explicitly, so the backing store keeps following
+      // even if a future Pixi release stops cascading it from a bare
+      // `resolution` assignment.
+      app.renderer.resize(app.renderer.screen.width, app.renderer.screen.height);
+      rebuild();
+      watchDpr();
+    };
+    watchDpr();
 
     // `setTheme` may have run while `app.init()` was in flight: at that moment
     // `app.renderer` did not exist yet, so its background assignment was skipped (it
@@ -2579,12 +2924,29 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     let lastCameraScale = Number.NaN;
     let lastCameraX = Number.NaN;
     let lastCameraY = Number.NaN;
+    // Tracked SEPARATELY from `lastCameraScale` above: that one gates on position
+    // too (edge labels slide along their stroke), this one only cares about scale
+    // (see `rescaleSemanticLabels`), and the two features are independently
+    // absent/present (no aggregates vs. no outgoing reference on the selection).
+    let lastSemanticLabelScale = Number.NaN;
 
     app.ticker.add(() => {
       if (destroyed || !camera) return;
       // Rebuilds on a LOD change, materializes/reclaims otherwise. This is where
       // culling follows the camera, frame by frame.
       refreshCards();
+
+      // Outside the semantic regime the layer is empty (see `redrawSemanticLayers`)
+      // and this is a no-op; inside it, a continued zoom-out never crosses another
+      // LOD boundary, so THIS is what keeps the legibility floor honest past the
+      // first crossing (see `rescaleSemanticLabels`).
+      if (viewPolicy().aggregates === "disc") {
+        const scale = camera.scale();
+        if (scale !== lastSemanticLabelScale) {
+          lastSemanticLabelScale = scale;
+          rescaleSemanticLabels(scale);
+        }
+      }
 
       // No labels: no cost at rest, which is the most frequent state (nothing
       // selected, or a selection with no outgoing reference).
@@ -2844,8 +3206,25 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
         // Graph view only knows entities: carry the selection over to the enclosing
         // entity rather than losing it.
         if (selection?.kind === "node") {
-          const nearest = nearestEntityAncestor(current, selection.id);
+          const from = selection.id;
+          const nearest = nearestEntityAncestor(current, from);
           selection = nearest === null ? null : { kind: "node", id: nearest };
+          // BOTH outcomes are announced, because both change what the canvas
+          // designates and the host's panel has to follow either way.
+          //
+          // No enclosing entity: the selection is GONE, not carried — same event
+          // as a background click. Carried over to another node: `select` on THAT
+          // node, otherwise the panel goes on describing the node the user chose
+          // while the canvas rings the entity that encloses it.
+          //
+          // `nearest === from` (the selected node IS an entity) emits nothing:
+          // nothing moved, and re-announcing it would wake the host on every
+          // toggle.
+          if (nearest === null) emitter.emit("deselect", undefined);
+          else if (nearest !== from) {
+            const node = current.nodes.get(nearest);
+            if (node) emitter.emit("select", node);
+          }
         }
       } else if (selection?.kind === "cluster") {
         // Symmetric, and with no carry-over possible: an aggregate selection only
@@ -2876,6 +3255,8 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       // The only global listener carried neither by the camera nor by the stage
       // (which `app.destroy` takes away): it has to be removed by hand.
       window.removeEventListener("keydown", handleKeyDown);
+      dprQuery?.removeEventListener("change", onDprChange);
+      dprQuery = null;
       // Graph view's worker does not die with the canvas: it would outlive the
       // instance and keep grinding through seconds of layout for nobody.
       // `graphView.destroy()` terminates it and settles the computations in flight.

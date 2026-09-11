@@ -7,7 +7,7 @@
 .status-link {
   font-family: inherit;
   font-size: 11px;
-  color: var(--ds-accent);
+  color: var(--ds-link);
   background: none;
   border: 0;
   padding: 0;

@@ -1,11 +1,15 @@
 /**
  * WCAG 2.x contrast between two opaque colors.
  *
- * The playground shows ratios so that whoever touches a color immediately sees
- * what they break: an `ink.subtle` lightened by two notches stays pretty and
- * becomes illegible, and nothing in a swatch says so. The computation lives
- * here rather than in the token package because it is a measurement ON the
- * tokens, not a token: the renderer has no use for it.
+ * Lives beside the tokens it measures rather than in `index.ts`: it is a
+ * measurement ON the tokens, not a token — the renderer has no use for it, and
+ * `index.ts` stays pure data. Being in this package, rather than in the
+ * playground that used to hold it, is what lets `test/contrast.test.ts` hold
+ * the shell's ratios to a 4.5:1 floor instead of only ever being eyeballed in
+ * a swatch. The playground still imports it (via `@tokens/contrast.ts`) to
+ * show ratios live, so whoever touches a color immediately sees what they
+ * break: an `ink.subtle` lightened by two notches stays pretty and becomes
+ * illegible, and nothing in a swatch says so.
  *
  * Only `#rrggbb` is accepted — the format of every color in
  * `packages/tokens/src/index.ts`. The chrome's translucent values

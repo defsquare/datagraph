@@ -92,7 +92,13 @@ window.__graph = graph;
 // The `onSearchOpen` callback references `search`, declared further down: it is
 // a closure, only called on the first click on the magnifier — long after this
 // module is evaluated.
-const chrome = createChrome(graph, { onSearchOpen: () => search.focus() });
+const chrome = createChrome(graph, {
+  onSearchOpen: () => search.focus(),
+  // Both hooks are read at CALL time, not at construction: `createChrome` runs
+  // before `createSearchUi` and `createDetailPanel` (it is what appends their
+  // DOM), so capturing either here would capture a binding not yet initialised.
+  onDiagnosticsOpen: () => detail.renderDiagnostics(graph.diagnostics()),
+});
 
 // The chrome is trimmed AFTER being built and BEFORE the modules below read it
 // back: a removed button makes `getElementById` return null, and every handler
@@ -110,15 +116,37 @@ if (launch.mode === "file") {
 }
 
 const detail = createDetailPanel(graph);
-const search = createSearchUi(graph);
+const search = createSearchUi(graph, {
+  onQueryChange: (hasQuery) => chrome.setSearchActive(hasQuery),
+});
 
 graph.on("select", (node: GraphNode) => {
   detail.render(node);
+});
+
+// The panel describes a selection: when there is none left it has nothing to
+// say, and leaving it open would keep describing a node the canvas no longer
+// designates.
+graph.on("deselect", () => {
+  detail.clear();
+});
+
+// The single refresh point for the status bar. It replaces the manual calls
+// scattered over `select`, the view toggle and the dataset toggle: any operation
+// changing the visible set now updates the counter without this file having to
+// know it exists.
+graph.on("statschange", () => {
   chrome.updateStatus();
 });
 
 graph.on("followRef", (edge) => {
-  if (edge.dangling) console.warn(`[demo] dangling ref: ${edge.field} -> ${edge.targetType}#${edge.targetId}`);
+  if (!edge.dangling) return;
+  // The warn stays useful in dev; it was never feedback. The panel is: the
+  // diagnostic the click just ran into is exactly the entry A1 already renders,
+  // so we open that list on it rather than inventing a transient state on the
+  // status bar.
+  console.warn(`[demo] dangling ref: ${edge.field} -> ${edge.targetType}#${edge.targetId}`);
+  detail.renderDiagnostics(graph.diagnostics(), edge.from);
 });
 
 // `setData()` resets the renderer's search and selection state; the shell takes
@@ -126,7 +154,6 @@ graph.on("followRef", (edge) => {
 demo?.setupDatasetToggle(graph, () => {
   search.reset();
   detail.clear();
-  chrome.updateStatus();
 });
 
 void (async () => {

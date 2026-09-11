@@ -15,8 +15,8 @@ import {
   type ChromeTokens,
   type ColorTokens,
 } from "@tokens/index.ts";
+import { contrastRatio } from "@tokens/contrast.ts";
 
-import { contrastRatio } from "../contrast.ts";
 import { currentTheme, type ThemeState } from "../theme-state.ts";
 
 import "./tokens.css";

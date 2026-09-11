@@ -42,6 +42,7 @@ describe("frozen values of the shipped themes", () => {
         selection: "#f65e5e",
         match: "#ede2cf",
         matchStroke: "#8d7e63",
+        matchCurrent: "#1f7a66",
       },
       edge: {
         contain: "#c7cdd6",
@@ -67,6 +68,7 @@ describe("frozen values of the shipped themes", () => {
         selection: "#f65e5e",
         match: "#3a3323",
         matchStroke: "#e2ca9e",
+        matchCurrent: "#5fd7bb",
       },
       edge: {
         contain: "#3a4159",
@@ -92,6 +94,7 @@ describe("frozen values of the shipped themes", () => {
         selection: "#2563eb",
         match: "#fef9c3",
         matchStroke: "#a16207",
+        matchCurrent: "#0f766e",
       },
       edge: {
         contain: "#d4d4d8",
@@ -117,6 +120,7 @@ describe("frozen values of the shipped themes", () => {
         selection: "#60a5fa",
         match: "#422006",
         matchStroke: "#ca8a04",
+        matchCurrent: "#5eead4",
       },
       edge: {
         contain: "#52525b",

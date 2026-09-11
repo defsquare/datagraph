@@ -95,13 +95,13 @@ Returned by `createDataGraph(container, options)`.
 | `search(query): SearchResult[]` | Full-text search across every node label, entity id, and row key/value; returns all matches and resets the next/prev cursor. |
 | `nextMatch(): SearchResult \| null` | Advances to the next search result (circular), auto-expanding and focusing it. |
 | `prevMatch(): SearchResult \| null` | Same as `nextMatch`, in reverse. |
-| `on(event, callback): () => void` | Subscribes to `"select"` (`GraphNode`) or `"followRef"` (`RefEdge`); returns an unsubscribe function. |
+| `on(event, callback): () => void` | Subscribes to `"select"` (`GraphNode`), `"followRef"` (`RefEdge`), `"deselect"` (no payload — fires once per transition from a selection to none, never at boot or on an <kbd>Esc</kbd> pressed into the void) or `"statschange"` (no payload — fires when `stats()` would report different counters than at the previous emission, deduplicated so a LOD flip or a `setTheme` stays silent); returns an unsubscribe function. |
 | `setData(data, config?): Promise<void>` | Rebuilds the whole graph against new data (and optionally a new config), resetting search/selection state. |
 | `diagnostics(): Diagnostic[]` | Returns build-time diagnostics: dangling references, duplicate ids, missing id fields. |
 | `stats(): { logicalNodeCount, visibleNodeCount }` | Counters for a host status bar: `logicalNodeCount` is every node in the built graph, `visibleNodeCount` is how many are currently expanded/rendered. |
 | `refEdges(from): RefEdge[]` | The outgoing reference edges of node `from`, so a host can offer "follow reference" affordances without knowing graph internals. |
 | `setTheme(theme)` | Replaces the theme and redraws, without rerunning layout or re-measuring fonts. Accepts a full `Theme` or a `ThemeOverride`, merged via `resolveTheme` against the theme currently in effect — a `byEntityType` set earlier survives a plain theme swap. Safe for toggling between themes that share the same `typography`/`fonts` (e.g. a light/dark pair); changing those two groups needs a fresh `createDataGraph`. |
-| `setView(view): Promise<void>` | Switches between `"structure"` and `"graph"`. The first switch to `"graph"` dynamically imports the graph-view engine and computes aggregates, hence the promise — see [graph view](#graph-view). A card selection is carried over onto the nearest entity ancestor, since the graph view only knows entities; an *aggregate* selection is dropped on the way out, having no meaning outside the graph view. |
+| `setView(view): Promise<void>` | Switches between `"structure"` and `"graph"`. The first switch to `"graph"` dynamically imports the graph-view engine and computes aggregates, hence the promise — see [graph view](#graph-view). A card selection is carried over onto the nearest entity ancestor, since the graph view only knows entities, and `select` fires on the node it lands on (nothing is emitted when it lands on the node already selected); if no ancestor exists, the selection is dropped and `deselect` fires. An *aggregate* selection is dropped on the way out, having no meaning outside the graph view — no event, since `select` never announced it either. |
 | `currentView(): DataGraphView` | Returns `"structure"` or `"graph"`, whichever is active. |
 | `destroy()` | Tears down the Pixi application and releases all resources. |
 
@@ -137,6 +137,15 @@ it has to be deliberate.
 | Click on an aggregate envelope (graph view) | Select the whole aggregate |
 | Click on the empty background | Clear the selection |
 | <kbd>Esc</kbd> | Clear the selection |
+| <kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd> | Move the selection to the nearest visible neighbour in that direction |
+| <kbd>Enter</kbd> | Fold or unfold the selected card (structure view) |
+
+The arrows and <kbd>Enter</kbd> only apply when the key is aimed at the graph:
+with one of the host's own controls focused, the key belongs to that control —
+<kbd>Enter</kbd> on a focused button IS the browser's activation gesture, and
+intercepting it would make every button of a chrome dead to the keyboard.
+<kbd>Esc</kbd> is the exception: it clears the selection from wherever focus
+sits, being the last level of a host's Escape cascade.
 
 Dragging a card works in both views. The gesture splits from a plain click at
 4 px of pointer travel: below that the click still selects, folds or follows a
@@ -211,12 +220,21 @@ geometry, not opacity.
 
 Clearing the selection restores everything: click the empty background (a real
 click — a pan past the same 4 px threshold does not count — and not on a card, a
-reference's click area or an envelope), or press <kbd>Esc</kbd>. Neither gesture
-emits an event; selection state is read from `select`.
+reference's click area or an envelope), or press <kbd>Esc</kbd>. Either gesture
+emits `deselect` — but only when a selection actually existed, so pressing
+<kbd>Esc</kbd> into the void or clicking the background at boot stays silent.
 
-Zoom is bounded to `[0.02, 3]`. `fit()` never scales past `1` — magnifying a
-bitmap-font atlas baked at its nominal size is what made text look soft — so a
-graph smaller than the viewport is centred rather than blown up.
+Scale is bounded to `[0.02, 3]`, and the **wheel's way out stops earlier**: it
+cannot go below a quarter of the scale at which the content is framed — far
+enough for an ordinary zoom-out (about seven notches), not far enough to leave
+the graph as a dot lost in an empty canvas. That floor is a property of the
+content, not a snapshot: it is recomputed on every rebuild, so an expansion can
+always be zoomed out to. `fit()` and `focus()` keep the absolute bounds — a
+framing the host asks for is the host's call.
+
+`fit()` never scales past `1` — magnifying a bitmap-font atlas baked at its
+nominal size is what made text look soft — so a graph smaller than the viewport
+is centred rather than blown up.
 
 ## Structure view
 

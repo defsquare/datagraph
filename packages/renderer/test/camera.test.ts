@@ -4,6 +4,7 @@ import {
   Camera,
   classifyWheel,
   normalizeWheelDelta,
+  revealPan,
   zoomFactorFor,
   type WheelSignal,
 } from "../src/camera.js";
@@ -112,6 +113,7 @@ function mountCamera(isBlocked: () => boolean = () => false) {
   const canvas = {
     addEventListener: record("canvas"),
     removeEventListener: () => {},
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: 1000, height: 800 }),
   } as unknown as HTMLCanvasElement;
   vi.stubGlobal("window", { addEventListener: record("window"), removeEventListener: () => {} });
 
@@ -123,6 +125,21 @@ function mountCamera(isBlocked: () => boolean = () => false) {
     down: (clientX: number, clientY: number) =>
       handlers.get("canvas:pointerdown")!({ button: 0, clientX, clientY }),
     move: (clientX: number, clientY: number) => handlers.get("window:pointermove")!({ clientX, clientY }),
+    // `handleWheel` reads `preventDefault`, the deltas, the modifiers and the
+    // cursor position — everything else is a plausible default a caller can
+    // override, the way a real `WheelEvent` would let `init` do.
+    wheel: (init: Partial<WheelSignal & { clientX: number; clientY: number }> = {}) =>
+      handlers.get("canvas:wheel")!({
+        preventDefault() {},
+        deltaX: 0,
+        deltaY: 0,
+        deltaMode: 0,
+        ctrlKey: false,
+        metaKey: false,
+        clientX: 500,
+        clientY: 400,
+        ...init,
+      }),
   };
 }
 
@@ -207,5 +224,172 @@ describe("Camera — worldViewport", () => {
     const after = camera.worldViewport(VIEWPORT);
     expect(after.x).toBeCloseTo(before.x - 50, 6);
     expect(after.y).toBeCloseTo(before.y, 6);
+  });
+});
+
+/**
+ * Following revealed content is a DECISION before it is a motion, and the
+ * decision is the part worth proving: pan only when nothing new landed in
+ * frame, and pan by the least that brings some of it in. The motion itself is
+ * covered end to end in `apps/demo/e2e/reveal-camera.spec.ts`.
+ */
+describe("revealPan", () => {
+  const VIEW = { x: 0, y: 0, width: 1000, height: 800 };
+
+  it("does nothing when one of the targets is already in frame", () => {
+    // The user is looking at part of what just appeared: stealing the camera
+    // there would move a view they did not ask to move.
+    expect(revealPan(VIEW, [{ x: 900, y: 700, width: 200, height: 200 }], 40)).toBeNull();
+  });
+
+  it("does nothing when a target merely touches the edge", () => {
+    expect(revealPan(VIEW, [{ x: 1000, y: 0, width: 100, height: 100 }], 40)).toBeNull();
+  });
+
+  it("does nothing when only ONE of several targets is in frame", () => {
+    // The off-screen one comes FIRST: a loop that returns a pan as soon as it
+    // sees a single non-overlapping target, instead of scanning the whole
+    // list for a visible one, would fail this and pass the others.
+    const pan = revealPan(
+      VIEW,
+      [
+        { x: 1400, y: 900, width: 100, height: 100 },
+        { x: 900, y: 700, width: 200, height: 200 },
+      ],
+      40,
+    );
+    expect(pan).toBeNull();
+  });
+
+  it("pans down by the least that brings content under the window into view", () => {
+    const pan = revealPan(VIEW, [{ x: 100, y: 900, width: 200, height: 100 }], 40);
+    // The block's top must land 40 above the view's bottom edge: view.y goes
+    // from 0 to 900 - (800 - 40) = 140.
+    expect(pan).toEqual({ dx: 0, dy: 140 });
+  });
+
+  it("pans up for content above the window", () => {
+    const pan = revealPan(VIEW, [{ x: 100, y: -300, width: 200, height: 100 }], 40);
+    // The block's bottom (-200) must land 40 below the view's top: view.y goes
+    // from 0 to -200 - 40 = -240.
+    expect(pan).toEqual({ dx: 0, dy: -240 });
+  });
+
+  it("pans on both axes when the content is off in both", () => {
+    const pan = revealPan(VIEW, [{ x: 1400, y: 900, width: 100, height: 100 }], 40);
+    expect(pan).toEqual({ dx: 1400 - (1000 - 40), dy: 900 - (800 - 40) });
+  });
+
+  it("frames the bounding box of several targets, not each one", () => {
+    const pan = revealPan(
+      VIEW,
+      [
+        { x: 100, y: 900, width: 100, height: 100 },
+        { x: 100, y: 1200, width: 100, height: 100 },
+      ],
+      40,
+    );
+    // The nearest edge of the box is what has to come in: same result as the
+    // first block alone.
+    expect(pan).toEqual({ dx: 0, dy: 140 });
+  });
+
+  it("returns null on an empty target list", () => {
+    expect(revealPan(VIEW, [], 40)).toBeNull();
+  });
+});
+
+describe("zoom-out floor", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("starts at the absolute minimum before anything is framed", () => {
+    const { camera } = mountCamera();
+    expect(camera.zoomOutFloor()).toBeCloseTo(0.02);
+  });
+
+  it("sits one headroom factor below the framing after a fit", () => {
+    const { camera } = mountCamera();
+    camera.fitTo({ x: 0, y: 0, width: 4000, height: 4000 }, { width: 1000, height: 800 });
+    const fitted = camera.scale();
+    // ZOOM_OUT_HEADROOM = 4. A floor exactly AT the framing would forbid the very
+    // first notch out, the fit being where every dataset starts.
+    expect(camera.zoomOutFloor()).toBeCloseTo(fitted / 4);
+  });
+
+  it("refuses to zoom out past one headroom factor below the framing", () => {
+    const { camera, wheel } = mountCamera();
+    camera.fitTo({ x: 0, y: 0, width: 4000, height: 4000 }, { width: 1000, height: 800 });
+    const fitted = camera.scale();
+    // Twenty notches out: without the floor this lands near MIN_SCALE and the
+    // whole graph becomes a dot lost in an empty canvas.
+    for (let i = 0; i < 20; i++) {
+      wheel({ deltaY: 100, ctrlKey: true });
+    }
+    expect(camera.scale()).toBeCloseTo(fitted / 4);
+    // The floor is what stopped the descent, not MIN_SCALE: it still bites.
+    expect(camera.scale()).toBeGreaterThan(0.02 * 2);
+  });
+
+  it("still zooms out on content that FITS the viewport", () => {
+    // The regression this case exists for: the floor used to be the framing scale
+    // AFTER MAX_FIT_SCALE (= 1) capped it, and `fitTo` applies that same capped
+    // value — so for any content small enough to be framed at 1, floor ===
+    // currentScale and `handleWheel`'s `nextScale === currentScale` early return
+    // made zoom-out a complete no-op. The demo's own dataset is in that regime.
+    const { camera, wheel } = mountCamera();
+    camera.fitTo({ x: 0, y: 0, width: 400, height: 300 }, { width: 1000, height: 800 });
+    const fitted = camera.scale();
+    expect(fitted).toBeCloseTo(1); // capped by MAX_FIT_SCALE, as before
+    wheel({ deltaY: 100, ctrlKey: true });
+    expect(camera.scale()).toBeLessThan(fitted);
+  });
+
+  it("keeps a usable floor on content FAR smaller than the viewport", () => {
+    // A one-card document: the raw fit ratio is ~9, well past the headroom factor.
+    // Deriving the floor from that raw ratio alone would put it at 9/4 = 2.25 —
+    // ABOVE the scale `fitTo` actually applies (1, capped), so the user could not
+    // even zoom back out to the framing they booted on. The floor is therefore
+    // taken on the framing the camera really shows.
+    const { camera, wheel } = mountCamera();
+    camera.fitTo({ x: 0, y: 0, width: 100, height: 80 }, { width: 1000, height: 800 });
+    const fitted = camera.scale();
+    expect(camera.zoomOutFloor()).toBeLessThan(fitted);
+    wheel({ deltaY: 100, ctrlKey: true });
+    expect(camera.scale()).toBeLessThan(fitted);
+  });
+
+  it("follows the content's extent, not only the last fit", () => {
+    // An expansion grows the content without reframing it (`doExpand` ends on
+    // `rebuild()`, never on `doFit`): a floor refreshed only inside `fitTo` would
+    // keep the pre-expansion value and forbid zooming out to see what was just
+    // revealed.
+    const { camera } = mountCamera();
+    camera.fitTo({ x: 0, y: 0, width: 1000, height: 800 }, { width: 1000, height: 800 });
+    const before = camera.zoomOutFloor();
+    camera.updateZoomOutFloor({ x: 0, y: 0, width: 4000, height: 3200 }, { width: 1000, height: 800 });
+    expect(camera.zoomOutFloor()).toBeLessThan(before);
+  });
+
+  it("never drags the view back IN when the floor rises above the current scale", () => {
+    // Symmetric case: a collapse shrinks the content, so the floor goes UP. The
+    // clamp must block the zoom-out, not answer it with a zoom-in.
+    const { camera, wheel } = mountCamera();
+    camera.fitTo({ x: 0, y: 0, width: 4000, height: 3200 }, { width: 1000, height: 800 });
+    const zoomedOut = camera.scale();
+    camera.updateZoomOutFloor({ x: 0, y: 0, width: 400, height: 320 }, { width: 1000, height: 800 });
+    expect(camera.zoomOutFloor()).toBeGreaterThan(zoomedOut);
+    wheel({ deltaY: 100, ctrlKey: true });
+    expect(camera.scale()).toBeCloseTo(zoomedOut);
+  });
+
+  it("leaves zooming IN untouched", () => {
+    const { camera, wheel } = mountCamera();
+    camera.fitTo({ x: 0, y: 0, width: 4000, height: 4000 }, { width: 1000, height: 800 });
+    for (let i = 0; i < 40; i++) {
+      wheel({ deltaY: -100, ctrlKey: true });
+    }
+    expect(camera.scale()).toBeCloseTo(3); // MAX_SCALE, unchanged
   });
 });

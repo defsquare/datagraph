@@ -17,7 +17,14 @@ export interface SearchUi {
   focus(): void;
 }
 
-export function createSearchUi(graph: DataGraph): SearchUi {
+export interface SearchUiHooks {
+  /** Called whenever the field goes from empty to filled or back. The search UI
+   * owns the input; the chrome owns the button that has to reflect it, and
+   * neither reaches into the other's DOM. */
+  onQueryChange(hasQuery: boolean): void;
+}
+
+export function createSearchUi(graph: DataGraph, hooks: SearchUiHooks): SearchUi {
   const searchInput = document.getElementById("search") as HTMLInputElement | null;
   const matchCounterEl = document.getElementById("match-counter");
   const prevMatchBtn = document.getElementById("prev-match");
@@ -27,26 +34,51 @@ export function createSearchUi(graph: DataGraph): SearchUi {
   let matchTotal = 0;
   let matchCursor = -1;
 
+  /**
+   * Three resting states, and the distinction between the last two is the point:
+   * an empty field has nothing to report, whereas a query that matches nothing
+   * must SAY it — that silence was read as "the search did not run".
+   */
   function updateMatchCounter(): void {
     if (!matchCounterEl) return;
-    matchCounterEl.textContent = matchTotal > 0 ? `${matchCursor + 1}/${matchTotal}` : "";
+    if (matchTotal > 0) {
+      matchCounterEl.textContent = `${matchCursor + 1}/${matchTotal}`;
+      return;
+    }
+    matchCounterEl.textContent = (searchInput?.value ?? "") === "" ? "" : "0 résultat";
   }
 
-  function runSearch(query: string): void {
+  /**
+   * Runs the query. `landOnFirst` is what tells apart the two callers instead of
+   * having them recurse into each other: the debounce timer passes `true` — a
+   * settled, user-driven search should LAND on the first result, the resting
+   * state of every standard findbar (without it the counter read "0/3" and the
+   * camera had not moved, so a search that had worked looked like one that had
+   * not). `flushPendingSearch` passes `false`: it runs inside `goToNextMatch`/
+   * `goToPrevMatch`, only to make the results current before ITS caller's own
+   * single step — landing here too would turn one keypress into two steps.
+   */
+  function runSearch(query: string, landOnFirst: boolean): void {
     const results = graph.search(query);
     matchTotal = results.length;
     matchCursor = -1;
+    if (landOnFirst && matchTotal > 0) {
+      goToNextMatch();
+      return;
+    }
     updateMatchCounter();
   }
 
   /** Runs a pending debounced search right away — so that Enter (or a navigation
    * button) pressed just after a keystroke does not navigate stale results from
-   * before the last key. */
+   * before the last key. Never lands on a match itself (`landOnFirst: false`):
+   * it exists to make `goToNextMatch`/`goToPrevMatch`'s own step land on current
+   * results, not to take a step of its own ahead of them. */
   function flushPendingSearch(): void {
     if (debounceHandle === undefined) return;
     clearTimeout(debounceHandle);
     debounceHandle = undefined;
-    runSearch(searchInput?.value ?? "");
+    runSearch(searchInput?.value ?? "", false);
   }
 
   function goToNextMatch(): void {
@@ -67,9 +99,10 @@ export function createSearchUi(graph: DataGraph): SearchUi {
     searchInput.addEventListener("input", () => {
       clearTimeout(debounceHandle);
       const value = searchInput.value;
+      hooks.onQueryChange(value !== "");
       debounceHandle = setTimeout(() => {
         debounceHandle = undefined;
-        runSearch(value);
+        runSearch(value, true);
       }, SEARCH_DEBOUNCE_MS);
     });
 
@@ -89,6 +122,7 @@ export function createSearchUi(graph: DataGraph): SearchUi {
       if (searchInput) searchInput.value = "";
       matchTotal = 0;
       matchCursor = -1;
+      hooks.onQueryChange(false);
       updateMatchCounter();
     },
     focus(): void {

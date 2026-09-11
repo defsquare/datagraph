@@ -91,11 +91,11 @@ test("switching with a nested node selected breaks nothing", async ({ page }) =>
   await loadAggregateData(page)
 
   // An object nested under an entity does not exist in the graph view: the
-  // toggle must move the selection onto the Customer that contains it. The
-  // RESULT of that move is not observable from outside (no selection getter, and
-  // `setView` does not emit "select"), so this test only covers the fact that
-  // this path runs without breaking; the function itself is covered by a unit
-  // test in `packages/renderer/test/view.test.ts` (`nearestEntityAncestor`).
+  // toggle must move the selection onto the Customer that contains it. This test
+  // covers only the fact that the path runs without breaking — WHERE the
+  // selection lands is asserted by the test right below, and the function itself
+  // by a unit test in `packages/renderer/test/view.test.ts`
+  // (`nearestEntityAncestor`).
   await page.evaluate(() => (window as any).__graph.select("/customers/0/address"))
   await expect(page.locator("#selection-path")).toContainText("/customers/0/address")
 
@@ -103,6 +103,24 @@ test("switching with a nested node selected breaks nothing", async ({ page }) =>
   expect(await visibleCount(page)).toBe(5)
   await page.evaluate(() => (window as any).__graph.setView("structure"))
   expect(errors).toEqual([])
+})
+
+/**
+ * The other half of the carry-over: when it SUCCEEDS, the host must be told.
+ * `deselect` already covered the case with no enclosing entity; a successful
+ * carry-over silently changed which node was selected, and the detail panel went
+ * on describing the one the canvas no longer designates — the exact failure the
+ * event pair exists to remove.
+ */
+test("switching views carries the selection over and says so", async ({ page }) => {
+  await gotoReady(page)
+  await loadAggregateData(page)
+
+  await page.evaluate(() => (window as any).__graph.select("/customers/0/address"))
+  await expect(page.locator("#selection-path")).toHaveText("/customers/0/address")
+
+  await page.evaluate(() => (window as any).__graph.setView("graph"))
+  await expect(page.locator("#selection-path")).toHaveText("/customers/0")
 })
 
 test("expand() from the structure view moves nothing in graph view", async ({ page }) => {

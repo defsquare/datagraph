@@ -47,3 +47,4 @@ or spec that introduced the decision.
 | 0027 | [`packages/tokens`, the single source of truth for the design system](./0027-tokens-single-source-of-truth.md) | 2026-09-07 | Accepted |
 | 0028 | [`apps/design`: a never-published playground, aliased to the sources](./0028-design-playground-source-aliases.md) | 2026-09-07 | Accepted |
 | 0029 | [Chrome primitives as a shared private package](./0029-chrome-primitives-shared-package.md) | 2026-09-07 | Accepted |
+| 0030 | [`deselect` and `statschange`, the renderer's lifecycle events](./0030-renderer-lifecycle-events.md) | 2026-09-08 | Accepted |
