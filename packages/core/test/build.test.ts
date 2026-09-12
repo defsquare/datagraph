@@ -35,11 +35,14 @@ describe("buildGraph", () => {
   it("throws GraphTooLargeError above maxNodes", () => {
     expect(() => buildGraph(bigShop(2000), { ...shopConfig, maxNodes: 100 })).toThrow(GraphTooLargeError)
   })
-  it("GraphTooLargeError says how to raise the cap", () => {
-    // The cap is a memory guard, deliberately raisable: the message must name
-    // the lever (`maxNodes` in the config), otherwise a blocked user has no way
-    // out.
-    expect(() => buildGraph(bigShop(2000), { ...shopConfig, maxNodes: 100 })).toThrow(/maxNodes.*config/)
+  it("GraphTooLargeError says how to raise the cap, in English", () => {
+    // The message travels: the demo paints it on its error screen and `--check`
+    // prints it as a `graph-too-large` config error. It must name the lever
+    // (`maxNodes` in the config) and it must read like the thirteen other core
+    // messages — English, like the CLI that surfaces it.
+    expect(() => buildGraph(bigShop(2000), { ...shopConfig, maxNodes: 100 })).toThrow(
+      'Graph exceeds maxNodes: 101 > 100 — raise "maxNodes" in the config (the CLI\'s -c option)',
+    )
   })
   it("handles 10k logical nodes under 1s", () => {
     const t0 = performance.now()
