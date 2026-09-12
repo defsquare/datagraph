@@ -82,6 +82,15 @@ describe("validateConfig", () => {
     }
   })
 
+  it("rejects a null config as a ConfigError, not a raw TypeError", () => {
+    // `null` is valid JSON, so it is reachable end to end from a `-c` file: the
+    // guard on `config.ids` must not read `.ids` off `null` before checking
+    // `config` itself, or this degrades to a crash instead of a diagnosable
+    // report.
+    expect(() => validateConfig(null as never)).toThrow(ConfigError)
+    expect(() => validateConfig(null as never)).toThrow(/ids object/)
+  })
+
   it("rejects an id path that is not a string or does not end on a field name", () => {
     expect(() => validateConfig({ ids: { X: 42 } } as never)).toThrow(ConfigError)
     for (const bad of ["$.customers[*]", "$.customers[0]", "$.customers.*"]) {

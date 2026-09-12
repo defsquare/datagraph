@@ -70,8 +70,17 @@ function segmentsEqual(a: PathSegment[], b: PathSegment[]): boolean {
 export function validateConfig(config: DataGraphConfig): ValidatedConfig {
   // A config loaded from disk (the CLI's `-c` option) can be any JSON: the type
   // guarantees nothing, and a raw TypeError would bubble up as-is to the end
-  // user's error screen.
-  if (typeof config.ids !== "object" || config.ids === null || Array.isArray(config.ids)) {
+  // user's error screen. `config === null` must be checked before `config.ids`
+  // is read — `null` is valid JSON, and reading a property off it throws a raw
+  // TypeError instead of reaching this function's own `ConfigError`, which is
+  // the one shape `--check` cannot turn into a report (it only catches
+  // `ConfigError` and `GraphTooLargeError`).
+  if (
+    config === null ||
+    typeof config.ids !== "object" ||
+    config.ids === null ||
+    Array.isArray(config.ids)
+  ) {
     throw new ConfigError("invalid-config", "Config must declare an ids object")
   }
 

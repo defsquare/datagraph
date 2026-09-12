@@ -49,3 +49,4 @@ or spec that introduced the decision.
 | 0029 | [Chrome primitives as a shared private package](./0029-chrome-primitives-shared-package.md) | 2026-09-07 | Accepted |
 | 0030 | [`deselect` and `statschange`, the renderer's lifecycle events](./0030-renderer-lifecycle-events.md) | 2026-09-08 | Accepted |
 | 0031 | [The LOD 1 label holds a screen floor, quantized into rebuild steps](./0031-lod1-label-screen-floor.md) | 2026-09-11 | Accepted |
+| 0032 | [The `--check` report runs the core inside an embedded JS engine](./0032-embedded-core-for-headless-check.md) | 2026-09-11 | Accepted |
