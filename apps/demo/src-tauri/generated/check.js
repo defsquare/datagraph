@@ -494,11 +494,7 @@ ${output}`;
       ids,
       refs,
       diagnostics,
-      // `nodes` and `entities` are NOT the same unit — see the field doc above,
-      // and a `duplicate-id` diagnostic is where that shows. `logicalNodes` is the
-      // one `maxNodes` bounds, hence the one comparable to the number
-      // `GraphTooLargeError` quotes. Both travel, because neither answers the
-      // other's question.
+      // Three different units — see the `totals` field doc.
       totals: {
         nodes: graph.nodes.size,
         logicalNodes: graph.logicalNodeCount,

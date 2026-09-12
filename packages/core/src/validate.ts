@@ -1,15 +1,14 @@
 /**
  * Third entry point of the core: the `--check` report.
  *
- * This module is bundled by `scripts/generate-check-bundle.ts` into the JavaScript
- * the `datagraph` binary embeds, so its import closure is DELIBERATELY narrow —
+ * Bundled by `scripts/generate-check-bundle.ts` into the JavaScript the
+ * `datagraph` binary embeds, so its import closure must stay narrow —
  * `build.ts`, `config.ts`, `selector.ts`, `model.ts` and nothing else. Reaching
- * `structure-layout.ts` would drag elkjs into the 21,021-byte committed bundle;
- * `test/check-bundle.test.ts` is what says so out loud instead of letting it
- * happen silently.
+ * `structure-layout.ts` would drag elkjs into the committed bundle;
+ * `test/check-bundle.test.ts` enforces it.
  *
- * It is NOT re-exported by `index.ts`: the package publishes what consumers
- * consume (ADR-0023), and the only consumer here is the bundler.
+ * NOT re-exported by `index.ts`: the package publishes what consumers consume
+ * (ADR-0023), and the only consumer here is the bundler.
  */
 
 import { buildGraph } from "./build.js"
@@ -24,11 +23,9 @@ export interface CheckIdEntry {
    * Whether the INSTANCE PREFIX of the selector designates anything in this
    * document — `$.customers[*]` for `$.customers[*].id`.
    *
-   * Deliberately distinct from `matched > 0`: `$.orders[*].id` over an empty
-   * `orders` array matches nothing and is still a correct declaration of an
-   * empty collection, whereas `$.produits[*].id` over a document with no
-   * `produits` key is a config bug. Only the second one is an error, and that
-   * distinction is the whole reason this field exists next to `matched`.
+   * Distinct from `matched > 0`: `$.orders[*].id` over an empty `orders` matches
+   * nothing and is still a correct declaration; `$.produits[*].id` over a document
+   * with no `produits` key is a config bug — only that one is an error.
    */
   pathResolves: boolean
 }
@@ -43,16 +40,15 @@ export interface CheckRefEntry {
 
 export interface CheckReport {
   /**
-   * Wire version. It goes against YAGNI on purpose: the consumer is a skill file
-   * sitting on someone's disk, which is not updated with the binary. A version
-   * does not repair a break, it makes it diagnosable. Associated rule: ADDING a
-   * field is allowed, renaming or removing one is a break and bumps this number.
+   * Wire version, against YAGNI on purpose: the consumer is a skill file on
+   * someone's disk, not updated with the binary, so a break must at least be
+   * diagnosable. ADDING a field is allowed; renaming or removing one bumps this.
    */
   report: 1
   /**
-   * True iff nothing here can be fixed by editing the config. This is the SINGLE
-   * home of the exit-code rule: `runCheck` turns it into the 0 or 3 the binary
-   * exits with, so the rule never exists in two languages at once.
+   * True iff nothing here can be fixed by editing the config. SINGLE home of the
+   * exit-code rule: `runCheck` turns it into the 0 or 3 the binary exits with, so
+   * the rule never exists in TS and Rust at once.
    */
   ok: boolean
   configErrors: { code: string; message: string }[]
@@ -60,26 +56,19 @@ export interface CheckReport {
   refs: CheckRefEntry[]
   diagnostics: Diagnostic[]
   /**
-   * Two counts, not one, and confusing them would trap the very consumer this
-   * mode is for. `nodes` is the size of the graph. `entities` is NOT in the
-   * same unit: it sums the DISTINCT ids per entity type, from the deduplicated
-   * `entityIndex` — the two diverge exactly on a `duplicate-id` diagnostic,
-   * where `nodes` still counts every node but `entities` only the first one
-   * seen per id. `logicalNodes` counts the scalar rows on top, and it is THE
-   * ONLY ONE `maxNodes` bounds — `build.ts` throws
-   * `GraphTooLargeError(logicalNodeCount, maxNodes)`. With only `nodes`, an agent
-   * that hit the cap reads `1000001 > 1000000` in the message, retries with a
-   * raised bound, gets `nodes: 350000`, and has no way to relate the two numbers
-   * or to see it was anywhere near the limit.
+   * `nodes` is the size of the graph. `entities` is NOT in the same unit: it
+   * sums the DISTINCT ids per entity type, from the deduplicated `entityIndex`
+   * — the two diverge exactly on a `duplicate-id` diagnostic. `logicalNodes`
+   * counts the scalar rows on top, and it is THE ONLY ONE `maxNodes` bounds —
+   * `build.ts` throws `GraphTooLargeError(logicalNodeCount, maxNodes)`.
    */
   totals: { nodes: number; logicalNodes: number; entities: number; refEdges: number }
 }
 
 /**
- * The boundary the binary calls: three values in, one string out — the exit code
- * on the first line, the rendered output after it. The binary prints the output
- * and exits with the code; it parses nothing of the report, so the shape, the
- * rendering AND the exit-code rule all live here only.
+ * The boundary the binary calls: exit code on the first line, rendered output
+ * after it. The binary parses nothing of the report, so the shape, the rendering
+ * AND the exit-code rule all live here only.
  */
 export function runCheck(dataText: string, configText: string, asJson: boolean): string {
   const report = checkReport(JSON.parse(dataText), JSON.parse(configText))
@@ -87,9 +76,9 @@ export function runCheck(dataText: string, configText: string, asJson: boolean):
   return `${report.ok ? 0 : 3}\n${output}`
 }
 
-/** Text mode lists at most this many diagnostics: a document with ten thousand
- * dangling references must not scroll its own report off the terminal. `--json`
- * still carries every one of them. */
+/** Text mode lists at most this many diagnostics: ten thousand dangling
+ * references must not scroll the report off the terminal. `--json` still carries
+ * every one. */
 const MAX_LISTED_DIAGNOSTICS = 20
 
 /** Pads on CODE POINTS, not UTF-16 units: a non-ASCII name or selector would
@@ -115,7 +104,7 @@ export function renderText(report: CheckReport): string {
   }
 
   // Alphabetical, hence stable between runs. The JSON keeps the config's own
-  // declaration order — the two orders differ on purpose, each serving its reader.
+  // declaration order — the two orders differ on purpose.
   const ids = Object.entries(report.ids).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
   if (ids.length > 0) {
     out += "  ids\n"
@@ -134,8 +123,7 @@ export function renderText(report: CheckReport): string {
     out += "  refs\n"
     for (const entry of report.refs) {
       // The dangling RATIO, not just the count: `12/12 dangling` is what makes an
-      // entirely broken declaration visible without the exit code having to guess
-      // whether the config or the data is at fault.
+      // entirely broken declaration visible.
       const dangling = entry.dangling > 0 ? `, ${entry.dangling}/${entry.matched} dangling` : ""
       out += `    ${entry.from} → ${entry.to}    ${entry.resolved}/${entry.matched} resolved${dangling}\n`
     }
@@ -167,16 +155,13 @@ export function checkReport(data: unknown, config: unknown): CheckReport {
   try {
     graph = buildGraph(data, typed)
   } catch (error) {
-    // Only the core's two DECLARED failures become a report. `ConfigError` is a
-    // wrong declaration; `GraphTooLargeError` names `maxNodes`, a config field,
-    // so it too is fixed by editing the config. Anything else keeps travelling
-    // as an exception, which is how the binary exits 4 instead of 3.
+    // Only the core's two DECLARED failures become a report: `ConfigError` is a
+    // wrong declaration, `GraphTooLargeError` names `maxNodes` — a config field.
+    // Anything else keeps travelling as an exception, so the binary exits 4, not 3.
     if (error instanceof ConfigError) return failed(error.code, error.message)
     if (error instanceof GraphTooLargeError) {
-      // `error.count` IS the count the message quotes (`maxNodes: <count> >
-      // <max>`): reporting it in `totals.logicalNodes` too is what lets a
-      // consumer read the number instead of regexing it back out of the
-      // message the field exists to make unnecessary.
+      // `error.count` IS the count the message quotes, so reporting it in
+      // `totals.logicalNodes` saves regexing it back out of that message.
       return failed("graph-too-large", error.message, error.count)
     }
     throw error
@@ -200,11 +185,7 @@ export function checkReport(data: unknown, config: unknown): CheckReport {
     ids,
     refs,
     diagnostics,
-    // `nodes` and `entities` are NOT the same unit — see the field doc above,
-    // and a `duplicate-id` diagnostic is where that shows. `logicalNodes` is the
-    // one `maxNodes` bounds, hence the one comparable to the number
-    // `GraphTooLargeError` quotes. Both travel, because neither answers the
-    // other's question.
+    // Three different units — see the `totals` field doc.
     totals: {
       nodes: graph.nodes.size,
       logicalNodes: graph.logicalNodeCount,
@@ -214,12 +195,10 @@ export function checkReport(data: unknown, config: unknown): CheckReport {
   }
 }
 
-/** A failed report keeps the FULL shape: a consumer reads the same fields
- * whatever the outcome, and never has to branch on presence. Every count is 0
- * because no graph was built — except `logicalNodes` on the `graph-too-large`
- * path, where the count IS known (`GraphTooLargeError.count`, the traversal ran
- * far enough to hit the cap) and withholding it would force a consumer to
- * regex it back out of the message instead of reading the field. */
+/** A failed report keeps the FULL shape, so consumers never branch on presence.
+ * Every count is 0 because no graph was built — except `logicalNodes` on the
+ * `graph-too-large` path, where the count IS known
+ * (`GraphTooLargeError.count`). */
 function failed(code: string, message: string, logicalNodes = 0): CheckReport {
   return {
     report: 1,
@@ -260,9 +239,9 @@ function analyzeRefs(config: DataGraphConfig, graph: Graph): CheckRefEntry[] {
       const holder = graph.nodes.get(edge.from)
       if (!holder) continue
       // An edge belongs to this declaration when the ABSOLUTE path of the row it
-      // carries matches `from`. Attributing by field name alone would merge two
-      // declarations ending on the same key under different prefixes, and
-      // `RefEdge` deliberately does not carry the declaration that produced it.
+      // carries matches `from`: by field name alone, two declarations ending on
+      // the same key under different prefixes would merge. `RefEdge` deliberately
+      // does not carry the declaration that produced it.
       if (!matchesPath(fromSegments, [...holder.path, edge.field])) continue
       matched++
       if (edge.dangling) dangling++
@@ -279,11 +258,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /**
  * Does this path designate anything in THIS document?
  *
- * Walks the raw data rather than the graph, because the question is about the
- * document's shape and not about what got built. Two rules carry the whole
- * distinction the exit code rests on: a key that exists nowhere fails, while a
- * wildcard over an EMPTY container succeeds — the container is there, it is just
- * empty, and there is nothing left to disprove below it.
+ * Walks the raw data, not the graph: the question is about the document's shape,
+ * not about what got built. Two rules carry the exit code: a key that exists
+ * nowhere fails, a wildcard over an EMPTY container succeeds.
  */
 function resolves(data: unknown, segments: PathSegment[]): boolean {
   let current: unknown[] = [data]
