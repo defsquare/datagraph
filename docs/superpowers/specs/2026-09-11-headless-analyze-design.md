@@ -195,13 +195,23 @@ config correcte.
   "diagnostics": [
     { "code": "dangling-ref", "path": "$.orders[1].customerId", "message": "…" }
   ],
-  "totals": { "nodes": 14, "entities": 4, "refEdges": 2 }
+  "totals": { "nodes": 11, "logicalNodes": 27, "entities": 4, "refEdges": 2 }
 }
 ```
 
 Les décomptes par sélecteur sont le cœur du rapport, pas les diagnostics : c'est
 ce qui remplace le pré-vol `jq`, et en mieux. `totals` tient en une ligne et vaut
 son poids, `nodes: 0` disant immédiatement que le document n'a pas été parcouru.
+
+`totals` porte **deux** comptes, et les confondre tendrait un piège au
+consommateur visé. `nodes` est la taille du graphe, dans la même unité
+qu'`entities` et `refEdges`. `logicalNodes` compte en plus les lignes scalaires,
+et c'est **le seul que `maxNodes` borne** : `build.ts` lève
+`GraphTooLargeError(logicalNodeCount, maxNodes)`. Sans les deux, un agent qui
+dépasse le cap lit `1000001 > 1000000` dans le message, relance avec une borne
+relevée, obtient `nodes: 350000`, et n'a aucun moyen de relier les deux nombres
+ni de voir qu'il approchait de la limite. Sur `apps/demo/fixtures/shop.json`,
+mesuré : 11 et 27.
 
 Le champ `report: 1` va contre le réflexe YAGNI, pour une raison précise : le
 consommateur est un fichier de skill posé sur le disque de quelqu'un, qui n'est
