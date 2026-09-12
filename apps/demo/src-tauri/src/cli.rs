@@ -12,6 +12,7 @@ pub const USAGE: &str = "datagraph - explore a JSON document as a graph of recor
 
 Usage:
   datagraph [<data.json>] [-c <config.json>]
+  datagraph --check <data.json> -c <config.json> [--json]
 
 Arguments:
   <data.json>       Path to the JSON document to open.
@@ -21,13 +22,24 @@ Options:
   -c <config.json>  Path to a JSON config declaring ids, refs
                     and groups. Without it, the document opens in
                     structure view only.
+  --check           Validate the config against the data, print a report on
+                    stdout and exit without opening a window. Requires -c.
+                    Exit 0 valid config, 3 invalid config, 4 internal error.
+  --json            Print the --check report as JSON instead of text.
   -h, --help        Show this help and exit.";
 
-#[derive(Debug, PartialEq)]
+/// `Default` is derived so that the tests can name only the field they are about
+/// (`Cli { data_path: Some(p), ..Default::default() }`). Adding a flag then costs
+/// one line here instead of a pass over every literal — which is exactly the
+/// churn `--check` and `--json` would otherwise have caused. The default is also
+/// the meaningful one: no file, no flag, demo mode.
+#[derive(Debug, Default, PartialEq)]
 pub struct Cli {
   pub data_path: Option<String>,
   pub config_path: Option<String>,
   pub help: bool,
+  pub check: bool,
+  pub json: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
@@ -42,6 +54,8 @@ pub fn parse(args: &[String]) -> Result<Cli, String> {
   let mut data_path: Option<String> = None;
   let mut config_path: Option<String> = None;
   let mut help = false;
+  let mut check = false;
+  let mut json = false;
   let mut it = args.iter();
   while let Some(arg) = it.next() {
     match arg.as_str() {
@@ -50,6 +64,8 @@ pub fn parse(args: &[String]) -> Result<Cli, String> {
         let value = it.next().ok_or_else(|| "option '-c' expects a path".to_string())?;
         config_path = Some(value.clone());
       }
+      "--check" => check = true,
+      "--json" => json = true,
       s if s.starts_with('-') => return Err(format!("unknown option '{s}'")),
       s => {
         if data_path.is_some() {
@@ -59,11 +75,19 @@ pub fn parse(args: &[String]) -> Result<Cli, String> {
       }
     }
   }
-  // `-c` alone makes no sense: a config qualifies a document.
-  if !help && config_path.is_some() && data_path.is_none() {
-    return Err("option '-c' requires a data file argument".to_string());
+  // `--help` wins over everything: the user asked for help, they get it.
+  if !help {
+    if config_path.is_some() && data_path.is_none() {
+      return Err("option '-c' requires a data file argument".to_string());
+    }
+    if check && config_path.is_none() {
+      return Err("option '--check' requires a config file".to_string());
+    }
+    if json && !check {
+      return Err("option '--json' requires '--check'".to_string());
+    }
   }
-  Ok(Cli { data_path, config_path, help })
+  Ok(Cli { data_path, config_path, help, check, json })
 }
 
 /// Reads the `Cli`'s files and checks each one is syntactically valid JSON.
@@ -98,7 +122,7 @@ mod tests {
   #[test]
   fn no_args_means_demo_mode() {
     let cli = parse(&args(&[])).unwrap();
-    assert_eq!(cli, Cli { data_path: None, config_path: None, help: false });
+    assert_eq!(cli, Cli::default());
   }
 
   #[test]
@@ -150,6 +174,52 @@ mod tests {
     assert!(err.contains("requires a data file"), "{err}");
   }
 
+  #[test]
+  fn check_is_a_flag_not_a_subcommand() {
+    // Same argument line as a launch: you validate, then you drop `--check` to
+    // open the window. A subcommand would break that gesture.
+    let cli = parse(&args(&["--check", "data.json", "-c", "conf.json"])).unwrap();
+    assert!(cli.check);
+    assert!(!cli.json);
+    assert_eq!(cli.data_path.as_deref(), Some("data.json"));
+    assert_eq!(cli.config_path.as_deref(), Some("conf.json"));
+  }
+
+  #[test]
+  fn json_is_recognized_alongside_check() {
+    let cli = parse(&args(&["--check", "data.json", "-c", "conf.json", "--json"])).unwrap();
+    assert!(cli.check);
+    assert!(cli.json);
+  }
+
+  #[test]
+  fn check_without_a_config_is_an_error() {
+    // Without a config there is nothing to validate: structure-only mode has no
+    // contract to be valid or invalid about.
+    let err = parse(&args(&["--check", "data.json"])).unwrap_err();
+    assert!(err.contains("'--check' requires a config file"), "{err}");
+  }
+
+  #[test]
+  fn json_without_check_is_an_error() {
+    // `--json` is the FORMAT of a report. Refusing it explicitly beats ignoring
+    // it in silence.
+    let err = parse(&args(&["data.json", "--json"])).unwrap_err();
+    assert!(err.contains("'--json' requires '--check'"), "{err}");
+  }
+
+  #[test]
+  fn help_still_wins_over_the_new_rules() {
+    assert!(parse(&args(&["--check", "--help"])).unwrap().help);
+    assert!(parse(&args(&["--json", "--help"])).unwrap().help);
+  }
+
+  #[test]
+  fn usage_documents_the_check_mode() {
+    assert!(USAGE.contains("--check"), "{USAGE}");
+    assert!(USAGE.contains("--json"), "{USAGE}");
+  }
+
   // --- load: fixtures written to the system temp directory, named by PID + test
   // name so that parallel tests do not step on each other.
   fn temp_file(name: &str, contents: &str) -> String {
@@ -160,7 +230,7 @@ mod tests {
 
   #[test]
   fn load_without_data_path_is_none() {
-    let cli = Cli { data_path: None, config_path: None, help: false };
+    let cli = Cli::default();
     assert_eq!(load(&cli).unwrap(), None);
   }
 
@@ -168,7 +238,7 @@ mod tests {
   fn load_reads_data_and_optional_config() {
     let data = temp_file("data.json", r#"{"customers": []}"#);
     let conf = temp_file("conf.json", r#"{"ids": {}}"#);
-    let cli = Cli { data_path: Some(data), config_path: Some(conf), help: false };
+    let cli = Cli { data_path: Some(data), config_path: Some(conf), ..Default::default() };
     let payload = load(&cli).unwrap().unwrap();
     assert_eq!(payload.data, r#"{"customers": []}"#);
     assert_eq!(payload.config.as_deref(), Some(r#"{"ids": {}}"#));
@@ -178,8 +248,7 @@ mod tests {
   fn load_missing_file_is_an_error() {
     let cli = Cli {
       data_path: Some("/nonexistent/nope.json".to_string()),
-      config_path: None,
-      help: false,
+      ..Default::default()
     };
     let err = load(&cli).unwrap_err();
     assert!(err.contains("cannot read '/nonexistent/nope.json'"), "{err}");
@@ -198,7 +267,7 @@ mod tests {
     let cli = Cli {
       data_path: Some(format!("{dir}/shop.json")),
       config_path: Some(format!("{dir}/shop.config.json")),
-      help: false,
+      ..Default::default()
     };
     let payload = load(&cli).unwrap().unwrap();
     assert!(payload.data.contains("\"customers\""), "{}", payload.data);
@@ -209,7 +278,7 @@ mod tests {
   #[test]
   fn load_invalid_json_is_an_error() {
     let data = temp_file("bad.json", "{not json");
-    let cli = Cli { data_path: Some(data.clone()), config_path: None, help: false };
+    let cli = Cli { data_path: Some(data.clone()), ..Default::default() };
     let err = load(&cli).unwrap_err();
     assert!(err.contains("is not valid JSON"), "{err}");
     assert!(err.contains(&data), "{err}");
