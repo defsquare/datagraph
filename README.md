@@ -62,12 +62,13 @@ Later versions arrive with `brew upgrade datagraph`.
 recent release.
 
 ```bash
-curl -fsSL https://dl.datagraph.defsquare.com/datagraph/datagraph-macos.tar.gz | tar -xz
+curl -fsSL https://dl.datagraph.defsquare.com/datagraph/datagraph-darwin-arm64.tar.gz | tar -xz
 sudo mv datagraph /usr/local/bin/
 ```
 
-That binary is universal — it carries both the Apple silicon and the Intel
-slice — and it is **not signed by an Apple Developer identity**. That matters
+The prebuilt binary is **Apple silicon (arm64) only** — on an Intel Mac, build
+from source (the fallback below) — and it is **not signed by an Apple Developer
+identity**. That matters
 less than it sounds: `curl` sets no `com.apple.quarantine` attribute on what it
 writes — and Homebrew downloads with `curl` too — so Gatekeeper never assesses
 the file and either install runs without a prompt. Downloading the tarball with
@@ -423,9 +424,9 @@ resulting binary is, and how to install it, is in
 [The `datagraph` CLI](#the-datagraph-cli).
 
 **Release.** `bin/release.sh <version>` does the whole publication from a
-maintainer's Mac: it builds the universal binary, uploads the tarball to the
+maintainer's Mac: it builds the arm64 binary, uploads the tarball to the
 Cloudflare R2 bucket behind the download host — under both a versioned key and
-the stable `datagraph-macos.tar.gz` one — tags the version, then renders
+the stable `datagraph-darwin-arm64.tar.gz` one — tags the version, then renders
 `Formula/datagraph.rb.tmpl` and pushes it to the Homebrew tap. The artifact goes
 up before the formula, so a formula never points at a tarball that does not
 exist yet. The upload authenticates through Cloudflare's own OAuth — run

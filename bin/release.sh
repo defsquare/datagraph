@@ -15,11 +15,11 @@ fi
 
 # Usage: bin/release.sh <version> [--skip-build] [--dry-run]
 #   <version>     e.g. 0.1.0 (no leading v)
-#   --skip-build  reuse an existing universal binary (fast iteration)
+#   --skip-build  reuse an existing binary (fast iteration)
 #   --dry-run     do everything except upload, tag and tap push (prints what it would do)
 
-BINARY="apps/demo/src-tauri/target/universal-apple-darwin/release/datagraph"
-STABLE_ASSET="datagraph-macos.tar.gz"
+BINARY="apps/demo/src-tauri/target/release/datagraph"
+STABLE_ASSET="datagraph-darwin-arm64.tar.gz"
 
 SKIP_BUILD=0
 DRY_RUN=0
@@ -41,7 +41,7 @@ done
   echo "Invalid version: $VERSION (expected e.g. 0.1.0)" >&2; exit 2; }
 
 TAG="v${VERSION}"
-ARTIFACT="dist/datagraph-${VERSION}-macos-universal.tar.gz"
+ARTIFACT="dist/datagraph-${VERSION}-darwin-arm64.tar.gz"
 
 require_env() {
   local missing=0
@@ -69,9 +69,9 @@ build() {
   if [ "$SKIP_BUILD" -eq 1 ]; then
     echo "==> [build] skipped (--skip-build); using existing $BINARY"
   else
-    echo "==> [build] universal binary"
+    echo "==> [build] arm64 binary"
     pnpm build
-    pnpm --filter demo tauri build --target universal-apple-darwin
+    pnpm --filter demo tauri build
   fi
 
   if [ ! -x "$BINARY" ]; then
@@ -79,11 +79,6 @@ build() {
     echo "    WARNING: $BINARY missing (dry-run: continuing without it)"
     return
   fi
-
-  # lipo invalidates the arm64 slice's signature, and macOS refuses to run an
-  # arm64 binary whose signature is broken; ad-hoc signing restores a valid one.
-  echo "==> [sign] ad-hoc re-sign"
-  codesign --force -s - "$BINARY"
 
   echo "==> [smoke] $BINARY --help"
   "$BINARY" --help >/dev/null

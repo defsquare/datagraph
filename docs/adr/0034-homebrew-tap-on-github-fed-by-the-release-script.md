@@ -5,8 +5,8 @@
 
 ## Context
 
-ADR-0033 gave the project a download URL: `bin/release.sh` publishes a
-universal, ad-hoc signed binary to a public Cloudflare R2 bucket, and the
+ADR-0033 gave the project a download URL: `bin/release.sh` publishes an
+arm64, ad-hoc signed binary to a public Cloudflare R2 bucket, and the
 documented install is a `curl | tar` one-liner. That leaves one thing
 unresolved — `curl`
 installs nothing that knows its own version, so there is no upgrade path beyond
@@ -26,7 +26,7 @@ The formula's source of truth is `Formula/datagraph.rb.tmpl`, in this
 repository, next to the code whose version it describes. `bin/release.sh`
 renders it in its last phase — version, `sha256` of the tarball it just built,
 and a URL pinned to the **versioned** R2 key rather than the stable
-`datagraph-macos.tar.gz` one — writes the result into a local checkout of the tap
+`datagraph-darwin-arm64.tar.gz` one — writes the result into a local checkout of the tap
 (`DATAGRAPH_TAP_DIR`), commits `datagraph <version>` and pushes.
 
 The tap is a **shared** repository, **`defsquare/homebrew-tap`**, and it stays
@@ -41,8 +41,9 @@ Because the script runs on the maintainer's machine, the push is authenticated
 by whatever git credentials that machine already has for GitHub. There is no
 token to store on either side.
 
-The formula declares `depends_on :macos` and nothing about the architecture —
-the artifact is universal, which is precisely what ADR-0033 bought. Users get:
+The formula declares `depends_on :macos` and `depends_on arch: :arm64`, matching
+the single artifact ADR-0033 publishes, so brew refuses cleanly on an Intel Mac
+instead of installing something that cannot run. Users get:
 
 ```bash
 brew install defsquare/tap/datagraph   # or: brew tap defsquare/tap && brew install datagraph

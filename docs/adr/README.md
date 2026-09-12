@@ -50,5 +50,5 @@ or spec that introduced the decision.
 | 0030 | [`deselect` and `statschange`, the renderer's lifecycle events](./0030-renderer-lifecycle-events.md) | 2026-09-08 | Accepted |
 | 0031 | [The LOD 1 label holds a screen floor, quantized into rebuild steps](./0031-lod1-label-screen-floor.md) | 2026-09-11 | Accepted |
 | 0032 | [The `--check` report runs the core inside an embedded JS engine](./0032-embedded-core-for-headless-check.md) | 2026-09-11 | Accepted |
-| 0033 | [An unsigned universal macOS binary, hosted on Cloudflare R2](./0033-unsigned-universal-macos-binary-on-cloudflare-r2.md) | 2026-09-12 | Accepted |
+| 0033 | [An unsigned arm64 macOS binary, hosted on Cloudflare R2](./0033-unsigned-arm64-macos-binary-on-cloudflare-r2.md) | 2026-09-12 | Accepted |
 | 0034 | [A Homebrew tap on GitHub, fed by the release script](./0034-homebrew-tap-on-github-fed-by-the-release-script.md) | 2026-09-12 | Accepted |
