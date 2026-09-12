@@ -1,4 +1,5 @@
 pub mod cli;
+pub mod report;
 
 use cli::LaunchPayload;
 
