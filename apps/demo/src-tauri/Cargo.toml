@@ -6,7 +6,7 @@ authors = ["defsquare"]
 license = "MIT"
 repository = "https://github.com/defsquare/data-graph"
 edition = "2021"
-rust-version = "1.77.2"
+rust-version = "1.81"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -26,6 +26,10 @@ tauri-build = { version = "2.6.3", features = [] }
 [dependencies]
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
+# QuickJS, with no feature enabled: neither `loader` nor `dyn-load`. The context
+# must never resolve a module — the only JavaScript that enters it is ours,
+# embedded via include_str! and frozen at compile time.
+rquickjs = "0.9"
 log = "0.4"
 tauri = { version = "2.11.3", features = [] }
 tauri-plugin-log = "2"
