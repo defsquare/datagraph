@@ -73,6 +73,9 @@ datagraph data.json -c config.json  # a JSON document with its ids/refs/groups c
 datagraph data.json                 # no config: structure view only
 datagraph                           # no argument: the built-in demo dataset
 datagraph --help
+
+datagraph --check data.json -c config.json          # validate the config, print a report, exit
+datagraph --check data.json -c config.json --json   # same report, as JSON
 ```
 
 The `-c` file is the `ids` / `refs` / `groups` object documented in
@@ -99,6 +102,41 @@ are in [Structure view](./packages/renderer/README.md#structure-view).
 Argument and file errors are reported on stderr with a non-zero exit code
 before any window opens. See [`apps/demo/README.md`](./apps/demo/README.md) for
 the details — exit codes, the CSP, the vendored fonts.
+
+**Checking a config without opening it.** `--check` builds the graph, prints a
+report on stdout and exits — no window. It reports, per selector, how many
+instances it matched and whether its path resolves at all, and per reference how
+many joins resolved or dangled. On a Windows release build launched from a
+console, the report never reaches the screen — stdout has no handle there —
+but it works when the output is redirected or piped, which is how an agent
+invoking it captures it.
+
+```
+✓ config valid — 4 entities, 2 references resolved
+
+  ids
+    Customer  $.customers[*].id  2 instances
+    Order     $.orders[*].id     2 instances
+  refs
+    $.orders[*].customerId → $.customers[*].id    2/2 resolved
+
+  No diagnostics.
+```
+
+(Copy this block from the binary's own output rather than from here — the columns
+are computed, and a hand-typed example drifts.)
+
+The exit code answers one question — *can I fix this by editing the config?*
+`0` valid (the report may still carry data diagnostics), `3` invalid config,
+`4` internal error, on top of the existing `1` for an unreadable file and `2`
+for a bad argument. A dangling foreign key, a duplicate id or a missing id is a
+hole in the **data**, so it stays at `0`; an unresolved selector prefix or a
+reference declaration nothing satisfied is a **config** bug, so it exits `3`.
+`--json` prints the same report as JSON, carrying a `"report": 1` version field.
+Its `totals` hold two node counts: `nodes`, the size of the graph, and
+`logicalNodes`, the same nodes plus the scalar rows — the second is the one
+`maxNodes` bounds, so it is the one to compare against the number a
+`GraphTooLargeError` quotes.
 
 ## The `@defsquare/data-graph` package
 

@@ -19,6 +19,9 @@ datagraph data.json -c config.json  # open a JSON document with an ids/refs/grou
 datagraph data.json                 # no config: structure view only
 datagraph                           # no argument: built-in demo dataset
 datagraph --help
+
+datagraph --check data.json -c config.json          # validate the config, print a report, exit
+datagraph --check data.json -c config.json --json   # same report, as JSON
 ```
 
 The argument parser lives in [`src-tauri/src/cli.rs`](./src-tauri/src/cli.rs)
@@ -28,6 +31,41 @@ cannot be read or parsed), where a CLI user expects them, rather than inside a
 WebView. Only JSON *syntax* is validated up front; a semantically invalid config
 (unknown group, malformed selector) is reported in-app by the TypeScript core,
 which is the single source of truth for it.
+
+`--check` is the headless half of the same binary. It requires `-c` (without a
+config there is no contract to check) and refuses `--json` on its own (that is
+the format of a report). It builds the graph with the **same TypeScript core**
+the window uses — bundled into
+[`src-tauri/generated/check.js`](./src-tauri/generated/check.js) and evaluated in
+an embedded QuickJS by [`src-tauri/src/check.rs`](./src-tauri/src/check.rs) — so
+the fourteen `ConfigError` messages read identically here and on the app's error
+screen. The report's shape, the exit codes and the text rendering live in
+[`src-tauri/src/report.rs`](./src-tauri/src/report.rs).
+
+On Windows, `main.rs`'s `windows_subsystem = "windows"` leaves a release
+build with no console handle for `print!`/`println!` when launched directly
+from a console, so `--check`'s report is silent there; it still works when
+stdout is redirected or piped, which covers an agent capturing the output.
+
+| Exit | Meaning |
+|---|---|
+| `0` | Config valid. The report may still carry **data** diagnostics. |
+| `1` | File unreadable, or invalid JSON. |
+| `2` | Invalid argument. |
+| `3` | Invalid config: a `ConfigError`, a selector prefix that does not resolve, or a reference declaration nothing satisfied. |
+| `4` | Internal error: engine failure or a core bug. Never a verdict on your config. |
+
+```bash
+datagraph --check fixtures/shop.json -c fixtures/shop.config.json
+datagraph --check fixtures/shop.json -c fixtures/shop.config.json --json
+```
+
+`check.js` is **generated and committed**: `include_str!` needs it at Rust compile
+time, so cargo never has to run pnpm. Regenerate it with
+`pnpm --filter @defsquare/data-graph-core generate:check` after any change to the
+validation closure — `packages/core/test/check-bundle.test.ts` compares it byte
+for byte and fails `pnpm test` otherwise. See
+[ADR-0032](../../docs/adr/0032-embedded-core-for-headless-check.md).
 
 Size is no longer a reason a document refuses to open: it opens on a bounded
 preview (~300 cards), each expansion then reveals 100 children at a

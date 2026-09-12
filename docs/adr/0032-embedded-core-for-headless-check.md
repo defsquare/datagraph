@@ -81,3 +81,8 @@ in the DATA and stay at `0`.
   is allowed, renaming or removing one is a break.
 - Deliberately out of scope: rich data analysis (degrees, connected components,
   cycles, orphans). The report is shaped to take it without breaking.
+- **On Windows, `--check` is silent when launched directly from a console.**
+  `windows_subsystem = "windows"` (needed to suppress a console window when the
+  app opens normally) leaves a release build with no handle for `print!`/
+  `println!` there; redirecting or piping stdout still works, which covers an
+  agent capturing the report.

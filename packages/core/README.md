@@ -310,6 +310,27 @@ an index is only ever obtained from `buildSearchIndex`, never constructed.
 `test/api-surface.test.ts` pins the exact runtime export list of both entry
 points, so any change to it has to be deliberate.
 
+## The `--check` bundle
+
+`src/validate.ts` is a **third entry point**, outside the published API: it builds
+the report the `datagraph --check` CLI prints. It is deliberately narrow —
+`build.ts`, `config.ts`, `selector.ts`, `model.ts` and nothing else — because it
+is bundled into a single ES file the desktop binary embeds and runs in QuickJS.
+Reaching `structure-layout.ts` would drag elkjs into it, 18,798 bytes (the
+committed bundle, unminified) becoming 1.5 MB.
+
+```bash
+pnpm --filter @defsquare/data-graph-core generate:check
+```
+
+writes `apps/demo/src-tauri/generated/check.js`, which is **committed**: Rust's
+`include_str!` needs the file at compile time, and cargo must never depend on
+pnpm. `test/check-bundle.test.ts` guards two things — that the closure stays
+narrow and expects no host global, and that the committed file matches the
+generator byte for byte. A change to the validation closure that is not
+regenerated breaks `pnpm test`. The decision is in
+[ADR-0032](../../docs/adr/0032-embedded-core-for-headless-check.md).
+
 ## License
 
 MIT © 2026 Defsquare
