@@ -1,7 +1,7 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use data_graph_lib::{check, cli};
+use datagraph_lib::{check, cli};
 
 // All CLI routing lives BEFORE `run_with`: help, argument errors, and `--check`
 // must never open a window. `run_check_mode` is typed `-> !`, so control only
@@ -34,7 +34,7 @@ fn main() {
   if parsed.check {
     run_check_mode(payload.as_ref(), parsed.json);
   }
-  data_graph_lib::run_with(payload);
+  datagraph_lib::run_with(payload);
 }
 
 /// Never returns: every path exits the process with the code the report earned.

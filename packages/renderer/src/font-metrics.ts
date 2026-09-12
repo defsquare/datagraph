@@ -1,4 +1,4 @@
-import type { NodeMetrics } from "@defsquare/data-graph-core";
+import type { NodeMetrics } from "@defsquare/datagraph-core";
 import type { Theme } from "./theme.js";
 
 // Sample representative of the text actually displayed: lowercase and uppercase

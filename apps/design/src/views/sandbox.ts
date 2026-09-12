@@ -77,7 +77,7 @@ export function mountSandboxView(root: HTMLElement, state: ThemeState): () => vo
         // here is that the playground's aliases are unconditional, so `serve`
         // and `build` alike load the layout worker's SOURCE.
         elkWorkerUrl: new URL("elkjs/lib/elk-worker.min.js", import.meta.url),
-        graphLayoutWorkerUrl: new URL("@defsquare/data-graph/graph-layout-worker", import.meta.url),
+        graphLayoutWorkerUrl: new URL("@defsquare/datagraph/graph-layout-worker", import.meta.url),
       });
     } catch (error) {
       // `createDataGraph` validates the config synchronously. Without this

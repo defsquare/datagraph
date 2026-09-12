@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { Color } from "pixi.js";
-import { buildGraph, rowRectFor, DEFAULT_METRICS } from "@defsquare/data-graph-core";
+import { buildGraph, rowRectFor, DEFAULT_METRICS } from "@defsquare/datagraph-core";
 import { anchorOnRect, drawEdgeHitAreas, drawEdges, drawSelectionOverlay } from "../src/draw.js";
 import { DIM_ALPHA } from "../src/focus.js";
 import { resolveTheme } from "../src/theme.js";

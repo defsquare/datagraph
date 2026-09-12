@@ -26,14 +26,14 @@ const src = (rel: string): string => fileURLToPath(new URL(rel, import.meta.url)
 // ---------------------------------------------------------------------------
 // THE GRAPH VIEW LAYOUT WORKER, AND ITS FOUR MODES
 //
-// `main.ts` passes `graphLayoutWorkerUrl: new URL("@defsquare/data-graph/graph-layout-worker",
+// `main.ts` passes `graphLayoutWorkerUrl: new URL("@defsquare/datagraph/graph-layout-worker",
 // import.meta.url)`, exactly as it already does for elk. Vite recognizes this
 // form (`new URL(<literal>, import.meta.url)`), RESOLVES the specifier through
 // its plugin chain — aliases included — and rewrites the expression. What it
 // then does with it differs per mode, and all four have been exercised:
 //
 //   1. `vite dev` (so ALSO the Playwright e2e run, cf. the note above). The
-//      `@defsquare/data-graph/graph-layout-worker` alias below — placed BEFORE
+//      `@defsquare/datagraph/graph-layout-worker` alias below — placed BEFORE
 //      the bare package one, for the ordering reason already explained — points
 //      at the worker's TypeScript SOURCE. The dev server serves it transformed
 //      to JS, imports rewritten to module URLs; `new Worker(url, { type:
@@ -61,15 +61,15 @@ export default defineConfig(({ command }) => ({
       ? {
           alias: [
             {
-              find: "@defsquare/data-graph-core/graph-layout",
+              find: "@defsquare/datagraph-core/graph-layout",
               replacement: src("../../packages/core/src/graph-layout.ts"),
             },
             {
-              find: "@defsquare/data-graph-core",
+              find: "@defsquare/datagraph-core",
               replacement: src("../../packages/core/src/index.ts"),
             },
             {
-              find: "@defsquare/data-graph/graph-layout-worker",
+              find: "@defsquare/datagraph/graph-layout-worker",
               replacement: src("../../packages/renderer/src/graph-layout-worker.ts"),
             },
             // The demo does not import the tokens directly — the renderer's
@@ -78,28 +78,28 @@ export default defineConfig(({ command }) => ({
             // package's `dist/`, and a color fixed in `packages/tokens/src`
             // would stay invisible in dev.
             {
-              find: "@defsquare/data-graph-tokens/css",
+              find: "@defsquare/datagraph-tokens/css",
               replacement: src("../../packages/tokens/src/css.ts"),
             },
             {
-              find: "@defsquare/data-graph-tokens",
+              find: "@defsquare/datagraph-tokens",
               replacement: src("../../packages/tokens/src/index.ts"),
             },
             // The shared chrome. Its two entries must come before the bare
             // package one below, for the ordering reason already explained:
-            // `@defsquare/data-graph` also matches the prefix of
-            // `@defsquare/data-graph-chrome`, which would be rewritten to
+            // `@defsquare/datagraph` also matches the prefix of
+            // `@defsquare/datagraph-chrome`, which would be rewritten to
             // `.../renderer/src/index.ts-chrome`.
             {
-              find: "@defsquare/data-graph-chrome/chrome.css",
+              find: "@defsquare/datagraph-chrome/chrome.css",
               replacement: src("../../packages/chrome/src/chrome.css"),
             },
             {
-              find: "@defsquare/data-graph-chrome",
+              find: "@defsquare/datagraph-chrome",
               replacement: src("../../packages/chrome/src/index.ts"),
             },
             {
-              find: "@defsquare/data-graph",
+              find: "@defsquare/datagraph",
               replacement: src("../../packages/renderer/src/index.ts"),
             },
           ],

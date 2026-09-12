@@ -1,21 +1,21 @@
 [package]
-name = "data-graph"
+name = "datagraph"
 version = "0.1.0"
 description = "Data graph explorer"
 authors = ["defsquare"]
 license = "MIT"
-repository = "https://github.com/defsquare/data-graph"
+repository = "https://gitlab.com/defsquare/datagraph"
 edition = "2021"
 rust-version = "1.81"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
-name = "data_graph_lib"
+name = "datagraph_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
-# The binary is named after the command the user types — `datagraph` — not
-# after the package. `mainBinaryName` (tauri.conf.json) must stay aligned.
+# The binary is named after the command the user types — `datagraph`.
+# `mainBinaryName` (tauri.conf.json) must stay aligned.
 [[bin]]
 name = "datagraph"
 path = "src/main.rs"

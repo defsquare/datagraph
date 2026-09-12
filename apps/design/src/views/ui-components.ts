@@ -17,7 +17,7 @@ import "./ui-components.css";
  * states.
  *
  * These specimens are the COMPONENTS THEMSELVES. They come out of
- * `@defsquare/data-graph-chrome`'s factories, the ones the demo calls, and are
+ * `@defsquare/datagraph-chrome`'s factories, the ones the demo calls, and are
  * dressed by the stylesheet the demo loads. Same regime as the graph components
  * board with respect to `draw.ts`: a specimen cannot lie about what the product
  * draws, because it IS what the product draws.

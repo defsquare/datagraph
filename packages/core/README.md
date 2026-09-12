@@ -1,28 +1,28 @@
-# @defsquare/data-graph-core
+# @defsquare/datagraph-core
 
-Headless graph engine for [`data-graph`](https://github.com/defsquare/data-graph)
-(see the [root README](https://github.com/defsquare/data-graph#readme) for the
+Headless graph engine for [`datagraph`](https://gitlab.com/defsquare/datagraph)
+(see the [root README](https://gitlab.com/defsquare/datagraph#readme) for the
 full pitch and the ids/refs/groups config, and
-[`docs/graph-view.md`](https://github.com/defsquare/data-graph/blob/main/docs/graph-view.md)
+[`docs/graph-view.md`](https://gitlab.com/defsquare/datagraph/-/blob/main/docs/graph-view.md)
 for the graph view's layout engine and its measurements).
 
 This package has no rendering dependency: it builds a graph from arbitrary
 JSON plus an ids/refs/groups config, tracks expand/collapse state, indexes
 it for search, and lays it out via [elkjs](https://github.com/kieler/elkjs).
 If you want the interactive Pixi.js canvas, use
-[`@defsquare/data-graph`](https://www.npmjs.com/package/@defsquare/data-graph)
+[`@defsquare/datagraph`](https://www.npmjs.com/package/@defsquare/datagraph)
 instead — it depends on this package.
 
 ## Install
 
 ```bash
-pnpm add @defsquare/data-graph-core
+pnpm add @defsquare/datagraph-core
 ```
 
 ## Quickstart
 
 ```ts
-import { buildGraph, buildSearchIndex, CollapseState, createStructureLayoutEngine } from "@defsquare/data-graph-core";
+import { buildGraph, buildSearchIndex, CollapseState, createStructureLayoutEngine } from "@defsquare/datagraph-core";
 
 const data = {
   customers: [{ id: "c1", name: "Dupont" }],
@@ -206,7 +206,7 @@ A dangling reference propagates nothing: an entity reachable only through a
 broken reference is left out of every aggregate. Declaration order in
 `config.groups` is therefore **load-bearing**: it decides who wins a
 distance tie, and so which aggregate an entity ends up in. It also orders
-`byNode`'s entries and, in `@defsquare/data-graph`, the paint order of
+`byNode`'s entries and, in `@defsquare/datagraph`, the paint order of
 envelopes.
 
 **Why the rule arbitrates instead of sharing.** An earlier version let an
@@ -246,7 +246,7 @@ layout engine is.
 > | canvas bbox | 7199 × 4588 | 18714 × 19984 |
 >
 > The bbox figures belong to that engine and no longer describe the current one;
-> see [`docs/graph-view.md`](https://github.com/defsquare/data-graph/blob/main/docs/graph-view.md)
+> see [`docs/graph-view.md`](https://gitlab.com/defsquare/datagraph/-/blob/main/docs/graph-view.md)
 > for what the two-level engine lays those same 116 blocks out in.
 
 The union-find that carried the merge went with the pass when it was removed. It
@@ -258,12 +258,12 @@ current engine packs each aggregate independently and never moves a card
 relative to its co-members at all.
 
 `aggregates` is what powers the renderer's **graph view** — see the
-[renderer package README](https://github.com/defsquare/data-graph/tree/main/packages/renderer#graph-view)
+[renderer package README](https://gitlab.com/defsquare/datagraph/-/tree/main/packages/renderer#graph-view)
 for `view`/`setView`/`currentView` and how aggregates are drawn.
 
 ## Benchmark
 
-`pnpm bench` (or `pnpm --filter @defsquare/data-graph-core bench`) runs
+`pnpm bench` (or `pnpm --filter @defsquare/datagraph-core bench`) runs
 `bench/bench.ts` against a synthetic `bigShop(10_000)` fixture and prints
 each step's time against its budget; it never fails the build (non-blocking,
 always exits 0). Latest measured numbers:
@@ -282,7 +282,7 @@ The same script also sweeps `buildGraph` + `buildSearchIndex` at 100k / 500k /
 1M logical nodes, which is what fixed the `maxNodes` default at `1_000_000`.
 The grouped sweep over-reports (the tiers share one heap and the GC has not
 necessarily run between them), so the deciding numbers were taken one process
-per tier — `BENCH_SCALE_N=1000000 pnpm --filter @defsquare/data-graph-core bench`:
+per tier — `BENCH_SCALE_N=1000000 pnpm --filter @defsquare/datagraph-core bench`:
 95 MB / 66 ms at 100k, 291 MB / 338 ms at 500k, 479 MB / 814 ms at 1M, i.e.
 linear and ~3× under the ~1.5 GB targeted — measured under **default** node heap
 options, since the desktop WebView gets no `--max-old-space-size` either. Re-run
@@ -298,7 +298,7 @@ tokens, so it has to name the same pages as `CollapseState` and read the same
 budget rather than copy the literals. Plus the `Graph`, `GraphNode`, `RefEdge`,
 `Diagnostic`, `DataGraphConfig`, `Aggregate`, `AggregateIndex`, `HiddenGap`,
 `SearchIndex` types. See the
-[root README](https://github.com/defsquare/data-graph#readme) for the config
+[root README](https://gitlab.com/defsquare/datagraph#readme) for the config
 shape and `packages/core/src/index.ts` for the full export list.
 
 `src/index.ts` is a **contract, not an index**: it re-exports only what a
@@ -321,7 +321,7 @@ Reaching `structure-layout.ts` would drag elkjs into it, 21,021 bytes (the
 committed bundle, unminified) becoming 1.5 MB.
 
 ```bash
-pnpm --filter @defsquare/data-graph-core generate:check
+pnpm --filter @defsquare/datagraph-core generate:check
 ```
 
 writes `apps/demo/src-tauri/generated/check.js`, which is **committed**: Rust's

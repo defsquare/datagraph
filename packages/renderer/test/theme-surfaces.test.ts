@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildGraph, type Rect } from "@defsquare/data-graph-core";
+import { buildGraph, type Rect } from "@defsquare/datagraph-core";
 import { DOMAdapter, Graphics } from "pixi.js";
 import { drawNode } from "../src/draw.js";
 import { defsquareDark, defsquareLight, neutralDark, type Theme } from "../src/theme.js";

@@ -1,4 +1,4 @@
-import type { DataGraphConfig } from "@defsquare/data-graph";
+import type { DataGraphConfig } from "@defsquare/datagraph";
 
 // E-commerce demo dataset. Deliberately duplicated from
 // `packages/core/test/fixtures.ts`: the demo is a consumer of the published

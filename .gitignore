@@ -8,3 +8,9 @@ test-results/
 playwright-report/
 apps/demo/src-tauri/target/
 apps/demo/src-tauri/gen/
+
+# Release config (tokens, local paths): see bin/release.env.example.
+bin/release.env
+
+# Working datasets (client schemas, generator output): local only, never committed.
+datasets/

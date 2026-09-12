@@ -3,7 +3,7 @@ import {
   type DataGraph,
   type DataGraphConfig,
   type GraphNode,
-} from "@defsquare/data-graph";
+} from "@defsquare/datagraph";
 import { resolveLaunch } from "./launch";
 import { createDetailPanel } from "./detail-panel";
 import { createSearchUi } from "./search-ui";
@@ -59,7 +59,7 @@ try {
     // toggle that freezes the page for ~4.4 s from one during which the structure
     // view stays usable. Without this line everything still works: the renderer
     // computes in-process.
-    graphLayoutWorkerUrl: new URL("@defsquare/data-graph/graph-layout-worker", import.meta.url),
+    graphLayoutWorkerUrl: new URL("@defsquare/datagraph/graph-layout-worker", import.meta.url),
   });
 } catch (error) {
   // `createDataGraph` validates the config synchronously: a semantically invalid

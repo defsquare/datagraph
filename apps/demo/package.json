@@ -13,8 +13,8 @@
     "tauri": "tauri"
   },
   "dependencies": {
-    "@defsquare/data-graph": "workspace:*",
-    "@defsquare/data-graph-chrome": "workspace:*",
+    "@defsquare/datagraph": "workspace:*",
+    "@defsquare/datagraph-chrome": "workspace:*",
     "@tauri-apps/api": "^2.11.1",
     "elkjs": "^0.12.0"
   },

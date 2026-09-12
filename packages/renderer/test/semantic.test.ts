@@ -7,8 +7,8 @@ import {
   type NodeId,
   type NodeMetrics,
   type RefEdge,
-} from "@defsquare/data-graph-core";
-import type { ClusterShape, GraphLayoutResult } from "@defsquare/data-graph-core/graph-layout";
+} from "@defsquare/datagraph-core";
+import type { ClusterShape, GraphLayoutResult } from "@defsquare/datagraph-core/graph-layout";
 import {
   aggregateRefEdges,
   createGraphViewController,

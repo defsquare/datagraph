@@ -1,7 +1,7 @@
 {
-  "name": "@defsquare/data-graph-core",
+  "name": "@defsquare/datagraph-core",
   "version": "0.1.0",
-  "description": "Headless graph engine for data-graph: builds a graph from arbitrary JSON plus an ids/refs/groups config, following foreign-key style references — with search indexing and ELK-based layout, no rendering dependency.",
+  "description": "Headless graph engine for datagraph: builds a graph from arbitrary JSON plus an ids/refs/groups config, following foreign-key style references — with search indexing and ELK-based layout, no rendering dependency.",
   "keywords": [
     "graph",
     "json",
@@ -16,7 +16,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/defsquare/data-graph.git",
+    "url": "git+https://gitlab.com/defsquare/datagraph.git",
     "directory": "packages/core"
   },
   "type": "module",

@@ -2,13 +2,13 @@
    at the top of a stylesheet. */
 @import "./fonts.css";
 @import "./tokens.css";
-@import "@defsquare/data-graph-chrome/chrome.css";
+@import "@defsquare/datagraph-chrome/chrome.css";
 
-/* defsquare shell for the data-graph demo.
+/* defsquare shell for the datagraph demo.
    The tokens (`--ds-*`, `--float-*`, scales, fonts) are generated from
-   @defsquare/data-graph-tokens into ./tokens.css — do not redeclare them here.
+   @defsquare/datagraph-tokens into ./tokens.css — do not redeclare them here.
    The chrome PRIMITIVES (floating surface, icon button, search, menu, badge,
-   status link) come from @defsquare/data-graph-chrome, the single source shared
+   status link) come from @defsquare/datagraph-chrome, the single source shared
    with the design system catalogue — do not redeclare those here either. This
    stylesheet keeps only the PLACEMENT and the ASSEMBLIES specific to the demo.
    The canvas is no longer "the hero in the middle of the chrome": it IS the

@@ -1,10 +1,10 @@
 {
-  "name": "data-graph-workspace",
+  "name": "datagraph-workspace",
   "private": true,
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/defsquare/data-graph.git"
+    "url": "git+https://gitlab.com/defsquare/datagraph.git"
   },
   "type": "module",
   "engines": {
@@ -14,7 +14,7 @@
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
-    "bench": "pnpm --filter @defsquare/data-graph-core bench"
+    "bench": "pnpm --filter @defsquare/datagraph-core bench"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

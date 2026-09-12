@@ -1,0 +1,19 @@
+class Datagraph < Formula
+  desc     "Explore a JSON document as an interactive graph of records and references"
+  homepage "https://gitlab.com/defsquare/datagraph"
+  url      "@@URL@@"
+  version  "@@VERSION@@"
+  sha256   "@@SHA256@@"
+  license  "MIT"
+
+  # No arch constraint: the tarball carries a universal binary (arm64 + x86_64).
+  depends_on :macos
+
+  def install
+    bin.install "datagraph"
+  end
+
+  test do
+    assert_match "datagraph", shell_output("#{bin}/datagraph --help")
+  end
+end

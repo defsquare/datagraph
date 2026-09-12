@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "data-graph",
+  "productName": "datagraph",
   "mainBinaryName": "datagraph",
   "version": "0.1.0",
   "identifier": "com.defsquare.datagraph",
@@ -13,7 +13,7 @@
   "app": {
     "windows": [
       {
-        "title": "data-graph",
+        "title": "datagraph",
         "width": 1280,
         "height": 800,
         "resizable": true,

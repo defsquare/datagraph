@@ -80,7 +80,7 @@ sidebar.setAttribute("aria-label", "Vues du playground");
 
 const brandEl = document.createElement("div");
 brandEl.className = "sidebar-brand";
-brandEl.textContent = "data-graph";
+brandEl.textContent = "datagraph";
 sidebar.append(brandEl);
 
 // Links, not buttons: the route IS the hash, so the element leading to it must

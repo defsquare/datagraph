@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { NodeId, RefEdge } from "@defsquare/data-graph-core";
+import type { NodeId, RefEdge } from "@defsquare/datagraph-core";
 import { clusterDimmed, clusterRelatedIds, DIM_ALPHA, relatedIds } from "../src/focus.js";
 
 /** A bare reference edge: `relatedIds` reads nothing but `fromEntity`, `to` and

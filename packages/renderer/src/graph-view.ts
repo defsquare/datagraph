@@ -10,7 +10,7 @@ import {
   type NodeMetrics,
   type Rect,
   type RefEdge,
-} from "@defsquare/data-graph-core";
+} from "@defsquare/datagraph-core";
 // `import type` ONLY: this entry point carries the graph view and
 // must only enter the bundle of whoever actually switches to it. A
 // type import produces no runtime code; the only runtime path to the
@@ -29,7 +29,7 @@ import type {
   GraphLayoutInput,
   GraphLayoutResult,
   TwoLevelLayoutOptions,
-} from "@defsquare/data-graph-core/graph-layout";
+} from "@defsquare/datagraph-core/graph-layout";
 import { clusterDimmed } from "./focus.js";
 
 /**
@@ -107,7 +107,7 @@ export type GraphLayoutWorkerSpawn = (
  * in-process path `createTwoLevelLayoutEngine`, and both take
  * `TWO_LEVEL_LAYOUT_DEFAULTS`.
  */
-type GraphLayoutModule = typeof import("@defsquare/data-graph-core/graph-layout");
+type GraphLayoutModule = typeof import("@defsquare/datagraph-core/graph-layout");
 
 /**
  * The link between TWO AGGREGATES, and the number of references it sums up.
@@ -637,7 +637,7 @@ export function createGraphViewController(hooks: GraphViewHooks): GraphViewContr
    */
   async function ensureModule(): Promise<GraphLayoutModule> {
     if (!graphModule) {
-      graphModule = await import("@defsquare/data-graph-core/graph-layout");
+      graphModule = await import("@defsquare/datagraph-core/graph-layout");
       // It is here, and NOWHERE else, that we learn the default hull padding: the
       // loaded module's namespace carries it, so the renderer knows it without
       // keeping a copy of it and without statically importing that entry point —
@@ -709,9 +709,9 @@ export function createGraphViewController(hooks: GraphViewHooks): GraphViewContr
   function retireWorker(reason: unknown): void {
     if (!workerRetired) {
       workerRetired = true;
-      console.warn("[data-graph] graph layout via graphLayoutWorkerUrl failed, falling back to in-process layout", reason);
+      console.warn("[datagraph] graph layout via graphLayoutWorkerUrl failed, falling back to in-process layout", reason);
     }
-    closeWorker(new Error("[data-graph] graph layout worker retired"));
+    closeWorker(new Error("[datagraph] graph layout worker retired"));
   }
 
   /** Terminates the worker and settles the in-flight requests with `reason`. */
@@ -902,7 +902,7 @@ export function createGraphViewController(hooks: GraphViewHooks): GraphViewContr
       try {
         return await compute(target, config, reuse);
       } catch (err) {
-        console.warn(`[data-graph] ${context}`, err);
+        console.warn(`[datagraph] ${context}`, err);
         return null;
       }
     },
@@ -932,7 +932,7 @@ export function createGraphViewController(hooks: GraphViewHooks): GraphViewContr
     destroy(): void {
       if (controllerDestroyed) return;
       controllerDestroyed = true;
-      closeWorker(new Error("[data-graph] instance destroyed while the graph layout was in flight"));
+      closeWorker(new Error("[datagraph] instance destroyed while the graph layout was in flight"));
     },
 
     positions(): Map<NodeId, Rect> | undefined {

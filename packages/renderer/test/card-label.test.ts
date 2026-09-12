@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { DEFAULT_METRICS } from "@defsquare/data-graph-core";
+import { DEFAULT_METRICS } from "@defsquare/datagraph-core";
 import {
   CARD_LABEL_HEIGHT_RATIO,
   CARD_LABEL_LINE_HEIGHT_RATIO,

@@ -1,5 +1,5 @@
 // GENERATED FILE — do not edit.
-// Run `pnpm --filter @defsquare/data-graph-core generate:check` after any change to
+// Run `pnpm --filter @defsquare/datagraph-core generate:check` after any change to
 // the validation closure (validate.ts, build.ts, config.ts, selector.ts, model.ts).
 // Embedded verbatim in the datagraph binary by `include_str!`, see
 // apps/demo/src-tauri/src/check.rs. Freshness: packages/core/test/check-bundle.test.ts.

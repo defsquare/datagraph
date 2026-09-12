@@ -14,10 +14,10 @@ importers:
 
   apps/demo:
     dependencies:
-      '@defsquare/data-graph':
+      '@defsquare/datagraph':
         specifier: workspace:*
         version: link:../../packages/renderer
-      '@defsquare/data-graph-chrome':
+      '@defsquare/datagraph-chrome':
         specifier: workspace:*
         version: link:../../packages/chrome
       '@tauri-apps/api':
@@ -42,7 +42,7 @@ importers:
 
   apps/design:
     dependencies:
-      '@defsquare/data-graph-chrome':
+      '@defsquare/datagraph-chrome':
         specifier: workspace:*
         version: link:../../packages/chrome
       elkjs:
@@ -95,10 +95,10 @@ importers:
 
   packages/renderer:
     dependencies:
-      '@defsquare/data-graph-core':
+      '@defsquare/datagraph-core':
         specifier: workspace:*
         version: link:../core
-      '@defsquare/data-graph-tokens':
+      '@defsquare/datagraph-tokens':
         specifier: workspace:*
         version: link:../tokens
       elkjs:

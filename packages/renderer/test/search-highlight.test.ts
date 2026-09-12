@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { Graphics } from "pixi.js";
-import type { NodeId, Rect } from "@defsquare/data-graph-core";
+import type { NodeId, Rect } from "@defsquare/datagraph-core";
 import { drawSearchHighlights } from "../src/draw.js";
 import { defsquareDark, defsquareLight, type Theme } from "../src/theme.js";
 

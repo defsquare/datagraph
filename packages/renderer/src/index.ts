@@ -27,7 +27,7 @@ export type {
   DataGraphEvent,
   DataGraphView,
   // Relayed by `create.ts` and not re-exported directly from
-  // `@defsquare/data-graph-core/graph-layout`: `test/bundle-purity.test.ts` forbids any
+  // `@defsquare/datagraph-core/graph-layout`: `test/bundle-purity.test.ts` forbids any
   // `export … from` form towards that specifier, type-only included. Going through
   // `create.ts`, which already makes it an `import type`, hands consumers the type
   // without touching that guard.
@@ -42,7 +42,7 @@ export type {
 } from "./create.js";
 
 // Re-exported so consumers can type their config/results without depending
-// on @defsquare/data-graph-core directly.
+// on @defsquare/datagraph-core directly.
 export type {
   DataGraphConfig,
   NodeId,
@@ -52,9 +52,9 @@ export type {
   RefEdge,
   Diagnostic,
   SearchResult,
-} from "@defsquare/data-graph-core";
+} from "@defsquare/datagraph-core";
 
 // A host that renders a node's rows itself (a detail panel) needs to phrase an array
 // row the way the card does: "3 items" and not "3", which would read as the field's
 // value.
-export { arrayTokenTextFor } from "@defsquare/data-graph-core";
+export { arrayTokenTextFor } from "@defsquare/datagraph-core";

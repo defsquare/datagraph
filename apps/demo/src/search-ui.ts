@@ -1,4 +1,4 @@
-import type { DataGraph } from "@defsquare/data-graph";
+import type { DataGraph } from "@defsquare/datagraph";
 
 // Search: debounced input, Enter/Shift+Enter navigation, ↑/↓ buttons and an
 // "N/total" counter. `graph.search`/`nextMatch`/`prevMatch` do not expose the

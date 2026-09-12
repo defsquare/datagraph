@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { Container, DOMAdapter, Graphics, Text } from "pixi.js";
-import { buildGraph } from "@defsquare/data-graph-core";
+import { buildGraph } from "@defsquare/datagraph-core";
 import {
   anchorOnRect,
   drawEdgeLabels,

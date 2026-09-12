@@ -32,7 +32,7 @@ import {
   type RefEdge,
   type SearchIndex,
   type SearchResult,
-} from "@defsquare/data-graph-core";
+} from "@defsquare/datagraph-core";
 // `import type` ONLY: this entry point carries the graph view and must enter only
 // the bundle of whoever actually switches to it. A type import produces no runtime
 // code; the only runtime path to the engine is `graph-view.ts`'s dynamic
@@ -45,7 +45,7 @@ import {
 // removed: 3.58 kB gzip instead of 180.28. It stays because it holds the SHAPE —
 // the graph view loads on demand by construction — and no longer because it holds a
 // weight. The complete reasoning is in the two purity tests.
-import type { TwoLevelLayoutOptions } from "@defsquare/data-graph-core/graph-layout";
+import type { TwoLevelLayoutOptions } from "@defsquare/datagraph-core/graph-layout";
 // A relay and not a re-export: `export … from "<this specifier>"` is forbidden by
 // `test/bundle-purity.test.ts`, type-only form included. Re-exporting the symbol
 // already imported above gives consumers the same service without writing the
@@ -228,9 +228,9 @@ export interface DataGraphOptions {
    * the wait.
    *
    * The URL must designate the worker this package publishes,
-   * `@defsquare/data-graph/graph-layout-worker` — a standalone ESM module, loaded
+   * `@defsquare/datagraph/graph-layout-worker` — a standalone ESM module, loaded
    * with `{ type: "module" }`. Under a bundler, the usual form is
-   * `new URL("@defsquare/data-graph/graph-layout-worker", import.meta.url)`;
+   * `new URL("@defsquare/datagraph/graph-layout-worker", import.meta.url)`;
    * `apps/demo` does it that way, with `vite.config.ts`'s note on the four
    * execution modes.
    *
@@ -981,7 +981,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     try {
       return { engine: primary, layout: await primary.layout(target, visible, metrics) };
     } catch (err) {
-      console.warn("[data-graph] layout via elkWorkerUrl failed, falling back to in-process elk", err);
+      console.warn("[datagraph] layout via elkWorkerUrl failed, falling back to in-process elk", err);
       const fallback = createStructureLayoutEngine();
       return { engine: fallback, layout: await fallback.layout(target, visible, metrics) };
     }

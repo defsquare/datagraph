@@ -1,4 +1,4 @@
-# data-graph
+# datagraph
 
 **Interactive visualization for complex JSON documents — keyed records and real reference edges.**
 
@@ -7,7 +7,7 @@ box, every key becomes an edge. That's fine for small documents, but it falls
 apart on real domain data — records with hundreds of nested fields, foreign
 keys that point across the document, collections with thousands of rows.
 
-`data-graph` renders that same interactive box-and-line canvas, but on top of a
+`datagraph` renders that same interactive box-and-line canvas, but on top of a
 **domain model** instead of raw JSON structure: you declare, in `ids`, which
 paths in your data are *keyed records* (e.g. `Customer`, `Order`), and, in
 `refs`, which fields *join* them (e.g.
@@ -28,17 +28,17 @@ and [`docs/graph-view.md`](./docs/graph-view.md).
 There are two ways to use it. As a **standalone desktop app**, the `datagraph`
 binary opens a JSON file straight from the shell, no code to write — see
 [The `datagraph` CLI](#the-datagraph-cli). As a **JS package**,
-`@defsquare/data-graph` mounts the same canvas into a container in your own
-app — see [The `@defsquare/data-graph` package](#the-defsquaredata-graph-package).
+`@defsquare/datagraph` mounts the same canvas into a container in your own
+app — see [The `@defsquare/datagraph` package](#the-defsquaredatagraph-package).
 
 ## Packages
 
 | Package | Description |
 | --- | --- |
-| [`@defsquare/data-graph-tokens`](./packages/tokens) | Design tokens — the single source of truth behind both the renderer themes and the shell CSS variables. |
-| [`@defsquare/data-graph-chrome`](./packages/chrome) | Chrome primitives — CSS, icons and markup factories shared by the demo and the playground. Never published. |
-| [`@defsquare/data-graph-core`](./packages/core) | Headless: `buildGraph`, `CollapseState`, `buildSearchIndex`, `createStructureLayoutEngine`. No rendering, no DOM. |
-| [`@defsquare/data-graph`](./packages/renderer) | Pixi.js renderer on top of core: `createDataGraph`, themes. |
+| [`@defsquare/datagraph-tokens`](./packages/tokens) | Design tokens — the single source of truth behind both the renderer themes and the shell CSS variables. |
+| [`@defsquare/datagraph-chrome`](./packages/chrome) | Chrome primitives — CSS, icons and markup factories shared by the demo and the playground. Never published. |
+| [`@defsquare/datagraph-core`](./packages/core) | Headless: `buildGraph`, `CollapseState`, `buildSearchIndex`, `createStructureLayoutEngine`. No rendering, no DOM. |
+| [`@defsquare/datagraph`](./packages/renderer) | Pixi.js renderer on top of core: `createDataGraph`, themes. |
 | [`apps/demo`](./apps/demo) | Vite demo, Playwright e2e, and the Tauri desktop shell that doubles as the `datagraph` CLI. |
 | [`apps/design`](./apps/design) | Design system playground: tokens, graph and UI components, and a live sandbox. Never published. |
 
@@ -48,11 +48,42 @@ app — see [The `@defsquare/data-graph` package](#the-defsquaredata-graph-packa
 binary is the end-user tool: point it at a JSON document and it opens the
 canvas described above, with no project to set up and no code to write.
 
-**Install: build from source.** There is no pre-built binary to download, and
-no `.app` / `.dmg` bundle — `bundle.active` is `false`, so `tauri build`
-produces a raw executable meant to be launched from a shell, which is what
-makes the CLI arguments useful in the first place. You need **pnpm** and a
-**Rust toolchain** (Tauri v2).
+**Install on macOS.** Each release uploads the prebuilt binary to defsquare's
+download host and pushes the matching formula to the defsquare tap, so the
+shortest route is Homebrew:
+
+```bash
+brew install defsquare/tap/datagraph
+```
+
+Later versions arrive with `brew upgrade datagraph`.
+
+**Without Homebrew**, take the tarball directly; that URL always serves the most
+recent release.
+
+```bash
+curl -fsSL https://dl.datagraph.defsquare.com/datagraph/datagraph-macos.tar.gz | tar -xz
+sudo mv datagraph /usr/local/bin/
+```
+
+That binary is universal — it carries both the Apple silicon and the Intel
+slice — and it is **not signed by an Apple Developer identity**. That matters
+less than it sounds: `curl` sets no `com.apple.quarantine` attribute on what it
+writes — and Homebrew downloads with `curl` too — so Gatekeeper never assesses
+the file and either install runs without a prompt. Downloading the tarball with
+a **browser** does set the attribute, and then macOS refuses to open the
+binary; clear it once and the binary behaves like any other:
+
+```bash
+xattr -d com.apple.quarantine ./datagraph
+```
+
+There is no `.app` / `.dmg` bundle on any platform — `bundle.active` is
+`false`, so `tauri build` produces a raw executable meant to be launched from a
+shell, which is what makes the CLI arguments useful in the first place.
+
+**Fallback: build from source** (any platform, and the only route on Linux and
+Windows). You need **pnpm** and a **Rust toolchain** (Tauri v2).
 
 ```bash
 # from a clone of this repository
@@ -60,7 +91,7 @@ pnpm install
 pnpm --filter demo tauri build   # → apps/demo/src-tauri/target/release/datagraph
 ```
 
-The binary is not on your `PATH`: copy it, or symlink it, somewhere that is.
+The built binary is not on your `PATH`: copy it, or symlink it, somewhere that is.
 
 ```bash
 ln -s "$PWD/apps/demo/src-tauri/target/release/datagraph" /usr/local/bin/datagraph
@@ -138,23 +169,27 @@ Its `totals` hold two node counts: `nodes`, the size of the graph, and
 `maxNodes` bounds, so it is the one to compare against the number a
 `GraphTooLargeError` quotes.
 
-## The `@defsquare/data-graph` package
+## The `@defsquare/datagraph` package
 
 The other way in: embedding the renderer in your own app, rather than opening a
 file with [the CLI](#the-datagraph-cli) above.
 
 ```bash
-pnpm add @defsquare/data-graph
+pnpm add @defsquare/datagraph
 ```
 
-`@defsquare/data-graph` depends on `@defsquare/data-graph-core` and `pixi.js`
+Not yet, though: the packages are not published to npm at the time of writing,
+so until they are, the only way to consume them is from a clone of this
+repository, as workspace dependencies.
+
+`@defsquare/datagraph` depends on `@defsquare/datagraph-core` and `pixi.js`
 directly (they're installed automatically), and on `elkjs` for layout.
 
 This is the exact bootstrap used by [`apps/demo`](./apps/demo/src/main.ts),
 whose small fixture is a four-entity-type e-commerce shop:
 
 ```ts
-import { createDataGraph } from "@defsquare/data-graph";
+import { createDataGraph } from "@defsquare/datagraph";
 
 const shopData = {
   categories: [
@@ -210,7 +245,7 @@ const graph = createDataGraph(container, {
   elkWorkerUrl: new URL("elkjs/lib/elk-worker.min.js", import.meta.url),
   // Same deal for the graph view's own layout, which is where the seconds are
   // on large datasets. Same permanent in-process fallback on first failure.
-  graphLayoutWorkerUrl: new URL("@defsquare/data-graph/graph-layout-worker", import.meta.url),
+  graphLayoutWorkerUrl: new URL("@defsquare/datagraph/graph-layout-worker", import.meta.url),
 });
 
 await graph.ready;
@@ -231,7 +266,7 @@ source/target of reference edges.
 
 `config.refs` is an array of joins, `{ from, to }`: `from` is a selector for
 a field whose value is meant to be read as a foreign key, and `to` is one of
-the paths declared in `ids`. `data-graph` resolves `from`'s value against the
+the paths declared in `ids`. `datagraph` resolves `from`'s value against the
 target's index at build time and draws a reference edge (dangling and
 highlighted differently if the target id doesn't exist).
 
@@ -292,12 +327,12 @@ Gestures, dimming rules and the graph view are documented there too.
 
 ## Themes
 
-`@defsquare/data-graph` ships four built-in themes — `defsquareLight` (the
+`@defsquare/datagraph` ships four built-in themes — `defsquareLight` (the
 default), `defsquareDark`, `neutralLight`, `neutralDark` — and lets you
 override any subset of theme tokens per instance:
 
 ```ts
-import { createDataGraph, defsquareDark } from "@defsquare/data-graph";
+import { createDataGraph, defsquareDark } from "@defsquare/datagraph";
 
 const graph = createDataGraph(container, {
   data,
@@ -326,16 +361,18 @@ exact shape.
 ## Monorepo layout
 
 ```
-data-graph/
+datagraph/
 ├── packages/
-│   ├── tokens/    @defsquare/data-graph-tokens — design tokens, CSS generator
-│   ├── chrome/    @defsquare/data-graph-chrome — chrome primitives, never published
-│   ├── core/      @defsquare/data-graph-core — graph model, layout, search
-│   └── renderer/  @defsquare/data-graph — Pixi.js renderer, themes
+│   ├── tokens/    @defsquare/datagraph-tokens — design tokens, CSS generator
+│   ├── chrome/    @defsquare/datagraph-chrome — chrome primitives, never published
+│   ├── core/      @defsquare/datagraph-core — graph model, layout, search
+│   └── renderer/  @defsquare/datagraph — Pixi.js renderer, themes
 ├── apps/
 │   ├── demo/      Vite app demonstrating the renderer + Playwright e2e
 │   │   └── src-tauri/  Tauri v2 desktop shell + `datagraph` CLI (Rust)
 │   └── design/    design system playground (port 5174), never published
+├── bin/           release.sh — builds, publishes and taps a version
+├── Formula/       datagraph.rb.tmpl — the Homebrew formula release.sh renders
 ├── docs/
 │   ├── graph-view.md   graph-view layout, guarantees and measurements
 │   └── superpowers/    historical journal of spikes, specs and plans
@@ -384,6 +421,20 @@ for a full `pnpm test` — run `pnpm --filter '!demo' -r test` to skip it.
 **Desktop app and CLI.** Both `tauri` commands need a Rust toolchain. What the
 resulting binary is, and how to install it, is in
 [The `datagraph` CLI](#the-datagraph-cli).
+
+**Release.** `bin/release.sh <version>` does the whole publication from a
+maintainer's Mac: it builds the universal binary, uploads the tarball to the
+Cloudflare R2 bucket behind the download host — under both a versioned key and
+the stable `datagraph-macos.tar.gz` one — tags the version, then renders
+`Formula/datagraph.rb.tmpl` and pushes it to the Homebrew tap. The artifact goes
+up before the formula, so a formula never points at a tarball that does not
+exist yet. The upload authenticates through Cloudflare's own OAuth — run
+`wrangler login` once; no token lives in the environment or the repository. The
+bucket, the download base URL and the local tap checkout come from
+`bin/release.env`, which is git-ignored — copy
+[`bin/release.env.example`](./bin/release.env.example) and fill it in. Add
+`--dry-run` to see the plan and the rendered formula without touching the
+network.
 
 ## License
 

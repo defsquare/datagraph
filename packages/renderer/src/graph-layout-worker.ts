@@ -2,7 +2,7 @@
 //
 // This file is imported by NO other module of the package: it is a build
 // ENTRY in its own right (see `tsup.config.ts`), published under
-// `@defsquare/data-graph/graph-layout-worker` and meant to be designated
+// `@defsquare/datagraph/graph-layout-worker` and meant to be designated
 // by a URL, not by an `import`. Nothing it pulls in therefore enters the
 // bundle of a consumer that does not use it — that is what authorizes
 // the STATIC import of the `./graph-layout` entry point below, which
@@ -22,7 +22,7 @@
 // reads the `Graph` — stays at the caller's: a `Graph` does not travel through a
 // `postMessage`, and that is exactly why the core was split (see `GraphLayoutInput`,
 // core side).
-import { layoutFromInput } from "@defsquare/data-graph-core/graph-layout";
+import { layoutFromInput } from "@defsquare/datagraph-core/graph-layout";
 // `import type`: the protocol is declared at its other interlocutor, the controller,
 // and the bundler erases this line. No renderer code — hence no Pixi — comes in this
 // way.

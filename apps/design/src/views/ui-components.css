@@ -1,6 +1,6 @@
 /* The caption of the « Composants UI » view, and nothing else.
 
-   The primitives on display are dressed by `@defsquare/data-graph-chrome`, the
+   The primitives on display are dressed by `@defsquare/datagraph-chrome`, the
    stylesheet the demo loads too — `main.ts` imports it. This stylesheet only
    dresses what surrounds the objects: grids, checkerboard, captions.
 

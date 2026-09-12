@@ -1,5 +1,5 @@
 import type { Container } from "pixi.js";
-import type { Rect } from "@defsquare/data-graph-core";
+import type { Rect } from "@defsquare/datagraph-core";
 import { easeOutQuad } from "./animate.js";
 
 export interface Size {

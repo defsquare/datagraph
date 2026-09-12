@@ -1,16 +1,16 @@
-# @defsquare/data-graph
+# @defsquare/datagraph
 
 Interactive visualization for complex JSON documents — keyed records, with real
 reference edges — rendered on a Pixi.js canvas. See the
-[root README](https://github.com/defsquare/data-graph#readme) for the full
+[root README](https://gitlab.com/defsquare/datagraph#readme) for the full
 pitch and the ids/refs/groups config format, and
-[`docs/graph-view.md`](https://github.com/defsquare/data-graph/blob/main/docs/graph-view.md)
+[`docs/graph-view.md`](https://gitlab.com/defsquare/datagraph/-/blob/main/docs/graph-view.md)
 for the graph view's layout guarantees and performance budgets.
 
 ## Install
 
 ```bash
-pnpm add @defsquare/data-graph
+pnpm add @defsquare/datagraph
 ```
 
 ## Quickstart
@@ -20,7 +20,7 @@ This is the same fixture the root README and
 types, two aggregate roots, and one deliberate dangling reference:
 
 ```ts
-import { createDataGraph } from "@defsquare/data-graph";
+import { createDataGraph } from "@defsquare/datagraph";
 
 const shopData = {
   categories: [
@@ -279,7 +279,7 @@ search, references and diagnostics never see a truncated document, and
 `stats().logicalNodeCount` still counts the whole thing while
 `visibleNodeCount` counts what these rules let through. The hard cap on the
 document itself is `config.maxNodes` (default 1,000,000), a memory guard on
-build + index; see the [root README](https://github.com/defsquare/data-graph#config-ids-refs-groups).
+build + index; see the [root README](https://gitlab.com/defsquare/datagraph#config-ids-refs-groups).
 
 ## Graph view
 
@@ -292,7 +292,7 @@ build + index; see the [root README](https://github.com/defsquare/data-graph#con
   this README.
 - **`"graph"`** lays out records as vertices and joins as edges, grouped
   as declared in `config.groups` (see the
-  [core package README](https://github.com/defsquare/data-graph/tree/main/packages/core#aggregates)
+  [core package README](https://gitlab.com/defsquare/datagraph/-/tree/main/packages/core#aggregates)
   for the membership rule) and drawn as circular envelopes — the minimal
   enclosing circle of each aggregate's cards, plus a `hullPadding` margin.
 
@@ -374,7 +374,7 @@ came out as a visible grid. Each cluster gets a deterministic `jitter` (default
 **32 px**, `0` disables) that inflates its radius *during the simulation only*:
 the guarantees and the painted circles are computed from the true radius and are
 bit-identical whatever the amplitude.
-[`docs/graph-view.md`](https://github.com/defsquare/data-graph/blob/main/docs/graph-view.md)
+[`docs/graph-view.md`](https://gitlab.com/defsquare/datagraph/-/blob/main/docs/graph-view.md)
 carries the measured before/after on all of this.
 
 Every aggregate gets its own block: membership is a partition, so no two
@@ -391,7 +391,7 @@ shared card), and on this same config the merge percolated: 108 aggregates
 collapsed into a single block of 342 of 350 cards, and there was nothing left to
 space out. The membership rule now arbitrates ties instead of sharing, which is
 what brought the spacing back — see the
-[core README's Aggregates section](https://github.com/defsquare/data-graph/tree/main/packages/core#aggregates)
+[core README's Aggregates section](https://gitlab.com/defsquare/datagraph/-/tree/main/packages/core#aggregates)
 for the rule and the measured before/after. And until recently the spacing itself
 was done by two relaxation passes over the output of a global `fcose` layout;
 those passes and that engine have since been **removed from the core** along
@@ -399,7 +399,7 @@ with `cytoscape`. On the demo's dataset the switch took `setView("graph")` from
 **4,310–4,484 ms to 220–252 ms** (measured in Chromium, three isolated runs
 each, on a dev server serving unminified sources) and the canvas from
 18,714 × 19,984 to 8,083 × 8,437.
-[`docs/graph-view.md`](https://github.com/defsquare/data-graph/blob/main/docs/graph-view.md)
+[`docs/graph-view.md`](https://gitlab.com/defsquare/datagraph/-/blob/main/docs/graph-view.md)
 carries the full before/after.
 
 How wide the corridors should be is a matter of eye, screen size and data
@@ -417,7 +417,7 @@ const graph = createDataGraph(container, {
 ```
 
 `TwoLevelLayoutOptions` is re-exported from this package, so you can type the
-object without depending on `@defsquare/data-graph-core` directly.
+object without depending on `@defsquare/datagraph-core` directly.
 
 > **API change (0.x, no compatibility shim).** `graphLayoutOptions` used to take
 > `GraphLayoutOptions` — `{ hullPadding, separationMargin, separationIterations,
@@ -443,7 +443,7 @@ package publishes and that computation moves to a Web Worker:
 const graph = createDataGraph(container, {
   data,
   config,
-  graphLayoutWorkerUrl: new URL("@defsquare/data-graph/graph-layout-worker", import.meta.url),
+  graphLayoutWorkerUrl: new URL("@defsquare/datagraph/graph-layout-worker", import.meta.url),
 });
 ```
 
@@ -490,7 +490,7 @@ library underneath it to override. Removing folding also removed the
 pinned incremental relayout that used to bound drift on already-placed cards
 when an aggregate was unfolded, along with the 0px-median-drift budget it
 enforced — there is no longer any incremental relayout to stabilise. See
-[`docs/graph-view.md`](https://github.com/defsquare/data-graph/blob/main/docs/graph-view.md)
+[`docs/graph-view.md`](https://gitlab.com/defsquare/datagraph/-/blob/main/docs/graph-view.md)
 for the full table of guarantees and what enforces each one.
 
 ## Themes
@@ -501,7 +501,7 @@ Ships four built-in themes — `defsquareLight` (default), `defsquareDark`,
 per-instance customization.
 
 ```ts
-import { createDataGraph, defsquareDark, resolveTheme } from "@defsquare/data-graph";
+import { createDataGraph, defsquareDark, resolveTheme } from "@defsquare/datagraph";
 
 // Partial override: any token not mentioned comes from defsquareLight.
 const graph = createDataGraph(container, {
@@ -540,7 +540,7 @@ requires a fresh `createDataGraph`. It merges through `resolveTheme` against
 the theme currently in effect, so a `byEntityType` set earlier survives a
 plain light/dark swap unless the new call overrides it.
 
-See the [root README](https://github.com/defsquare/data-graph#themes) for
+See the [root README](https://gitlab.com/defsquare/datagraph#themes) for
 more on the theme/config relationship.
 
 ## License

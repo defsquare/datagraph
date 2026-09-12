@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { DEFAULT_METRICS } from "@defsquare/data-graph-core";
+import { DEFAULT_METRICS } from "@defsquare/datagraph-core";
 import { measureFontMetrics } from "../src/font-metrics.js";
 import { defsquareLight } from "../src/theme.js";
 

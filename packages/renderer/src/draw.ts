@@ -16,7 +16,7 @@ import {
   type NodeMetrics,
   type Rect,
   type RefEdge,
-} from "@defsquare/data-graph-core";
+} from "@defsquare/datagraph-core";
 import type { Theme, TypeStyle } from "./theme.js";
 import { DIM_ALPHA } from "./focus.js";
 import { fontNameFor, type TextRole } from "./font-registry.js";

@@ -1,4 +1,4 @@
-import { defsquareLight, defsquareDark, type DataGraph } from "@defsquare/data-graph";
+import { defsquareLight, defsquareDark, type DataGraph } from "@defsquare/datagraph";
 import {
   createCluster,
   createClusterSeparator,
@@ -7,7 +7,7 @@ import {
   createMenu,
   createMenuItem,
   createStatusLink,
-} from "@defsquare/data-graph-chrome";
+} from "@defsquare/datagraph-chrome";
 
 declare global {
   interface Window {
@@ -258,7 +258,7 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
     // The `console.warn` stays: in dev it is still the fastest way to read the
     // whole batch, and the packaged binary has no devtools — which is exactly
     // why the panel below had to exist.
-    for (const d of graph.diagnostics()) console.warn(`[data-graph] ${d.code} @ ${d.path}: ${d.message}`);
+    for (const d of graph.diagnostics()) console.warn(`[datagraph] ${d.code} @ ${d.path}: ${d.message}`);
     hooks.onDiagnosticsOpen();
   });
 

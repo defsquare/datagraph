@@ -48,7 +48,7 @@ describe("bundle purity", () => {
 
   it("keeps the graph-view engine out of the main entry point's transitive closure", () => {
     if (!existsSync(entry)) {
-      throw new Error("dist/index.js is missing — run `pnpm --filter @defsquare/data-graph-core build` before this test")
+      throw new Error("dist/index.js is missing — run `pnpm --filter @defsquare/datagraph-core build` before this test")
     }
 
     // Breadth-first walk over the relative specifiers, with a `visited` set that

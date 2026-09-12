@@ -1,5 +1,5 @@
-// Non-blocking performance bench for @defsquare/data-graph-core. Run via
-// `pnpm bench` (root) or `pnpm --filter @defsquare/data-graph-core bench`.
+// Non-blocking performance bench for @defsquare/datagraph-core. Run via
+// `pnpm bench` (root) or `pnpm --filter @defsquare/datagraph-core bench`.
 // Always exits 0: this is a reporting tool, not a gate — CI must never fail
 // because a bench number regressed. Read the printed lines against the
 // budgets documented in the root README's "Performance budgets" section.
@@ -64,7 +64,7 @@ function mb(bytes: number): string {
 // `maxNodes: 1_000_000` default in `config.ts` was fixed on ISOLATED runs, one
 // process per tier, via `BENCH_SCALE_N`:
 //
-//   BENCH_SCALE_N=100000  pnpm --filter @defsquare/data-graph-core bench  →  95 MB,  66 ms
+//   BENCH_SCALE_N=100000  pnpm --filter @defsquare/datagraph-core bench  →  95 MB,  66 ms
 //   BENCH_SCALE_N=500000  ...                                            → 291 MB, 338 ms
 //   BENCH_SCALE_N=1000000 ...                                            → 479 MB, 814 ms
 //
@@ -120,7 +120,7 @@ async function scaleSweep(): Promise<void> {
 
 async function main(): Promise<void> {
   const N = 10_000
-  console.log(`--- data-graph-core bench (bigShop(${N})) ---`)
+  console.log(`--- datagraph-core bench (bigShop(${N})) ---`)
 
   const data = bigShop(N)
 

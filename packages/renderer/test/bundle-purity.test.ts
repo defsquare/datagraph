@@ -61,7 +61,7 @@ function stripComments(source: string): string {
  * `import()` there would add a round trip and buy nothing. The rule it breaks
  * does not concern it, because that rule protects the CONSUMER's bundle: this
  * file is a build ENTRY of its own (see `tsup.config.ts`), published as
- * `@defsquare/data-graph/graph-layout-worker` and referred to by URL, never
+ * `@defsquare/datagraph/graph-layout-worker` and referred to by URL, never
  * imported.
  *
  * The exemption therefore has a PRICE, checked right below: nobody imports this
@@ -73,7 +73,7 @@ const WORKER_ENTRY = "graph-layout-worker.ts";
 
 describe("bundle purity (renderer sources)", () => {
   const srcDir = fileURLToPath(new URL("../src", import.meta.url));
-  const SPECIFIER = "@defsquare/data-graph-core/graph-layout";
+  const SPECIFIER = "@defsquare/datagraph-core/graph-layout";
   const SPEC_RE = SPECIFIER.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
 
   const sources = readdirSync(srcDir)
@@ -183,7 +183,7 @@ describe("bundle purity (layout worker)", () => {
   it("does import the engine, and statically", () => {
     // Counter-guard: without it, emptying the file would make all the rest pass.
     expect(worker.code).toMatch(
-      /^[ \t]*import\s+\{[^}]*layoutFromInput[^}]*\}\s+from\s+["']@defsquare\/data-graph-core\/graph-layout["']/m,
+      /^[ \t]*import\s+\{[^}]*layoutFromInput[^}]*\}\s+from\s+["']@defsquare\/datagraph-core\/graph-layout["']/m,
     );
   });
 

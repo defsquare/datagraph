@@ -1,5 +1,5 @@
 /**
- * The single source of truth for data-graph's design tokens.
+ * The single source of truth for datagraph's design tokens.
  *
  * The same values feed two outputs that, until now, each duplicated them on
  * their own side: the Pixi themes of `packages/renderer/src/theme.ts` and the

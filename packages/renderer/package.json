@@ -1,7 +1,7 @@
 {
-  "name": "@defsquare/data-graph",
+  "name": "@defsquare/datagraph",
   "version": "0.1.0",
-  "description": "Interactive visualization for arbitrary JSON driven by an ids/refs/groups config, with real reference edges — Pixi.js renderer, expand/collapse, search, and theming, on top of @defsquare/data-graph-core.",
+  "description": "Interactive visualization for arbitrary JSON driven by an ids/refs/groups config, with real reference edges — Pixi.js renderer, expand/collapse, search, and theming, on top of @defsquare/datagraph-core.",
   "keywords": [
     "visualization",
     "graph",
@@ -16,7 +16,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/defsquare/data-graph.git",
+    "url": "git+https://gitlab.com/defsquare/datagraph.git",
     "directory": "packages/renderer"
   },
   "type": "module",
@@ -49,8 +49,8 @@
     "vitest": "^4.1.11"
   },
   "dependencies": {
-    "@defsquare/data-graph-core": "workspace:*",
-    "@defsquare/data-graph-tokens": "workspace:*",
+    "@defsquare/datagraph-core": "workspace:*",
+    "@defsquare/datagraph-tokens": "workspace:*",
     "pixi.js": "^8.0.0",
     "elkjs": "^0.12.0"
   }

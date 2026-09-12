@@ -1,6 +1,6 @@
 # `apps/design` — playground du design system
 
-Banc d'essai des tokens et des composants de `data-graph`. Ce n'est ni un
+Banc d'essai des tokens et des composants de `datagraph`. Ce n'est ni un
 produit ni une démo : `apps/demo` montre le viewer à un utilisateur, `apps/design`
 montre le **design system à ceux qui le modifient** — chaque token, chaque
 variante de composant, dans les quatre thèmes, côte à côte.
@@ -70,7 +70,7 @@ Les quatre vues, dans l'ordre de la barre latérale :
   flottante, bouton d'icône, barre de recherche, pastille, item de menu),
   chacune en rangée d'états **réels** — on survole, on tabule ; aucune classe
   jumelle du genre `.is-hover`. Les spécimens sortent des fabriques de
-  `@defsquare/data-graph-chrome` et sont habillés par sa feuille, celle que la
+  `@defsquare/datagraph-chrome` et sont habillés par sa feuille, celle que la
   démo charge : même régime que la vue Composants graphe vis-à-vis de `draw.ts`.
   Cette planche a commencé par recopier le CSS et les icônes de la démo, faute
   de pouvoir les importer — c'est ce constat qui a fait extraire le paquet.

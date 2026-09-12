@@ -1,4 +1,4 @@
-import type { NodeId, SearchIndex, SearchResult } from "@defsquare/data-graph-core";
+import type { NodeId, SearchIndex, SearchResult } from "@defsquare/datagraph-core";
 
 export interface SearchHooks {
   /**

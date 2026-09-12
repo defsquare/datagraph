@@ -1,4 +1,4 @@
-import type { NodeId, RefEdge } from "@defsquare/data-graph-core";
+import type { NodeId, RefEdge } from "@defsquare/datagraph-core";
 
 /**
  * The opacity of a card or an edge with NO link to the selection.

@@ -8,7 +8,7 @@ import {
   Rectangle,
   type FederatedPointerEvent,
 } from "pixi.js";
-import type { NodeId, Rect } from "@defsquare/data-graph-core";
+import type { NodeId, Rect } from "@defsquare/datagraph-core";
 import { attachDrag, TAP_THRESHOLD } from "../src/drag.js";
 import {
   attachTap,

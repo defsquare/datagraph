@@ -1,11 +1,11 @@
 {
-  "name": "@defsquare/data-graph-tokens",
+  "name": "@defsquare/datagraph-tokens",
   "version": "0.1.0",
-  "description": "Design tokens for data-graph: single source of truth feeding both the Pixi renderer themes and the demo shell CSS variables.",
+  "description": "Design tokens for datagraph: single source of truth feeding both the Pixi renderer themes and the demo shell CSS variables.",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/defsquare/data-graph.git",
+    "url": "git+https://gitlab.com/defsquare/datagraph.git",
     "directory": "packages/tokens"
   },
   "type": "module",

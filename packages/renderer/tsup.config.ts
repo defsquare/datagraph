@@ -5,14 +5,14 @@ import { defineConfig } from "tsup";
  * of this file, which replaces the `tsup src/index.ts` line in `package.json`.
  *
  * 1. `src/index.ts` — the package. NORMAL regime: `pixi.js` and
- *    `@defsquare/data-graph-core` stay external, it is the consumer's bundler
+ *    `@defsquare/datagraph-core` stay external, it is the consumer's bundler
  *    that resolves and dedupes them. Types emitted.
  *
  * 2. `src/graph-layout-worker.ts` — the graph view's Web Worker. STANDALONE
  *    regime: the layout's pure core is bundled INSIDE it (`noExternal`). This is
  *    not a preference, it is the only shape that works — this file is loaded by
  *    URL, not by `import`, so nobody is there to resolve a bare specifier like
- *    `@defsquare/data-graph-core/graph-layout`: the browser would read it as-is
+ *    `@defsquare/datagraph-core/graph-layout`: the browser would read it as-is
  *    and fail. No `.d.ts` either: we never import it, we point at it.
  *
  * What the worker actually pulls in, and why that is little: the core's
@@ -40,6 +40,6 @@ export default defineConfig([
     format: ["esm"],
     dts: false,
     clean: false,
-    noExternal: ["@defsquare/data-graph-core"],
+    noExternal: ["@defsquare/datagraph-core"],
   },
 ]);

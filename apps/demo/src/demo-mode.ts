@@ -1,4 +1,4 @@
-import type { DataGraph, DataGraphConfig } from "@defsquare/data-graph";
+import type { DataGraph, DataGraphConfig } from "@defsquare/datagraph";
 import { shopData, shopConfig, bigShop, bigShopConfig } from "./sample-data";
 
 // Everything that exists ONLY IN DEMO MODE — the sample dataset, its generator

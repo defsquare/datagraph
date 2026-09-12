@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
-import { buildGraph, DEFAULT_METRICS, type DataGraphConfig, type NodeMetrics } from "@defsquare/data-graph-core";
-import { layoutFromInput, type GraphLayoutInput } from "@defsquare/data-graph-core/graph-layout";
+import { buildGraph, DEFAULT_METRICS, type DataGraphConfig, type NodeMetrics } from "@defsquare/datagraph-core";
+import { layoutFromInput, type GraphLayoutInput } from "@defsquare/datagraph-core/graph-layout";
 import {
   createGraphViewController,
   type GraphLayoutWorkerHandle,

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { Container, DOMAdapter, Graphics, Text } from "pixi.js";
-import { DEFAULT_METRICS } from "@defsquare/data-graph-core";
+import { DEFAULT_METRICS } from "@defsquare/datagraph-core";
 import { drawRemainderToken, REMAINDER_TOKEN_GAP, REMAINDER_TOKEN_HEIGHT } from "../src/draw.js";
 import { resolveTheme } from "../src/theme.js";
 

@@ -1,7 +1,7 @@
 //! The embedded engine: the `--check` mode's JavaScript half.
 //!
 //! The bundle is generated from `packages/core` and COMMITTED (see
-//! `pnpm --filter @defsquare/data-graph-core generate:check`). `include_str!`
+//! `pnpm --filter @defsquare/datagraph-core generate:check`). `include_str!`
 //! needs it at Rust compile time, and cargo must never depend on pnpm; its
 //! freshness is a vitest matter, not a cargo one.
 //!

@@ -1,6 +1,6 @@
-# @defsquare/data-graph-chrome
+# @defsquare/datagraph-chrome
 
-The DOM primitives of data-graph's chrome: floating surface, icon button,
+The DOM primitives of datagraph's chrome: floating surface, icon button,
 unfolding search bar, menu, entity badge, status link, reference button.
 
 **One primitive per module, its stylesheet beside it**, under `src/components/`:
@@ -27,8 +27,8 @@ state without seeing its factory, nor the other way round. Consumers, for their
 part, see only two entry points — the index and `chrome.css`.
 
 ```ts
-import { createIconButton, createFindbar } from "@defsquare/data-graph-chrome";
-import "@defsquare/data-graph-chrome/chrome.css"; // AFTER the tokens
+import { createIconButton, createFindbar } from "@defsquare/datagraph-chrome";
+import "@defsquare/datagraph-chrome/chrome.css"; // AFTER the tokens
 ```
 
 ## Why this package exists
@@ -62,7 +62,7 @@ Vite applications that compile source. Making it publishable would cost a
 Every factory accepts an `id`: the demo's instances are addressed by id, by its
 wiring as much as by its end-to-end tests.
 
-`pnpm --filter @defsquare/data-graph-chrome test` — the factories are tested
+`pnpm --filter @defsquare/datagraph-chrome test` — the factories are tested
 under happy-dom, the repo's first DOM environment. What those tests freeze
 (classes, ids, ARIA attributes) is the contract the demo and the catalogue now
 share.

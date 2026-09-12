@@ -1,6 +1,6 @@
 # Graph view and performance budgets
 
-The **graph view** is `data-graph`'s second layout: instead of the containment
+The **graph view** is `datagraph`'s second layout: instead of the containment
 tree (the default *structure view*), it draws records as vertices and joins as
 edges, grouping records into the DDD aggregates declared by
 [`config.groups`](../README.md#config-ids-refs-groups) and painting each
@@ -145,7 +145,7 @@ O(k² · iterations) on k discs plus a linear packing.
 | Envelope fidelity | The disc that gets spaced is the disc that gets painted: each emitted `ClusterShape` matches the minimal enclosing circle recomputed from the final card positions to 1e-6, every member's corners lie inside it, and only real aggregates emit one | `packages/core/test/graph-layout.test.ts` |
 | Jitter never weakens a guarantee | The virtual inflation applies to the simulation only: the final hard pass uses the true radius, and the emitted `ClusterShape` radii are **bit-identical** between `jitter: 0` and `jitter: 64` while the positions differ. Nearest-neighbour minimum stays at exactly `clusterGap` at every amplitude measured (0, 16, 32, 48, 64) | `packages/core/test/graph-layout.test.ts` |
 | `setView("graph")` on the demo's 350-entity dataset | **Measured, not enforced.** 220–252 ms in Chromium over three isolated Playwright runs — in the **dev server**, unminified, against the workspace *sources* (see below), so it is not a figure for published, bundled code. The committed assertion is only a 30 s ceiling; the number is logged, not asserted, because a CI machine is not a developer's | `apps/demo/e2e/view.spec.ts` |
-| `@defsquare/data-graph` bundle purity | The graph view never enters a consumer's bundle unless it calls `setView("graph")` — the structure view alone doesn't pull it in. **What this is worth in kilobytes has collapsed, and the tests say so**: the chunk it keeps out is **3.58 kB gzip** (7.80 kB raw), so a regression would now cost 3.58 kB on a 559 kB bundle. Both tests are kept for the *shape* they hold — the view loads lazily by construction, so whatever weight lands behind it next inherits that — not for the kilobytes | `packages/core/test/bundle-purity.test.ts` (core half) + `packages/renderer/test/bundle-purity.test.ts` (renderer half) |
+| `@defsquare/datagraph` bundle purity | The graph view never enters a consumer's bundle unless it calls `setView("graph")` — the structure view alone doesn't pull it in. **What this is worth in kilobytes has collapsed, and the tests say so**: the chunk it keeps out is **3.58 kB gzip** (7.80 kB raw), so a regression would now cost 3.58 kB on a 559 kB bundle. Both tests are kept for the *shape* they hold — the view loads lazily by construction, so whatever weight lands behind it next inherits that — not for the kilobytes | `packages/core/test/bundle-purity.test.ts` (core half) + `packages/renderer/test/bundle-purity.test.ts` (renderer half) |
 
 **About the e2e numbers.** `apps/demo/playwright.config.ts` starts the app with
 `pnpm dev`, and `apps/demo/vite.config.ts` aliases the workspace packages to

@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { DataGraphConfig } from "@defsquare/data-graph";
+import type { DataGraphConfig } from "@defsquare/datagraph";
 
 /** What the command line asked for. `"demo"` covers two cases the frontend has
  * no reason to tell apart: running outside Tauri (Vite/e2e), and the binary

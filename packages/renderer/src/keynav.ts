@@ -1,4 +1,4 @@
-import type { NodeId, Rect } from "@defsquare/data-graph-core";
+import type { NodeId, Rect } from "@defsquare/datagraph-core";
 
 export type Direction = "up" | "down" | "left" | "right";
 

@@ -1,4 +1,4 @@
-import type { DataGraphConfig } from "@defsquare/data-graph-core";
+import type { DataGraphConfig } from "@defsquare/datagraph-core";
 
 // Deliberately duplicates `packages/core/test/fixtures.ts`: the renderer is a
 // consumer of the published package and must import only its public API, never

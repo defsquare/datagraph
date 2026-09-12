@@ -5,7 +5,7 @@ import {
   radii as tokenRadii,
   strokes as tokenStrokes,
   typography as tokenTypography,
-} from "@defsquare/data-graph-tokens";
+} from "@defsquare/datagraph-tokens";
 
 /**
  * The values all come from the tokens package, the source of truth shared with

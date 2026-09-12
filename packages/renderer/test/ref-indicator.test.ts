@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { Color, DOMAdapter, Graphics, Text } from "pixi.js";
-import { buildGraph, DEFAULT_METRICS, type DataGraphConfig } from "@defsquare/data-graph-core";
+import { buildGraph, DEFAULT_METRICS, type DataGraphConfig } from "@defsquare/datagraph-core";
 import { drawNode } from "../src/draw.js";
 import { resolveTheme } from "../src/theme.js";
 

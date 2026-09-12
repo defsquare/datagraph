@@ -26,7 +26,7 @@ const src = (rel: string): string => fileURLToPath(new URL(rel, import.meta.url)
 //      bench.
 //   2. The bare package names — the playground NEVER writes them. They are here
 //      for the INTERNAL imports of the sources thus pulled in: the renderer's
-//      `theme.ts` imports `@defsquare/data-graph-tokens`, the renderer imports
+//      `theme.ts` imports `@defsquare/datagraph-tokens`, the renderer imports
 //      the core, and so on. Without these entries, those imports would fall
 //      back to the `dist/` builds (when they are even resolvable from
 //      apps/design, which pnpm does not guarantee), and a value fixed in
@@ -34,7 +34,7 @@ const src = (rel: string): string => fileURLToPath(new URL(rel, import.meta.url)
 //
 // Order matters in both families: an entry matches subpaths too, so the most
 // specific must come before the most general — otherwise
-// `@defsquare/data-graph-core/graph-layout` would be rewritten into
+// `@defsquare/datagraph-core/graph-layout` would be rewritten into
 // `.../core/src/index.ts/graph-layout`.
 export default defineConfig({
   resolve: {
@@ -45,35 +45,35 @@ export default defineConfig({
       { find: "@chrome/", replacement: src("../../packages/chrome/src/") },
 
       {
-        find: "@defsquare/data-graph-core/graph-layout",
+        find: "@defsquare/datagraph-core/graph-layout",
         replacement: src("../../packages/core/src/graph-layout.ts"),
       },
       {
-        find: "@defsquare/data-graph-core",
+        find: "@defsquare/datagraph-core",
         replacement: src("../../packages/core/src/index.ts"),
       },
       {
-        find: "@defsquare/data-graph/graph-layout-worker",
+        find: "@defsquare/datagraph/graph-layout-worker",
         replacement: src("../../packages/renderer/src/graph-layout-worker.ts"),
       },
       {
-        find: "@defsquare/data-graph-tokens/css",
+        find: "@defsquare/datagraph-tokens/css",
         replacement: src("../../packages/tokens/src/css.ts"),
       },
       {
-        find: "@defsquare/data-graph-tokens",
+        find: "@defsquare/datagraph-tokens",
         replacement: src("../../packages/tokens/src/index.ts"),
       },
       {
-        find: "@defsquare/data-graph-chrome/chrome.css",
+        find: "@defsquare/datagraph-chrome/chrome.css",
         replacement: src("../../packages/chrome/src/chrome.css"),
       },
       {
-        find: "@defsquare/data-graph-chrome",
+        find: "@defsquare/datagraph-chrome",
         replacement: src("../../packages/chrome/src/index.ts"),
       },
       {
-        find: "@defsquare/data-graph",
+        find: "@defsquare/datagraph",
         replacement: src("../../packages/renderer/src/index.ts"),
       },
     ],

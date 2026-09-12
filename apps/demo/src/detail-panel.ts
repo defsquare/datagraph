@@ -4,8 +4,8 @@ import {
   type Diagnostic,
   type GraphNode,
   type RefEdge,
-} from "@defsquare/data-graph";
-import { createBadge, createRefButton } from "@defsquare/data-graph-chrome";
+} from "@defsquare/datagraph";
+import { createBadge, createRefButton } from "@defsquare/datagraph-chrome";
 
 /** Proof that the renderer's public "select" event is enough to build a detail
  * panel entirely outside the library: plain DOM, no library internals. */

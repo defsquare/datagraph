@@ -7,7 +7,7 @@
  * touching what they write.
  *
  * The stylesheet is not re-exported here — it is imported through the
- * `@defsquare/data-graph-chrome/chrome.css` subpath, and AFTER the tokens
+ * `@defsquare/datagraph-chrome/chrome.css` subpath, and AFTER the tokens
  * package's variables it depends on.
  */
 export * from "./icons.js";

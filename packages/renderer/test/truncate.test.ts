@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildGraph, measureNode, DEFAULT_METRICS, badgeTextFor, headerTextFor } from "@defsquare/data-graph-core";
+import { buildGraph, measureNode, DEFAULT_METRICS, badgeTextFor, headerTextFor } from "@defsquare/datagraph-core";
 import { truncateToWidth, charWidthFor } from "../src/draw.js";
 
 const data = {

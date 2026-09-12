@@ -7,14 +7,14 @@ import {
   type NodeId,
   type NodeMetrics,
   type Rect,
-} from "@defsquare/data-graph-core";
+} from "@defsquare/datagraph-core";
 // STATIC import of the graph view entry point, and it is allowed here: the rule
 // in `bundle-purity.test.ts` covers `src/` only (the consumer's bundle is what it
 // protects), and the controller itself still reaches it only through its dynamic
 // `import()`. We read the constant instead of writing 18 into the test: that is
 // exactly the invariant we want to assert — the renderer keeps NO copy of that
 // number.
-import { TWO_LEVEL_LAYOUT_DEFAULTS } from "@defsquare/data-graph-core/graph-layout";
+import { TWO_LEVEL_LAYOUT_DEFAULTS } from "@defsquare/datagraph-core/graph-layout";
 import {
   createGraphViewController,
   type ClustersForArgs,

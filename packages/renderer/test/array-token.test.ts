@@ -5,7 +5,7 @@ import {
   buildGraph,
   DEFAULT_METRICS,
   type DataGraphConfig,
-} from "@defsquare/data-graph-core";
+} from "@defsquare/datagraph-core";
 import { drawNode } from "../src/draw.js";
 import { resolveTheme } from "../src/theme.js";
 

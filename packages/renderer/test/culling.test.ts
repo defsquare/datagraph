@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildGraph, type NodeId, type Rect } from "@defsquare/data-graph-core";
+import { buildGraph, type NodeId, type Rect } from "@defsquare/datagraph-core";
 import { cardFate, cardWindowsFor, inflateRect, rectContains, rectsOverlap } from "../src/create.js";
 import { drawEdgeHitAreas } from "../src/draw.js";
 import { shopData, shopConfig } from "./fixtures.js";

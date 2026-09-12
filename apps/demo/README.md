@@ -1,6 +1,6 @@
 # demo
 
-The reference application for [`data-graph`](../../README.md). It is two things
+The reference application for [`datagraph`](../../README.md). It is two things
 in one package:
 
 - a **Vite web app** that exercises the renderer's public API end to end — small
@@ -64,7 +64,7 @@ datagraph --check fixtures/shop.json -c fixtures/shop.config.json --json
 
 `check.js` is **generated and committed**: `include_str!` needs it at Rust compile
 time, so cargo never has to run pnpm. Regenerate it with
-`pnpm --filter @defsquare/data-graph-core generate:check` after any change to the
+`pnpm --filter @defsquare/datagraph-core generate:check` after any change to the
 validation closure — `packages/core/test/check-bundle.test.ts` compares it byte
 for byte and fails `pnpm test` otherwise. See
 [ADR-0032](../../docs/adr/0032-embedded-core-for-headless-check.md).
