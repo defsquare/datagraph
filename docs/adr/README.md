@@ -52,3 +52,4 @@ or spec that introduced the decision.
 | 0032 | [The `--check` report runs the core inside an embedded JS engine](./0032-embedded-core-for-headless-check.md) | 2026-09-11 | Accepted |
 | 0033 | [An unsigned arm64 macOS binary, hosted on Cloudflare R2](./0033-unsigned-arm64-macos-binary-on-cloudflare-r2.md) | 2026-09-12 | Accepted |
 | 0034 | [A Homebrew tap on GitHub, fed by the release script](./0034-homebrew-tap-on-github-fed-by-the-release-script.md) | 2026-09-12 | Accepted |
+| 0035 | [The Claude skill ships with the repo, as a plugin](./0035-claude-skill-ships-with-the-repo-as-a-plugin.md) | 2026-09-12 | Accepted |

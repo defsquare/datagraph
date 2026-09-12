@@ -25,6 +25,14 @@ into DDD aggregates drawn as circular envelopes — see [`config.groups`](#confi
 [the renderer's graph view docs](./packages/renderer/README.md#graph-view)
 and [`docs/graph-view.md`](./docs/graph-view.md).
 
+![Structure view — the containment tree, records as cards with their fields, reference edges in blue](./docs/screenshots/structure.png)
+
+*Structure view: the containment tree, with foreign keys drawn as reference edges.*
+
+![Graph view — records as vertices, joins as edges, aggregates drawn as circular envelopes](./docs/screenshots/graph.png)
+
+*Graph view: the same document as records and joins, grouped into aggregates.*
+
 There are two ways to use it. As a **standalone desktop app**, the `datagraph`
 binary opens a JSON file straight from the shell, no code to write — see
 [The `datagraph` CLI](#the-datagraph-cli). As a **JS package**,
@@ -169,6 +177,26 @@ Its `totals` hold two node counts: `nodes`, the size of the graph, and
 `logicalNodes`, the same nodes plus the scalar rows — the second is the one
 `maxNodes` bounds, so it is the one to compare against the number a
 `GraphTooLargeError` quotes.
+
+## The Claude Code plugin
+
+`datagraph` has one non-human user worth first-class support: an agent asked to
+show somebody a JSON document. The repo ships a Claude Code skill —
+[`skills/datagraph/`](./skills/datagraph/) — that teaches the agent the whole
+protocol: shape the data so the cards read well, write an `ids` / `refs` /
+`groups` config against the document's real paths, validate it with
+[`--check`](#the-datagraph-cli) before opening anything, and launch the window
+detached. The repo doubles as a plugin marketplace, so installing it is:
+
+```
+/plugin marketplace add https://gitlab.com/defsquare/datagraph.git
+/plugin install datagraph@defsquare
+```
+
+The plugin installs the *skill* only; the binary itself still arrives through
+[Homebrew or the tarball](#the-datagraph-cli). The skill is versioned with the
+binary whose behaviour it documents, so a CLI change and its skill update
+travel in the same commit (ADR-0035).
 
 ## The `@defsquare/datagraph` package
 
@@ -374,6 +402,7 @@ datagraph/
 │   └── design/    design system playground (port 5174), never published
 ├── bin/           release.sh — builds, publishes and taps a version
 ├── Formula/       datagraph.rb.tmpl — the Homebrew formula release.sh renders
+├── skills/        the Claude Code skill the plugin installs (.claude-plugin/ manifests)
 ├── docs/
 │   ├── graph-view.md   graph-view layout, guarantees and measurements
 │   └── superpowers/    historical journal of spikes, specs and plans

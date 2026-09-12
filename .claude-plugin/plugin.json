@@ -1,0 +1,5 @@
+{
+  "name": "datagraph",
+  "version": "0.1.0",
+  "description": "View a JSON document as an interactive graph of records and references — skill for driving the datagraph desktop app."
+}
