@@ -7,7 +7,7 @@ import { buildCheckBundle } from "../scripts/check-bundle.js"
 /**
  * Layer 1 of the `--check` test plan: the closure of `validate.ts` must stay
  * narrow. Without this, an import added there brings elkjs into the binary — an
- * 18,798-byte bundle becomes 1.5 MB — with nothing to signal it.
+ * 21,021-byte bundle becomes 1.5 MB — with nothing to signal it.
  *
  * The march is RECURSIVE over relative imports, the same shape as
  * `bundle-purity.test.ts`, and it walks the SOURCES rather than `dist/`:
@@ -76,7 +76,7 @@ describe("generated check.js", () => {
   })
 
   it("stays small enough that nobody has to wonder", () => {
-    // Not minified on purpose: 18,798 bytes weighs nothing against a 9.2 MB
+    // Not minified on purpose: 21,021 bytes weighs nothing against a 9.2 MB
     // binary, and buys a diff that can be reviewed plus a test failure that
     // can be read. The ceiling is here to catch a dependency creeping in, not to
     // police bytes.

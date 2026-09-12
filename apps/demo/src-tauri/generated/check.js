@@ -410,9 +410,64 @@
   }
 
   // src/validate.ts
-  function runCheck(dataText, configText) {
+  function runCheck(dataText, configText, asJson) {
     const report = checkReport(JSON.parse(dataText), JSON.parse(configText));
-    return JSON.stringify(report, null, 2);
+    const output = asJson ? `${JSON.stringify(report, null, 2)}
+` : renderText(report);
+    return `${report.ok ? 0 : 3}
+${output}`;
+  }
+  var MAX_LISTED_DIAGNOSTICS = 20;
+  function pad(text, width) {
+    return text + " ".repeat(Math.max(0, width - [...text].length));
+  }
+  function renderText(report) {
+    let out = report.ok ? `✓ config valid — ${report.totals.entities} entities, ${report.refs.reduce((sum, entry) => sum + entry.resolved, 0)} references resolved
+` : "✗ config invalid\n";
+    out += "\n";
+    const mark = out.length;
+    if (report.configErrors.length > 0) {
+      out += "  errors\n";
+      for (const error of report.configErrors) out += `    ${error.code}  ${error.message}
+`;
+    }
+    const ids = Object.entries(report.ids).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
+    if (ids.length > 0) {
+      out += "  ids\n";
+      const nameWidth = Math.max(...ids.map(([name]) => [...name].length));
+      const selectorWidth = Math.max(...ids.map(([, entry]) => [...entry.selector].length));
+      for (const [name, entry] of ids) {
+        const warning = entry.pathResolves ? "" : "  (path does not resolve)";
+        const unit = entry.matched === 1 ? "instance" : "instances";
+        out += `    ${pad(name, nameWidth)}  ${pad(entry.selector, selectorWidth)}  ${entry.matched} ${unit}${warning}
+`;
+      }
+    }
+    if (report.refs.length > 0) {
+      out += "  refs\n";
+      for (const entry of report.refs) {
+        const dangling = entry.dangling > 0 ? `, ${entry.dangling}/${entry.matched} dangling` : "";
+        out += `    ${entry.from} → ${entry.to}    ${entry.resolved}/${entry.matched} resolved${dangling}
+`;
+      }
+    }
+    if (out.length > mark) out += "\n";
+    if (report.diagnostics.length === 0) {
+      out += "  No diagnostics.\n";
+    } else {
+      out += `  diagnostics (${report.diagnostics.length})
+`;
+      for (const entry of report.diagnostics.slice(0, MAX_LISTED_DIAGNOSTICS)) {
+        out += `    ${entry.code}  ${entry.message}
+`;
+      }
+      if (report.diagnostics.length > MAX_LISTED_DIAGNOSTICS) {
+        const rest = report.diagnostics.length - MAX_LISTED_DIAGNOSTICS;
+        out += `    … and ${rest} more — use --json for the full list
+`;
+      }
+    }
+    return out;
   }
   function checkReport(data, config) {
     const typed = config;

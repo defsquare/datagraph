@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { checkReport, runCheck } from "../src/validate.js"
+import { checkReport, renderText, runCheck, type CheckReport } from "../src/validate.js"
 
 /** The shape the whole feature rests on: two id declarations, one join. Counts
  * are stated literally rather than computed, so that a change in the build
@@ -162,13 +162,150 @@ describe("checkReport", () => {
   })
 })
 
+/** A report with every field at its empty value, so each rendering test names
+ * only what it is about. */
+function report(overrides: Partial<CheckReport>): CheckReport {
+  return {
+    report: 1,
+    ok: true,
+    configErrors: [],
+    ids: {},
+    refs: [],
+    diagnostics: [],
+    totals: { nodes: 0, logicalNodes: 0, entities: 0, refEdges: 0 },
+    ...overrides,
+  }
+}
+
+/** The measured report for `apps/demo/fixtures/shop.json` and its config. */
+const valid = report({
+  ids: {
+    Customer: { selector: "$.customers[*].id", matched: 2, pathResolves: true },
+    Order: { selector: "$.orders[*].id", matched: 2, pathResolves: true },
+  },
+  refs: [
+    {
+      from: "$.orders[*].customerId",
+      to: "$.customers[*].id",
+      matched: 2,
+      resolved: 2,
+      dangling: 0,
+    },
+  ],
+  totals: { nodes: 11, logicalNodes: 27, entities: 4, refEdges: 2 },
+})
+
+describe("renderText", () => {
+  /** The whole layout, pinned exactly. Columns line up because "Order" is padded
+   * to the width of "Customer" (8) and "$.orders[*].id" to the width of
+   * "$.customers[*].id" (17), plus two literal spaces between columns; a blank
+   * line separates the verdict, the table and the diagnostics, and nothing else. */
+  it("states the verdict and the counts", () => {
+    expect(renderText(valid)).toBe(
+      [
+        "✓ config valid — 4 entities, 2 references resolved",
+        "",
+        "  ids",
+        "    Customer  $.customers[*].id  2 instances",
+        "    Order     $.orders[*].id     2 instances",
+        "  refs",
+        "    $.orders[*].customerId → $.customers[*].id    2/2 resolved",
+        "",
+        "  No diagnostics.",
+        "",
+      ].join("\n"),
+    )
+  })
+
+  it("quotes config errors", () => {
+    const text = renderText(
+      report({
+        ok: false,
+        configErrors: [
+          { code: "selector-syntax", message: 'Selector must start with "$": produits[*].id' },
+        ],
+      }),
+    )
+    expect(text.startsWith("✗ config invalid")).toBe(true)
+    expect(text).toContain('selector-syntax  Selector must start with "$"')
+  })
+
+  /** A selector matching exactly one row must read "1 instance", not "1
+   * instances" — the singular a plural-only format string silently drops. */
+  it("says 1 instance in the singular", () => {
+    const text = renderText(
+      report({ ids: { Order: { selector: "$.orders[*].id", matched: 1, pathResolves: true } } }),
+    )
+    expect(text).toContain("1 instance\n")
+    expect(text).not.toContain("1 instances")
+  })
+
+  it("names an unresolved prefix on its line", () => {
+    const text = renderText(
+      report({
+        ok: false,
+        ids: { Produit: { selector: "$.produits[*].id", matched: 0, pathResolves: false } },
+      }),
+    )
+    expect(text).toContain("0 instances  (path does not resolve)")
+  })
+
+  /** An empty `customers` array and 12 orders all pointing at `c9`: the config is
+   * fine, the data has a hole — and the ratio is what makes that hole visible. */
+  it("shows the ratio of a fully dangling declaration", () => {
+    const text = renderText(
+      report({
+        refs: [
+          {
+            from: "$.orders[*].customerId",
+            to: "$.customers[*].id",
+            matched: 12,
+            resolved: 0,
+            dangling: 12,
+          },
+        ],
+      }),
+    )
+    expect(text).toContain("0/12 resolved, 12/12 dangling")
+  })
+
+  it("truncates a flood of diagnostics", () => {
+    const text = renderText(
+      report({
+        diagnostics: Array.from({ length: 25 }, (_, i) => ({
+          code: "dangling-ref" as const,
+          path: `/orders/${i}`,
+          message: `m${i}`,
+        })),
+      }),
+    )
+    expect(text).toContain("diagnostics (25)")
+    expect(text).toContain("… and 5 more — use --json for the full list")
+    expect(text).not.toContain("m24")
+  })
+})
+
 describe("runCheck", () => {
-  it("takes two strings and returns the report as one string", () => {
-    const out = runCheck(JSON.stringify(data), JSON.stringify(config))
-    expect(typeof out).toBe("string")
-    const parsed = JSON.parse(out)
+  it("prefixes the JSON report with exit code 0", () => {
+    const out = runCheck(JSON.stringify(data), JSON.stringify(config), true)
+    const newline = out.indexOf("\n")
+    expect(out.slice(0, newline)).toBe("0")
+    const parsed = JSON.parse(out.slice(newline + 1))
     expect(parsed.report).toBe(1)
     expect(parsed.ok).toBe(true)
     expect(parsed.totals).toEqual({ nodes: 7, logicalNodes: 15, entities: 4, refEdges: 2 })
+  })
+
+  it("renders text instead of JSON when asJson is false", () => {
+    const out = runCheck(JSON.stringify(data), JSON.stringify(config), false)
+    expect(out).toBe(`0\n${renderText(checkReport(data, config))}`)
+    expect(out.startsWith("0\n✓ config valid — 4 entities, 2 references resolved\n")).toBe(true)
+  })
+
+  it("prefixes an invalid config with exit code 3", () => {
+    const invalid = JSON.stringify({ ids: { Produit: "$.produits[*].id" } })
+    const out = runCheck(JSON.stringify(data), invalid, false)
+    expect(out.split("\n")[0]).toBe("3")
+    expect(out).toContain("✗ config invalid")
   })
 })

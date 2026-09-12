@@ -4,7 +4,7 @@
  * This module is bundled by `scripts/generate-check-bundle.ts` into the JavaScript
  * the `datagraph` binary embeds, so its import closure is DELIBERATELY narrow —
  * `build.ts`, `config.ts`, `selector.ts`, `model.ts` and nothing else. Reaching
- * `structure-layout.ts` would drag elkjs into the 18,798-byte committed bundle;
+ * `structure-layout.ts` would drag elkjs into the 21,021-byte committed bundle;
  * `test/check-bundle.test.ts` is what says so out loud instead of letting it
  * happen silently.
  *
@@ -51,8 +51,8 @@ export interface CheckReport {
   report: 1
   /**
    * True iff nothing here can be fixed by editing the config. This is the SINGLE
-   * home of the exit-code rule: Rust's `classify` only turns it into 0 or 3, so
-   * the rule never exists in two languages at once.
+   * home of the exit-code rule: `runCheck` turns it into the 0 or 3 the binary
+   * exits with, so the rule never exists in two languages at once.
    */
   ok: boolean
   configErrors: { code: string; message: string }[]
@@ -75,10 +75,90 @@ export interface CheckReport {
   totals: { nodes: number; logicalNodes: number; entities: number; refEdges: number }
 }
 
-/** The boundary the binary calls: two strings in, one string out. */
-export function runCheck(dataText: string, configText: string): string {
+/**
+ * The boundary the binary calls: three values in, one string out — the exit code
+ * on the first line, the rendered output after it. The binary prints the output
+ * and exits with the code; it parses nothing of the report, so the shape, the
+ * rendering AND the exit-code rule all live here only.
+ */
+export function runCheck(dataText: string, configText: string, asJson: boolean): string {
   const report = checkReport(JSON.parse(dataText), JSON.parse(configText))
-  return JSON.stringify(report, null, 2)
+  const output = asJson ? `${JSON.stringify(report, null, 2)}\n` : renderText(report)
+  return `${report.ok ? 0 : 3}\n${output}`
+}
+
+/** Text mode lists at most this many diagnostics: a document with ten thousand
+ * dangling references must not scroll its own report off the terminal. `--json`
+ * still carries every one of them. */
+const MAX_LISTED_DIAGNOSTICS = 20
+
+/** Pads on CODE POINTS, not UTF-16 units: a non-ASCII name or selector would
+ * otherwise shift its whole column. */
+function pad(text: string, width: number): string {
+  return text + " ".repeat(Math.max(0, width - [...text].length))
+}
+
+export function renderText(report: CheckReport): string {
+  let out = report.ok
+    ? `✓ config valid — ${report.totals.entities} entities, ` +
+      `${report.refs.reduce((sum, entry) => sum + entry.resolved, 0)} references resolved\n`
+    : "✗ config invalid\n"
+
+  out += "\n"
+  // `errors`, `ids` and `refs` read as one table, so they are separated from the
+  // verdict above and the diagnostics below, never from one another.
+  const mark = out.length
+
+  if (report.configErrors.length > 0) {
+    out += "  errors\n"
+    for (const error of report.configErrors) out += `    ${error.code}  ${error.message}\n`
+  }
+
+  // Alphabetical, hence stable between runs. The JSON keeps the config's own
+  // declaration order — the two orders differ on purpose, each serving its reader.
+  const ids = Object.entries(report.ids).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+  if (ids.length > 0) {
+    out += "  ids\n"
+    const nameWidth = Math.max(...ids.map(([name]) => [...name].length))
+    const selectorWidth = Math.max(...ids.map(([, entry]) => [...entry.selector].length))
+    for (const [name, entry] of ids) {
+      const warning = entry.pathResolves ? "" : "  (path does not resolve)"
+      const unit = entry.matched === 1 ? "instance" : "instances"
+      out +=
+        `    ${pad(name, nameWidth)}  ${pad(entry.selector, selectorWidth)}  ` +
+        `${entry.matched} ${unit}${warning}\n`
+    }
+  }
+
+  if (report.refs.length > 0) {
+    out += "  refs\n"
+    for (const entry of report.refs) {
+      // The dangling RATIO, not just the count: `12/12 dangling` is what makes an
+      // entirely broken declaration visible without the exit code having to guess
+      // whether the config or the data is at fault.
+      const dangling = entry.dangling > 0 ? `, ${entry.dangling}/${entry.matched} dangling` : ""
+      out += `    ${entry.from} → ${entry.to}    ${entry.resolved}/${entry.matched} resolved${dangling}\n`
+    }
+  }
+
+  // With nothing between the verdict and the diagnostics — an empty `ids` — there
+  // must not be two blank lines in a row.
+  if (out.length > mark) out += "\n"
+
+  if (report.diagnostics.length === 0) {
+    out += "  No diagnostics.\n"
+  } else {
+    out += `  diagnostics (${report.diagnostics.length})\n`
+    for (const entry of report.diagnostics.slice(0, MAX_LISTED_DIAGNOSTICS)) {
+      out += `    ${entry.code}  ${entry.message}\n`
+    }
+    if (report.diagnostics.length > MAX_LISTED_DIAGNOSTICS) {
+      const rest = report.diagnostics.length - MAX_LISTED_DIAGNOSTICS
+      out += `    … and ${rest} more — use --json for the full list\n`
+    }
+  }
+
+  return out
 }
 
 export function checkReport(data: unknown, config: unknown): CheckReport {

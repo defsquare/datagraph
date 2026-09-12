@@ -39,8 +39,10 @@ the window uses — bundled into
 [`src-tauri/generated/check.js`](./src-tauri/generated/check.js) and evaluated in
 an embedded QuickJS by [`src-tauri/src/check.rs`](./src-tauri/src/check.rs) — so
 the fourteen `ConfigError` messages read identically here and on the app's error
-screen. The report's shape, the exit codes and the text rendering live in
-[`src-tauri/src/report.rs`](./src-tauri/src/report.rs).
+screen. The report's shape, its text rendering and the exit-code rule live in the
+core, in [`packages/core/src/validate.ts`](../../packages/core/src/validate.ts):
+`check.rs` hands it the two files and the output format, then prints the string it
+gets back and exits with the code on its first line, parsing nothing.
 
 On Windows, `main.rs`'s `windows_subsystem = "windows"` leaves a release
 build with no console handle for `print!`/`println!` when launched directly

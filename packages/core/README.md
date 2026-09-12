@@ -313,10 +313,11 @@ points, so any change to it has to be deliberate.
 ## The `--check` bundle
 
 `src/validate.ts` is a **third entry point**, outside the published API: it builds
-the report the `datagraph --check` CLI prints. It is deliberately narrow —
+the report the `datagraph --check` CLI prints, renders its text form and decides
+the exit code the binary exits with. It is deliberately narrow —
 `build.ts`, `config.ts`, `selector.ts`, `model.ts` and nothing else — because it
 is bundled into a single ES file the desktop binary embeds and runs in QuickJS.
-Reaching `structure-layout.ts` would drag elkjs into it, 18,798 bytes (the
+Reaching `structure-layout.ts` would drag elkjs into it, 21,021 bytes (the
 committed bundle, unminified) becoming 1.5 MB.
 
 ```bash

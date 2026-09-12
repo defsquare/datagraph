@@ -30,7 +30,7 @@ export function buildCheckBundle(): string {
     platform: "neutral",
     charset: "utf8",
     legalComments: "none",
-    // Not minified: 18,798 bytes is nothing against a 9.2 MB binary, and
+    // Not minified: 21,021 bytes is nothing against a 9.2 MB binary, and
     // it buys a reviewable diff and a readable test failure.
     minify: false,
     banner: { js: CHECK_BUNDLE_BANNER },

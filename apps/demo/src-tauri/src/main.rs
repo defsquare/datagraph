@@ -1,7 +1,7 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use data_graph_lib::{check, cli, report};
+use data_graph_lib::{check, cli};
 
 // All CLI routing lives BEFORE `run_with`: help, argument errors, and `--check`
 // must never open a window. `run_check_mode` is typed `-> !`, so control only
@@ -44,33 +44,22 @@ fn run_check_mode(payload: Option<&cli::LaunchPayload>, as_json: bool) -> ! {
   // still name itself rather than panic — and it is OUR fault, hence exit 4.
   let Some((data, config)) = payload.and_then(|p| p.config.as_ref().map(|c| (&p.data, c))) else {
     eprintln!("datagraph: internal error: --check reached without both files");
-    std::process::exit(report::EXIT_INTERNAL);
+    std::process::exit(check::EXIT_INTERNAL);
   };
 
-  let json = match check::run_check(data, config) {
-    Ok(json) => json,
+  // The core rendered the output and picked the code; printing it VERBATIM is all
+  // that is left — nothing here parses the report.
+  match check::run_check(data, config, as_json) {
+    Ok((code, output)) => {
+      print!("{output}");
+      std::process::exit(code);
+    }
     Err(message) => {
       // A stack overflow, an exhausted memory budget or a core bug. Telling an
       // agent its config is wrong when the fault is ours condemns it to edit a
       // correct file forever, so this can never be a 3.
       eprintln!("datagraph: internal error: {message}");
-      std::process::exit(report::EXIT_INTERNAL);
+      std::process::exit(check::EXIT_INTERNAL);
     }
-  };
-  let parsed = match report::parse(&json) {
-    Ok(parsed) => parsed,
-    Err(message) => {
-      eprintln!("datagraph: internal error: {message}");
-      std::process::exit(report::EXIT_INTERNAL);
-    }
-  };
-
-  if as_json {
-    // Printed VERBATIM: re-serializing would round-trip the report through a
-    // second encoder for no reason, and would let the two spellings drift.
-    println!("{json}");
-  } else {
-    print!("{}", report::render_text(&parsed));
   }
-  std::process::exit(report::classify(&parsed));
 }

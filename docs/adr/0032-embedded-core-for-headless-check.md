@@ -32,11 +32,15 @@ The binary carries the validation itself, without reimplementing it:
   other. The same contract as `apps/demo/src/tokens.css` (ADR-0027): a freshness
   test compares byte for byte.
 - The binary evaluates it in **QuickJS** (`rquickjs`), with a memory bound and a
-  stack bound on the context. Nothing is injected: the boundary is one function,
-  two strings in, one string out.
+  stack bound on the context. Nothing is injected: the boundary is one function —
+  data, config and the output format in, the exit code and the rendered output
+  out. Rust **parses nothing of the report**: it prints the string and exits with
+  the code.
 
 The exit code answers one question — *can I fix this by editing the config?* `0`
 valid, `3` invalid config, `4` internal error, on top of the existing `1` and `2`.
+`0` and `3` are decided inside the core, on the first line of the boundary's
+answer; `4` is the only code Rust reaches on its own.
 A `GraphTooLargeError`, an unresolved selector prefix and an `unresolved-reference`
 are config bugs. A dangling foreign key, a duplicate id and a missing id are holes
 in the DATA and stay at `0`.
@@ -67,7 +71,9 @@ in the DATA and stay at `0`.
 
 - **The config contract has exactly one implementation.** The 14 `ConfigError`
   messages read identically in `--check` and on the app's error screen. No
-  translation layer.
+  translation layer. The same holds for the report itself: its shape, its text
+  rendering and the exit-code rule live in `validate.ts` only, so there is no
+  second spelling on the Rust side to keep in step.
 - **`cargo build` now compiles QuickJS in C**, which lengthens the first build.
   `rquickjs` 0.9 also raises the crate's `rust-version` to 1.81.
 - **A change to the validation closure that is not regenerated breaks `pnpm test`.**
