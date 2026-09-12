@@ -58,7 +58,9 @@ preflight() {
   if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
     problem="tag $TAG already exists"
   fi
-  [ -n "$problem" ] || return
+  # `return 0`, not bare `return`: a bare return would inherit the failed
+  # test's status 1 and `set -e` would kill the script on the happy path.
+  [ -n "$problem" ] || return 0
   [ "$DRY_RUN" -eq 1 ] || { echo "$problem" >&2; exit 1; }
   echo "    WARNING: $problem (dry-run: continuing)"
 }
