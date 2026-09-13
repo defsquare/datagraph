@@ -32,6 +32,7 @@
   "scripts": {
     "build": "tsup src/index.ts src/css.ts --format esm --dts",
     "generate:css": "tsx scripts/generate-css.ts",
+    "generate:brand": "tsx scripts/generate-brand.ts",
     "prepublishOnly": "pnpm run build",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"

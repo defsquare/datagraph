@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="datagraph">
+  <title>datagraph</title>
+  <!-- The defsquare brackets, unmodified, holding two records joined by an
+       orthogonal edge — the exact routing the layout engine draws on screen.
+       Everything is an axis-aligned rectangle on a 64 grid: bracket stroke 7,
+       edge 6, node 12. No curves, no diagonals: that is the parent's rule.
+
+       The elbow turns right-then-down on purpose. Down-then-right puts the
+       corner at the bottom left and the whole thing reads as a capital L. -->
+  <g fill="#f65e5e">
+    <rect x="6" y="8" width="7" height="48"/>
+    <rect x="6" y="8" width="13" height="7"/>
+    <rect x="6" y="49" width="13" height="7"/>
+    <rect x="51" y="8" width="7" height="48"/>
+    <rect x="45" y="8" width="13" height="7"/>
+    <rect x="45" y="49" width="13" height="7"/>
+    <rect x="26" y="19" width="12" height="6"/>
+    <rect x="35" y="19" width="6" height="23"/>
+  </g>
+  <g fill="#1a2a36">
+    <rect x="20" y="16" width="12" height="12"/>
+    <rect x="32" y="36" width="12" height="12"/>
+  </g>
+</svg>

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="datagraph">
+  <title>datagraph</title>
+  <!-- The reduction, for 24 px and below: the bracket collapses to a hairline
+       at that size, so only its contents survive — two records and the edge
+       between them. Same grid, same two colours; it is the mark's inside, not
+       a second mark. -->
+  <rect x="20" y="28" width="24" height="8" fill="#f65e5e"/>
+  <g fill="#1a2a36">
+    <rect x="6" y="25" width="14" height="14"/>
+    <rect x="44" y="25" width="14" height="14"/>
+  </g>
+</svg>

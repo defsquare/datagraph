@@ -269,7 +269,7 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
   function applyTheme(): void {
     document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
     if (logoEl) {
-      logoEl.src = dark ? "/defsquare-short-white-red.svg" : "/defsquare-short-dark-red.svg";
+      logoEl.src = dark ? "/datagraph-lockup-inverse.svg" : "/datagraph-lockup.svg";
     }
     // The menu item names the theme it WOULD activate, not the current one.
     themeBtn.textContent = dark ? "Thème clair" : "Thème sombre";

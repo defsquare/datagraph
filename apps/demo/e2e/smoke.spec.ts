@@ -78,7 +78,7 @@ test("the theme button toggles light and dark", async ({ page }) => {
   await openMenu(page)
   await page.click("#toggle-theme")
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark")
-  await expect(page.locator("#logo")).toHaveAttribute("src", "/defsquare-short-white-red.svg")
+  await expect(page.locator("#logo")).toHaveAttribute("src", "/datagraph-lockup-inverse.svg")
   // Choosing an item closes the menu: it has to be reopened to switch back.
   await expect(page.locator("#menu")).toBeHidden()
   const errors: string[] = []

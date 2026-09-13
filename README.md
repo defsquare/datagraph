@@ -1,4 +1,6 @@
-# datagraph
+<h1>
+  <img alt="datagraph" src="packages/tokens/brand/datagraph-lockup-auto.svg" width="284">
+</h1>
 
 **Interactive visualization for complex JSON documents — keyed records and real reference edges.**
 
