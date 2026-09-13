@@ -6,6 +6,9 @@ dist/
 .claude/worktrees/
 test-results/
 playwright-report/
+# Playwright MCP scratch: screenshots and page snapshots. The *.log rule above
+# already hid its console dumps, which is why the .png and .yml never got noticed.
+.playwright-mcp/
 apps/demo/src-tauri/target/
 apps/demo/src-tauri/gen/
 
