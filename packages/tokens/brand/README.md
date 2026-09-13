@@ -37,7 +37,7 @@ tried and rejected.
 | `datagraph-lockup.svg` | Horizontal mark + wordmark. |
 | `datagraph-lockup-auto.svg` | Horizontal, follows the reader's `prefers-color-scheme`. For the repository README, where the background is unknown. |
 | `datagraph-lockup-stacked.svg` | Vertical, same mark and type sizes. |
-| `datagraph-appicon.svg` | Navy rounded square, pale records. Source of the ≥48 px rasters. |
+| `datagraph-appicon.svg` | White rounded square, navy records. Source of the ≥48 px rasters. |
 | `datagraph-appicon-min.svg` | Same ground, reduced artwork. Source of the <48 px rasters. |
 
 `-inverse` exists for each lockup too.

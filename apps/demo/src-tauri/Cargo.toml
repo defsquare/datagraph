@@ -33,3 +33,12 @@ rquickjs = "0.9"
 log = "0.4"
 tauri = { version = "2.11.3", features = [] }
 tauri-plugin-log = "2"
+
+# AppKit, only to paint the Dock tile at runtime (see src/dock.rs). Both crates
+# are already in Cargo.lock — tauri vendors them — so this pulls nothing new;
+# it only makes the dependency ours and explicit. Feature-gated per class
+# because objc2-app-kit compiles the whole framework otherwise.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSImage", "NSResponder"] }
+objc2-foundation = { version = "0.3", features = ["NSData"] }

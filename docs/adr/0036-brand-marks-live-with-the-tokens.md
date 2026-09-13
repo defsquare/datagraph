@@ -78,6 +78,8 @@ renders on machines whose fonts we do not control.
   macOS draws an icon only from a `.app`'s `Contents/Resources`. The set is
   generated regardless: it is correct and ready the day the bundle is switched
   on, and it replaces template artwork that was equally unreachable.
+  *Refined by ADR-0037: `icons/icon.png` is now read, embedded in the binary to
+  paint the Dock tile at runtime. The rest of the set stays unread.*
 - The demo's corner signature moved from defsquare to datagraph. The parent's
   SVGs left `apps/demo/public/`, so `e2e/smoke.spec.ts`, which asserts the
   logo's `src` across the theme toggle, moved with them.

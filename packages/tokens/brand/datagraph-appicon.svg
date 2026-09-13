@@ -4,7 +4,7 @@
        22.5 % radius macOS uses. Full bleed — Tauri and Windows do not add any
        padding of their own, and the bundle is off today anyway. The nodes go
        pale here: navy on navy would disappear. -->
-  <rect width="1024" height="1024" rx="230" ry="230" fill="#1a2a36"/>
+  <rect width="1024" height="1024" rx="230" ry="230" fill="#ffffff"/>
   <g transform="translate(160 160) scale(11)">
     <g fill="#f65e5e">
       <rect x="6" y="8" width="7" height="48"/>
@@ -16,7 +16,7 @@
       <rect x="26" y="19" width="12" height="6"/>
       <rect x="35" y="19" width="6" height="23"/>
     </g>
-    <g fill="#f0f5fc">
+    <g fill="#1a2a36">
       <rect x="20" y="16" width="12" height="12"/>
       <rect x="32" y="36" width="12" height="12"/>
     </g>

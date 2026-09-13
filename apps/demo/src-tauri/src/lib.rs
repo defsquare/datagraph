@@ -1,5 +1,6 @@
 pub mod check;
 pub mod cli;
+pub mod dock;
 
 use cli::LaunchPayload;
 
@@ -17,6 +18,9 @@ pub fn run_with(payload: Option<LaunchPayload>) {
     .manage(payload)
     .invoke_handler(tauri::generate_handler![launch_payload])
     .setup(|app| {
+      // Before anything else: the Dock tile is the first thing the user sees,
+      // and a bare binary has no other way to carry one. See `dock.rs`.
+      dock::set_icon();
       if cfg!(debug_assertions) {
         app.handle().plugin(
           tauri_plugin_log::Builder::default()

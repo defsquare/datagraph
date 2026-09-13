@@ -54,3 +54,4 @@ or spec that introduced the decision.
 | 0034 | [A Homebrew tap on GitHub, fed by the release script](./0034-homebrew-tap-on-github-fed-by-the-release-script.md) | 2026-09-12 | Accepted |
 | 0035 | [The Claude skill ships with the repo, as a plugin](./0035-claude-skill-ships-with-the-repo-as-a-plugin.md) | 2026-09-12 | Accepted |
 | 0036 | [The brand marks live in `packages/tokens`, beside the design tokens](./0036-brand-marks-live-with-the-tokens.md) | 2026-09-13 | Accepted |
+| 0037 | [The Dock icon is painted by the process, not carried by a bundle](./0037-dock-icon-painted-at-runtime.md) | 2026-09-13 | Accepted |
