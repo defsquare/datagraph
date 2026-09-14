@@ -540,9 +540,6 @@ requires a fresh `createDataGraph`. It merges through `resolveTheme` against
 the theme currently in effect, so a `byEntityType` set earlier survives a
 plain light/dark swap unless the new call overrides it.
 
-See the [root README](../../README.md#themes) for
-more on the theme/config relationship.
-
 ## License
 
 MIT © 2026 Defsquare

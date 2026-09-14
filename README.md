@@ -32,11 +32,11 @@ see [`config.groups`](#config-ids-refs-groups) and
 
 *Graph view: the same document as records and joins, grouped into aggregates.*
 
-There are two ways to use it. As a **standalone desktop app**, the `datagraph`
-binary opens a JSON file straight from the shell, no code to write; see
-[The `datagraph` CLI](#the-datagraph-cli). As a **JS package**,
-`@defsquare/datagraph` mounts the same canvas into a container in your own
-app; see [The `@defsquare/datagraph` package](#the-defsquaredatagraph-package).
+You use it as a **standalone desktop app**: the `datagraph` binary opens a
+JSON file straight from the shell, no code to write; see
+[The `datagraph` CLI](#the-datagraph-cli). An embeddable JS package,
+`@defsquare/datagraph`, lives in [`packages/renderer`](./packages/renderer)
+but is not published to npm yet.
 
 ## Packages
 
@@ -195,78 +195,6 @@ The plugin installs the *skill* only; the binary itself still arrives through
 binary whose behaviour it documents, so a CLI change and its skill update
 travel in the same commit (ADR-0035, ADR-0038).
 
-## The `@defsquare/datagraph` package
-
-The other way in: embedding the renderer in your own app rather than opening a
-file with the CLI.
-
-```bash
-pnpm add @defsquare/datagraph
-```
-
-Not yet, though. The packages are not published to npm at the time of writing,
-so until they are, consume them from a clone of this repository, as workspace
-dependencies. `@defsquare/datagraph` pulls in `@defsquare/datagraph-core` and
-`pixi.js` directly, plus `elkjs` for layout.
-
-The demo app ([`apps/demo/src/main.ts`](./apps/demo/src/main.ts)) boots
-exactly like this, on a small e-commerce fixture:
-
-```ts
-import { createDataGraph } from "@defsquare/datagraph";
-
-const shopData = {
-  categories: [{ id: "cat1", name: "Informatique" }],
-  products: [
-    { id: "p1", name: "Clavier mécanique", price: 89.9, stock: 42, categoryId: "cat1" },
-  ],
-  customers: [
-    { id: "c1", name: "Camille Dubois", email: "camille.dubois@example.fr",
-      address: { street: "1 rue de la Paix", postcode: "75002", city: "Paris" } },
-  ],
-  orders: [
-    { id: "o1", customerId: "c1", productId: "p1", quantity: 2, total: 179.8 },
-    // `GHOST` doesn't exist: a deliberate dangling reference.
-    { id: "o2", customerId: "GHOST", productId: "p1", quantity: 1, total: 89.9 },
-  ],
-};
-
-const shopConfig = {
-  ids: {
-    Customer: "$.customers[*].id",
-    Order: "$.orders[*].id",
-    Product: "$.products[*].id",
-    Category: "$.categories[*].id",
-  },
-  refs: [
-    { from: "$.orders[*].customerId", to: "$.customers[*].id" },
-    { from: "$.orders[*].productId", to: "$.products[*].id" },
-    { from: "$.products[*].categoryId", to: "$.categories[*].id" },
-  ],
-  rootLabel: "Boutique",
-  groups: ["Customer", "Product"],
-};
-
-const container = document.getElementById("app")!;
-
-const graph = createDataGraph(container, {
-  data: shopData,
-  config: shopConfig,
-  // Best-effort Web Worker offload for the ELK layout pass; falls back
-  // in-process automatically if the worker can't be spun up.
-  elkWorkerUrl: new URL("elkjs/lib/elk-worker.min.js", import.meta.url),
-  // Same deal for the graph view's own layout, which is where the seconds are
-  // on large datasets. Same permanent in-process fallback on first failure.
-  graphLayoutWorkerUrl: new URL("@defsquare/datagraph/graph-layout-worker", import.meta.url),
-});
-
-await graph.ready;
-graph.fit();
-
-graph.on("select", (node) => console.log("selected:", node.label));
-graph.on("followRef", (edge) => console.log("followed ref:", edge.field));
-```
-
 ## Config: ids, refs, groups
 
 `config.ids` maps a name to a JSONPath-like selector (`$`, `.key`, `[index]`,
@@ -321,54 +249,6 @@ the target id doesn't exist.
 
 **Limitation:** field keys that don't match the selector token grammar (e.g.
 `@odata:id`) cannot be declared as reference fields.
-
-## API
-
-`createDataGraph(container, options)` returns a `DataGraph` handle:
-
-- Camera and navigation: `ready`, `fit()`, `focus(id)`, `destroy()`.
-- Structure view only: `expand(id)`, `collapse(id)`, `tidy()`.
-- Selection and events: `select(id)`, `on("select" | "followRef", cb)`, `refEdges(from)`.
-- Search: `search(query)`, `nextMatch()`, `prevMatch()`.
-- Data, views, theme: `setData(data, config?)`, `setView("structure" | "graph")`,
-  `currentView()`, `setTheme(theme)`.
-- Introspection: `diagnostics()`, `stats()`.
-
-The full reference table, with every member's exact semantics and
-view-specific caveats, lives in the published package's README:
-[Public API — `DataGraph`](./packages/renderer/README.md#public-api--datagraph).
-Gestures, dimming rules and the graph view are documented there too.
-
-## Themes
-
-`@defsquare/datagraph` ships four built-in themes (`defsquareLight`, the
-default, `defsquareDark`, `neutralLight`, `neutralDark`) and lets you override
-any subset of theme tokens per instance:
-
-```ts
-import { createDataGraph, defsquareDark } from "@defsquare/datagraph";
-
-const graph = createDataGraph(container, {
-  data,
-  config,
-  theme: {
-    accent: { selection: "#0ea5e9" },
-    byEntityType: { Order: { accent: "#f59e0b" } },
-  },
-});
-
-// Swap to the dark theme at runtime, in place — no relayout, no re-measuring
-// fonts, so this is safe for a light/dark toggle.
-graph.setTheme(defsquareDark);
-```
-
-A `Theme` is grouped by role rather than a flat color bag: `surface`, `ink`,
-`accent`, `edge`, `typography`, `radii`, `strokes`, `entityPalette`, an
-optional `byEntityType`, and `fonts`. The `theme` option is a `ThemeOverride`:
-any subset of that shape, deep-merged one level per group via the exported
-`resolveTheme(partial?, base?)`. The full token list and more examples are in
-the [renderer package README](./packages/renderer/README.md#themes); the exact
-shape is in [`theme.ts`](./packages/renderer/src/theme.ts).
 
 ## Monorepo layout
 
