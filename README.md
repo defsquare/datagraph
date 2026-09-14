@@ -188,17 +188,19 @@ show somebody a JSON document. The repo ships a Claude Code skill —
 protocol: shape the data so the cards read well, write an `ids` / `refs` /
 `groups` config against the document's real paths, validate it with
 [`--check`](#the-datagraph-cli) before opening anything, and launch the window
-detached. The repo doubles as a plugin marketplace, so installing it is:
+detached. The plugin is listed on defsquare's org marketplace,
+[`defsquare/claude-marketplace`](https://github.com/defsquare/claude-marketplace),
+which references plugins where they live — here, this repo. Installing it is:
 
 ```
-/plugin marketplace add https://gitlab.com/defsquare/datagraph.git
+/plugin marketplace add defsquare/claude-marketplace
 /plugin install datagraph@defsquare
 ```
 
 The plugin installs the *skill* only; the binary itself still arrives through
 [Homebrew or the tarball](#the-datagraph-cli). The skill is versioned with the
 binary whose behaviour it documents, so a CLI change and its skill update
-travel in the same commit (ADR-0035).
+travel in the same commit (ADR-0035, ADR-0038).
 
 ## The `@defsquare/datagraph` package
 

@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Data graph explorer"
 authors = ["defsquare"]
 license = "MIT"
-repository = "https://gitlab.com/defsquare/datagraph"
+repository = "https://github.com/defsquare/datagraph"
 edition = "2021"
 rust-version = "1.81"
 

@@ -138,7 +138,7 @@ upload() {
 
 release() {
   # Unlike specy the version is also recorded as a git tag; the hosting itself
-  # needs no GitLab release — R2 serves the bytes.
+  # needs no GitHub release — R2 serves the bytes.
   if [ "$DRY_RUN" -eq 1 ]; then
     echo "==> [release] DRY-RUN would tag $TAG and push it"
     return

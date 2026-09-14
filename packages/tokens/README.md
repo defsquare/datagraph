@@ -1,6 +1,6 @@
 # @defsquare/datagraph-tokens
 
-Design tokens for [datagraph](https://gitlab.com/defsquare/datagraph): the single
+Design tokens for [datagraph](../../README.md): the single
 source of truth for colors, fonts, typography, radii, spacing, strokes and motion.
 
 The same values used to live twice — once in the Pixi themes of the renderer, once in

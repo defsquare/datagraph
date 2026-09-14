@@ -36,7 +36,7 @@ brew install defsquare/tap/datagraph
 
 That is macOS on Apple silicon — the only platform with a published binary.
 Anywhere else it is built from source from
-<https://gitlab.com/defsquare/datagraph> (clone, pnpm + a Rust toolchain, then
+<https://github.com/defsquare/datagraph> (clone, pnpm + a Rust toolchain, then
 `pnpm --filter demo tauri build`, which produces
 `apps/demo/src-tauri/target/release/datagraph`, a raw binary with no `.app`).
 Tell the user that is what it takes and let them decide; do not launch that

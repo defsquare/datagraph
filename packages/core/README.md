@@ -1,9 +1,9 @@
 # @defsquare/datagraph-core
 
-Headless graph engine for [`datagraph`](https://gitlab.com/defsquare/datagraph)
-(see the [root README](https://gitlab.com/defsquare/datagraph#readme) for the
+Headless graph engine for [`datagraph`](../../README.md)
+(see the [root README](../../README.md) for the
 full pitch and the ids/refs/groups config, and
-[`docs/graph-view.md`](https://gitlab.com/defsquare/datagraph/-/blob/main/docs/graph-view.md)
+[`docs/graph-view.md`](../../docs/graph-view.md)
 for the graph view's layout engine and its measurements).
 
 This package has no rendering dependency: it builds a graph from arbitrary
@@ -246,7 +246,7 @@ layout engine is.
 > | canvas bbox | 7199 × 4588 | 18714 × 19984 |
 >
 > The bbox figures belong to that engine and no longer describe the current one;
-> see [`docs/graph-view.md`](https://gitlab.com/defsquare/datagraph/-/blob/main/docs/graph-view.md)
+> see [`docs/graph-view.md`](../../docs/graph-view.md)
 > for what the two-level engine lays those same 116 blocks out in.
 
 The union-find that carried the merge went with the pass when it was removed. It
@@ -258,7 +258,7 @@ current engine packs each aggregate independently and never moves a card
 relative to its co-members at all.
 
 `aggregates` is what powers the renderer's **graph view** — see the
-[renderer package README](https://gitlab.com/defsquare/datagraph/-/tree/main/packages/renderer#graph-view)
+[renderer package README](../renderer/README.md#graph-view)
 for `view`/`setView`/`currentView` and how aggregates are drawn.
 
 ## Benchmark
@@ -298,7 +298,7 @@ tokens, so it has to name the same pages as `CollapseState` and read the same
 budget rather than copy the literals. Plus the `Graph`, `GraphNode`, `RefEdge`,
 `Diagnostic`, `DataGraphConfig`, `Aggregate`, `AggregateIndex`, `HiddenGap`,
 `SearchIndex` types. See the
-[root README](https://gitlab.com/defsquare/datagraph#readme) for the config
+[root README](../../README.md) for the config
 shape and `packages/core/src/index.ts` for the full export list.
 
 `src/index.ts` is a **contract, not an index**: it re-exports only what a
