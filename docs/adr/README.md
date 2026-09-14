@@ -13,7 +13,8 @@ the time stays readable.
 
 ADR-0001 to ADR-0028 were **reconstructed after the fact on 2026-09-07** from the
 git history, the dated design documents in `docs/superpowers/specs/`, the spikes in
-`docs/superpowers/spikes/` and the packages' READMEs. Dates are those of the commit
+`docs/superpowers/spikes/` (a journal since dropped from git; recover it from the
+history) and the packages' READMEs. Dates are those of the commit
 or spec that introduced the decision.
 
 | # | Title | Date | Status |

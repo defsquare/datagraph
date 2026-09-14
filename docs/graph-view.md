@@ -344,8 +344,8 @@ The graph view used to lay out through a global `fcose` layout (via `cytoscape`
 and `cytoscape-fcose`) repaired by two relaxation passes, one for cards and one
 for envelopes. That engine, its passes, its tests and both dependencies were
 **removed from the repo**; the code is in git history, and the comparison that
-retired it is in
-[`superpowers/spikes/2026-09-01-two-level-layout.md`](./superpowers/spikes/2026-09-01-two-level-layout.md).
+retired it is in the journal spike
+`docs/superpowers/spikes/2026-09-01-two-level-layout.md` (see below).
 Run at equal guarantees (`clusterGap: 160`, `hullPadding: 18` on both sides), it
 measured the two-level engine at 143 ms against 1,624 ms on a 334-card fixture
 and 64 ms against 4,138 ms on the demo's, with fill going from 6.2% to 12.3% and
@@ -355,6 +355,7 @@ spacing budget is spent on corridors instead of on padding. Several defaults
 documented above (`clusterGap`, the partition rule's measurements) were chosen
 against that engine, which is why it is still named here.
 
-`docs/superpowers/` is a historical journal of spikes and specs, kept as a
-record of how decisions were reached. It is not maintained as current reference
-documentation; where it disagrees with this file or with the code, the code wins.
+`docs/superpowers/` is a historical journal of spikes and specs, a record of
+how decisions were reached. It is no longer tracked by git (recover it from the
+history before it was dropped); where it disagrees with this file or with the
+code, the code wins.

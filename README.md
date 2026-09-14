@@ -267,8 +267,7 @@ datagraph/
 ├── Formula/       datagraph.rb.tmpl — the Homebrew formula release.sh renders
 ├── skills/        the Claude Code skill the plugin installs (.claude-plugin/ manifests)
 ├── docs/
-│   ├── graph-view.md   graph-view layout, guarantees and measurements
-│   └── superpowers/    historical journal of spikes, specs and plans
+│   └── graph-view.md   graph-view layout, guarantees and measurements
 ├── LICENSE
 └── README.md
 ```

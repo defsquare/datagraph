@@ -17,3 +17,7 @@ bin/release.env
 
 # Working datasets (client schemas, generator output): local only, never committed.
 datasets/
+
+# Superpowers journal (spikes, specs, plans): local working notes, kept out of
+# the repo since df10b61's follow-up; the history up to that point retains them.
+docs/superpowers/
