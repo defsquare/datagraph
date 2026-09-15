@@ -38,7 +38,7 @@ import { currentTheme, type ThemeState } from "../theme-state.ts";
 import "./graph-components.css";
 
 /**
- * The « Composants graphe » view: every visual that
+ * The « Graph components » view: every visual that
  * `packages/renderer/src/draw.ts` can produce, in all its states, drawn by THE
  * SAME functions as the product.
  *
@@ -54,8 +54,8 @@ import "./graph-components.css";
  * reach in the product with a complicit dataset.
  *
  * The CAPTIONS, for their part, are Pixi `Text` and not `BitmapText`: the
- * renderer's atlas is baked on `BitmapFontManager.ASCII`, where « é » and « — »
- * are missing. A `Text` is no lie here, because the caption is NOT a component
+ * renderer's atlas is baked on `BitmapFontManager.ASCII`, where an em dash or
+ * an accented letter is missing. A `Text` is no lie here, because the caption is NOT a component
  * of the product — it is the display card of the object shown, not the object.
  */
 
@@ -293,10 +293,10 @@ function cardSpecimens(theme: Theme): Specimen[] {
     );
 
   return [
-    { label: "repos (replié)", build: (bitmap) => card(bitmap) },
-    { label: "déplié", build: (bitmap) => card(bitmap, { expanded: true }) },
+    { label: "rest (collapsed)", build: (bitmap) => card(bitmap) },
+    { label: "expanded", build: (bitmap) => card(bitmap, { expanded: true }) },
     {
-      label: `survol — lift ×${1 + HOVER_LIFT}`,
+      label: `hover — lift ×${1 + HOVER_LIFT}`,
       build: (bitmap) => {
         const c = card(bitmap);
         const scale = 1 + HOVER_LIFT;
@@ -309,7 +309,7 @@ function cardSpecimens(theme: Theme): Specimen[] {
       },
     },
     {
-      label: "survol d'une ligne de référence",
+      label: "hovering a reference row",
       build: (bitmap) => {
         const c = card(bitmap);
         // `drawNode` has prepared the hidden underline; knowing which row is
@@ -322,22 +322,22 @@ function cardSpecimens(theme: Theme): Specimen[] {
       },
     },
     {
-      label: "sélectionné",
+      label: "selected",
       build: (bitmap) =>
         group(card(bitmap), drawSelectionOverlay(graph, positions, theme, order.id, "ref")),
     },
     {
-      label: "résultat de recherche (match)",
+      label: "search result (match)",
       build: (bitmap) =>
         group(card(bitmap), drawSearchHighlights(positions, theme, [order.id], null)),
     },
     {
-      label: "résultat courant (matchCurrent)",
+      label: "current result (matchCurrent)",
       build: (bitmap) =>
         group(card(bitmap), drawSearchHighlights(positions, theme, [order.id], order.id)),
     },
     {
-      label: "référence cassée (dangling)",
+      label: "broken reference (dangling)",
       build: (bitmap) => card(bitmap, { dangling: true }),
     },
     {
@@ -439,7 +439,7 @@ function edgeSpecimens(theme: Theme): Specimen[] {
 
   return [
     {
-      label: "containment — bézier pleine (vue structure)",
+      label: "containment — solid bezier (structure view)",
       build: (bitmap) => {
         const { from, to, positions, cards } = pair(bitmap);
         const graph = graphOf([from, to], [], [{ kind: "contain", from: from.id, to: to.id }]);
@@ -447,7 +447,7 @@ function edgeSpecimens(theme: Theme): Specimen[] {
       },
     },
     {
-      label: "référence, vue graphe — trait plein + flèche",
+      label: "reference, graph view — solid stroke + arrow",
       build: (bitmap) => {
         const { from, to, positions, cards } = pair(bitmap);
         const graph = graphOf([from, to], [refEdge(from.id, to.id, "customerId")]);
@@ -455,7 +455,7 @@ function edgeSpecimens(theme: Theme): Specimen[] {
       },
     },
     {
-      label: "référence, vue structure — pointillés + flèche",
+      label: "reference, structure view — dashes + arrow",
       build: (bitmap) => {
         const { from, to, positions, cards } = pair(bitmap);
         const graph = graphOf([from, to], [refEdge(from.id, to.id, "customerId")]);
@@ -463,7 +463,7 @@ function edgeSpecimens(theme: Theme): Specimen[] {
       },
     },
     {
-      label: "référence cassée — aucun trait : le diagnostic est sur la carte",
+      label: "broken reference — no stroke: the diagnostic is on the card",
       build: (bitmap) => {
         const { from, to, positions, cards } = pair(bitmap);
         const graph = graphOf([from, to], [refEdge(from.id, null, "customerId")]);
@@ -471,7 +471,7 @@ function edgeSpecimens(theme: Theme): Specimen[] {
       },
     },
     {
-      label: "étiquette de référence (source sélectionnée)",
+      label: "reference label (source selected)",
       build: (bitmap) => {
         const { from, to, positions, cards } = pair(bitmap);
         const graph = graphOf([from, to], [refEdge(from.id, to.id, "customerId")]);
@@ -518,9 +518,9 @@ function paintEdges(
  * hover arrives ALREADY eased by `attachHover`: what the specimen forces here is
  * the upper bound of that intensity, not one more curve. */
 const HULL_STATES: { label: string; hover?: number; dim?: boolean }[] = [
-  { label: "repos (hover 0)" },
-  { label: "survolée (hover 1)", hover: 1 },
-  { label: "estompée (dim, hors sélection)", dim: true },
+  { label: "rest (hover 0)" },
+  { label: "hovered (hover 1)", hover: 1 },
+  { label: "dimmed (dim, outside selection)", dim: true },
 ];
 
 function hullStageSize(): { width: number; height: number } {
@@ -819,10 +819,10 @@ function paintSemantic(stage: PixiStage, theme: Theme, useBitmap: boolean): void
   const world = buildFakeWorld(theme);
   PANEL_SCALES.forEach((scale, index) => {
     const lod = lodForScale(scale);
-    const regime = lod === 2 ? "disques d'agrégats" : lod === 1 ? "cartes tronquées" : "cartes complètes";
+    const regime = lod === 2 ? "aggregate discs" : lod === 1 ? "truncated cards" : "full cards";
     stage.app.stage.addChild(
       cell(
-        `échelle ${scale.toFixed(2)} — LOD ${lod} : ${regime}`,
+        `scale ${scale.toFixed(2)} — LOD ${lod}: ${regime}`,
         semanticPanel(world, theme, useBitmap, scale),
         theme,
         STAGE_PAD + index * (PANEL_W + PANEL_GAP),
@@ -860,7 +860,7 @@ export function mountGraphComponentsView(root: HTMLElement, state: ThemeState): 
     paint: (stage: PixiStage, useBitmap: boolean) => void,
   ): void => {
     const { node, host } = section(title, note);
-    const status = el("p", "gc-note gc-status", "Initialisation du canvas…");
+    const status = el("p", "gc-note gc-status", "Initializing canvas…");
     node.append(status);
     page.append(node);
 
@@ -887,7 +887,7 @@ export function mountGraphComponentsView(root: HTMLElement, state: ThemeState): 
         // Without this, a renderer init that fails (WebGL off, context refused)
         // would leave the caption stuck and the reason in an unhandled
         // rejection. The failure reads where the specimen is missing.
-        status.textContent = `Le canvas Pixi n'a pas pu s'initialiser : ${String(error)}`;
+        status.textContent = `The Pixi canvas could not initialize: ${String(error)}`;
       });
   };
 
@@ -898,29 +898,29 @@ export function mountGraphComponentsView(root: HTMLElement, state: ThemeState): 
   const edges = edgeSpecimens(theme);
 
   mount(
-    "Carte de nœud",
-    "Le même nœud fictif décliné par les paramètres de drawNode. Les états d'interface (survol, sélection, recherche) sont FORCÉS ici : dans le produit c'est create.ts qui les décide, drawNode ne fait que préparer le visuel — un souligné caché, un contour, un remplissage lavé.",
+    "Node card",
+    "The same fictitious node declined by drawNode's parameters. The interface states (hover, selection, search) are FORCED here: in the product create.ts is what decides them, drawNode only prepares the visual — a hidden underline, an outline, a washed fill.",
     cardStageSize(cards.length),
     (stage, useBitmap) => paintCards(stage, theme, useBitmap, cards),
   );
 
   mount(
-    "Arêtes",
-    "Le style d'un trait dit sa nature ET la vue où il est tracé : le containment est une bézier pleine, une référence est pleine en vue graphe (où elle est la relation montrée) et pointillée en vue structure (où elle décore l'arbre). Une référence cassée n'est plus tracée du tout — son diagnostic a été déplacé sur la ligne de la carte, où la croix désigne le champ fautif plutôt que la carte entière.",
+    "Edges",
+    "A stroke's style states its nature AND the view it is drawn in: containment is a solid bezier, a reference is solid in graph view (where it is the relation being shown) and dashed in structure view (where it decorates the tree). A broken reference is no longer drawn at all — its diagnostic moved onto the card's row, where the cross designates the offending field rather than the whole card.",
     edgeStageSize(edges.length),
     (stage, useBitmap) => paintEdges(stage, theme, useBitmap, edges),
   );
 
   mount(
-    "Enveloppes d'agrégats",
-    "Le disque que la mise en page a calculé pour un agrégat, peint sous les cartes. Les trois paliers — remplissage, épaisseur, opacité du contour — montent ensemble au survol : c'est cette montée simultanée qui fait lire l'enveloppe comme un objet saisissable, ce qu'elle est.",
+    "Aggregate envelopes",
+    "The disc the layout computed for an aggregate, painted under the cards. The three levels — fill, thickness, outline opacity — rise together on hover: it is that simultaneous rise that makes the envelope read as a graspable object, which it is.",
     hullStageSize(),
     (stage) => paintHulls(stage, theme),
   );
 
   mount(
-    "Zoom sémantique",
-    `Le même monde fictif à trois échelles de caméra, de part et d'autre des seuils de lodForScale (${LOD0_MIN_SCALE} et ${LOD1_MIN_SCALE}). Sous le second seuil, une carte n'est plus qu'un rectangle muet : la vue graphe cesse alors de les dessiner et peint les agrégats comme des nœuds — disques, libellés tronqués par le milieu, et références repliées sur les paires, graduées par leur poids.`,
+    "Semantic zoom",
+    `The same fictitious world at three camera scales, on either side of lodForScale's thresholds (${LOD0_MIN_SCALE} and ${LOD1_MIN_SCALE}). Below the second threshold a card is nothing but a mute rectangle: the graph view then stops drawing them and paints the aggregates as nodes — discs, labels truncated through the middle, and references folded onto the pairs, graded by their weight.`,
     semanticStageSize(),
     (stage, useBitmap) => paintSemantic(stage, theme, useBitmap),
   );

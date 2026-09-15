@@ -11,7 +11,7 @@ import shopConfig from "../../../demo/fixtures/shop.config.json";
 import shopData from "../../../demo/fixtures/shop.json";
 
 /**
- * The « Bac à sable » view: a complete renderer instance, on a real fixture, in
+ * The « Sandbox » view: a complete renderer instance, on a real fixture, in
  * the playground's current theme.
  *
  * The other three views show PARTS — a token, a card painted out of context, a
@@ -39,7 +39,7 @@ export function mountSandboxView(root: HTMLElement, state: ThemeState): () => vo
   const note = document.createElement("p");
   note.className = "sb-note";
   note.textContent =
-    "Instance complète du renderer sur apps/demo/fixtures/shop.json. Glisser pour déplacer, molette + ⌘/Ctrl pour zoomer, clic sur un en-tête pour plier ou déplier, Échap pour désélectionner.";
+    "Full renderer instance on apps/demo/fixtures/shop.json. Drag to pan, wheel + ⌘/Ctrl to zoom, click a header to collapse or expand, Esc to deselect.";
 
   const stage = document.createElement("div");
   stage.className = "sb-stage";
@@ -55,7 +55,7 @@ export function mountSandboxView(root: HTMLElement, state: ThemeState): () => vo
 
   function fail(error: unknown): void {
     if (disposed) return;
-    note.textContent = `Échec du chargement : ${error instanceof Error ? error.message : String(error)}`;
+    note.textContent = `Load failed: ${error instanceof Error ? error.message : String(error)}`;
   }
 
   // A `const` out of an IIFE rather than a `let` assigned inside a `try`: the

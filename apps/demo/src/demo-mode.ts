@@ -54,7 +54,7 @@ export function setupDatasetToggle(graph: DataGraph, onSwapped: () => void): voi
           usingBigDataset ? bigDataset() : shopData,
           usingBigDataset ? bigShopConfig : shopConfig,
         );
-        toggleDatasetBtn.textContent = usingBigDataset ? "Jeu de données réduit" : "Jeu de données étendu (4000)";
+        toggleDatasetBtn.textContent = usingBigDataset ? "Reduced dataset" : "Extended dataset (4000)";
         onSwapped();
       } finally {
         toggleDatasetBtn.disabled = false;

@@ -46,9 +46,9 @@ const TOKENS_VIEW: PlaygroundView = { id: "tokens", label: "Tokens", mount: moun
 
 const VIEWS: PlaygroundView[] = [
   TOKENS_VIEW,
-  { id: "graph", label: "Composants graphe", mount: mountGraphComponentsView },
-  { id: "ui", label: "Composants UI", mount: mountUiComponentsView },
-  { id: "sandbox", label: "Bac à sable", mount: mountSandboxView },
+  { id: "graph", label: "Graph components", mount: mountGraphComponentsView },
+  { id: "ui", label: "UI components", mount: mountUiComponentsView },
+  { id: "sandbox", label: "Sandbox", mount: mountSandboxView },
 ];
 
 const DEFAULT_VIEW = TOKENS_VIEW;
@@ -76,7 +76,7 @@ shell.className = "shell";
 
 const sidebar = document.createElement("nav");
 sidebar.className = "sidebar";
-sidebar.setAttribute("aria-label", "Vues du playground");
+sidebar.setAttribute("aria-label", "Playground views");
 
 const brandEl = document.createElement("div");
 brandEl.className = "sidebar-brand";
@@ -120,7 +120,7 @@ for (const [value, label] of [
 const brandLabel = document.createElement("label");
 brandLabel.className = "control-label";
 brandLabel.htmlFor = brandSelect.id;
-brandLabel.textContent = "Marque";
+brandLabel.textContent = "Brand";
 controls.append(brandLabel, brandSelect);
 
 const modeBtn = document.createElement("button");
@@ -182,9 +182,9 @@ function syncControls(state: ThemeState): void {
   brandSelect.value = state.brand;
   // The button names the mode it WOULD activate, not the one in place — same
   // convention as the demo's menu entry.
-  const next = state.mode === "dark" ? "clair" : "sombre";
-  modeBtn.textContent = `Thème ${next}`;
-  modeBtn.setAttribute("aria-label", `Passer au thème ${next}`);
+  const next = state.mode === "dark" ? "Light" : "Dark";
+  modeBtn.textContent = `${next} theme`;
+  modeBtn.setAttribute("aria-label", `Switch to ${next.toLowerCase()} theme`);
 }
 
 modeBtn.addEventListener("click", () => {

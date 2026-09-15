@@ -26,8 +26,8 @@ describe("createFindbar", () => {
 
   it("names its chevrons without the shortcut for ARIA, with it for the tooltip", () => {
     const bar = createFindbar();
-    expect(bar.next.title).toBe("Résultat suivant (Entrée)");
-    expect(bar.next.getAttribute("aria-label")).toBe("Résultat suivant");
+    expect(bar.next.title).toBe("Next result (Enter)");
+    expect(bar.next.getAttribute("aria-label")).toBe("Next result");
   });
 
   it("returns its five parts, all inside the bar", () => {

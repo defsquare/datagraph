@@ -81,8 +81,8 @@ export function createDetailPanel(graph: DataGraph): DetailPanel {
           const broken = ref.to === null || ref.dangling;
           const btn = createRefButton({
             title: broken
-              ? `Référence cassée : ${ref.targetType}#${ref.targetId}`
-              : `Aller à ${ref.targetType}#${ref.targetId}`,
+              ? `Broken reference: ${ref.targetType}#${ref.targetId}`
+              : `Go to ${ref.targetType}#${ref.targetId}`,
             disabled: broken,
           });
           if (!broken) {
@@ -163,7 +163,7 @@ export function createDetailPanel(graph: DataGraph): DetailPanel {
         if (navigable) {
           const button = body as HTMLButtonElement;
           button.type = "button";
-          button.title = `Aller à ${d.path}`;
+          button.title = `Go to ${d.path}`;
           button.addEventListener("click", () => {
             // Same gesture as the panel's reference buttons: select then frame.
             // Both are safe no-ops on an id the graph does not carry, which is

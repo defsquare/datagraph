@@ -6,7 +6,7 @@ async function gotoReady(page: Page): Promise<void> {
   await page.evaluate(() => (window as any).__graph.ready)
 }
 
-test("Ranger announces itself busy while the layout runs", async ({ page }) => {
+test("Tidy announces itself busy while the layout runs", async ({ page }) => {
   await gotoReady(page)
 
   // The reduced dataset tidies almost instantly, so the state is read from a

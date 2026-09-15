@@ -53,22 +53,22 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
   const searchToggleBtn = createIconButton({
     id: "search-toggle",
     icon: "search",
-    label: "Rechercher",
+    label: "Search",
     controls: "findbar",
     expanded: false,
   });
-  const fitBtn = createIconButton({ id: "fit", icon: "fit", label: "Ajuster à la vue" });
-  // "Ranger" (tidy): a global re-layout on demand, which repairs the drift
+  const fitBtn = createIconButton({ id: "fit", icon: "fit", label: "Fit to view" });
+  // "Tidy": a global re-layout on demand, which repairs the drift
   // accumulated by successive expansions and reveals. No effect in graph view,
   // per `tidy()`'s contract.
-  const tidyBtn = createIconButton({ id: "tidy", icon: "tidy", label: "Ranger" });
+  const tidyBtn = createIconButton({ id: "tidy", icon: "tidy", label: "Tidy" });
   // `data-target` carries the view a click WOULD activate: the icon shown is
   // therefore the target view's. `syncViewButton()` sets it from the real
   // `graph.currentView()`, never from what was requested.
   const toggleViewBtn = createIconButton({
     id: "toggle-view",
     icon: ["graph", "structure"],
-    label: "Vue graphe",
+    label: "Graph view",
   });
   toggleViewBtn.dataset.target = "graph";
   const menuToggleBtn = createIconButton({
@@ -93,9 +93,9 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
   // current state, which a child icon would not survive.
   const datasetItem = createMenuItem({
     id: "toggle-dataset",
-    label: "Jeu de données étendu (4000)",
+    label: "Extended dataset (4000)",
   });
-  const themeBtn = createMenuItem({ id: "toggle-theme", label: "Thème sombre" });
+  const themeBtn = createMenuItem({ id: "toggle-theme", label: "Dark theme" });
   const menuEl = createMenu({ id: "menu", labelledBy: "menu-toggle" }, datasetItem, themeBtn);
 
   document
@@ -119,7 +119,7 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
       createIconButton({
         id: "detail-close",
         icon: "close",
-        label: "Fermer le panneau",
+        label: "Close panel",
         small: true,
       }),
     );
@@ -251,7 +251,7 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
       return;
     }
     statDiagEl.removeAttribute("hidden");
-    statDiagEl.textContent = `${diagnostics.length} diagnostic${diagnostics.length > 1 ? "s" : ""}`;
+    statDiagEl.textContent = `${diagnostics.length} diagnostic${diagnostics.length !== 1 ? "s" : ""}`;
   }
 
   statDiagEl.addEventListener("click", () => {
@@ -272,7 +272,7 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
       logoEl.src = dark ? "/datagraph-lockup-inverse.svg" : "/datagraph-lockup.svg";
     }
     // The menu item names the theme it WOULD activate, not the current one.
-    themeBtn.textContent = dark ? "Thème clair" : "Thème sombre";
+    themeBtn.textContent = dark ? "Light theme" : "Dark theme";
     graph.setTheme(dark ? defsquareDark : defsquareLight);
     window.__theme = dark ? "dark" : "light";
   }
@@ -289,7 +289,7 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
    * was requested (see the handler's comment). */
   function syncViewButton(): void {
     const target = graph.currentView() === "graph" ? "structure" : "graph";
-    const label = target === "graph" ? "Vue graphe" : "Vue structure";
+    const label = target === "graph" ? "Graph view" : "Structure view";
     toggleViewBtn.dataset.target = target;
     toggleViewBtn.title = label;
     toggleViewBtn.setAttribute("aria-label", label);

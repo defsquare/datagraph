@@ -42,8 +42,8 @@ Also remember to update the index `docs/adr/README.md` whenever an ADR is create
 
 ## Conventions
 
-- **English for everything a developer reads**: code comments — which document constraints/invariants (the "why"), not the "what" — plus test names and developer-facing diagnostics (`throw` messages, `console.*`, assertion messages). The global translation pass is done: none of these is French any more.
-- **French for everything a user reads**: the demo and the playground are French on screen, so their labels, placeholders, `title`/`aria-label` and error screens stay French. The e2e tests select and assert on those strings — translating one breaks its test.
+- **English everywhere**: code comments — which document constraints/invariants (the "why"), not the "what" — test names, developer-facing diagnostics (`throw` messages, `console.*`, assertion messages), AND every user-visible string of the demo and the playground (labels, placeholders, `title`/`aria-label`, menu entries, on-screen prose, error screens). The demo used to be French on screen; that is over, and nothing should reintroduce it. Careful when touching a label: the e2e tests select and assert on on-screen strings, so changing one means updating its spec in the same commit.
+  - **One deliberate exception, the demo DATASET**: `apps/demo/src/sample-data.ts` and `apps/demo/fixtures/*.json` are French e-commerce CONTENT (customer names, addresses, product labels), not UI. The e2e tests search that content ("camille", "Dubois", "rue de la paix"). Leave it French — it is data under test, not a label to translate.
 - **English for commit messages too**, subject and body, `ADR-Reviewed:` trailer included. The history before the `--check` branch is French; that branch normalised it and the rule starts there. Left unwritten, the question gets re-answered at random on every branch — which is exactly what happened before this line existed.
 - `draw.ts` takes only bare data (no graph/interface state) to stay testable without an instance.
 - Every async mutating operation is guarded by `opGen` + `destroyed` (see `create.ts`).

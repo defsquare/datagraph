@@ -24,7 +24,7 @@ test("a query with no result says so", async ({ page }) => {
   await gotoReady(page)
   await openSearch(page)
   await page.fill("#search", "zzzzzz")
-  await expect(page.locator("#match-counter")).toHaveText("0 résultat")
+  await expect(page.locator("#match-counter")).toHaveText("0 results")
 })
 
 test("an empty field leaves the counter empty", async ({ page }) => {

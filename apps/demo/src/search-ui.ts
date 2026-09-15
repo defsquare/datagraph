@@ -45,7 +45,7 @@ export function createSearchUi(graph: DataGraph, hooks: SearchUiHooks): SearchUi
       matchCounterEl.textContent = `${matchCursor + 1}/${matchTotal}`;
       return;
     }
-    matchCounterEl.textContent = (searchInput?.value ?? "") === "" ? "" : "0 résultat";
+    matchCounterEl.textContent = (searchInput?.value ?? "") === "" ? "" : "0 results";
   }
 
   /**

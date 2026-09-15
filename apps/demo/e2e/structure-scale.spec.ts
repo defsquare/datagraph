@@ -8,7 +8,7 @@ import { test, expect, type Page } from "@playwright/test"
  * `focus` cascade on the renderer side. What CANNOT be proven there, no package
  * test mounting `createDataGraph`, is the CHAIN: a document no human would open
  * flat opens bounded, paginates on a gesture, lets search dig deep into it, and
- * survives a "Ranger" (tidy).
+ * survives a "Tidy".
  *
  * The only channel that proves a card really exists in the scene is the pointer
  * — a missing Pixi container does not answer the hit-test. So, as in
@@ -229,7 +229,7 @@ test("tidy keeps a consistent view after reveals", async ({ page }) => {
   // The second one is not zeal. Between the two, `collapseState` has already
   // revealed the page but `engine.layoutAfterReveal` is still in flight, and any
   // operation incrementing `opGen` during that flight — the next `nextMatch()`,
-  // the click on "Ranger" — makes the cascade bail out, which then UNDOES its
+  // the click on "Tidy" — makes the cascade bail out, which then UNDOES its
   // own reveal (`doFocus`, `gen !== opGen` branch). Stopping at the counter
   // would therefore leave a race that removes every other page.
   const reveals = [

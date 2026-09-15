@@ -3,7 +3,7 @@ import { createMenu, createMenuItem } from "../../src/components/menu.js";
 
 describe("createMenu", () => {
   it("is a menu-role panel, folded, carrying its entries", () => {
-    const item = createMenuItem({ label: "Thème sombre", id: "toggle-theme" });
+    const item = createMenuItem({ label: "Dark theme", id: "toggle-theme" });
     const menu = createMenu({ id: "menu", labelledBy: "menu-toggle" }, item);
     expect(menu.className).toBe("menu float");
     expect(menu.getAttribute("role")).toBe("menu");
@@ -19,11 +19,11 @@ describe("createMenu", () => {
 
 describe("createMenuItem", () => {
   it("is a menuitem-role button, text alone", () => {
-    const item = createMenuItem({ label: "Jeu de données étendu (4000)" });
+    const item = createMenuItem({ label: "Extended dataset (4000)" });
     expect(item.className).toBe("menu-item");
     expect(item.type).toBe("button");
     expect(item.getAttribute("role")).toBe("menuitem");
-    expect(item.textContent).toBe("Jeu de données étendu (4000)");
+    expect(item.textContent).toBe("Extended dataset (4000)");
     // No icon: the application rewrites the `textContent` to reflect the current
     // state, which a child would not survive.
     expect(item.children).toHaveLength(0);

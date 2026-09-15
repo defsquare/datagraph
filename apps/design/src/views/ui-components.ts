@@ -12,7 +12,7 @@ import {
 import "./ui-components.css";
 
 /**
- * The « Composants UI » view: the DOM chrome's primitives — floating surface,
+ * The « UI components » view: the DOM chrome's primitives — floating surface,
  * icon button, findbar, entity badge, menu item — each laid out as a row of
  * states.
  *
@@ -65,7 +65,7 @@ function el<K extends keyof HTMLElementTagNameMap>(
  * A section's frame: title, note, row of cells.
  *
  * The classes belong to this view (`uic-*`) and are not those of the Tokens
- * (`ds-*`) or Composants graphe (`gc-*`) views: those live in ANOTHER view's
+ * (`ds-*`) or Graph components (`gc-*`) views: those live in ANOTHER view's
  * stylesheet, and leaning on them would break the day that other view renames
  * or moves its sheet, with nothing to announce it.
  */
@@ -108,8 +108,8 @@ function float(extraClass: string | null, ...content: Node[]): HTMLElement {
 
 function floatSection(): HTMLElement {
   const { node, row } = section(
-    "Surface flottante",
-    "Le socle de tout le chrome : --float-bg translucide, --float-border, --shadow-float, et un flou de 16px saturé à 160% appliqué à ce qui passe DERRIÈRE. Posé sur un damier, sans quoi « translucide » et « flouté » ne se distinguent pas d'un aplat. La surface elle-même n'est pas interactive : survol, focus, actif et désactivé appartiennent à ses enfants — les quatre sections suivantes.",
+    "Floating surface",
+    "The base of the whole chrome: translucent --float-bg, --float-border, --shadow-float, and a 16px blur saturated to 160% applied to whatever passes BEHIND. Laid on a checkerboard, without which « translucent » and « blurred » cannot be told apart from a flat fill. The surface itself is not interactive: hover, focus, active and disabled belong to its children — the four sections that follow.",
   );
 
   const body = el("div", "uic-float-body");
@@ -121,15 +121,15 @@ function floatSection(): HTMLElement {
 
   row.append(
     cell(
-      "repos — <strong>son seul état</strong> : une surface ne se survole pas, ne prend pas le focus et ne se désactive pas.",
+      "rest — <strong>its only state</strong>: a surface is not hovered, does not take focus and is never disabled.",
       float(null, body),
     ),
     cell(
-      "la grappe d'icônes (<code>createCluster</code>) — la même surface, resserrée à 3px autour de ses boutons, avec son séparateur d'1px. C'est l'assemblage exact de la barre d'outils de la démo.",
+      "the icon cluster (<code>createCluster</code>) — the same surface, tightened to 3px around its buttons, with its 1px separator. This is the demo toolbar's exact assembly.",
       createCluster(
-        createIconButton({ icon: "search", label: "Rechercher" }),
-        createIconButton({ icon: "fit", label: "Ajuster à la vue" }),
-        createIconButton({ icon: "graph", label: "Vue graphe" }),
+        createIconButton({ icon: "search", label: "Search" }),
+        createIconButton({ icon: "fit", label: "Fit to view" }),
+        createIconButton({ icon: "graph", label: "Graph view" }),
         createClusterSeparator(),
         createIconButton({ icon: "dots", label: "Menu" }),
       ),
@@ -183,54 +183,54 @@ function loneButton(opts: SpecimenButtonOptions): HTMLElement {
 
 function iconButtonSection(): HTMLElement {
   const { node, row } = section(
-    "Bouton d'icône",
-    "L'unique commande du chrome : 30px, sans fond au repos, l'icône en --ds-muted. Chaque case ci-dessous est un vrai bouton — les états ne sont pas simulés, il faut les provoquer. Les deux derniers, eux, tiennent à un attribut et se lisent au repos.",
+    "Icon button",
+    "The chrome's only command: 30px, no background at rest, the icon in --ds-muted. Every cell below is a real button — the states are not simulated, they have to be provoked. The last two, on the other hand, hang on an attribute and read at rest.",
   );
 
   // `data-badge` is a runtime state too, exactly like `disabled` and
   // `aria-busy` above: not a `createIconButton` option, set here the way the
   // demo sets it on the magnifier once a query survives the findbar's fold.
-  const badged = createIconButton({ icon: "search", label: "Rechercher" });
+  const badged = createIconButton({ icon: "search", label: "Search" });
   badged.dataset.badge = "true";
 
   row.append(
-    cell("repos", loneButton({ icon: "search", label: "Rechercher" })),
+    cell("rest", loneButton({ icon: "search", label: "Search" })),
     cell(
-      "survol — <strong>passez le pointeur</strong> : fond <code>--float-hover</code>, icône en <code>--ds-ink</code>.",
-      loneButton({ icon: "search", label: "Rechercher" }),
+      "hover — <strong>move the pointer over it</strong>: <code>--float-hover</code> background, icon in <code>--ds-ink</code>.",
+      loneButton({ icon: "search", label: "Search" }),
     ),
     cell(
-      "focus clavier — <strong>atteignez-le au Tab</strong> : liseré <code>--ds-primary</code> à 2px, décalé de 1px vers l'extérieur. Le clic ne le déclenche pas (<code>:focus-visible</code>).",
-      loneButton({ icon: "search", label: "Rechercher" }),
+      "keyboard focus — <strong>reach it with Tab</strong>: 2px <code>--ds-primary</code> ring, offset 1px outwards. A click does not trigger it (<code>:focus-visible</code>).",
+      loneButton({ icon: "search", label: "Search" }),
     ),
     cell(
-      "actif — <strong>maintenez le clic</strong> : le bouton descend d'un demi-pixel, tout l'enfoncement.",
-      loneButton({ icon: "search", label: "Rechercher" }),
+      "active — <strong>hold the click</strong>: the button drops half a pixel, the whole of the press.",
+      loneButton({ icon: "search", label: "Search" }),
     ),
     cell(
-      "<code>disabled</code> — opacité 0.45 et curseur par défaut ; il ne prend plus le focus.",
-      loneButton({ icon: "search", label: "Rechercher", disabled: true }),
+      "<code>disabled</code> — 0.45 opacity and the default cursor; it no longer takes focus.",
+      loneButton({ icon: "search", label: "Search", disabled: true }),
     ),
     cell(
-      "<code>aria-expanded=\"true\"</code> — le panneau qu'il ouvre est déplié : le déclencheur reste allumé en <code>--ds-primary</code> sur un fond lavé à 14%.",
+      "<code>aria-expanded=\"true\"</code> — the panel it opens is unfolded: the trigger stays lit in <code>--ds-primary</code> over a background washed to 14%.",
       loneButton({ icon: "dots", label: "Menu", expanded: true }),
     ),
     cell(
-      "<code>aria-busy=\"true\"</code> + <code>disabled</code> — calcul en cours. Opacité 0.7 (plus claire que le simple désactivé : « en cours » n'est pas « pas disponible ») et pulsation lente, supprimée sous <code>prefers-reduced-motion</code>.",
-      loneButton({ icon: "fit", label: "Ajuster à la vue", busy: true, disabled: true }),
+      "<code>aria-busy=\"true\"</code> + <code>disabled</code> — computation running. 0.7 opacity (lighter than plain disabled: « in progress » is not « unavailable ») and a slow pulse, dropped under <code>prefers-reduced-motion</code>.",
+      loneButton({ icon: "fit", label: "Fit to view", busy: true, disabled: true }),
     ),
     cell(
-      "variante <code>small</code> (<code>.ibtn-sm</code>) — 24px, la seule autre taille du chrome ; elle ne sert qu'à fermer le panneau de détail. Mêmes états que ci-dessus.",
-      loneButton({ icon: "close", label: "Fermer le panneau", small: true }),
+      "<code>small</code> variant (<code>.ibtn-sm</code>) — 24px, the chrome's only other size; it serves nothing but closing the detail panel. Same states as above.",
+      loneButton({ icon: "close", label: "Close panel", small: true }),
     ),
     cell(
-      "deux icônes dans un bouton — c'est ainsi que la bascule de vue porte l'état courant ET l'état cible, la feuille de la démo en masquant une selon <code>data-target</code>. Hors de la démo, aucune règle ne les départage : les deux se voient, ce qui est la structure nue.",
+      "two icons in one button — this is how the view toggle carries the current state AND the target state, the demo's stylesheet hiding one according to <code>data-target</code>. Outside the demo no rule separates them: both show, which is the bare structure.",
       createCluster(
-        createIconButton({ icon: ["graph", "structure"], label: "Vue graphe" }),
+        createIconButton({ icon: ["graph", "structure"], label: "Graph view" }),
       ),
     ),
     cell(
-      "<code>data-badge=\"true\"</code> — un point tenant à un pseudo-élément : quelque chose tourne encore derrière le bouton replié. Comme <code>disabled</code> et <code>aria-busy</code>, ce n'est pas un argument de <code>createIconButton</code> — c'est la démo qui le pose, sur la loupe, quand une recherche survit au repli de la barre.",
+      "<code>data-badge=\"true\"</code> — a dot held by a pseudo-element: something is still running behind the folded button. Like <code>disabled</code> and <code>aria-busy</code>, it is not a <code>createIconButton</code> argument — the demo is what sets it, on the magnifier, when a query survives the bar being folded.",
       createCluster(badged),
     ),
   );
@@ -265,22 +265,22 @@ function findbar(opts: FindbarSpecimenOptions = {}): HTMLElement {
 
 function findbarSection(): HTMLElement {
   const { node, row } = section(
-    "Champ de recherche",
-    "La barre dépliante : une surface flottante de 296×36 qui porte l'icône, le champ nu (ni bordure ni contour propres — c'est la BARRE qui réagit au focus), le compteur en chasse fixe et les deux chevrons de navigation. Les chevrons ont leurs propres survol et focus clavier, dans chacune des cases.",
+    "Search field",
+    "The unfolding bar: a 296×36 floating surface carrying the icon, the bare field (neither border nor outline of its own — it is the BAR that reacts to focus), the monospace counter and the two navigation chevrons. The chevrons have their own hover and keyboard focus, in every one of the cells.",
   );
 
   row.append(
-    cell("repos, champ vide — le compteur reste absent tant qu'aucune recherche n'a tourné.", findbar()),
+    cell("rest, empty field — the counter stays absent as long as no search has run.", findbar()),
     cell(
-      "focus — <strong>cliquez dans le champ ou atteignez-le au Tab</strong> : c'est <code>:focus-within</code>, donc c'est la barre entière qui s'allume — bordure teintée et halo de 3px — pendant que le champ, lui, reste sans contour.",
+      "focus — <strong>click into the field or reach it with Tab</strong>: this is <code>:focus-within</code>, so the whole bar lights up — tinted border and a 3px halo — while the field itself stays outline-free.",
       findbar(),
     ),
     cell(
-      "avec résultats — le compteur « courant/total » apparaît entre le champ et les chevrons, et pousse ceux-ci sans jamais faire changer la barre de largeur (elle est fixée à 296px).",
+      "with results — the « current/total » counter appears between the field and the chevrons, and pushes them without ever changing the bar's width (fixed at 296px).",
       findbar({ value: "order", counter: "3/17" }),
     ),
     cell(
-      "<code>disabled</code> sur le champ et les chevrons — <strong>et c'est un trou</strong> : le chrome ne définit aucune règle désactivée pour eux. Ce qu'on voit est le style par défaut du navigateur, pas une décision du design system.",
+      "<code>disabled</code> on the field and the chevrons — <strong>and this is a hole</strong>: the chrome defines no disabled rule for them. What shows is the browser's default style, not a design system decision.",
       findbar({ value: "order", counter: "0/0", disabled: true }),
     ),
   );
@@ -296,18 +296,18 @@ function badgeSample(type: string, label: string): HTMLElement {
 
 function badgeSection(): HTMLElement {
   const { node, row } = section(
-    "Pastille d'entité",
-    "Le type du nœud sélectionné, en tête du panneau de détail : capitales, interlettrage ouvert, fond --ds-primary. Comme la surface flottante, elle n'est pas interactive — pas de survol, pas de focus, pas d'état désactivé. Montrée au-dessus du libellé du nœud, seul endroit où elle s'emploie, pour qu'on juge sa taille par rapport à lui.",
+    "Entity badge",
+    "The selected node's type, at the head of the detail panel: capitals, open tracking, --ds-primary background. Like the floating surface it is not interactive — no hover, no focus, no disabled state. Shown above the node's label, the only place it is used, so its size can be judged against it.",
   );
 
   row.append(
-    cell("repos — <strong>son seul état</strong>.", badgeSample("Order", "Order #4821")),
+    cell("rest — <strong>its only state</strong>.", badgeSample("Order", "Order #4821")),
     cell(
-      "libellé long — la pastille n'a ni largeur ni troncature : elle prend la place de son texte, et un type verbeux fait donc s'allonger la ligne.",
+      "long label — the badge has neither a width nor truncation: it takes its text's room, so a verbose type stretches the line.",
       badgeSample("PurchaseOrderLine", "PurchaseOrderLine #77-3"),
     ),
     cell(
-      "l'encre est un <code>#ffffff</code> écrit en dur dans <code>chrome.css</code>, pas un token — <strong>le design system n'a pas d'encre « sur accent »</strong>. C'est la vraie règle qui s'applique ici, donc le trou se voit tel qu'il est.",
+      "the ink is a <code>#ffffff</code> hard-coded in <code>chrome.css</code>, not a token — <strong>the design system has no « on accent » ink</strong>. The real rule is what applies here, so the hole shows as it is.",
       badgeSample("Customer", "Customer #c1"),
     ),
   );
@@ -347,27 +347,27 @@ function menuPanel(items: MenuItemSpecimen[]): HTMLElement {
 
 function menuSection(): HTMLElement {
   const { node, row } = section(
-    "Item de menu",
-    "Les entrées du menu ⋮ : du texte seul, sur toute la largeur du panneau. Elles n'ont pas d'icône par construction — la démo réécrit leur textContent pour refléter l'état courant (« Thème sombre » / « Thème clair »), ce qu'un enfant icône ne survivrait pas. Ici chaque entrée porte dans son propre libellé l'état qu'elle demande.",
+    "Menu item",
+    "The ⋮ menu's entries: text alone, across the panel's whole width. They carry no icon by construction — the demo rewrites their textContent to reflect the current state (« Dark theme » / « Light theme »), which an icon child would not survive. Here every entry carries in its own label the state it asks for.",
   );
 
   row.append(
     cell(
-      "les quatre états, une entrée chacun. Le focus clavier pose son liseré à l'INTÉRIEUR (<code>outline-offset: -2px</code>) : l'entrée occupant toute la largeur, un liseré extérieur déborderait du panneau.",
+      "the four states, one entry each. Keyboard focus lays its ring INSIDE (<code>outline-offset: -2px</code>): the entry spanning the full width, an outer ring would overflow the panel.",
       menuPanel([
-        { text: "Repos" },
-        { text: "Survolez-moi" },
-        { text: "Tab jusqu'ici pour le focus" },
-        { text: "Désactivée (disabled)", disabled: true },
+        { text: "Rest" },
+        { text: "Hover me" },
+        { text: "Tab here for focus" },
+        { text: "Disabled", disabled: true },
       ]),
     ),
     cell(
-      "<strong>pas d'état actif</strong> : le chrome ne définit aucune règle <code>:active</code> pour l'item de menu, là où le bouton d'icône en a une. Maintenir le clic ne produit donc rien — asymétrie constatée, pas rebouchée ici.",
-      menuPanel([{ text: "Maintenez le clic : rien ne bouge" }]),
+      "<strong>no active state</strong>: the chrome defines no <code>:active</code> rule for the menu item, where the icon button has one. Holding the click therefore produces nothing — an asymmetry observed, not patched here.",
+      menuPanel([{ text: "Hold the click: nothing moves" }]),
     ),
     cell(
-      "le menu réel de la démo, pour l'échelle : deux entrées, panneau de 216px de large, 5px de marge intérieure.",
-      menuPanel([{ text: "Jeu de données étendu (4000)" }, { text: "Thème sombre" }]),
+      "the demo's real menu, for scale: two entries, a 216px-wide panel, 5px of inner padding.",
+      menuPanel([{ text: "Extended dataset (4000)" }, { text: "Dark theme" }]),
     ),
   );
 

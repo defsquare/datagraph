@@ -34,17 +34,17 @@ export function createFindbar(o: FindbarOptions = {}): Findbar {
 
   const input = element("input", "findbar-input", o.inputId);
   input.type = "search";
-  input.placeholder = "Rechercher…";
+  input.placeholder = "Search…";
   input.autocomplete = "off";
-  input.setAttribute("aria-label", "Rechercher");
+  input.setAttribute("aria-label", "Search");
 
   const counter = element("span", "findbar-counter", o.counterId);
   // The counter announces itself when it changes: it is the only search feedback
   // for anyone who cannot see the canvas.
   counter.setAttribute("aria-live", "polite");
 
-  const prev = navButton("up", "Résultat précédent (Maj+Entrée)", "Résultat précédent", o.prevId);
-  const next = navButton("down", "Résultat suivant (Entrée)", "Résultat suivant", o.nextId);
+  const prev = navButton("up", "Previous result (Shift+Enter)", "Previous result", o.prevId);
+  const next = navButton("down", "Next result (Enter)", "Next result", o.nextId);
 
   root.append(icon("search", "findbar-icon"), input, counter, prev, next);
   return { root, input, counter, prev, next };

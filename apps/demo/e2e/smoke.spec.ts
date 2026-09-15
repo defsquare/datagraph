@@ -154,12 +154,12 @@ test("setTheme accepts a partial palette override without crashing", async ({ pa
 test("the toggle button triggers a real setView and its label follows", async ({ page }) => {
   await gotoReady(page)
 
-  await page.getByRole("button", { name: "Vue graphe" }).click()
+  await page.getByRole("button", { name: "Graph view" }).click()
 
   // The click only fires the async handler: waiting for the button to have
   // swapped its label is what guarantees setView() has finished, before reading
   // currentView() (otherwise the read short-circuits the wait).
-  await expect(page.getByRole("button", { name: "Vue structure" })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Structure view" })).toBeVisible()
 
   const view = await page.evaluate(() => (window as any).__graph.currentView())
   expect(view).toBe("graph")

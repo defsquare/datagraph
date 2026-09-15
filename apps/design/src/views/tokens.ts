@@ -52,7 +52,8 @@ const DEMO_ENTITY_TYPES = [
 ];
 
 /** Typographic specimen. Pure ASCII: the renderer's BitmapFont atlas is baked on
- * `BitmapFontManager.ASCII`, so a « — » or an « é » would be missing on screen.
+ * `BitmapFontManager.ASCII`, so an em dash or an accented letter would be
+ * missing on screen — hence a specimen that stays inside ASCII.
  */
 const SPECIMEN = "Order #4821 / client_id";
 
@@ -100,7 +101,7 @@ function headerRow(labels: readonly (readonly [string, number])[]): HTMLTableRow
   return tr;
 }
 
-// --- The « Couleurs » section.
+// --- The « Colors » section.
 
 /** Flattens `ColorTokens` into `group.key` → hex pairs, in declaration order:
  * that is the source's order, hence the one read back in a diff. */
@@ -114,13 +115,13 @@ function colorEntries(colors: ColorTokens): [string, string][] {
 
 function colorsSection(brand: BrandTokens): HTMLElement {
   const s = section(
-    "Couleurs",
-    "Les quatre groupes de ColorTokens, clair et sombre côte à côte. La valeur affichée est celle de la source, pas celle du thème du shell.",
+    "Colors",
+    "The four ColorTokens groups, light and dark side by side. The value shown is the source's, not the shell theme's.",
   );
 
   const table = el("table", "ds-table");
   const thead = el("thead");
-  thead.append(headerRow([["Token", 1], ["Clair", 2], ["Sombre", 2]]));
+  thead.append(headerRow([["Token", 1], ["Light", 2], ["Dark", 2]]));
   table.append(thead);
 
   const tbody = el("tbody");
@@ -185,25 +186,25 @@ function contrastCells(colors: ColorTokens, ink: keyof ColorTokens["ink"]): HTML
 
 function contrastTable(brand: BrandTokens): HTMLElement {
   const wrap = el("div", "subsection");
-  wrap.append(el("h3", "ds-subtitle", "Contraste encre / surface.card"));
+  wrap.append(el("h3", "ds-subtitle", "Ink / surface.card contrast"));
   wrap.append(
     el(
       "p",
       "ds-note",
-      "Ratio WCAG 2.x. AA exige 4,5 pour du texte courant, AAA 7. Le tiret marque une paire qui ne passe pas — ce qui reste acceptable pour ink.subtle, réservé aux mentions secondaires.",
+      "WCAG 2.x ratio. AA requires 4.5 for body text, AAA 7. The dash marks a pair that does not pass — which stays acceptable for ink.subtle, reserved for secondary mentions.",
     ),
   );
 
   const table = el("table", "ds-table");
   const thead = el("thead");
-  thead.append(headerRow([["Paire", 1], ["Clair", 2], ["Sombre", 2]]));
+  thead.append(headerRow([["Pair", 1], ["Light", 2], ["Dark", 2]]));
   table.append(thead);
 
   const tbody = el("tbody");
   for (const ink of CONTRAST_PAIRS) {
     const tr = el("tr");
     tr.append(
-      cell(el("code", "token-name", `ink.${ink} sur surface.card`)),
+      cell(el("code", "token-name", `ink.${ink} on surface.card`)),
       ...contrastCells(brand.light, ink),
       ...contrastCells(brand.dark, ink),
     );
@@ -222,7 +223,7 @@ function contrastTable(brand: BrandTokens): HTMLElement {
 function chromeSection(brand: BrandTokens): HTMLElement {
   const s = section(
     "Chrome",
-    "Tokens du shell DOM uniquement : translucidité et ombres, notions que le canvas Pixi ne connaît pas. Posés sur un damier pour rendre l'opacité lisible.",
+    "DOM shell tokens only: translucency and shadows, notions the Pixi canvas knows nothing about. Laid on a checkerboard to make opacity readable.",
   );
 
   const grid = el("div", "chrome-grid");
@@ -239,7 +240,7 @@ function chromePanel(
   canvas: string,
 ): HTMLElement {
   const panel = el("div", "chrome-panel");
-  panel.append(el("h3", "ds-subtitle", mode === "light" ? "Clair" : "Sombre"));
+  panel.append(el("h3", "ds-subtitle", mode === "light" ? "Light" : "Dark"));
 
   // The checkerboard gets the brand's canvas surface as its background:
   // compositing the translucency over anything but the real background would
@@ -276,7 +277,7 @@ function chromePanel(
   return panel;
 }
 
-// --- The « Typographie » section.
+// --- The « Typography » section.
 
 /** Each role's ink color exactly as `draw.ts` picks it — the specimen must look
  * like the card, not like a neutral sample. */
@@ -304,8 +305,8 @@ interface TypographySection {
 
 function typographySection(brand: BrandTokens, state: ThemeState): TypographySection {
   const s = section(
-    "Typographie",
-    "À gauche le spécimen DOM, à droite le même texte rendu par Pixi dans l'atlas BitmapFont du renderer. C'est la seconde qui fait foi pour le canvas : elle est mesurée puis cuite à la police réelle, et diverge du DOM dès qu'une famille manque.",
+    "Typography",
+    "On the left the DOM specimen, on the right the same text rendered by Pixi in the renderer's BitmapFont atlas. The second is what counts for the canvas: it is measured then baked against the real font, and diverges from the DOM as soon as a family is missing.",
   );
 
   const grid = el("div", "typo-grid");
@@ -343,7 +344,7 @@ function typographySection(brand: BrandTokens, state: ThemeState): TypographySec
   const pixiPanel = el("div", "typo-panel");
   pixiPanel.append(el("h3", "ds-subtitle", "Canvas (Pixi)"));
   const canvasHost = el("div", "typo-canvas");
-  const caption = el("p", "ds-note", "Initialisation du canvas…");
+  const caption = el("p", "ds-note", "Initializing canvas…");
   pixiPanel.append(canvasHost, caption);
 
   grid.append(domPanel, pixiPanel);
@@ -385,8 +386,8 @@ function typographySection(brand: BrandTokens, state: ThemeState): TypographySec
     // other than the product's would be false testimony.
     const useBitmap = app.renderer.name !== "canvas";
     caption.textContent = useBitmap
-      ? "BitmapText sur les atlas installés par le registre de polices du renderer."
-      : "Repli Text : ce navigateur n'expose ni WebGL ni WebGPU, BitmapText y resterait vide.";
+      ? "BitmapText on the atlases installed by the renderer's font registry."
+      : "Text fallback: this browser exposes neither WebGL nor WebGPU, BitmapText would stay empty here.";
 
     if (useBitmap) lease.sync(theme);
 
@@ -409,9 +410,9 @@ function typographySection(brand: BrandTokens, state: ThemeState): TypographySec
     canvasHost.append(app.canvas);
   })().catch((error: unknown) => {
     // A renderer init that fails (WebGL off, context refused) would otherwise
-    // leave the caption stuck on "Initialisation…" and the reason in an
+    // leave the caption stuck on "Initializing…" and the reason in an
     // unhandled rejection. The failure reads here, where the panel is missing.
-    caption.textContent = `Le canvas Pixi n'a pas pu s'initialiser : ${String(error)}`;
+    caption.textContent = `The Pixi canvas could not initialize: ${String(error)}`;
   });
 
   return {
@@ -460,12 +461,12 @@ function makeLabel(
   });
 }
 
-// --- The « Échelles » section.
+// --- The « Scales » section.
 
 function scalesSection(): HTMLElement {
   const s = section(
-    "Échelles",
-    "Espacements, rayons et épaisseurs de trait, dessinés à leur taille réelle en pixels — c'est la seule façon de voir qu'un échelon manque ou qu'un autre fait doublon.",
+    "Scales",
+    "Spacings, radii and stroke widths, drawn at their real size in pixels — the only way to see that a step is missing or that another is a duplicate.",
   );
 
   const grid = el("div", "scale-grid");
@@ -507,12 +508,12 @@ function scalesSection(): HTMLElement {
   return s;
 }
 
-// --- The « Palette d'entités » section.
+// --- The « Entity palette » section.
 
 function entitySection(brand: BrandTokens, state: ThemeState): HTMLElement {
   const s = section(
-    "Palette d'entités",
-    "Les couleurs de rail, assignées par ORDRE DE DÉCLARATION des types d'entité — pas par ordre d'apparition dans les données, pour qu'un même jeu de données garde les mêmes couleurs d'une exécution à l'autre.",
+    "Entity palette",
+    "The rail colors, assigned by DECLARATION ORDER of the entity types — not by order of appearance in the data, so that the same dataset keeps the same colors from one run to the next.",
   );
 
   const chips = el("div", "chip-row");
@@ -530,14 +531,14 @@ function entitySection(brand: BrandTokens, state: ThemeState): HTMLElement {
     el(
       "p",
       "ds-note",
-      `Sept types fictifs pour ${brand.entityPalette.length} couleurs : au-delà, l'index reboucle par modulo et deux types partagent une teinte. C'est le moment où il faut soit étendre la palette, soit poser un byEntityType.`,
+      `Seven fictitious types for ${brand.entityPalette.length} colors: beyond that, the index wraps by modulo and two types share a hue. That is the moment to either extend the palette or set a byEntityType.`,
     ),
   );
 
   const assigned = entityAccentMap([...DEMO_ENTITY_TYPES], currentTheme(state));
   const table = el("table", "ds-table");
   const thead = el("thead");
-  thead.append(headerRow([["Index", 1], ["Type", 1], ["Couleur", 2], ["Origine", 1]]));
+  thead.append(headerRow([["Index", 1], ["Type", 1], ["Color", 2], ["Origin", 1]]));
   table.append(thead);
 
   const tbody = el("tbody");

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="fr" data-theme="light">
+<html lang="en" data-theme="light">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -27,10 +27,10 @@
 
     <aside id="detail" hidden>
       <div class="detail-head">
-        <h2>Détail du nœud</h2>
+        <h2>Node detail</h2>
         <!-- The close button (`#detail-close`) is appended here by `chrome.ts`. -->
       </div>
-      <p id="selection-empty">Sélectionnez un nœud pour voir son détail.</p>
+      <p id="selection-empty">Select a node to see its detail.</p>
       <!-- The type badge (`#selection-type`) is inserted here by
            `detail-panel.ts`, right after the empty-state message. -->
       <p id="selection-label" hidden></p>
@@ -46,13 +46,13 @@
          `.float` is applied directly: it is a class you PUT on a surface, not a
          component you build — sharing it through the stylesheet is enough. -->
     <div id="load-error" class="float" hidden>
-      <h2>Impossible d'ouvrir le document</h2>
+      <h2>Could not open the document</h2>
       <pre id="load-error-message"></pre>
     </div>
 
     <div id="statusbar">
-      <span><strong id="stat-nodes">0</strong> nœuds</span>
-      <span><strong id="stat-visible">0</strong> visibles</span>
+      <span><strong id="stat-nodes">0</strong> nodes</span>
+      <span><strong id="stat-visible">0</strong> visible</span>
       <!-- The diagnostics link (`#stat-diagnostics`) is appended here by
            `chrome.ts`. -->
     </div>
