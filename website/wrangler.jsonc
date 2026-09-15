@@ -1,0 +1,16 @@
+// Assets-only Worker: no script, Cloudflare serves public/ directly.
+// Deployed by Workers Builds (git integration, root directory /website):
+//   build   git submodule update --init --recursive && hugo --minify --gc
+//   deploy  npx wrangler deploy
+{
+  "name": "datagraph",
+  "compatibility_date": "2026-09-15",
+  "assets": {
+    "directory": "./public",
+    // Hugo emits 404.html; without this, misses fall back to a blank 404.
+    "not_found_handling": "404-page"
+  },
+  "routes": [
+    { "pattern": "datagraph.defsquare.com", "custom_domain": true }
+  ]
+}
