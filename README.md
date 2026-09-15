@@ -24,13 +24,19 @@ and joins-as-edges, grouped into DDD aggregates drawn as circular envelopes;
 see [`config.groups`](#config-ids-refs-groups) and
 [`docs/graph-view.md`](./docs/graph-view.md).
 
-![Structure view: the containment tree, records as cards with their fields, reference edges in blue](./docs/screenshots/structure.png)
+<!-- A still that links out, not an inline player. GitHub strips every <video>
+     tag from Markdown, and injects a player only for URLs on its own attachment
+     hosts, so neither a repository path nor a third-party URL can play in
+     place here. The clip itself is website/static/video/trailer.mp4, served by
+     the documentation site; the thumbnail is a still cut from it by hand. -->
 
-*Structure view: the containment tree, with foreign keys drawn as reference edges.*
+[![datagraph: sixty records and their joins drawn as a graph — click to watch the thirty-second tour](./docs/trailer-poster.png)](https://datagraph.defsquare.com/)
 
-![Graph view: records as vertices, joins as edges, aggregates drawn as circular envelopes](./docs/screenshots/graph.png)
-
-*Graph view: the same document as records and joins, grouped into aggregates.*
+*Thirty seconds, from `datagraph demo.json -c demo.config.json` to the graph
+view: the structure view expands records and follows a foreign key to its
+target, then the same sixty records are redrawn as vertices and joins, clustered
+into aggregates. The clip plays on
+[datagraph.defsquare.com](https://datagraph.defsquare.com/).*
 
 You use it as a **standalone desktop app**: the `datagraph` binary opens a
 JSON file straight from the shell, no code to write; see
@@ -267,7 +273,9 @@ datagraph/
 ├── Formula/       datagraph.rb.tmpl — the Homebrew formula release.sh renders
 ├── skills/        the Claude Code skill the plugin installs (.claude-plugin/ manifests)
 ├── docs/
-│   └── graph-view.md   graph-view layout, guarantees and measurements
+│   ├── graph-view.md        graph-view layout, guarantees and measurements
+│   └── trailer-poster.png   the README thumbnail, a still of the landing page's clip
+├── website/       the Hugo site behind datagraph.defsquare.com — static/video/ holds the clip
 ├── LICENSE
 └── README.md
 ```
