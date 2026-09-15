@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="{{ partial "utils/hugo-compat/language-locale.html" site.Language | default "en" }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ with .Params.metaTitle }}{{ . }}{{ else }}{{ .Title }}{{ end }}</title>
+  <meta name="description" content="{{ .Params.description | default site.Params.description }}">
+  {{/* The Defsquare tokens first: colors_and_type.css opens with the @import
+       rules for EB Garamond and Fira Code, which must stay at the top of the
+       concatenated sheet. */}}
+  {{ $tokens := resources.Get "css/colors_and_type.css" }}
+  {{ $layout := resources.Get "css/landing.css" }}
+  {{ $css := slice $tokens $layout | resources.Concat "css/landing.css" | minify | fingerprint }}
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="{{ $css.RelPermalink }}" integrity="{{ $css.Data.Integrity }}">
+  <link rel="icon" href="{{ "favicon.svg" | relURL }}" type="image/svg+xml">
+</head>
+<body>
+
+{{ partial "landing/nav.html" . }}
+
+<main>
+  {{ block "main" . }}{{ end }}
+</main>
+
+{{ partial "landing/footer.html" . }}
+
+</body>
+</html>

@@ -1,0 +1,143 @@
+# datagraph website — ONE Hugo site, one build, one server.
+#
+#   /       the landing page: themeless, on the Defsquare Design System.
+#           Its content is content/_index.md alone — one hero, no essay rows.
+#   /docs/  the documentation: Hugo + Hextra (vendored at themes/hextra as a
+#           git submodule), a flat page list under content/docs/.
+#
+# The two shells coexist by scoping, not by separate sites:
+#   layouts/landing/{baseof,home}.html  are found only for `type: landing`;
+#   layouts/_partials/landing/*.html    are namespaced away from Hextra's.
+baseURL: "https://datagraph.defsquare.com/"
+title: "Datagraph"
+theme: hextra
+enableRobotsTXT: true
+enableGitInfo: true
+enableInlineShortcodes: true
+
+# Nothing on this site is tagged, so the taxonomy pages would all be empty.
+disableKinds: [taxonomy, term]
+
+module:
+  hugoVersion:
+    extended: true
+    min: "0.146.0"
+
+outputs:
+  home: [html, llms]
+  page: [html, markdown]
+  section: [html, rss, markdown]
+
+markup:
+  goldmark:
+    renderer:
+      unsafe: true   # the landing copy carries a few inline spans; Hextra needs it too
+  highlight:
+    # Class-based, so colour is a stylesheet concern. The docs load Hextra's
+    # Chroma sheet and get syntax colour; the landing shell does not load it,
+    # so its code block renders in a single colour — which is what the design
+    # system asks for — without a site-wide switch.
+    noClasses: false
+
+menu:
+  main:
+    - name: Docs
+      pageRef: /docs
+      weight: 1
+    - name: Landing page
+      weight: 7
+      url: "/"
+    - name: Search
+      weight: 8
+      params:
+        type: search
+    - name: GitHub
+      weight: 9
+      url: "https://github.com/defsquare/datagraph"
+      params:
+        icon: github
+
+params:
+  description: "Datagraph renders a JSON document as an interactive graph of keyed records and real reference edges, in two views: the containment tree and the records-and-joins graph."
+
+  # ---------------------------------------------------------------- landing
+  # Where the documentation lives. Every documentation link on the landing
+  # page is built from it, so moving the docs is a one-line change.
+  docsBase: "/docs/"
+
+  nav:
+    - name: "Documentation"
+      doc: ""
+    - name: "Source"
+      url: "https://github.com/defsquare/datagraph"
+
+  # The landing page's own footer. Kept apart from params.footer, which is
+  # Hextra's and has an entirely different shape.
+  landingFooter:
+    about:
+      logo: "img/defsquare-short-white-red.svg"
+      alt: "Defsquare"
+      text: >-
+        Datagraph is designed, built and run by <a href="https://defsquare.com">Defsquare</a>, a software studio that designs, builds and runs software systems in complex environments.
+    columns:
+      - heading: "Documentation"
+        links:
+          - name: "Install"
+            doc: "install/"
+          - name: "Getting started"
+            doc: "getting-started/"
+          - name: "Config reference"
+            doc: "config/"
+          - name: "Checking a config"
+            doc: "check/"
+      - heading: "Project"
+        links:
+          - name: "The two views"
+            doc: "views/"
+          - name: "Claude Code plugin"
+            doc: "plugin/"
+          - name: "Source on GitHub"
+            url: "https://github.com/defsquare/datagraph"
+          - name: "License: MIT"
+            url: "https://github.com/defsquare/datagraph/blob/main/LICENSE"
+
+  # ------------------------------------------------------------------ docs
+  externalLinkDecoration: true
+  navbar:
+    # The lockup IS the wordmark, so the title text would just repeat it.
+    displayTitle: false
+    displayLogo: true
+    logo:
+      # Hextra emits both and swaps them by theme: the navy lockup would be
+      # unreadable on the dark ground, so its inverse counterpart is required,
+      # not decorative.
+      path: "img/datagraph-lockup.svg"
+      dark: "img/datagraph-lockup-inverse.svg"
+      width: 167   # the SVG's own 284×51, scaled to a 30px navbar height
+      height: 30
+    width: wide
+  theme:
+    default: system
+    displayToggle: true
+  footer:
+    enable: true
+    displayCopyright: false
+    displayPoweredBy: false
+    width: normal
+  displayUpdatedDate: true
+  dateFormat: "January 2, 2006"
+  search:
+    enable: true
+    type: flexsearch
+    flexsearch:
+      index: content
+      tokenize: forward
+  editURL:
+    enable: true
+    base: "https://github.com/defsquare/datagraph/edit/main/website/content"
+  highlight:
+    copy:
+      enable: true
+      display: hover
+  page:
+    width: normal

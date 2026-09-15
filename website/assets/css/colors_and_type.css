@@ -1,0 +1,350 @@
+/* ============================================================
+   Defsquare Design System — Foundations
+   Colors, typography, spacing, radii, shadows.
+   Source of truth derived from the marketing website
+   (tailwind.config.js + assets/css/styles.css) and the
+   PowerPoint brand sheet (slide 14 of the deck template).
+   Copied verbatim from the Defsquare Design System project;
+   only the self-hosted font subset differs (five faces, not nine).
+   ============================================================ */
+
+/* ---------- Fonts ---------- */
+
+/* TITLE — EB Garamond from Google Fonts (the original site uses ITC
+   Garamond Std Light Condensed; EB Garamond is the design system's spec). */
+@import url('https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&display=swap');
+
+/* MONO — Fira Code */
+@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&display=swap');
+
+/* BODY — IBM Plex Sans Condensed (self-hosted) */
+@font-face {
+  font-family: 'IBM Plex Sans Condensed';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/IBMPlexSansCondensed-Regular.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'IBM Plex Sans Condensed';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/IBMPlexSansCondensed-Italic.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'IBM Plex Sans Condensed';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/IBMPlexSansCondensed-Medium.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'IBM Plex Sans Condensed';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/IBMPlexSansCondensed-SemiBold.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'IBM Plex Sans Condensed';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/IBMPlexSansCondensed-Bold.ttf') format('truetype');
+}
+
+/* ============================================================
+   TOKENS
+   ============================================================ */
+:root {
+  /* -------- Brand colors (from PPT brand sheet + tailwind.config) -------- */
+  --color-ink:           #172741;   /* PPT primary  — body text on light bg */
+  --color-primary:       #1e416e;   /* Web primary  — links, primaries-400 */
+
+  --color-primary-50:    #f0f5fc;
+  --color-primary-100:   #d9e3f1;
+  --color-primary-200:   #070f19;   /* (tailwind primaries-200, near-black) */
+  --color-primary-300:   #122843;
+  --color-primary-400:   #1e416e;   /* base */
+  --color-primary-500:   #2a5a98;
+  --color-primary-600:   #3573c3;
+  --color-primary-700:   #418ced;
+  --color-primary-800:   #367DD4;
+  --color-primary-900:   #3C8CEE;
+
+  /* Accent — Defsquare red. */
+  --color-accent:        #f65e5e;   /* base */
+  --color-accent-200:    #8C1C38;
+  --color-accent-300:    #A62949;
+  --color-accent-400:    #bf3d5e;
+  --color-accent-500:    #D95073;
+  --color-accent-600:    #F36186;
+  --color-accent-700:    #FF7FA0;
+  --color-accent-800:    #FFA6BD;
+  --color-accent-900:    #FFCCD9;
+
+  /* Secondary — Beige (print/slides only) */
+  --color-beige:         #E2CA9E;
+  --color-beige-soft:    #EDE2CF;
+  --color-beige-deep:    #8d7e63;
+
+  /* Complementary — teal-green from PPT brand sheet */
+  --color-mint:          #3dbf9e;
+
+  /* Neutral surfaces */
+  --color-navy:          #1A2A36;   /* footer background */
+  --color-navy-deep:     #161a2c;
+  --color-blue-soft:     #9BB2D9;
+  --color-blue-mid:      #4771B9;
+
+  /* Greys */
+  --color-bg:            #ffffff;
+  --color-bg-muted:      #f7f7f8;
+  --color-bg-card:       #ffffff;
+  --color-border:        #e5e7eb;
+  --color-border-soft:   #f1f1f3;
+  --color-fg:            var(--color-primary-200);
+  --color-fg-muted:      #4b5563;
+  --color-fg-subtle:     #9ca3af;
+
+  /* Semantic */
+  --color-link:          var(--color-primary-400);
+  --color-link-hover:    var(--color-accent);
+  --color-success:       var(--color-mint);
+  --color-warning:       #d97706;
+  --color-danger:        var(--color-accent);
+
+  /* The signature headline gradient — display words only */
+  --gradient-heat: linear-gradient(122deg, #f65E5E 0%, #d04a72 70%, #a0427a 100%);
+  /* Cool background gradient — full-bleed on dark sections */
+  --gradient-cool: linear-gradient(180deg, #122843 0%, #1A2A36 100%);
+
+  /* -------- Type families -------- */
+  --font-title:  'EB Garamond', 'Garamond', 'Cambria', 'Georgia', serif;
+  --font-body:   'IBM Plex Sans Condensed', 'IBM Plex Sans', -apple-system,
+                 BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-mono:   'Fira Code', 'SF Mono', 'SFMono-Regular', 'Menlo',
+                 'Consolas', monospace;
+  --font-blog-body:  'Lora', Georgia, serif;
+  --font-blog-title: 'Cabin', 'IBM Plex Sans', system-ui, sans-serif;
+
+  /* -------- Type scale -------- */
+  --text-xs:    0.75rem;
+  --text-sm:    0.875rem;
+  --text-base:  1rem;
+  --text-lg:    1.125rem;
+  --text-xl:    1.25rem;
+  --text-2xl:   1.5rem;
+  --text-3xl:   1.875rem;
+  --text-4xl:   2.25rem;
+  --text-5xl:   3rem;
+  --text-6xl:   3.75rem;
+  --text-7xl:   4.5rem;
+  --text-8xl:   6rem;
+  --text-9xl:   8rem;
+
+  /* Line heights */
+  --leading-tight:   1.1;
+  --leading-snug:    1.25;
+  --leading-normal:  1.5;
+  --leading-relaxed: 1.625;
+  --leading-display: 0.85;
+
+  /* Weights actually used in the brand */
+  --weight-light:     300;
+  --weight-regular:   400;
+  --weight-medium:    500;
+  --weight-semibold:  600;
+  --weight-bold:      700;
+
+  /* -------- Spacing scale (tailwind-aligned) -------- */
+  --space-1:  0.25rem;
+  --space-2:  0.5rem;
+  --space-3:  0.75rem;
+  --space-4:  1rem;
+  --space-5:  1.25rem;
+  --space-6:  1.5rem;
+  --space-8:  2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+  --space-20: 5rem;
+  --space-24: 6rem;
+
+  /* Marketing page rule — 10% gutter each side (5% under 1440px), max 2240px. */
+  --page-gutter:       10%;
+  --page-gutter-small: 5%;
+  --page-max:          2240px;
+
+  /* -------- Radii -------- */
+  --radius-none: 0;
+  --radius-sm:   0.25rem;
+  --radius-md:   0.375rem;   /* default for buttons + cards */
+  --radius-lg:   0.5rem;
+  --radius-xl:   0.75rem;
+  --radius-2xl:  1rem;
+  --radius-full: 9999px;
+
+  /* -------- Shadows ---------- */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow:    0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+
+  /* The blockquote accent — a 4px solid red left border */
+  --border-blockquote: 4px solid var(--color-accent);
+
+  /* Transitions */
+  --transition-fast: 150ms ease-in-out;
+  --transition:      200ms ease-in-out;
+}
+
+/* ============================================================
+   SEMANTIC ELEMENTS
+   ============================================================ */
+
+html, body {
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  -webkit-font-smoothing: antialiased;
+}
+
+.display, .hero, h1.display {
+  font-family: var(--font-title);
+  font-weight: var(--weight-regular);
+  font-size: var(--text-9xl);
+  line-height: var(--leading-display);
+  letter-spacing: -0.01em;
+  color: var(--color-primary-200);
+}
+
+h1 {
+  font-family: var(--font-title);
+  font-weight: var(--weight-regular);
+  font-size: var(--text-7xl);
+  line-height: var(--leading-tight);
+  letter-spacing: -0.005em;
+  color: var(--color-primary-200);
+  margin: 0 0 var(--space-8);
+}
+
+h2 {
+  font-family: var(--font-title);
+  font-weight: var(--weight-regular);
+  font-size: var(--text-5xl);
+  line-height: 1.1;
+  color: var(--color-primary-200);
+  margin: 0 0 var(--space-6);
+}
+
+h3 {
+  font-family: var(--font-body);
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-2xl);
+  line-height: 1.3;
+  color: var(--color-primary-200);
+  margin: 0 0 var(--space-4);
+}
+
+h4 {
+  font-family: var(--font-body);
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-xl);
+  color: var(--color-primary-200);
+  margin: 0 0 var(--space-3);
+}
+
+p {
+  font-family: var(--font-body);
+  font-size: var(--text-xl);
+  line-height: var(--leading-normal);
+  color: var(--color-primary-200);
+  margin: 0 0 var(--space-6);
+  text-wrap: pretty;
+}
+
+small {
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+}
+
+a {
+  color: var(--color-link);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+a:hover { color: var(--color-link-hover); }
+a:focus-visible {
+  outline: 2px solid var(--color-primary-700);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+strong, b { font-weight: var(--weight-bold); }
+em, i     { font-style: italic; }
+
+code, kbd, samp {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  background: var(--color-bg-muted);
+  padding: 0.1em 0.35em;
+  border-radius: var(--radius-sm);
+}
+
+pre {
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  background: #0d1117;
+  color: #e6edf3;
+  padding: var(--space-6);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+  line-height: 1.55;
+}
+pre code { background: transparent; padding: 0; color: inherit; }
+
+blockquote {
+  border-left: var(--border-blockquote);
+  padding: var(--space-2) var(--space-6);
+  margin: var(--space-8) 0;
+  font-family: var(--font-body);
+  font-size: var(--text-xl);
+  color: var(--color-primary-200);
+  background: linear-gradient(90deg,
+    rgba(246, 94, 94, 0.04), transparent 30%);
+}
+blockquote em { color: var(--color-fg-muted); }
+
+hr {
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  margin: var(--space-12) 0;
+}
+
+/* --- Headline gradient text (the signature trick) --- */
+.gradient-text {
+  background: var(--gradient-heat);
+  -webkit-background-clip: text;
+          background-clip: text;
+  -webkit-text-fill-color: transparent;
+          color: transparent;
+}
+
+/* --- Page-shell layout primitive --- */
+.content {
+  width: 100%;
+  padding-left: var(--page-gutter);
+  padding-right: var(--page-gutter);
+}
+.content.main {
+  max-width: var(--page-max);
+  margin-right: auto;
+}
+@media (max-width: 1440px) {
+  .content { padding: 0 var(--page-gutter-small); }
+}

@@ -133,6 +133,8 @@ importers:
         specifier: ^4.1.11
         version: 4.1.11(@types/node@20.19.43)(happy-dom@15.11.7)(vite@8.2.2(@types/node@20.19.43)(esbuild@0.28.2)(tsx@4.23.13))
 
+  website: {}
+
 packages:
 
   '@esbuild/aix-ppc64@0.25.12':

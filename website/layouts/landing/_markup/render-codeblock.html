@@ -1,0 +1,4 @@
+{{- /* Plain code block. Hextra's wraps every fence in `hextra-code-block`
+       chrome plus a copy button, all styled by a stylesheet this page does not
+       load. The design system gives code one colour on near-black instead. */ -}}
+<pre><code{{ with .Attributes.lang | default .Type }} class="language-{{ . }}"{{ end }}>{{- .Inner -}}</code></pre>

@@ -1,0 +1,24 @@
+{{ $footer := site.Params.landingFooter }}
+<footer class="footer">
+  <div class="content footer__inner">
+    <div class="footer__grid">
+      <div class="footer__about">
+        {{ with $footer.about }}
+          <img src="{{ .logo | relURL }}" alt="{{ .alt }}" width="121" height="54">
+          <p>{{ .text | safeHTML }}</p>
+        {{ end }}
+      </div>
+      {{ range $footer.columns }}
+        <div class="footer__col">
+          <h4>{{ .heading }}</h4>
+          <ul>
+            {{ range .links }}
+              {{ $href := partial "landing/link.html" . }}
+              <li>{{ if $href }}<a href="{{ $href }}">{{ .name }}</a>{{ else }}{{ .name }}{{ end }}</li>
+            {{ end }}
+          </ul>
+        </div>
+      {{ end }}
+    </div>
+  </div>
+</footer>

@@ -57,3 +57,4 @@ or spec that introduced the decision.
 | 0036 | [The brand marks live in `packages/tokens`, beside the design tokens](./0036-brand-marks-live-with-the-tokens.md) | 2026-09-13 | Accepted |
 | 0037 | [The Dock icon is painted by the process, not carried by a bundle](./0037-dock-icon-painted-at-runtime.md) | 2026-09-13 | Accepted |
 | 0038 | [The repository's home is GitHub, the marketplace is the org's](./0038-repo-moves-to-github-org-marketplace.md) | 2026-09-14 | Accepted |
+| 0039 | [A documentation website in the repository, flat rather than quadranted](./0039-documentation-website.md) | 2026-09-14 | Accepted |

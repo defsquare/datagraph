@@ -1,0 +1,148 @@
+/* datagraph landing — layout only. Colours, type, spacing, radii and shadows
+   come from colors_and_type.css, the Defsquare token layer, which is
+   concatenated ahead of this file by Hugo Pipes. */
+
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+img { max-width: 100%; height: auto; }
+
+/* Nav: scrolls with the page, wordmark left, links right (the site rule). */
+.nav {
+  display: flex;
+  /* Centred, not baseline: the mark is a logo whose bracket drops below the
+     wordmark's baseline, so baseline alignment would hang the links too low. */
+  align-items: center;
+  gap: var(--space-10);
+  padding-top: var(--space-6);
+  min-height: 3.75rem;
+}
+.nav__mark { display: flex; }
+/* Height on the type scale, so the wordmark inside the lockup lands at roughly
+   the --text-3xl the text mark used to be. Width follows the SVG's ratio. */
+.nav__mark img { height: 2.25rem; width: auto; display: block; }
+.nav__mark:hover { opacity: 0.75; }
+.nav__links { margin-left: auto; display: flex; gap: var(--space-10); }
+.nav__links a {
+  font-weight: var(--weight-medium);
+  font-size: var(--text-lg);
+  color: var(--color-primary-200);
+}
+.nav__links a:hover { color: var(--color-accent); }
+
+/* Intro. Not named `.hero`: the token layer binds that class to display type. */
+.intro {
+  margin-top: var(--space-16);
+  margin-bottom: var(--space-16);
+}
+.intro__display {
+  font-family: var(--font-title);
+  font-weight: var(--weight-regular);
+  font-size: clamp(3.5rem, 8vw, 11rem);
+  line-height: var(--leading-display);
+  letter-spacing: -0.01em;
+  color: var(--color-primary-200);
+  margin: 0;
+  max-width: 14ch;
+}
+.intro__lead {
+  font-weight: var(--weight-semibold);
+  font-size: clamp(var(--text-xl), 1.9vw, var(--text-2xl));
+  line-height: var(--leading-snug);
+  max-width: 52ch;
+  margin: var(--space-10) 0 0;
+}
+/* The one install line. `pre` already carries the near-black slab from the
+   token layer; only the width is a landing concern. */
+.intro__install {
+  display: inline-block;
+  margin: var(--space-10) 0 0;
+  padding: var(--space-4) var(--space-6);
+  font-size: var(--text-lg);
+}
+.intro__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+  margin-top: var(--space-10);
+}
+.intro__actions a:not(.btn) { font-size: var(--text-xl); font-weight: var(--weight-medium); }
+
+/* The trailer: the tool's own canvas, both views in one take. Capped at the
+   content column, since `.intro` is a `.content` without `.main`'s max-width. */
+.trailer {
+  margin: var(--space-16) 0 0;
+  max-width: var(--page-max);
+}
+.trailer__video {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+.trailer__caption {
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  color: var(--color-fg-muted);
+  margin: var(--space-4) 0 0;
+}
+.trailer__caption b, .trailer__caption strong {
+  color: var(--color-primary-200);
+  font-weight: var(--weight-semibold);
+}
+
+/* Button — the design system's primary: blue at rest, red on hover. */
+.btn {
+  font-family: var(--font-body);
+  font-size: var(--text-xl);
+  padding: var(--space-3) var(--space-6);
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  color: var(--color-bg);
+  background: var(--color-primary-500);
+  display: inline-flex;
+  align-items: center;
+  box-shadow: var(--shadow-sm);
+  transition: background-color var(--transition-fast);
+}
+.btn:hover { background: var(--color-accent-300); color: var(--color-bg); }
+.btn:active { background: var(--color-accent-200); }
+.btn .ic { width: 1.25rem; height: 1.25rem; margin: 0 var(--space-3) 0 calc(-1 * var(--space-1)); fill: currentColor; }
+
+/* Footer: navy, silent. */
+.footer { background: var(--color-navy); margin-top: var(--space-24); color: #d1d5db; }
+/* Vertical padding only, and in longhand on purpose: this element is also a
+   `.content`, so a `padding:` shorthand here would zero the page gutter it
+   inherits from there — same specificity, and this sheet is concatenated
+   second, so the shorthand would win and run the footer edge to edge. */
+.footer__inner { padding-top: var(--space-16); padding-bottom: var(--space-16); }
+.footer__grid { display: grid; grid-template-columns: 1.6fr 1fr 1fr; gap: var(--space-8); }
+.footer__about p { color: #d1d5db; font-size: var(--text-lg); max-width: 40ch; margin: var(--space-6) 0 0; }
+.footer__about a { color: var(--color-accent); }
+.footer__about img { height: 2rem; width: auto; display: block; }
+.footer__col h4 {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-fg-subtle);
+  margin: 0 0 var(--space-4);
+}
+.footer__col ul { list-style: none; padding: 0; margin: 0; }
+.footer__col li { margin-bottom: var(--space-3); font-size: var(--text-base); color: #d1d5db; }
+.footer__col a { color: #d1d5db; }
+.footer__col a:hover { color: var(--color-bg); }
+
+/* Responsive: the lead, the footer and the nav. */
+@media (max-width: 56rem) {
+  .intro__lead { max-width: 100%; }
+  .footer__grid { grid-template-columns: 1fr; }
+  .nav { flex-wrap: wrap; gap: var(--space-4); }
+  .nav__links { margin-left: 0; gap: var(--space-6); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; }
+}

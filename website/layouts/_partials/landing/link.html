@@ -1,0 +1,9 @@
+{{- /* Resolve one link target. `url` is used as given; `doc` is resolved
+       against site.Params.docsBase, so moving the documentation is one edit.
+       An entry with neither resolves to the empty string, and the caller
+       renders it as plain text. */ -}}
+{{- if .url -}}
+  {{- .url -}}
+{{- else if isset . "doc" -}}
+  {{- printf "%s%s" site.Params.docsBase .doc -}}
+{{- end -}}

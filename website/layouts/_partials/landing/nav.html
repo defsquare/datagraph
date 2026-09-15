@@ -1,0 +1,16 @@
+<header class="content">
+  <nav class="nav" aria-label="Site">
+    {{/* The lockup IS the logo, so the image carries the link's accessible
+         name — no separate text mark. Intrinsic size is the SVG's own 284×51;
+         the displayed height is set in CSS, on the type scale. */}}
+    <a class="nav__mark" href="{{ "" | relURL }}">
+      <img src="{{ "img/datagraph-lockup.svg" | relURL }}"
+           width="284" height="51" alt="datagraph">
+    </a>
+    <div class="nav__links">
+      {{ range site.Params.nav }}
+        <a href="{{ partial "landing/link.html" . }}">{{ .name }}</a>
+      {{ end }}
+    </div>
+  </nav>
+</header>

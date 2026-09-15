@@ -1,0 +1,5 @@
+{{- /* The landing page does not load Hextra's stylesheet, so it cannot use
+       Hextra's heading hook: that one emits Tailwind `hx:` utility classes and
+       a permalink anchor that would render as unstyled debris here. Plain
+       heading, plain anchor id. */ -}}
+<h{{ .Level }} id="{{ .Anchor | safeURL }}">{{ .Text | safeHTML }}</h{{ .Level }}>

@@ -1,0 +1,13 @@
+{
+  "name": "@defsquare/datagraph-website",
+  "version": "0.1.0",
+  "license": "MIT",
+  "private": true,
+  "description": "The datagraph website: one Hugo site, one build. The landing page at / (themeless, Defsquare Design System) and the documentation at /docs/ (Hextra, vendored as a submodule). Builds when the hugo binary is on PATH; skips (with a notice) otherwise, so Node-only environments stay green.",
+  "scripts": {
+    "build": "if command -v hugo >/dev/null 2>&1; then hugo --minify --gc; else echo 'hugo not installed: website build skipped' >&2; fi",
+    "dev": "hugo server -D --port 1315",
+    "typecheck": "true",
+    "test": "true"
+  }
+}
