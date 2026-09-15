@@ -59,3 +59,4 @@ or spec that introduced the decision.
 | 0038 | [The repository's home is GitHub, the marketplace is the org's](./0038-repo-moves-to-github-org-marketplace.md) | 2026-09-14 | Accepted |
 | 0039 | [A documentation website in the repository, flat rather than quadranted](./0039-documentation-website.md) | 2026-09-14 | Accepted |
 | 0040 | [The website is served by an assets-only Cloudflare Worker](./0040-website-served-by-cloudflare-worker.md) | 2026-09-15 | Accepted |
+| 0041 | [The README's hero is a still linking to the site, not an inline video](./0041-readme-hero-is-a-still-linking-to-the-site.md) | 2026-09-15 | Accepted |
