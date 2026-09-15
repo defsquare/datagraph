@@ -3,7 +3,7 @@
 The **graph view** is `datagraph`'s second layout: instead of the containment
 tree (the default *structure view*), it draws records as vertices and joins as
 edges, grouping records into the DDD aggregates declared by
-[`config.groups`](../README.md#config-ids-refs-groups) and painting each
+[`config.groups`](https://datagraph.defsquare.com/docs/config/#groups) and painting each
 aggregate as a circular envelope.
 
 This document covers how that view lays itself out, what its guarantees are, and

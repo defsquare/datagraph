@@ -21,7 +21,7 @@ reference to jump to its target, and search across every field.
 Two views are built in. The default structure view lays out the containment
 tree (ELK layered). The optional graph view switches to records-as-vertices
 and joins-as-edges, grouped into DDD aggregates drawn as circular envelopes;
-see [`config.groups`](#config-ids-refs-groups) and
+see [`config.groups`](https://datagraph.defsquare.com/docs/config/#groups) and
 [`docs/graph-view.md`](./docs/graph-view.md).
 
 <!-- A still that links out, not an inline player. GitHub strips every <video>
@@ -40,9 +40,53 @@ into aggregates. The clip plays on
 
 You use it as a **standalone desktop app**: the `datagraph` binary opens a
 JSON file straight from the shell, no code to write; see
-[The `datagraph` CLI](#the-datagraph-cli). An embeddable JS package,
+[Quick start](#quick-start). An embeddable JS package,
 `@defsquare/datagraph`, lives in [`packages/renderer`](./packages/renderer)
-but is not published to npm yet.
+but [is not published to npm yet](https://datagraph.defsquare.com/docs/api/).
+
+## Quick start
+
+```bash
+brew install defsquare/tap/datagraph   # macOS, Apple silicon
+```
+
+Every other platform builds from source; that route, the tarball and the
+macOS quarantine caveat are on the
+[install page](https://datagraph.defsquare.com/docs/install/).
+
+```bash
+datagraph                            # no argument: the built-in demo dataset
+datagraph data.json                  # a document, structure view only
+datagraph data.json -c config.json   # with an ids/refs/groups config
+
+datagraph apps/demo/fixtures/shop.json -c apps/demo/fixtures/shop.config.json
+```
+
+The last line runs the fixtures that ship with the repository. A `-c` file
+declares which paths hold keyed records and which fields join them, in the
+grammar of the
+[config reference](https://datagraph.defsquare.com/docs/config/).
+`datagraph --check data.json -c config.json` validates one and prints a
+report without opening a window; the exit code says whether the config
+itself is at fault
+([Checking a config](https://datagraph.defsquare.com/docs/check/)).
+
+## Documentation
+
+Full docs live at [datagraph.defsquare.com](https://datagraph.defsquare.com).
+
+- [Install](https://datagraph.defsquare.com/docs/install/): building from source, the macOS quarantine caveat.
+- [Getting started](https://datagraph.defsquare.com/docs/getting-started/): the canvas, the gestures, and [how a large file opens on a preview](https://datagraph.defsquare.com/docs/getting-started/#a-large-file-opens-on-a-preview).
+- [Config reference](https://datagraph.defsquare.com/docs/config/): `ids`, `refs`, `groups`, and the [selector grammar](https://datagraph.defsquare.com/docs/config/#selector-grammar).
+- [Checking a config](https://datagraph.defsquare.com/docs/check/): `--check`, the exit codes, `--json`.
+- [The two views](https://datagraph.defsquare.com/docs/views/): structure and graph.
+- [The Claude Code plugin](https://datagraph.defsquare.com/docs/plugin/): the skill that teaches an agent the protocol, installed from [`defsquare/claude-marketplace`](https://github.com/defsquare/claude-marketplace).
+
+What stays here documents the code rather than the product:
+
+- [`docs/graph-view.md`](./docs/graph-view.md): the graph-view layout engine, its guarantees, and which of them a test actually holds.
+- The package READMEs: [`core`](./packages/core), [`renderer`](./packages/renderer), [`chrome`](./packages/chrome), [`tokens`](./packages/tokens).
+- [`apps/demo/README.md`](./apps/demo/README.md): exit codes, the CSP, the vendored fonts.
 
 ## Packages
 
@@ -54,207 +98,6 @@ but is not published to npm yet.
 | [`@defsquare/datagraph`](./packages/renderer) | Pixi.js renderer on top of core: `createDataGraph`, themes. |
 | [`apps/demo`](./apps/demo) | Vite demo, Playwright e2e, and the Tauri desktop shell that doubles as the `datagraph` CLI. |
 | [`apps/design`](./apps/design) | Design system playground: tokens, graph and UI components, and a live sandbox. Never published. |
-
-## The `datagraph` CLI
-
-The demo app packaged as a Tauri v2 desktop binary. Point it at a JSON
-document and it opens the canvas described above, with no project to set up
-and no code to write.
-
-### Install on macOS (Apple silicon)
-
-Each release uploads the prebuilt binary to defsquare's download host and
-pushes the matching formula to the defsquare tap, so the shortest route is
-Homebrew:
-
-```bash
-brew install defsquare/tap/datagraph
-```
-
-Later versions arrive with `brew upgrade datagraph`. Without Homebrew, take
-the tarball directly; that URL always serves the most recent release:
-
-```bash
-curl -fsSL https://dl.datagraph.defsquare.com/datagraph/datagraph-darwin-arm64.tar.gz | tar -xz
-sudo mv datagraph /usr/local/bin/
-```
-
-The binary is not signed by an Apple Developer identity. In practice that
-changes nothing here: `curl` sets no `com.apple.quarantine` attribute on what
-it writes (Homebrew downloads with `curl` too), so Gatekeeper never assesses
-the file and either install runs without a prompt. A *browser* download does
-set the attribute, and macOS then refuses to open the binary. Clear it once:
-
-```bash
-xattr -d com.apple.quarantine ./datagraph
-```
-
-There is no `.app` or `.dmg` bundle on any platform. `tauri build` produces a
-raw executable meant to be launched from a shell, which is what makes the CLI
-arguments useful in the first place.
-
-### Build from source
-
-The fallback on any platform, and the only route on Intel Macs, Linux and
-Windows. You need pnpm and a Rust toolchain (Tauri v2).
-
-```bash
-# from a clone of this repository
-pnpm install
-pnpm --filter demo tauri build   # → apps/demo/src-tauri/target/release/datagraph
-```
-
-The built binary is not on your `PATH`; symlink it somewhere that is:
-
-```bash
-ln -s "$PWD/apps/demo/src-tauri/target/release/datagraph" /usr/local/bin/datagraph
-```
-
-### Usage
-
-```bash
-datagraph data.json -c config.json  # a JSON document with its ids/refs/groups config
-datagraph data.json                 # no config: structure view only
-datagraph                           # no argument: the built-in demo dataset
-datagraph --help
-
-datagraph --check data.json -c config.json          # validate the config, print a report, exit
-datagraph --check data.json -c config.json --json   # same report, as JSON
-```
-
-The `-c` file is the `ids` / `refs` / `groups` object documented in
-[Config: ids, refs, groups](#config-ids-refs-groups), as plain JSON. Without
-it, nothing is declared as an entity or a join, so you get the containment
-structure view only. Sample files ship with the repo:
-
-```bash
-datagraph apps/demo/fixtures/shop.json -c apps/demo/fixtures/shop.config.json
-```
-
-A large file opens on a preview, not in full. The initial expansion stops at
-~300 cards, and each further expansion reveals 100 children at a time, a
-clickable `+ n` token standing in for each run still hidden. Search reveals
-just the page holding its target. The toolbar's Ranger button (`tidy()` in the
-API) re-lays out everything visible in one pass, which is how you straighten
-the columns after a long exploration. Nothing changes for a document that fits
-under the budget; the rules, and why they are these ones, are in
-[Structure view](./packages/renderer/README.md#structure-view).
-
-Argument and file errors are reported on stderr, with a non-zero exit code,
-before any window opens. Exit codes, the CSP and the vendored fonts are
-covered in [`apps/demo/README.md`](./apps/demo/README.md).
-
-### Checking a config without opening it
-
-`--check` builds the graph, prints a report on stdout and exits. No window.
-It reports, per selector, how many instances matched and whether the path
-resolves at all, and per reference, how many joins resolved or dangled.
-
-<!-- Copy this block from the binary's own output rather than typing it by
-     hand: the columns are computed, and a hand-typed example drifts. -->
-
-```
-✓ config valid — 4 entities, 2 references resolved
-
-  ids
-    Customer  $.customers[*].id  2 instances
-    Order     $.orders[*].id     2 instances
-  refs
-    $.orders[*].customerId → $.customers[*].id    2/2 resolved
-
-  No diagnostics.
-```
-
-The exit code answers one question: *can I fix this by editing the config?*
-`0` means valid (the report may still carry data diagnostics), `3` invalid
-config, `4` internal error. The existing `1` (unreadable file) and `2` (bad
-argument) are unchanged. A dangling foreign key, a duplicate id or a
-missing id is a hole in the *data*, so it stays at `0`. An unresolved selector
-prefix, or a reference declaration nothing satisfied, is a *config* bug, so it
-exits `3`.
-
-`--json` prints the same report as JSON, with a `"report": 1` version field.
-Its `totals.logicalNodes` count (the graph nodes plus the scalar rows) is the
-one `maxNodes` bounds, so it is the one to compare against the number a
-`GraphTooLargeError` quotes. One Windows caveat: a release build launched from
-a console has no stdout handle, so redirect or pipe the output to capture the
-report, which is how an agent invoking it captures it anyway.
-
-## The Claude Code plugin
-
-`datagraph` has one non-human user worth first-class support: an agent asked
-to show somebody a JSON document. The repo ships a Claude Code skill,
-[`skills/datagraph/`](./skills/datagraph/), that teaches the agent the whole
-protocol. Shape the data so the cards read well, write an `ids` / `refs` /
-`groups` config against the document's real paths, validate it with
-[`--check`](#the-datagraph-cli) before opening anything, launch the window
-detached. Install it from defsquare's org marketplace,
-[`defsquare/claude-marketplace`](https://github.com/defsquare/claude-marketplace):
-
-```
-/plugin marketplace add defsquare/claude-marketplace
-/plugin install datagraph@defsquare
-```
-
-The plugin installs the *skill* only; the binary itself still arrives through
-[Homebrew or the tarball](#the-datagraph-cli). The skill is versioned with the
-binary whose behaviour it documents, so a CLI change and its skill update
-travel in the same commit (ADR-0035, ADR-0038).
-
-## Config: ids, refs, groups
-
-`config.ids` maps a name to a JSONPath-like selector (`$`, `.key`, `[index]`,
-and `*` wildcards for either) that ends in the field holding the id, e.g.
-`"$.customers[*].id"`. Any object matched by a selector (dropping the trailing
-id-field segment) becomes an *entity* node instead of a plain object node.
-Entities are the only nodes that start collapsed, and the only sources and
-targets of reference edges.
-
-`config.refs` is an array of joins, `{ from, to }`. `from` selects a field
-whose value is meant to be read as a foreign key; `to` is one of the paths
-declared in `ids`. `datagraph` resolves each `from` value against the target's
-index at build time and draws a reference edge, highlighted differently when
-the target id doesn't exist.
-
-```json
-{
-  "ids": {
-    "Customer": "$.customers[*].id",
-    "Order": "$.orders[*].id"
-  },
-  "refs": [
-    { "from": "$.orders[*].customerId", "to": "$.customers[*].id" }
-  ],
-  "groups": ["Customer"],
-  "maxNodes": 1000000,
-  "rootLabel": "$"
-}
-```
-
-- `ids.<Name>`: selector for where instances of `<Name>` live in the document,
-  ending in the id field.
-- `refs[].from`: selector for a field whose value is a foreign key.
-- `refs[].to`: the `ids` path it must resolve against.
-- `groups`: names from `ids` that are DDD aggregate roots, in declaration
-  order. That order is load-bearing: it decides which root claims a record
-  that reaches two of them at the same distance. See
-  [the core package README](./packages/core/README.md#aggregates) for the
-  membership rule and the [graph view](./packages/renderer/README.md#graph-view)
-  it powers.
-- `maxNodes`: optional safety cap (default `1000000`). Past it, `buildGraph`
-  throws `GraphTooLargeError`, and the message names the way out (raise
-  `maxNodes` in the `-c` config). It guards the *memory* of the built graph
-  and its search index, not layout cost: the views bound what they lay out
-  themselves. The default is where
-  [the core package's benchmark](./packages/core/README.md#benchmark) put it,
-  about 3× under the memory budget.
-- `rootLabel`: label shown on the root node (default `"$"`, the root symbol of
-  the same selector syntax `ids` uses). Set it to something your users
-  recognise (`"Shop"`, `"Invoice"`) when the graph is customer-facing. An
-  empty string is honoured rather than falling back to the default.
-
-**Limitation:** field keys that don't match the selector token grammar (e.g.
-`@odata:id`) cannot be declared as reference fields.
 
 ## Monorepo layout
 
