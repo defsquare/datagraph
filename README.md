@@ -123,6 +123,7 @@ datagraph/
 │   ├── graph-view.md        graph-view layout, guarantees and measurements
 │   └── trailer-poster.png   the README thumbnail, a still of the landing page's clip
 ├── website/       the Hugo site behind datagraph.defsquare.com — static/video/ holds the clip
+├── CHANGELOG.md   hand-written release notes, copied into each annotated tag
 ├── LICENSE
 └── README.md
 ```
@@ -179,6 +180,10 @@ git-ignored `bin/release.env`; copy
 [`bin/release.env.example`](./bin/release.env.example) and fill it in. Add
 `--dry-run` to see the plan and the rendered formula without touching the
 network.
+
+The release notes are hand-written in [`CHANGELOG.md`](./CHANGELOG.md): the
+script refuses to tag a version that has no section there, and copies that
+section into the annotated tag, so `git tag -n99` reads the same text.
 
 ## License
 

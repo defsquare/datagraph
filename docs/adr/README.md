@@ -62,3 +62,4 @@ or spec that introduced the decision.
 | 0041 | [The README's hero is a still linking to the site, not an inline video](./0041-readme-hero-is-a-still-linking-to-the-site.md) | 2026-09-15 | Accepted |
 | 0042 | [A tree view whose containment is derived from the references](./0042-tree-view-containment-derived-from-references.md) | 2026-09-18 | Accepted |
 | 0043 | [One controller per view, behind a `View` seam](./0043-one-controller-per-view.md) | 2026-09-18 | Accepted |
+| 0044 | [A hand-written CHANGELOG, carried by the annotated tag](./0044-hand-written-changelog-carried-by-the-tag.md) | 2026-09-18 | Accepted |

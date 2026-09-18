@@ -17,6 +17,8 @@ fi
 #   <version>     e.g. 0.1.0 (no leading v)
 #   --skip-build  reuse an existing binary (fast iteration)
 #   --dry-run     do everything except upload, tag and tap push (prints what it would do)
+# The version must already have a section in CHANGELOG.md: it becomes the
+# annotated tag's message.
 
 BINARY="apps/demo/src-tauri/target/release/datagraph"
 STABLE_ASSET="datagraph-darwin-arm64.tar.gz"
@@ -51,6 +53,18 @@ require_env() {
   [ "$missing" -eq 0 ] || exit 2
 }
 
+# Body of the `## [$VERSION]` section of CHANGELOG.md (any ` - date` suffix
+# allowed), up to the next `## ` heading or the trailing link-reference block,
+# blank edges trimmed.
+changelog_section() {
+  awk -v v="[$VERSION]" '
+    /^## / { inside = ($2 == v); next }
+    /^\[/  { inside = 0 }
+    inside { body = body $0 "\n" }
+    END { gsub(/^\n+|\n+$/, "", body); if (body != "") print body }
+  ' CHANGELOG.md
+}
+
 preflight() {
   echo "==> [preflight] $TAG from a clean tree"
   local problem=""
@@ -58,6 +72,7 @@ preflight() {
   if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
     problem="tag $TAG already exists"
   fi
+  [ -n "$(changelog_section)" ] || problem="CHANGELOG.md has no [$VERSION] section; write it before releasing"
   # `return 0`, not bare `return`: a bare return would inherit the failed
   # test's status 1 and `set -e` would kill the script on the happy path.
   [ -n "$problem" ] || return 0
@@ -138,13 +153,18 @@ upload() {
 
 release() {
   # Unlike specy the version is also recorded as a git tag; the hosting itself
-  # needs no GitHub release — R2 serves the bytes.
+  # needs no GitHub release — R2 serves the bytes. The tag carries the release
+  # notes in its annotation, so `git tag -n99` and any future GitHub release
+  # read the same text as CHANGELOG.md.
+  local message
+  message="$(printf 'datagraph %s\n\n%s\n' "$VERSION" "$(changelog_section)")"
   if [ "$DRY_RUN" -eq 1 ]; then
-    echo "==> [release] DRY-RUN would tag $TAG and push it"
+    echo "==> [release] DRY-RUN would tag $TAG (annotated) with:"
+    printf '%s\n' "$message" | sed 's/^/    /'
     return
   fi
   echo "==> [release] tagging $TAG"
-  git tag "$TAG"
+  printf '%s\n' "$message" | git tag -a "$TAG" -F -
   git push origin "$TAG"
 }
 
