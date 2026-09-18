@@ -89,5 +89,13 @@ export default defineConfig({
   server: { port: 5174 },
   // `main.ts` awaits `document.fonts.ready` as a top-level await; Vite's default
   // target (chrome87) rejects it at minification.
-  build: { target: "es2022" },
+  //
+  // No minification: the playground is never published, and esbuild's identifier
+  // mangling can name a local `of` — `of/(s+1)` inside the bundled elkjs — which
+  // the es-module-lexer 1.x bundled in vite 6 and 7 reads as the keyword `of`
+  // followed by a regex literal, desynchronising it until the end of the chunk
+  // (`Parse error @:1:1` from vite:build-import-analysis). Which name esbuild
+  // picks shifts with any source change, so this is a lottery, not a one-off;
+  // es-module-lexer 2.3.2 (vite 8) lexes it correctly.
+  build: { target: "es2022", minify: false },
 });

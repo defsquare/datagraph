@@ -164,7 +164,9 @@ release() {
     return
   fi
   echo "==> [release] tagging $TAG"
-  printf '%s\n' "$message" | git tag -a "$TAG" -F -
+  # `--cleanup=whitespace`: git's default `strip` mode drops every line starting
+  # with `#`, i.e. the changelog's `### Added` / `### Changed` headings.
+  printf '%s\n' "$message" | git tag -a "$TAG" --cleanup=whitespace -F -
   git push origin "$TAG"
 }
 
