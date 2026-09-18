@@ -1039,6 +1039,11 @@ function refEdgeEnds(
  * references alone (graph view). */
 export type EdgeMode = "contain" | "ref";
 
+/** The direction the containment is laid along: left-to-right (structure view) or
+ * top-to-bottom (tree view). It only concerns the CONTAINMENT geometry — references
+ * anchor on the side facing their target, whatever the flow. */
+export type EdgeFlow = "right" | "down";
+
 /**
  * Draws every edge between visible nodes into a single Graphics, grouped by style:
  * containment as solid horizontal beziers, resolved references ending in an arrow
@@ -1084,6 +1089,7 @@ export function drawEdges(
   mode: EdgeMode = "contain",
   focusIds: ReadonlySet<NodeId> | null = null,
   metrics: NodeMetrics = DEFAULT_METRICS,
+  flow: EdgeFlow = "right",
 ): Graphics {
   const g = new Graphics();
   if (lod === 2) return g;
@@ -1133,16 +1139,34 @@ export function drawEdges(
         // straight from `positions` — an edge cannot point at an elided node, which
         // has no card, and the `#p1 → tags` edge therefore falls away by itself,
         // replaced by the row it was describing.
-        const from = anchorRectFor(graph, positions, edge.from, metrics);
+        //
+        // In `"down"` flow the row band says nothing — rows run across the flow —
+        // so the start is the nearest DRAWN card instead, exactly as the layout
+        // engine's anchor does in that direction (`anchorInFlowSpace`): the
+        // expansion opens below the card, and the edge must leave where it opens.
+        const from =
+          flow === "down"
+            ? nearestCardRectFor(graph, positions, edge.from)
+            : anchorRectFor(graph, positions, edge.from, metrics);
         const to = positions.get(edge.to);
         if (!from || !to) continue;
-        const x1 = from.x + from.width;
-        const y1 = from.y + from.height / 2;
-        const x2 = to.x;
-        const y2 = to.y + to.height / 2;
-        const dx = Math.max(24, (x2 - x1) / 2);
-        g.moveTo(x1, y1);
-        g.bezierCurveTo(x1 + dx, y1, x2 - dx, y2, x2, y2);
+        if (flow === "down") {
+          const x1 = from.x + from.width / 2;
+          const y1 = from.y + from.height;
+          const x2 = to.x + to.width / 2;
+          const y2 = to.y;
+          const dy = Math.max(24, (y2 - y1) / 2);
+          g.moveTo(x1, y1);
+          g.bezierCurveTo(x1, y1 + dy, x2, y2 - dy, x2, y2);
+        } else {
+          const x1 = from.x + from.width;
+          const y1 = from.y + from.height / 2;
+          const x2 = to.x;
+          const y2 = to.y + to.height / 2;
+          const dx = Math.max(24, (x2 - x1) / 2);
+          g.moveTo(x1, y1);
+          g.bezierCurveTo(x1 + dx, y1, x2 - dx, y2, x2, y2);
+        }
         hasContain = true;
       }
       if (hasContain) {
@@ -1575,6 +1599,7 @@ export function drawSelectionOverlay(
   theme: Theme,
   selectedId: NodeId | null,
   mode: EdgeMode = "contain",
+  flow: EdgeFlow = "right",
 ): Graphics {
   const g = new Graphics();
   if (!selectedId) return g;
@@ -1592,12 +1617,23 @@ export function drawSelectionOverlay(
     const childRect = positions.get(node.id);
     const parentRect = positions.get(node.parentId);
     if (childRect && parentRect) {
-      const x1 = parentRect.x + parentRect.width;
-      const y1 = parentRect.y + parentRect.height / 2;
-      const x2 = childRect.x;
-      const y2 = childRect.y + childRect.height / 2;
-      const dx = Math.max(24, (x2 - x1) / 2);
-      g.moveTo(x1, y1).bezierCurveTo(x1 + dx, y1, x2 - dx, y2, x2, y2);
+      // The same geometry as `drawEdges`'s containment, flow for flow: the
+      // highlight must COVER the stroke it underlines, not run beside it.
+      if (flow === "down") {
+        const x1 = parentRect.x + parentRect.width / 2;
+        const y1 = parentRect.y + parentRect.height;
+        const x2 = childRect.x + childRect.width / 2;
+        const y2 = childRect.y;
+        const dy = Math.max(24, (y2 - y1) / 2);
+        g.moveTo(x1, y1).bezierCurveTo(x1, y1 + dy, x2, y2 - dy, x2, y2);
+      } else {
+        const x1 = parentRect.x + parentRect.width;
+        const y1 = parentRect.y + parentRect.height / 2;
+        const x2 = childRect.x;
+        const y2 = childRect.y + childRect.height / 2;
+        const dx = Math.max(24, (x2 - x1) / 2);
+        g.moveTo(x1, y1).bezierCurveTo(x1 + dx, y1, x2 - dx, y2, x2, y2);
+      }
       hasChain = true;
     }
     node = graph.nodes.get(node.parentId);

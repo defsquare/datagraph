@@ -71,6 +71,7 @@ export {
   type StructureLayoutEngine,
   // In the options of `createStructureLayoutEngine`.
   type ElkFactory,
+  type LayoutDirection,
 } from "./structure-layout.js"
 // `nearestDrawn` and `VALUE_ONLY_KEY` stay internal: the first is a detail of
 // the layout computation, the second the conventional key of a "value only"

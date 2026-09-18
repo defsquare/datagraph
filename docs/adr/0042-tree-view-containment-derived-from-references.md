@@ -46,6 +46,25 @@ Shared targets of a many-to-many join (a sanction type referenced by many
 relations) cannot hang under every parent without duplication: they sit under
 the root as leaves, and the reference stays an overlay edge.
 
+**The tree view flows TOP-TO-BOTTOM** — levels are rows, siblings side by side —
+while the structure view keeps its left-to-right layout. Not an option: a tree of
+a normalised document is read the way an org chart is. `createStructureLayoutEngine`
+therefore takes a `direction` (`"RIGHT"` by default, `"DOWN"` for the tree),
+implemented by TRANSPOSITION at the engine's boundary: the boxes handed to ELK
+have their width and height swapped, every `positions` map is transposed on entry
+and transposed back on exit, and the whole engine keeps working in a flow space
+where the layout always runs along x. A layered RIGHT layout over transposed boxes
+IS a layered DOWN layout over the real ones, so the three incremental paths —
+expand, reveal, collapse — stay a SINGLE implementation instead of two copies of
+the arithmetic that took the longest to get right. The one rule that does not
+transpose is the elided-array anchor: a row band is a horizontal reading, so in
+`"DOWN"` an elided node anchors on its nearest drawn card (its parent's) and the
+expansion opens below that card. On the renderer's side a `ViewPolicy.flow`
+(`"down"` for the tree, `"right"` elsewhere) carries the same decision to the
+containment edges — which leave the bottom centre of the source for the top centre
+of the target, from that same nearest drawn card — and to the remainder tokens,
+which sit beside their anchor rather than under it.
+
 One layout change, shared with the structure view: the ELK engine now gets
 `considerModelOrder.strategy = NODES_AND_EDGES`, so a column of siblings keeps
 its `childIds` order. Without it the layer sweep sorted the root's children by
@@ -62,6 +81,10 @@ order was decided and then not shown.
   arbitrates join tables. An explicit entry becomes worth its cost only if
   shared targets must be *inlined* under each parent — an alias node, which
   ADR-0003's path-derived ids do not have.
+- **A direction OPTION on the tree view** (horizontal or vertical, at the host's
+  choice) — rejected: nobody asked for a horizontal tree, and a switch is a second
+  geometry to keep working — a second set of edge anchors, token placements and
+  camera framings to test, for a reading nobody wants.
 - **Reading the `refs` declaration order as the parent choice** — rejected: a
   rule that happened to match the fixture, not a reason (cf. ADR-0017's
   threshold).

@@ -646,3 +646,57 @@ describe("drawSelectionOverlay — a lifted edge belongs to its entity too", () 
     expect(refStrokes("/products/0")).toBe(1);
   });
 });
+
+/**
+ * The tree view flows TOP-TO-BOTTOM: its levels are rows. Containment must follow,
+ * or every edge would cross the layout it describes — leaving the right side of a
+ * parent to reach the left side of a child sitting directly under it.
+ *
+ * The geometry of the LAYOUT that puts the cards there is proven in the core
+ * (`structure-layout-direction.test.ts`); what is proven here is only the drawing.
+ */
+describe('containment in "down" flow', () => {
+  const theme = resolveTheme(undefined);
+  const graph = buildGraph(shopData, shopConfig);
+
+  const PARENT = { x: 0, y: 0, width: 200, height: 80 };
+  const CHILD = { x: 40, y: 300, width: 160, height: 60 };
+  // Exactly one containment edge has both ends positioned, which keeps the reading
+  // unambiguous: every other one points at a node with no rect here.
+  const positions = new Map([
+    ["/customers/0", PARENT],
+    ["/customers/0/address", CHILD],
+  ]);
+
+  function path(g: { context: { instructions: unknown[] } }, index: number): any[] {
+    return (g.context.instructions[index] as any).data.path.instructions;
+  }
+
+  it("leaves the BOTTOM centre of the parent and enters the TOP centre of the child", () => {
+    const g = drawEdges(graph, positions, theme, 0, "contain", null, DEFAULT_METRICS, "down");
+    const p = path(g, 0);
+    expect(p[0].action).toBe("moveTo");
+    expect(p[0].data).toEqual([100, 80]); // the parent's bottom centre
+    expect(p[1].action).toBe("bezierCurveTo");
+    expect(p[1].data.slice(4, 6)).toEqual([120, 300]); // the child's top centre (data[4..5] is the bezier's endpoint)
+  });
+
+  it('keeps the left-to-right geometry in "right" flow, which stays the default', () => {
+    const explicit = drawEdges(graph, positions, theme, 0, "contain", null, DEFAULT_METRICS, "right");
+    const implicit = drawEdges(graph, positions, theme, 0, "contain");
+    expect(path(implicit, 0)).toEqual(path(explicit, 0));
+    const p = path(explicit, 0);
+    expect(p[0].data).toEqual([200, 40]); // the parent's right edge, mid-height
+    expect(p[1].data.slice(4, 6)).toEqual([40, 330]); // the child's left edge, mid-height
+  });
+
+  it("turns the selection's parent chain with it", () => {
+    const g = drawSelectionOverlay(
+      graph, positions, theme, "/customers/0/address", "contain", "down",
+    );
+    // [0] is the selected card's ring, [1] the parent chain.
+    const chain = path(g, 1);
+    expect(chain[0].data).toEqual([100, 80]);
+    expect(chain[1].data.slice(4, 6)).toEqual([120, 300]);
+  });
+});

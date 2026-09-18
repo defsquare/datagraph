@@ -78,6 +78,29 @@ test("setView('tree') folds the tables into a hierarchy, and back", async ({ pag
   await expect(page.locator("canvas")).toBeVisible()
 })
 
+test("the tree view lays out top-to-bottom without losing a card", async ({ page }) => {
+  // The DOWN layout's GEOMETRY is proven in the core, on positions this API does
+  // not expose: `packages/core/test/structure-layout-direction.test.ts`. What is
+  // proven end to end here is that the direction reaches the real engine and that
+  // the 207 cards survive every trip through it.
+  const errors = watchErrors(page)
+
+  await gotoReady(page)
+  await loadSanctions(page)
+
+  await page.evaluate(() => (window as any).__graph.setView("tree"))
+  expect(await visibleCount(page)).toBe(207)
+
+  await page.evaluate(() => (window as any).__graph.setView("structure"))
+  await page.evaluate(() => (window as any).__graph.setView("tree"))
+  expect(await currentView(page)).toBe("tree")
+  expect(await visibleCount(page)).toBe(207)
+
+  await page.evaluate(() => (window as any).__graph.fit())
+  expect(errors).toEqual([])
+  await expect(page.locator("canvas")).toBeVisible()
+})
+
 test("returning from graph view to structure swaps the folded graph back", async ({ page }) => {
   const errors = watchErrors(page)
 

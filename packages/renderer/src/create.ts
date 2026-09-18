@@ -26,6 +26,7 @@ import {
   type Graph,
   type GraphNode,
   type StructureLayoutEngine,
+  type LayoutDirection,
   type LayoutResult,
   type NodeId,
   type NodeMetrics,
@@ -157,6 +158,17 @@ interface ViewPolicy {
    * same circle.
    */
   aggregates: "none" | "hull" | "disc";
+  /**
+   * The direction the containment edges and the remainder tokens are laid along —
+   * the same one the layout engine was built with.
+   *
+   * `"down"` for the tree view, whose levels are rows: a containment edge leaves
+   * the bottom of its source, and the token of a hidden page sits BESIDE its
+   * anchor, the siblings being a row. `"right"` everywhere else — graph view
+   * included, which draws no containment and pages nothing, so the value is moot
+   * there.
+   */
+  flow: "right" | "down";
 }
 
 /**
@@ -625,15 +637,21 @@ export function translateCluster(
   }
 }
 
-function buildLayoutEngine(elkWorkerUrl: string | URL | undefined): StructureLayoutEngine {
-  if (!elkWorkerUrl) return createStructureLayoutEngine();
+function buildLayoutEngine(
+  elkWorkerUrl: string | URL | undefined,
+  direction: LayoutDirection,
+): StructureLayoutEngine {
+  if (!elkWorkerUrl) return createStructureLayoutEngine({ direction });
   // NOTE: elk.bundled.js's `workerUrl` path only spawns a real worker when
   // the optional `web-worker` package is present (it's a Node worker_threads
   // shim, not a browser API) — under Vite/browser it silently falls back to
   // elkjs's in-process "fake worker" instead of throwing. Passing the option is
   // therefore always safe: the worst case is a layout that runs in-process,
   // never a failed construction, so there is nothing to guard or feature-detect.
-  return createStructureLayoutEngine({ elkFactory: () => new ELK({ workerUrl: String(elkWorkerUrl) }) });
+  return createStructureLayoutEngine({
+    elkFactory: () => new ELK({ workerUrl: String(elkWorkerUrl) }),
+    direction,
+  });
 }
 
 /**
@@ -993,6 +1011,13 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     return target === "tree" ? buildTreeGraph(source, validateConfig(config)) : source;
   }
 
+  /** The direction a folded view's layout flows in: the tree view is TOP-TO-BOTTOM
+   * (levels are rows), the structure view stays left-to-right. Not an option — the
+   * tree view IS vertical. */
+  function layoutDirectionFor(target: "structure" | "tree"): LayoutDirection {
+    return target === "tree" ? "DOWN" : "RIGHT";
+  }
+
   /** The initial collapse state of a folded view. The tree opens FULLY EXPANDED —
    * within the opening budget — because every node below its root is an entity:
    * with the default entity boundary it would show nothing but its roots, and the
@@ -1016,13 +1041,16 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   async function layoutStructure(
     target: Graph,
     visible: Set<NodeId>,
+    direction: LayoutDirection,
   ): Promise<{ engine: StructureLayoutEngine; layout: LayoutResult }> {
-    const primary = buildLayoutEngine(options.elkWorkerUrl);
+    const primary = buildLayoutEngine(options.elkWorkerUrl, direction);
     try {
       return { engine: primary, layout: await primary.layout(target, visible, metrics) };
     } catch (err) {
       console.warn("[datagraph] layout via elkWorkerUrl failed, falling back to in-process elk", err);
-      const fallback = createStructureLayoutEngine();
+      // The SAME direction: a fallback laid out the other way round would swap the
+      // view's geometry the moment the worker fails.
+      const fallback = createStructureLayoutEngine({ direction });
       return { engine: fallback, layout: await fallback.layout(target, visible, metrics) };
     }
   }
@@ -1057,6 +1085,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
         expandedArrays: false,
         cards: semantic ? "unclustered" : "all",
         aggregates: semantic ? "disc" : "hull",
+        flow: "right",
       };
     }
     return {
@@ -1067,6 +1096,8 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       expandedArrays: true,
       cards: "all",
       aggregates: "none",
+      // The one value where the two folded views differ: the tree flows down.
+      flow: view === "tree" ? "down" : "right",
     };
   }
 
@@ -1219,6 +1250,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
           theme,
           selectedNodeId(),
           viewPolicy().edgeMode,
+          viewPolicy().flow,
         ),
       );
       // Both reads of the search state go through the controller, its sole owner:
@@ -1441,6 +1473,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       viewPolicy().edgeMode,
       edgeFocusIds(),
       metrics,
+      viewPolicy().flow,
     );
     world.addChildAt(edgesGraphics, 4);
 
@@ -1874,22 +1907,23 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
 
   /**
    * Repaints the remainder token layer: one token per block of unrevealed card
-   * children, at the place those cards would occupy in the column.
+   * children, at the place those cards would occupy in the sibling column — or ROW,
+   * in the tree view's `"down"` flow, where a level is laid out sideways.
    *
    * The position is ARITHMETIC and does not come from ELK, and that is the heart of
    * the device: a laid-out token would be one more box in the computation, and it
    * exists precisely so the 47,300 cards it replaces do not enter it. It therefore
    * hooks onto a neighboring card already placed — the one before if the preceding
-   * block is there (the token extends the column), otherwise the one after (the
-   * token precedes it).
+   * block is there (the token extends the column or row), otherwise the one after
+   * (the token precedes it).
    *
    * The token borrows that neighbor's WIDTH: its size says "here, cards like those",
    * which a width of its own would not.
    *
    * The tokens deliberately do NOT follow a card moved by hand: they are placed from
    * the last `rebuild()`'s positions and wait for the next one, a move being a local
-   * gesture that changes neither the revealed pages nor the column the hidden block
-   * will slot into.
+   * gesture that changes neither the revealed pages nor the column or row the hidden
+   * block will slot into.
    */
   function redrawRemainderTokens(): void {
     for (const child of remainderLayer.removeChildren()) child.destroy({ children: true });
@@ -1939,12 +1973,24 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
           metrics,
           useBitmapText,
         });
-        token.position.set(
-          anchor.x,
-          below
-            ? anchor.y + anchor.height + REMAINDER_TOKEN_GAP
-            : anchor.y - REMAINDER_TOKEN_HEIGHT - REMAINDER_TOKEN_GAP,
-        );
+        // In `"down"` flow the siblings are a ROW, not a column: the token sits
+        // BESIDE its anchor, on the side of the gap it stands for. Its width is
+        // the anchor's — what `drawRemainderToken` was just given.
+        if (viewPolicy().flow === "down") {
+          token.position.set(
+            below
+              ? anchor.x + anchor.width + REMAINDER_TOKEN_GAP
+              : anchor.x - anchor.width - REMAINDER_TOKEN_GAP,
+            anchor.y,
+          );
+        } else {
+          token.position.set(
+            anchor.x,
+            below
+              ? anchor.y + anchor.height + REMAINDER_TOKEN_GAP
+              : anchor.y - REMAINDER_TOKEN_HEIGHT - REMAINDER_TOKEN_GAP,
+          );
+        }
         // `attachTap` and not a bare `pointertap`: it does set `eventMode` and the
         // cursor, but above all it adds the threshold `attachDrag` shares — without
         // it, a camera pan started on a token would reveal a page on release, when
@@ -2946,7 +2992,11 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     collapseState = foldedCollapseStateFor(foldedView, graph);
     searchIndex = buildSearchIndex(graph);
 
-    const structure = await layoutStructure(graph, collapseState.visibleNodeIds());
+    const structure = await layoutStructure(
+      graph,
+      collapseState.visibleNodeIds(),
+      layoutDirectionFor(foldedView),
+    );
     engine = structure.engine;
     layoutResult = structure.layout;
     if (destroyed) return;
@@ -3058,7 +3108,11 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     const newCollapseState = foldedCollapseStateFor(foldedView, newGraph);
     const newSearchIndex = buildSearchIndex(newGraph);
 
-    const structure = await layoutStructure(newGraph, newCollapseState.visibleNodeIds());
+    const structure = await layoutStructure(
+      newGraph,
+      newCollapseState.visibleNodeIds(),
+      layoutDirectionFor(foldedView),
+    );
 
     // Graph view is recomputed on the NEW graph, before publication and without
     // reusing the index in place, which describes the old one. A failure here must
@@ -3277,7 +3331,11 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
         const nextGraph = foldedGraphFor(next, source, currentConfig);
         const nextCollapseState = foldedCollapseStateFor(next, nextGraph);
         const nextSearchIndex = buildSearchIndex(nextGraph);
-        const structure = await layoutStructure(nextGraph, nextCollapseState.visibleNodeIds());
+        const structure = await layoutStructure(
+          nextGraph,
+          nextCollapseState.visibleNodeIds(),
+          layoutDirectionFor(next),
+        );
         if (destroyed || gen !== opGen) return;
 
         graph = nextGraph;
