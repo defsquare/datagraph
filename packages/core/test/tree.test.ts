@@ -15,37 +15,37 @@ function tree(data: unknown, config: DataGraphConfig): { source: Graph; result: 
 /**
  * The shape of a NORMALISED document, the one the tree view exists for: flat
  * tables joined by foreign keys, a join table with two references, a lookup
- * table shared by every join row, and one table nobody points at. This is
- * `apps/demo/fixtures/sanctions.json` in miniature.
+ * table shared by every join row, and one table nobody points at — a normalised
+ * export in miniature.
  */
 const joinData = {
-  groupes: [{ id: "G1", label: "Rencontre" }, { id: "G2", label: "Discipline" }],
-  infractions: [
-    { id: "I1", groupeId: "G1", code: "1.1" },
-    { id: "I2", groupeId: "G2", code: "2.1" },
+  groups: [{ id: "G1", label: "Group A" }, { id: "G2", label: "Group B" }],
+  items: [
+    { id: "I1", groupId: "G1", code: "1.1" },
+    { id: "I2", groupId: "G2", code: "2.1" },
   ],
-  types: [{ id: "T1", label: "Avertissement" }],
+  types: [{ id: "T1", label: "Type One" }],
   relations: [
-    { id: "R1", infractionId: "I1", typeId: "T1" },
-    { id: "R2", infractionId: "I2", typeId: "T1" },
+    { id: "R1", itemId: "I1", typeId: "T1" },
+    { id: "R2", itemId: "I2", typeId: "T1" },
   ],
-  sites: [{ id: "S1", name: "Stade" }],
+  venues: [{ id: "S1", name: "Venue One" }],
 }
 
 const joinConfig: DataGraphConfig = {
   ids: {
-    Groupe: "$.groupes[*].id",
-    Infraction: "$.infractions[*].id",
+    Group: "$.groups[*].id",
+    Item: "$.items[*].id",
     Type: "$.types[*].id",
     Relation: "$.relations[*].id",
-    Site: "$.sites[*].id",
+    Venue: "$.venues[*].id",
   },
   refs: [
-    { from: "$.infractions[*].groupeId", to: "$.groupes[*].id" },
-    { from: "$.relations[*].infractionId", to: "$.infractions[*].id" },
+    { from: "$.items[*].groupId", to: "$.groups[*].id" },
+    { from: "$.relations[*].itemId", to: "$.items[*].id" },
     { from: "$.relations[*].typeId", to: "$.types[*].id" },
   ],
-  groups: ["Groupe"],
+  groups: ["Group"],
 }
 
 /** A nested entity — an order written INSIDE its customer — plus a reference out
@@ -68,12 +68,12 @@ const nestedConfig: DataGraphConfig = {
 describe("buildTreeGraph", () => {
   it("hangs a top-level entity under the target of the reference it was claimed through", () => {
     const { result } = tree(joinData, joinConfig)
-    expect(result.nodes.get("/infractions/0")!.parentId).toBe("/groupes/0")
-    expect(result.nodes.get("/infractions/1")!.parentId).toBe("/groupes/1")
+    expect(result.nodes.get("/items/0")!.parentId).toBe("/groups/0")
+    expect(result.nodes.get("/items/1")!.parentId).toBe("/groups/1")
     // The join row carries two references; only one of them leads back to a
     // declared root, and that is the one the BFS claimed it through.
-    expect(result.nodes.get("/relations/0")!.parentId).toBe("/infractions/0")
-    expect(result.nodes.get("/relations/1")!.parentId).toBe("/infractions/1")
+    expect(result.nodes.get("/relations/0")!.parentId).toBe("/items/0")
+    expect(result.nodes.get("/relations/1")!.parentId).toBe("/items/1")
   })
 
   it("puts the unclaimed entities under the root, after the aggregate roots, in document order", () => {
@@ -81,18 +81,18 @@ describe("buildTreeGraph", () => {
     // The two groups are the declared roots and come first; the shared lookup
     // row and the table nobody points at follow, in document order.
     expect(result.nodes.get(result.rootId)!.childIds).toEqual([
-      "/groupes/0",
-      "/groupes/1",
+      "/groups/0",
+      "/groups/1",
       "/types/0",
-      "/sites/0",
+      "/venues/0",
     ])
     expect(result.nodes.get("/types/0")!.parentId).toBe(result.rootId)
   })
 
   it("drops the structural nodes and gives the synthetic root no rows", () => {
     const { source, result } = tree(joinData, joinConfig)
-    expect(source.nodes.has("/groupes")).toBe(true)
-    expect(result.nodes.has("/groupes")).toBe(false)
+    expect(source.nodes.has("/groups")).toBe(true)
+    expect(result.nodes.has("/groups")).toBe(false)
     expect(result.nodes.has("/relations")).toBe(false)
     const root = result.nodes.get(result.rootId)!
     expect(root.rows).toEqual([])
@@ -202,7 +202,7 @@ describe("buildTreeGraph", () => {
   it("lays out under the structure view's own machinery", async () => {
     const { result } = tree(joinData, joinConfig)
     const collapse = new CollapseState(result)
-    collapse.expand("/groupes/0")
+    collapse.expand("/groups/0")
     const visible = collapse.visibleNodeIds()
     const { positions } = await createStructureLayoutEngine().layout(result, visible)
     // Elided nodes are rows of their parent's card and have no rect: the
@@ -210,7 +210,7 @@ describe("buildTreeGraph", () => {
     const drawn = [...visible].filter((id) => !result.nodes.get(id)!.elided)
     expect(positions.size).toBe(drawn.length)
     for (const id of drawn) expect(positions.has(id)).toBe(true)
-    // The expansion revealed the infraction the group claimed, not a table.
-    expect(visible.has("/infractions/0")).toBe(true)
+    // The expansion revealed the item the group claimed, not a table.
+    expect(visible.has("/items/0")).toBe(true)
   })
 })

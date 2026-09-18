@@ -1,5 +1,4 @@
 import { test, expect, type Page } from "@playwright/test"
-import { readFileSync } from "node:fs"
 
 /**
  * TREE VIEW — a containment re-derived from the references, with a machinery of
@@ -7,17 +6,106 @@ import { readFileSync } from "node:fs"
  * the switch can be proved end to end: no renderer unit test mounts
  * `createDataGraph`.
  *
- * The dataset is the committed `fixtures/sanctions.*`, read from disk rather
- * than copied, and it is the reason the view exists: six flat tables joined by
- * foreign keys, whose JSON nesting is `root → table → row` and whose meaning is
- * entirely in the references. Its `groups` declares a single root type, so the
- * derived tree is groupe → infraction → {relation, sanction financière} and the
- * tables nobody claims sit under the root.
+ * The dataset is generated inline, like `view.spec.ts`'s, and it has the shape
+ * the view exists for: a normalised export — flat tables joined by foreign keys,
+ * whose JSON nesting is `root → table → row` and whose meaning is entirely in
+ * the references. Its config declares a SINGLE root type, so the derived tree is
+ * group → item → {relation, penalty} and the tables nobody claims (types,
+ * venues) sit under the root as leaves.
  */
-const data = JSON.parse(readFileSync(new URL("../fixtures/sanctions.json", import.meta.url), "utf8"))
-const config = JSON.parse(
-  readFileSync(new URL("../fixtures/sanctions.config.json", import.meta.url), "utf8"),
+const GROUP_NAMES = ["A", "B", "C"]
+const ITEMS_PER_GROUP = 2
+const TYPE_COUNT = 5
+const VENUE_COUNT = 2
+const PENALTIES_PER_ITEM = 2
+
+const groups = GROUP_NAMES.map((name, i) => ({
+  id: `g${i + 1}`,
+  ordre: i + 1,
+  description: `Group ${name}`,
+}))
+
+const items = groups.flatMap((group, gi) =>
+  Array.from({ length: ITEMS_PER_GROUP }, (_, k) => ({
+    id: `i${gi + 1}-${k + 1}`,
+    groupId: group.id,
+    label: `Item ${GROUP_NAMES[gi]}${k + 1}`,
+  })),
 )
+
+const types = Array.from({ length: TYPE_COUNT }, (_, i) => ({
+  id: `t${i + 1}`,
+  label: `Type ${i + 1}`,
+}))
+
+const venues = Array.from({ length: VENUE_COUNT }, (_, i) => ({
+  id: `v${i + 1}`,
+  name: `Venue ${i + 1}`,
+}))
+
+// The many-to-many join: 2 or 3 types per item, alternating, so the table is not
+// a uniform multiple of the items. Each row carries TWO references, and only the
+// one leading back to a declared root decides its parent.
+const relations = items.flatMap((item, i) =>
+  Array.from({ length: 2 + (i % 2) }, (_, k) => ({
+    id: `r${i + 1}-${k + 1}`,
+    itemId: item.id,
+    typeId: types[(i + k) % TYPE_COUNT].id,
+  })),
+)
+
+// A second child table, with an OPTIONAL reference: `venueId` is null on all but
+// two rows, which is what keeps `venues` claimed by nobody.
+const penalties = items.flatMap((item, i) =>
+  Array.from({ length: PENALTIES_PER_ITEM }, (_, k) => ({
+    id: `p${i + 1}-${k + 1}`,
+    itemId: item.id,
+    amount: 100 * (k + 1),
+    venueId: i === 0 && k === 0 ? venues[0].id : i === 3 && k === 1 ? venues[1].id : null,
+  })),
+)
+
+const data = { groups, items, types, relations, penalties, venues }
+
+const config = {
+  ids: {
+    Group: "$.groups[*].id",
+    Item: "$.items[*].id",
+    Type: "$.types[*].id",
+    Relation: "$.relations[*].id",
+    Penalty: "$.penalties[*].id",
+    Venue: "$.venues[*].id",
+  },
+  refs: [
+    { from: "$.items[*].groupId", to: "$.groups[*].id" },
+    { from: "$.relations[*].itemId", to: "$.items[*].id" },
+    { from: "$.relations[*].typeId", to: "$.types[*].id" },
+    { from: "$.penalties[*].itemId", to: "$.items[*].id" },
+    { from: "$.penalties[*].venueId", to: "$.venues[*].id" },
+  ],
+  groups: ["Group"],
+  rootLabel: "Registry",
+}
+
+// Every row of every table is an entity, and no row holds a nested object, so
+// the tree graph is exactly the rows — MINUS its synthetic root, which the layout
+// drops (see the assertion below).
+const CARDS =
+  groups.length +
+  items.length +
+  types.length +
+  relations.length +
+  penalties.length +
+  venues.length
+
+// Collapsing the SECOND group hides its own items and everything the references
+// hung under them: their relations and their penalties. The group's card stays.
+const collapsedItems = items.filter((i) => i.groupId === groups[1].id)
+const collapsedItemIds = new Set(collapsedItems.map((i) => i.id))
+const HIDDEN_BY_COLLAPSE =
+  collapsedItems.length +
+  relations.filter((r) => collapsedItemIds.has(r.itemId)).length +
+  penalties.filter((p) => collapsedItemIds.has(p.itemId)).length
 
 async function gotoReady(page: Page): Promise<void> {
   await page.goto("/")
@@ -25,7 +113,7 @@ async function gotoReady(page: Page): Promise<void> {
   await page.evaluate(() => (window as any).__graph.ready)
 }
 
-async function loadSanctions(page: Page): Promise<void> {
+async function loadNormalised(page: Page): Promise<void> {
   await page.evaluate(
     async ([d, c]: any[]) => (window as any).__graph.setData(d, c),
     [data, config],
@@ -53,30 +141,29 @@ test("setView('tree') folds the tables into a hierarchy, and back", async ({ pag
   const errors = watchErrors(page)
 
   await gotoReady(page)
-  await loadSanctions(page)
+  await loadNormalised(page)
   const structureVisible = await visibleCount(page)
 
   await page.evaluate(() => (window as any).__graph.setView("tree"))
   expect(await currentView(page)).toBe("tree")
-  // The tree opens FULLY expanded: the 5 groups, their 14 infractions, and under
-  // those the 98 relations and 52 financial sanctions, plus the two tables
-  // nothing claims — 23 sanction types and 14 competitions. No nested objects
-  // anywhere, so that is every node of the tree graph MINUS its synthetic root:
-  // 206 cards, under the 300-card opening budget.
+  // The tree opens FULLY expanded: the groups, their items, and under those the
+  // relations and the penalties, plus the two tables nothing claims. No nested
+  // objects anywhere, so that is every node of the tree graph MINUS its synthetic
+  // root, under the 300-card opening budget.
   //
-  // 206 AND NOT 207, and that is the assertion: the root stays in the model —
-  // the collapse state and the search index need a node to start from — but the
-  // layout drops it, so no card is drawn for it and `stats()` does not count it.
-  // `visibleNodeCount` reports what the user can COUNT ON SCREEN (ADR-0003).
-  expect(await visibleCount(page)).toBe(206)
+  // CARDS AND NOT CARDS + 1, and that is the assertion: the root stays in the
+  // model — the collapse state and the search index need a node to start from —
+  // but the layout drops it, so no card is drawn for it and `stats()` does not
+  // count it. `visibleNodeCount` reports what the user can COUNT ON SCREEN
+  // (ADR-0003).
+  expect(await visibleCount(page)).toBe(CARDS)
 
   // So the gesture worth proving is now the opposite one: collapsing the second
-  // group takes its whole subtree with it — the 5 infractions the references
-  // gave it, and their 28 relations and 20 financial sanctions. The collapse
-  // lays the whole tree out again, so the count is only settled once its promise
-  // has resolved.
-  await page.evaluate(async () => await (window as any).__graph.collapse("/groupesInfraction/1"))
-  expect(await visibleCount(page)).toBe(206 - 53)
+  // group takes its whole subtree with it — the items the references gave it, and
+  // their relations and penalties. The collapse lays the whole tree out again, so
+  // the count is only settled once its promise has resolved.
+  await page.evaluate(async () => await (window as any).__graph.collapse("/groups/1"))
+  expect(await visibleCount(page)).toBe(CARDS - HIDDEN_BY_COLLAPSE)
 
   await page.evaluate(() => (window as any).__graph.setView("structure"))
   expect(await currentView(page)).toBe("structure")
@@ -89,20 +176,20 @@ test("setView('tree') folds the tables into a hierarchy, and back", async ({ pag
 test("the tree view lays out top-to-bottom without losing a card", async ({ page }) => {
   // The DOWN layout's GEOMETRY is proven in the core, on positions this API does
   // not expose: `packages/core/test/tree-layout.test.ts`. What is proven end to
-  // end here is that the tree's own layout reaches the real ELK and that the 206
-  // cards survive every trip through it.
+  // end here is that the tree's own layout reaches the real ELK and that every
+  // card survives each trip through it.
   const errors = watchErrors(page)
 
   await gotoReady(page)
-  await loadSanctions(page)
+  await loadNormalised(page)
 
   await page.evaluate(() => (window as any).__graph.setView("tree"))
-  expect(await visibleCount(page)).toBe(206)
+  expect(await visibleCount(page)).toBe(CARDS)
 
   await page.evaluate(() => (window as any).__graph.setView("structure"))
   await page.evaluate(() => (window as any).__graph.setView("tree"))
   expect(await currentView(page)).toBe("tree")
-  expect(await visibleCount(page)).toBe(206)
+  expect(await visibleCount(page)).toBe(CARDS)
 
   await page.evaluate(() => (window as any).__graph.fit())
   expect(errors).toEqual([])
@@ -113,11 +200,11 @@ test("returning from graph view to structure swaps the folded graph back", async
   const errors = watchErrors(page)
 
   await gotoReady(page)
-  await loadSanctions(page)
+  await loadNormalised(page)
   const structureVisible = await visibleCount(page)
 
   await page.evaluate(() => (window as any).__graph.setView("tree"))
-  expect(await visibleCount(page)).toBe(206)
+  expect(await visibleCount(page)).toBe(CARDS)
 
   // Graph view leaves the folded state alone; coming back to STRUCTURE — not to
   // the tree it was folded into — has to rebuild it from the source document.
@@ -135,7 +222,7 @@ test("the toolbar's three buttons switch views and mark the active one", async (
   const errors = watchErrors(page)
 
   await gotoReady(page)
-  await loadSanctions(page)
+  await loadNormalised(page)
 
   const pressed = async () => ({
     structure: await page.locator("#view-structure").getAttribute("aria-pressed"),

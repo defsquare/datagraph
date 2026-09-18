@@ -7,13 +7,13 @@
 
 The structure view lays out the containment tree of the JSON document and
 ignores references (ADR-0003, ADR-0012). On a **normalised** document — flat
-tables joined by foreign keys, the shape of `apps/demo/fixtures/sanctions.json`
-— that tree is `root → table → row`: six columns of cards, depth 2, and the
-~250 reference edges that carry all the meaning zigzag across them. The layout
+tables joined by foreign keys, the meaning entirely in the references — that
+tree is `root → table → row`: one column of cards per table, depth 2, and every
+reference edge that carries the meaning zigzags across them. The layout
 algorithm is not the problem; the edges it is given are.
 
-The hierarchy the reader wants is the references read backwards: an infraction
-hangs under its group, a sanction under its infraction. The graph view already
+The hierarchy the reader wants is the references read backwards: an item hangs
+under its group, a child row under the item that claimed it. The graph view already
 computes exactly that forest — `buildAggregates` runs a reverse BFS over the
 references from the `groups` roots, breaking ties by declaration order
 (ADR-0015) — but only to decide membership; the parent each entity was claimed
@@ -48,8 +48,8 @@ is fully determined by `refs` and `groups`.
   index, which are core primitives; it no longer runs the structure view's
   incremental engine.
 
-Shared targets of a many-to-many join (a sanction type referenced by many
-relations) cannot hang under every parent without duplication: they sit under
+Shared targets of a many-to-many join (a lookup row referenced by many join
+rows) cannot hang under every parent without duplication: they sit under
 the root as leaves, and the reference stays an overlay edge.
 
 **The tree view flows TOP-TO-BOTTOM** — levels are rows, siblings side by side —
@@ -78,9 +78,9 @@ than under it.
 One layout change, shared with the structure view: the ELK engine now gets
 `considerModelOrder.strategy = NODES_AND_EDGES`, so a column of siblings keeps
 its `childIds` order. Without it the layer sweep sorted the root's children by
-the barycenter of whatever subtrees happened to be open, and the five declared
-roots came out scattered among the 37 unclaimed leaves — the "roots first"
-order was decided and then not shown.
+the barycenter of whatever subtrees happened to be open, and the declared roots
+came out scattered among the unclaimed leaves — the "roots first" order was
+decided and then not shown.
 
 ## Alternatives considered
 
@@ -111,10 +111,10 @@ order was decided and then not shown.
   in tree view. Accepted: on a normalised document those nodes carry nothing.
 - Only top-level entities move. A nested entity referencing something outside
   its container stays nested — the containment is the stronger signal there.
-- The sanctions fixture's `groups` becomes `["GroupeInfractionPersonneMorale"]`:
-  with every infraction declared as a root, groups claimed nothing and no
-  hierarchy could emerge. The same change turns its graph view from 14 flat
-  shelves into 5 radial clusters.
+- A normalised document wants a SINGLE root type in `groups`: with every
+  intermediate type declared as a root as well, the roots claim nothing and no
+  hierarchy emerges. One root type drives both the tree and the graph view — the
+  same declaration turns a row of flat shelves into radial clusters there.
 - The tree view opens **fully expanded**, within the opening budget of ADR-0025
   (`CollapseState`'s `expandEntities`): every node below a tree graph's root is
   an entity, so the default entity boundary would show nothing but the roots —
@@ -124,4 +124,5 @@ order was decided and then not shown.
   belongs to `tree-view.ts` rather than being swapped into the structure view's
   slot by `setView`. The synthetic root that state starts from is also no longer
   DRAWN — the tree's layout gives ELK a 1×1 box for it and then drops it from
-  the positions — so the sanctions fixture opens on 206 cards, not 207.
+  the positions — so a document opens on one card fewer than its tree graph holds
+  nodes.

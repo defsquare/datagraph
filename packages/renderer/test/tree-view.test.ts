@@ -14,23 +14,23 @@ import { createTreeViewController } from "../src/tree-view.js";
  * machines: what the e2e suite can only prove through a canvas is settled here on
  * bare values.
  *
- * A normalised document in miniature: two groups, three infractions claimed by
- * foreign key. It is `apps/demo/fixtures/sanctions.json`'s shape, small enough to
- * write every expected count out in full.
+ * A normalised document in miniature: two groups, three items claimed by
+ * foreign key. It is the shape of a normalised export — flat tables joined by
+ * foreign keys — small enough to write every expected count out in full.
  */
 const data = {
-  groupes: [{ id: "G1", label: "Rencontre" }, { id: "G2", label: "Discipline" }],
-  infractions: [
-    { id: "I1", groupeId: "G1", code: "1.1" },
-    { id: "I2", groupeId: "G1", code: "1.2" },
-    { id: "I3", groupeId: "G2", code: "2.1" },
+  groups: [{ id: "G1", label: "Group A" }, { id: "G2", label: "Group B" }],
+  items: [
+    { id: "I1", groupId: "G1", code: "1.1" },
+    { id: "I2", groupId: "G1", code: "1.2" },
+    { id: "I3", groupId: "G2", code: "2.1" },
   ],
 };
 
 const config: DataGraphConfig = {
-  ids: { Groupe: "$.groupes[*].id", Infraction: "$.infractions[*].id" },
-  refs: [{ from: "$.infractions[*].groupeId", to: "$.groupes[*].id" }],
-  groups: ["Groupe"],
+  ids: { Group: "$.groups[*].id", Item: "$.items[*].id" },
+  refs: [{ from: "$.items[*].groupId", to: "$.groups[*].id" }],
+  groups: ["Group"],
 };
 
 /** A published controller, ready to be folded. `stale` is the host's generation
@@ -83,7 +83,7 @@ describe("createTreeViewController", () => {
 
   it("drops the references it turned into parent links", async () => {
     const { source, view } = await published();
-    // The three `groupeId` references ARE the tree's hierarchy: drawing them as
+    // The three `groupId` references ARE the tree's hierarchy: drawing them as
     // well would lay a dashed overlay exactly on top of every containment stroke.
     expect(source.refEdges).toHaveLength(3);
     expect(view.refEdgesToDraw()).toHaveLength(0);
@@ -91,17 +91,17 @@ describe("createTreeViewController", () => {
 
   it("lays the whole tree out again on a collapse, leaving no hole", async () => {
     const { view } = await published();
-    const step = await view.collapse("/groupes/0", fresh);
+    const step = await view.collapse("/groups/0", fresh);
     expect(step).not.toBeNull();
-    // G1's two infractions vanish, and the tree is laid out again around the gap
+    // G1's two items vanish, and the tree is laid out again around the gap
     // they leave: every surviving card has a rect, and only the surviving cards
     // do. Dropping the subtree's rects in place would leave the rest spread over
     // the width the tree had before, which `fit()` would then frame as emptiness.
-    expect(view.positions()!.has("/infractions/0")).toBe(false);
-    expect(view.positions()!.has("/infractions/1")).toBe(false);
-    expect(view.positions()!.has("/groupes/0")).toBe(true);
+    expect(view.positions()!.has("/items/0")).toBe(false);
+    expect(view.positions()!.has("/items/1")).toBe(false);
+    expect(view.positions()!.has("/groups/0")).toBe(true);
     expect([...view.positions()!.keys()].sort()).toEqual(drawnIds(view).sort());
-    expect(step!.prevPositions.has("/infractions/0")).toBe(true);
+    expect(step!.prevPositions.has("/items/0")).toBe(true);
     expect(step!.revealed).toEqual([]);
   });
 
@@ -109,39 +109,39 @@ describe("createTreeViewController", () => {
     const { view } = await published();
     const before = view.positions()!;
     // Same rule as `expand`, now that a collapse awaits a global layout too.
-    expect(await view.collapse("/groupes/0", () => true)).toBeNull();
-    expect(view.isExpanded("/groupes/0")).toBe(true);
+    expect(await view.collapse("/groups/0", () => true)).toBeNull();
+    expect(view.isExpanded("/groups/0")).toBe(true);
     expect(view.positions()).toBe(before);
   });
 
   it("lays the whole tree out again on an expand, and names what appeared", async () => {
     const { view } = await published();
-    await view.collapse("/groupes/0", fresh);
-    const step = await view.expand("/groupes/0", fresh);
-    expect(step!.revealed.sort()).toEqual(["/infractions/0", "/infractions/1"]);
-    expect(view.positions()!.has("/infractions/0")).toBe(true);
+    await view.collapse("/groups/0", fresh);
+    const step = await view.expand("/groups/0", fresh);
+    expect(step!.revealed.sort()).toEqual(["/items/0", "/items/1"]);
+    expect(view.positions()!.has("/items/0")).toBe(true);
   });
 
   it("rolls its own mutation back when the host says it was superseded", async () => {
     const { view } = await published();
-    await view.collapse("/groupes/0", fresh);
+    await view.collapse("/groups/0", fresh);
     const before = view.positions()!;
     // The host's guard turns true during the layout: the view must undo what it
     // mutated and publish nothing, or the collapse state gets ahead of the
     // positions and declares visible cards no rect carries.
-    expect(await view.expand("/groupes/0", () => true)).toBeNull();
-    expect(view.isExpanded("/groupes/0")).toBe(false);
+    expect(await view.expand("/groups/0", () => true)).toBeNull();
+    expect(view.isExpanded("/groups/0")).toBe(false);
     expect(view.positions()).toBe(before);
   });
 
   it("opens the path down to a hidden node, and does nothing when there is none", async () => {
     const { view } = await published();
-    await view.collapse("/groupes/1", fresh);
-    expect(view.visible().has("/infractions/2")).toBe(false);
-    const step = await view.revealPathTo("/infractions/2", fresh);
-    expect(step!.revealed).toContain("/infractions/2");
+    await view.collapse("/groups/1", fresh);
+    expect(view.visible().has("/items/2")).toBe(false);
+    const step = await view.revealPathTo("/items/2", fresh);
+    expect(step!.revealed).toContain("/items/2");
     // Already visible: nothing to open, hence no step and no layout paid for.
-    expect(await view.revealPathTo("/infractions/2", fresh)).toBeNull();
+    expect(await view.revealPathTo("/items/2", fresh)).toBeNull();
   });
 
   it("has nothing to tidy: it never lays out incrementally", async () => {

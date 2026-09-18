@@ -90,7 +90,7 @@ Two consequences of the seam are behavioural and deliberate:
   the returned positions**. The host materialises cards from positions, so no
   card can exist for it. `stats().visibleNodeCount` accordingly counts only nodes
   that are both non-elided and positioned: what the user can count on screen
-  (ADR-0003). The sanctions fixture reads 206, not 207.
+  (ADR-0003): one card fewer than the tree graph holds nodes.
 - **A view's published state survives a trip through another view.** `setView`
   computes only when the target has nothing published, so exploring the tree,
   looking at the graph and coming back finds the tree as it was left. The

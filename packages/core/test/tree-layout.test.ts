@@ -10,25 +10,25 @@ import { shopData, shopConfig } from "./fixtures.js"
 
 /**
  * The shape of a NORMALISED document, the one the tree view exists for: two
- * groups, each claiming two infractions through a foreign key. Small enough that
+ * groups, each claiming two items through a foreign key. Small enough that
  * the expected geometry can be written out in full.
  */
 const joinData = {
-  groupes: [{ id: "G1", label: "Rencontre" }, { id: "G2", label: "Discipline" }],
-  infractions: [
-    { id: "I1", groupeId: "G1", code: "1.1" },
-    { id: "I2", groupeId: "G1", code: "1.2" },
-    { id: "I3", groupeId: "G2", code: "2.1" },
+  groups: [{ id: "G1", label: "Group A" }, { id: "G2", label: "Group B" }],
+  items: [
+    { id: "I1", groupId: "G1", code: "1.1" },
+    { id: "I2", groupId: "G1", code: "1.2" },
+    { id: "I3", groupId: "G2", code: "2.1" },
   ],
 }
 
 const joinConfig: DataGraphConfig = {
   ids: {
-    Groupe: "$.groupes[*].id",
-    Infraction: "$.infractions[*].id",
+    Group: "$.groups[*].id",
+    Item: "$.items[*].id",
   },
-  refs: [{ from: "$.infractions[*].groupeId", to: "$.groupes[*].id" }],
-  groups: ["Groupe"],
+  refs: [{ from: "$.items[*].groupId", to: "$.groups[*].id" }],
+  groups: ["Group"],
 }
 
 /** The tree graph plus the layout of everything the tree opens on. */
@@ -58,13 +58,13 @@ describe("createTreeLayout", () => {
 
   it("keeps siblings in document order, left to right", async () => {
     const { positions } = await layoutTree(joinData, joinConfig)
-    // G1's two infractions, in `childIds` order — which is the document's.
-    const i1 = positions.get("/infractions/0")!
-    const i2 = positions.get("/infractions/1")!
+    // G1's two items, in `childIds` order — which is the document's.
+    const i1 = positions.get("/items/0")!
+    const i2 = positions.get("/items/1")!
     expect(i1.x).toBeLessThan(i2.x)
     // And the two groups themselves, children of the root.
-    const g1 = positions.get("/groupes/0")!
-    const g2 = positions.get("/groupes/1")!
+    const g1 = positions.get("/groups/0")!
+    const g2 = positions.get("/groups/1")!
     expect(g1.x).toBeLessThan(g2.x)
   })
 
@@ -74,8 +74,8 @@ describe("createTreeLayout", () => {
     // start from it — but it has no rect, hence no card.
     expect(new CollapseState(tree, { expandEntities: true }).visibleNodeIds()).toContain(tree.rootId)
     expect(positions.has(tree.rootId)).toBe(false)
-    const g1 = positions.get("/groupes/0")!
-    const g2 = positions.get("/groupes/1")!
+    const g1 = positions.get("/groups/0")!
+    const g2 = positions.get("/groups/1")!
     expect(g1.y).toBe(g2.y)
   })
 
