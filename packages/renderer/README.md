@@ -101,14 +101,15 @@ Returned by `createDataGraph(container, options)`.
 | `stats(): { logicalNodeCount, visibleNodeCount }` | Counters for a host status bar: `logicalNodeCount` is every node in the built graph, `visibleNodeCount` is how many are currently expanded/rendered. |
 | `refEdges(from): RefEdge[]` | The outgoing reference edges of node `from`, so a host can offer "follow reference" affordances without knowing graph internals. |
 | `setTheme(theme)` | Replaces the theme and redraws, without rerunning layout or re-measuring fonts. Accepts a full `Theme` or a `ThemeOverride`, merged via `resolveTheme` against the theme currently in effect — a `byEntityType` set earlier survives a plain theme swap. Safe for toggling between themes that share the same `typography`/`fonts` (e.g. a light/dark pair); changing those two groups needs a fresh `createDataGraph`. |
-| `setView(view): Promise<void>` | Switches between `"structure"` and `"graph"`. The first switch to `"graph"` dynamically imports the graph-view engine and computes aggregates, hence the promise — see [graph view](#graph-view). A card selection is carried over onto the nearest entity ancestor, since the graph view only knows entities, and `select` fires on the node it lands on (nothing is emitted when it lands on the node already selected); if no ancestor exists, the selection is dropped and `deselect` fires. An *aggregate* selection is dropped on the way out, having no meaning outside the graph view — no event, since `select` never announced it either. |
-| `currentView(): DataGraphView` | Returns `"structure"` or `"graph"`, whichever is active. |
+| `setView(view): Promise<void>` | Switches between `"structure"`, `"tree"` and `"graph"`. The first switch to `"graph"` dynamically imports the graph-view engine and computes aggregates, hence the promise — see [graph view](#graph-view). A card selection is carried over onto the nearest entity ancestor, since the graph view only knows entities, and `select` fires on the node it lands on (nothing is emitted when it lands on the node already selected); if no ancestor exists, the selection is dropped and `deselect` fires. An *aggregate* selection is dropped on the way out, having no meaning outside the graph view — no event, since `select` never announced it either. |
+| `currentView(): DataGraphView` | Returns `"structure"`, `"tree"` or `"graph"`, whichever is active. |
 | `destroy()` | Tears down the Pixi application and releases all resources. |
 
-`DataGraphOptions.view?: "structure" \| "graph"` (default `"structure"`) picks the initial view at
-`createDataGraph` time; `setView`/`currentView` switch and query it afterwards. The graph view folds
-nothing: every entity is always visible there, and a header click just selects the card. `expand`/
-`collapse`/`tidy` remain structure-view-only. Cards can be dragged in both views; in the graph view,
+`DataGraphOptions.view?: "structure" \| "tree" \| "graph"` (default `"structure"`) picks the initial
+view at `createDataGraph` time; `setView`/`currentView` switch and query it afterwards. The graph view
+folds nothing: every entity is always visible there, and a header click just selects the card.
+`expand`/`collapse` work in the structure and tree views; `tidy` is structure-view-only (the tree lays
+itself out globally on every gesture, so it never drifts). Cards can be dragged in both views; in the graph view,
 dragging an aggregate's envelope moves the whole aggregate rigidly, and clicking it (below the same
 4 px threshold) selects the whole aggregate. Neither drag is persisted — the next relayout
 recomputes positions (see [Navigation](#navigation)).
@@ -283,18 +284,32 @@ build + index; see the [root README](../../README.md#config-ids-refs-groups).
 
 ## Graph view
 
-`createDataGraph` supports two views, chosen with `DataGraphOptions.view?:
-"structure" | "graph"` (default `"structure"`) and switched at runtime with
-`setView(view): Promise<void>` / `currentView(): "structure" | "graph"`:
+`createDataGraph` supports three views, chosen with `DataGraphOptions.view?:
+"structure" | "tree" | "graph"` (default `"structure"`) and switched at runtime
+with `setView(view): Promise<void>` / `currentView(): DataGraphView`:
 
 - **`"structure"`** (default) lays out the containment tree — parent/child
-  structure, ELK layered. This is everything described above and elsewhere in
-  this README.
+  structure, ELK layered, left to right. This is everything described above and
+  elsewhere in this README.
+- **`"tree"`** lays out a containment RE-DERIVED from the references, top to
+  bottom: a top-level entity hangs under the target of the reference it was
+  claimed through. It opens fully expanded within the same card budget, and it
+  never draws a reference it turned into a parent link.
 - **`"graph"`** lays out records as vertices and joins as edges, grouped
   as declared in `config.groups` (see the
   [core package README](../core/README.md#aggregates)
   for the membership rule) and drawn as circular envelopes — the minimal
   enclosing circle of each aggregate's cards, plus a `hullPadding` margin.
+
+Internally the three views share nothing but the core's primitives (`buildGraph`,
+`CollapseState`, `buildSearchIndex`, the layout engines) and `draw.ts`'s pure
+drawing functions. Each has a controller of its own, with no Pixi import —
+`structure-view.ts` (incremental layout, hence `tidy`), `tree-view.ts` (one global
+layout per fold gesture), `graph-view.ts` (aggregates, loaded on demand) — and the
+host reads all three through the `View` seam in `view.ts`. `create.ts` is the Pixi
+host and the orchestrator only: cards, camera, hover, drag, selection, search and
+the view switch. See
+[ADR-0043](../../docs/adr/0043-one-controller-per-view.md).
 
 ```ts
 const graph = createDataGraph(container, {

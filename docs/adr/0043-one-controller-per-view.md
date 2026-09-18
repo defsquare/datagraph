@@ -56,10 +56,17 @@ where "which view are we in" was answered, in a dozen different ways.
 - **`graph-view.ts`** keeps its rich controller and gains a thin `View` adapter
   (`graphViewAsView`) beside it, so the host's generic paths read it in the same
   words as the other two.
-- The **structure view stays inline in `create.ts`** for this step, behind a
-  `structureView: View` façade over the existing state and functions. Nothing
-  outside that object touches `collapseState`, `layoutResult` or `engine`, which
-  is what turns step 2 into a relocation with no call site to chase.
+- **`structure-view.ts`** is the structure view's controller, and the machinery
+  it keeps is the INCREMENTAL one: `CollapseState` (no `expandEntities`), a
+  search index, the ELK engine with its in-process fallback, and the four
+  gestures built on `layoutAfterExpand`/`layoutAfterReveal`/`layoutAfterCollapse`
+  plus the global `layout()` behind `tidy()`. It also owns the column placement
+  of its remainder tokens. Relocated from `create.ts` in step 2 without a
+  behaviour change: the façade that preceded it had already made nothing outside
+  read `collapseState`, `layoutResult` or `engine`, so there was no call site to
+  chase. The engine travels INSIDE the published state, because the fallback
+  replaces it and a layout published without its engine would leave the next
+  gestures' `expansionDeltas` on an engine that did not produce those positions.
 - **`structure-layout.ts` returns to its pre-transposition shape** (the
   `e9b1702` version, keeping `considerModelOrder.strategy`, which predates the
   tree and belongs to the structure view). `LayoutDirection` and
@@ -140,6 +147,21 @@ Two consequences of the seam are behavioural and deliberate:
   machinery, the transposition is gone, and "opens fully expanded" is now a
   property of `tree-view.ts`'s own `CollapseState`. Its decision — a containment
   re-derived from the references, read top to bottom — stands untouched.
-- **Step 2** moves the structure view's state and gestures out of `create.ts`
-  into `structure-view.ts` by pure relocation, behind this same seam. The e2e
-  suite is the proof; no behaviour changes.
+- `create.ts` went from ~3,500 lines (`6b73254`, the seam and the façade) to
+  **3,153**, and no longer holds a `collapseState`, `layoutResult`, `engine` or
+  `searchIndex` of its own — the 364 lines removed are the structure view's, now
+  459 lines of `structure-view.ts` with its own doc header. The three
+  controllers are then symmetrical: `create.ts` imports no layout engine and no
+  `CollapseState` at all.
+- One publication discipline changed shape, and it is the only behavioural
+  difference of step 2. `ready` used to publish the collapse state and the search
+  index BEFORE awaiting the first layout, so `search()` and the fold guards could
+  read them during that round trip; the controller publishes all five members in
+  one gesture, after the layout. Nothing can be drawn in that window anyway
+  (there are no positions and no `rebuild()` yet), and one publication point per
+  view is what `FoldedView`'s `compute`/`publish` split is for.
+- `packages/renderer/test/structure-view.test.ts` covers the controller without
+  Pixi, on an in-process ELK — the layout contract (positions cover the drawn
+  visible set), the four gestures, their rollbacks, the token placement and
+  `tidy`. The e2e suite (`structure-scale`, `tidy`, `reveal-camera`,
+  `array-token`, `findbar`, `keyboard`) stays the behavioural proof.

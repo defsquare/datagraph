@@ -11,13 +11,9 @@ import {
 import ELK from "elkjs/lib/elk.bundled.js";
 import {
   buildGraph,
-  buildSearchIndex,
-  CollapseState,
   anchorRectFor,
-  createStructureLayoutEngine,
   DEFAULT_METRICS,
   enclosingCircle,
-  pageOf,
   validateConfig,
   type Aggregate,
   type DataGraphConfig,
@@ -25,13 +21,10 @@ import {
   type ElkFactory,
   type Graph,
   type GraphNode,
-  type StructureLayoutEngine,
-  type LayoutResult,
   type NodeId,
   type NodeMetrics,
   type Rect,
   type RefEdge,
-  type SearchIndex,
   type SearchResult,
 } from "@defsquare/datagraph-core";
 // `import type` ONLY: this entry point carries the graph view and must enter only
@@ -74,8 +67,6 @@ import {
   edgeLabelPosition,
   labelParamInView,
   lodForScale,
-  REMAINDER_TOKEN_GAP,
-  REMAINDER_TOKEN_HEIGHT,
   semanticLabelGeometry,
   type EdgeLabelPlacement,
   type Lod,
@@ -95,6 +86,7 @@ import {
   type GraphLayoutWorkerSpawn,
   type SemanticNodePaint,
 } from "./graph-view.js";
+import { createStructureViewController } from "./structure-view.js";
 import { createTreeViewController, type TreeViewState } from "./tree-view.js";
 import type { DataGraphView, FoldStep, RemainderToken, View, ViewPolicy } from "./view.js";
 import { Emitter } from "./events.js";
@@ -330,18 +322,6 @@ function dimFilters(): AlphaFilter[] {
  * `drawSelectionOverlay`'s ring see an id only when `kind === "node"`.
  */
 type Selection = { kind: "node"; id: NodeId } | { kind: "cluster"; aggregateId: string };
-
-/**
- * One link of `doFocus`'s cascade: the path to a deep target is now crossed with
- * TWO distinct gestures per level, an expansion and a page reveal, each having its
- * own incremental layout (`layoutAfterExpand` pushes a subtree beside its anchor,
- * `layoutAfterReveal` inserts a block into a column already arranged). Typing them
- * rather than lining up two lists keeps the execution order — and hence the
- * backtracking — in a single sequence.
- */
-type FocusStep =
-  | { kind: "expand"; id: NodeId }
-  | { kind: "reveal"; parentId: NodeId; page: number };
 
 /**
  * The three windows of card materialization, as SCREEN FRACTIONS added on each side
@@ -590,10 +570,6 @@ function buildElkFactory(elkWorkerUrl: string | URL | undefined): ElkFactory | u
   return () => new ELK({ workerUrl: String(elkWorkerUrl) });
 }
 
-function buildLayoutEngine(elkWorkerUrl: string | URL | undefined): StructureLayoutEngine {
-  return createStructureLayoutEngine({ elkFactory: buildElkFactory(elkWorkerUrl) });
-}
-
 /**
  * The factory for the graph view's layout worker, or `undefined` when the host has
  * not supplied its URL.
@@ -806,15 +782,15 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   const fontLease = pixiFontRegistry.lease();
 
   let camera: Camera | null = null;
-  // THE STRUCTURE VIEW's state, still inline here — it is reached only through
-  // `structureView`, the `View` this file builds over it (ADR-0043). Moving the
-  // five members into a controller of their own is step 2 and changes no
-  // behaviour; what matters already is that no path outside that object reads
-  // them.
-  let collapseState: CollapseState | undefined;
-  let layoutResult: LayoutResult | undefined;
-  let engine: StructureLayoutEngine | undefined;
-  let searchIndex: SearchIndex | undefined;
+  // THE STRUCTURE VIEW's state lives ENTIRELY in there — graph, collapse state,
+  // search index, incremental engine, layout — with the machinery that has always
+  // been its own: an expand pushes a subtree beside its anchor, a reveal inserts a
+  // block into a column, a collapse subtracts the delta (ADR-0043). Same
+  // `compute`/`publish` discipline as the two other controllers, for the same
+  // reason: `opGen` stays here.
+  const structureView = createStructureViewController({
+    elkFactory: buildElkFactory(options.elkWorkerUrl),
+  });
   // The current view. Every piece of state SPECIFIC to a view lives in that
   // view's controller; `view` stays here because it belongs to the cross-view
   // orchestration, which this file alone carries.
@@ -868,9 +844,9 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   // compares its captured value against the current counter and bails if
   // some other operation ran (and thus already applied its own layout)
   // in the meantime. Without that guard, a layout resolved late overwrites
-  // `layoutResult` after a newer operation already mutated `collapseState`:
-  // the two then describe different graphs, and the canvas shows positions
-  // for nodes the collapse state no longer considers visible.
+  // the active view's layout after a newer operation already mutated its
+  // collapse state: the two then describe different graphs, and the canvas shows
+  // positions for nodes the collapse state no longer considers visible.
   let opGen = 0;
   // BitmapText's canvas-fallback rendering path is unreliable (see draw.ts);
   // use plain Text there instead. Resolved once renderer type is known.
@@ -956,330 +932,6 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     if (node.kind !== "entity") return theme.edge.contain;
     return entityAccents.get(node.entityType) ?? theme.accent.entity;
   }
-
-  /**
-   * Lays `target` out for structure view, with the ELK engine's fallback:
-   * `elkWorkerUrl` designates a worker that may be unrunnable (missing chunk,
-   * different origin), and its failure must not condemn the instance — we then
-   * replay the same layout on an in-process engine.
-   *
-   * Returns the (engine, layout) pair without publishing anything: `ready` and
-   * `doSetData` assign it themselves, each behind its own guards. The engine is part
-   * of the result because the fallback REPLACES it: publishing the layout without it
-   * would leave the following operations' `expansionDeltas` on an engine that did
-   * not produce those positions.
-   */
-  async function layoutStructure(
-    target: Graph,
-    visible: Set<NodeId>,
-  ): Promise<{ engine: StructureLayoutEngine; layout: LayoutResult }> {
-    const primary = buildLayoutEngine(options.elkWorkerUrl);
-    try {
-      return { engine: primary, layout: await primary.layout(target, visible, metrics) };
-    } catch (err) {
-      console.warn("[datagraph] layout via elkWorkerUrl failed, falling back to in-process elk", err);
-      const fallback = createStructureLayoutEngine();
-      return { engine: fallback, layout: await fallback.layout(target, visible, metrics) };
-    }
-  }
-
-  /**
-   * THE STRUCTURE VIEW, seen through the seam.
-   *
-   * Its state is still the four `let`s above rather than a controller's, and its
-   * gestures still the incremental engine's three paths — this object is a FAÇADE
-   * over code that has not moved. What it buys immediately is the rule it makes
-   * true: nothing outside it reads `collapseState`, `layoutResult` or `engine`, so
-   * moving them into `structure-view.ts` becomes a relocation with no call site to
-   * chase (ADR-0043, step 2).
-   *
-   * The methods read those `let`s LIVE rather than closing over their values:
-   * `setData` replaces all four in one synchronous block, and a façade holding
-   * copies would go on describing the replaced data.
-   */
-  const structureView: View = {
-    kind: "structure",
-    // The document's graph IS what this view renders: it lays out the containment
-    // the JSON itself carries.
-    graph: () => sourceGraph,
-    positions: () => layoutResult?.positions,
-    visible: () => collapseState?.visibleNodeIds() ?? new Set(),
-    // The LOD plays no part here: only the graph view has a second regime.
-    policy: (): ViewPolicy => ({
-      edgeMode: "contain",
-      chevrons: true,
-      foldable: true,
-      tokenHover: true,
-      expandedArrays: true,
-      cards: "all",
-      aggregates: "none",
-      flow: "right",
-    }),
-    // Every reference of the document: this view consumes none into its hierarchy,
-    // which is the JSON's own nesting.
-    refEdgesToDraw: () => sourceGraph?.refEdges ?? [],
-    isExpanded: (id) => collapseState?.isExpanded(id) ?? false,
-    searchIndex: () => searchIndex,
-
-    /**
-     * The "+ n" tokens, one per block of unrevealed card children, at the place
-     * those cards would occupy in the sibling COLUMN.
-     *
-     * The position is ARITHMETIC and does not come from ELK, and that is the heart
-     * of the device: a laid-out token would be one more box in the computation, and
-     * it exists precisely so the 47,300 cards it replaces do not enter it. It
-     * therefore hooks onto a neighboring card already placed — the one before if
-     * the preceding block is there (the token extends the column), otherwise the
-     * one after (the token precedes it).
-     *
-     * The token borrows that neighbor's WIDTH: its size says "here, cards like
-     * those", which a width of its own would not.
-     */
-    remainderTokens(): RemainderToken[] {
-      const g = sourceGraph;
-      const positions = layoutResult?.positions;
-      if (!g || !collapseState || !positions) return [];
-      const tokens: RemainderToken[] = [];
-      for (const id of collapseState.visibleNodeIds()) {
-        // `hiddenGaps` looks at the pages ONLY: it reports the same gaps for a
-        // COLLAPSED node, none of whose children are on screen. Collapse is
-        // therefore tested here, and it has no other site to be tested at: a token
-        // placed under a collapsed card would dangle in the void, next to a column
-        // of children that does not exist.
-        if (!collapseState.isExpanded(id)) continue;
-        const gaps = collapseState.hiddenGaps(id);
-        if (gaps.length === 0) continue;
-        const node = g.nodes.get(id);
-        if (!node) continue;
-        // The CARD children, in `childIds` order: this is the indexing the gaps
-        // speak of. The elided ones are rows of `id`'s own card, so counting them
-        // would shift every index from one token to the next.
-        const cards = node.childIds.filter((childId) => g.nodes.get(childId)?.elided === false);
-
-        for (const gap of gaps) {
-          let anchor: Rect | undefined;
-          let below = true;
-          for (let i = gap.fromIndex - 1; i >= 0 && !anchor; i--) anchor = positions.get(cards[i]!);
-          if (!anchor) {
-            below = false;
-            for (let i = gap.fromIndex + gap.count; i < cards.length && !anchor; i++) {
-              anchor = positions.get(cards[i]!);
-            }
-          }
-          // No card placed on either side of the gap. Should not happen for an
-          // expanded, visible node — it has at least one revealed page — but
-          // drawing without an anchor would amount to inventing a position.
-          if (!anchor) continue;
-          tokens.push({
-            parentId: id,
-            page: gap.nextPage,
-            count: gap.count,
-            width: anchor.width,
-            x: anchor.x,
-            y: below
-              ? anchor.y + anchor.height + REMAINDER_TOKEN_GAP
-              : anchor.y - REMAINDER_TOKEN_HEIGHT - REMAINDER_TOKEN_GAP,
-          });
-        }
-      }
-      return tokens;
-    },
-
-    async expand(id: NodeId, stale: () => boolean): Promise<FoldStep | null> {
-      const g = sourceGraph;
-      const cs = collapseState;
-      const eng = engine;
-      if (!g || !cs || !eng || !layoutResult) return null;
-      if (!g.nodes.has(id) || cs.isExpanded(id)) return null;
-      // Captured BEFORE the mutation: the diff against the post-layout set is what
-      // names the cards that appeared, and it is the only thing the camera follow
-      // needs to know.
-      const beforeVisible = cs.visibleNodeIds();
-      cs.expand(id);
-      const visible = cs.visibleNodeIds();
-      const prevPositions = new Map(layoutResult.positions);
-      const next = await eng.layoutAfterExpand(layoutResult, g, id, visible, metrics);
-      if (stale()) {
-        // A concurrent operation ran while we were awaiting and already applied its
-        // own layout — applying this stale one now would silently revert it. We bail
-        // AND undo the mutation made above: without this rollback, the collapse
-        // state stays ahead of the layout, declaring `id` expanded (hence its
-        // children visible) when none of them has a position in what is published.
-        // They are never drawn, and that half-merged layout goes on to corrupt the
-        // next operation by serving as its `prev`.
-        //
-        // `opGen` is SHARED with the other views: `setView` bumps it too. A view
-        // switch can therefore short-circuit an `expand()` in flight — the race
-        // spans the views, and the damage only shows on coming back.
-        cs.collapse(id);
-        return null;
-      }
-      layoutResult = next;
-      return { prevPositions, revealed: difference(cs.visibleNodeIds(), beforeVisible) };
-    },
-
-    collapse(id: NodeId): Promise<FoldStep | null> {
-      const g = sourceGraph;
-      const cs = collapseState;
-      const eng = engine;
-      if (!g || !cs || !eng || !layoutResult) return Promise.resolve(null);
-      if (!cs.isExpanded(id)) return Promise.resolve(null);
-      // A promise for the seam's sake only — the body below has no `await`, and so
-      // no rollback to plan for, unlike `expand`: `layoutAfterCollapse` is
-      // synchronous, so there is no suspension between mutating the collapse state
-      // and publishing the layout. The two cannot desynchronize, and no concurrent
-      // operation can slot in between them. `stale` is therefore never consulted.
-      cs.collapse(id);
-      const visible = cs.visibleNodeIds();
-      const prevPositions = new Map(layoutResult.positions);
-      layoutResult = eng.layoutAfterCollapse(layoutResult, g, id, visible);
-      return Promise.resolve({ prevPositions, revealed: [] });
-    },
-
-    /**
-     * Reveals a page of `parentId`'s card children: the remainder token's gesture.
-     *
-     * Sibling of `expand`, and distinct from it for a LAYOUT reason and not a state
-     * one: expanding opens a subtree BESIDE its anchor, revealing inserts a block
-     * INTO a column already arranged and pushes what is below. Hence
-     * `layoutAfterReveal`, and hence the fact that a token is not a chevron.
-     */
-    async reveal(parentId: NodeId, page: number, stale: () => boolean): Promise<FoldStep | null> {
-      const g = sourceGraph;
-      const cs = collapseState;
-      const eng = engine;
-      if (!g || !cs || !eng || !layoutResult) return null;
-      if (!g.nodes.has(parentId) || cs.revealedPages(parentId).has(page)) return null;
-      const beforeVisible = cs.visibleNodeIds();
-      cs.revealPage(parentId, page);
-      const visible = cs.visibleNodeIds();
-      const prevPositions = new Map(layoutResult.positions);
-      const next = await eng.layoutAfterReveal(layoutResult, g, parentId, visible, metrics);
-      if (stale()) {
-        // Same rollback as `expand`, and for the same reason.
-        //
-        // AN ACCEPTED APPROXIMATION: the engine, for its part, has already
-        // accumulated this block's offset in its private memory (`expansionDeltas`),
-        // and nothing here takes it back from it — this page, revealed then
-        // discarded, therefore leaves a trace, and the next placements under
-        // `parentId` will be offset by that much. It is tolerated: the race is rare
-        // (it takes a second operation during the layout's round trip) and the next
-        // `tidy()` or the next global layout repairs it. It is not an oversight.
-        cs.unrevealPage(parentId, page);
-        return null;
-      }
-      layoutResult = next;
-      return { prevPositions, revealed: difference(cs.visibleNodeIds(), beforeVisible) };
-    },
-
-    /**
-     * Opens the path down to `id`, ONE LEVEL AT A TIME.
-     *
-     * The steps are collected WITHOUT mutating the collapse state yet: mutation
-     * happens one step at a time, in lockstep with the layout actually applied for
-     * it. Otherwise an abort mid-cascade leaves the collapse state reporting nodes
-     * as expanded/visible that have no entry in the published positions: they
-     * silently never render, and that partially-merged layout goes on to corrupt
-     * the next operation as its `prev`.
-     *
-     * Since pagination, the cascade opens PAGES as much as ancestors: expanding a
-     * parent is no longer enough to make the target visible if it lives on an
-     * unrevealed page. So we walk the COMPLETE parent chain (not just the collapsed
-     * ones), and we reveal only the page of the child on the path — never the whole
-     * prefix, otherwise reaching the 47,312th child would pay for 47,313 cards.
-     */
-    async revealPathTo(id: NodeId, stale: () => boolean): Promise<FoldStep | null> {
-      const g = sourceGraph;
-      const cs = collapseState;
-      const eng = engine;
-      if (!g || !cs || !eng || !layoutResult) return null;
-      if (!g.nodes.has(id) || cs.visibleNodeIds().has(id)) return null;
-
-      const steps: FocusStep[] = [];
-      let childOnPath: NodeId = id;
-      let node = g.nodes.get(id);
-      let parentId = node?.parentId ?? null;
-      while (parentId !== null) {
-        // `reverse()` ALSO reverses the within-level order: to run expand BEFORE
-        // reveal at each level (revealing a page of a still-collapsed node shows
-        // nothing), we push reveal first here.
-        //
-        // An ELIDED child on the path (`cardIndexOf` < 0) is a row of its parent's
-        // card: it has no page to reveal.
-        const cardIndex = cs.cardIndexOf(parentId, childOnPath);
-        if (cardIndex >= 0 && !cs.revealedPages(parentId).has(pageOf(cardIndex))) {
-          steps.push({ kind: "reveal", parentId, page: pageOf(cardIndex) });
-        }
-        if (!cs.isExpanded(parentId)) steps.push({ kind: "expand", id: parentId });
-        childOnPath = parentId;
-        node = g.nodes.get(parentId);
-        parentId = node?.parentId ?? null;
-      }
-      steps.reverse(); // root-first, and expand before reveal at each level
-      if (steps.length === 0) return null;
-
-      const beforeVisible = cs.visibleNodeIds();
-      const prevPositions = new Map(layoutResult.positions);
-      for (const step of steps) {
-        if (stale()) return null;
-        if (step.kind === "expand") cs.expand(step.id);
-        else cs.revealPage(step.parentId, step.page);
-        const prev = layoutResult;
-        const visible = cs.visibleNodeIds();
-        // An explicit annotation: without it, `layoutResult = next` below makes
-        // `next`'s inference circular (it would depend on `layoutResult`'s type,
-        // which would depend on it) and TS gives up the `LayoutResult | undefined` →
-        // `LayoutResult` narrowing.
-        const next: LayoutResult =
-          step.kind === "expand"
-            ? await eng.layoutAfterExpand(prev, g, step.id, visible, metrics)
-            : await eng.layoutAfterReveal(prev, g, step.parentId, visible, metrics);
-        if (stale()) {
-          // Superseded mid-cascade: revert ONLY this not-yet-applied step so the
-          // collapse state never gets ahead of the layout by more than one in-flight
-          // step.
-          //
-          // On a reveal step, the engine keeps the offset already accumulated for
-          // this block: the same accepted approximation as `reveal`, whose comment
-          // carries the complete reasoning.
-          if (step.kind === "expand") cs.collapse(step.id);
-          else cs.unrevealPage(step.parentId, step.page);
-          return null;
-        }
-        layoutResult = next;
-      }
-      return { prevPositions, revealed: difference(cs.visibleNodeIds(), beforeVisible) };
-    },
-
-    async tidy(stale: () => boolean): Promise<FoldStep | null> {
-      const g = sourceGraph;
-      const cs = collapseState;
-      const eng = engine;
-      if (!g || !cs || !eng || !layoutResult) return null;
-      const prevPositions = new Map(layoutResult.positions);
-      const visible = cs.visibleNodeIds();
-      // The GLOBAL path, the initial layout's. It is affordable because the visible
-      // set is bounded — card budget and sibling pages — and that is precisely what
-      // makes this button possible.
-      //
-      // `layout()` also purges the engine's delta memory along the way: this global
-      // arrangement becomes the new truth, and the offsets accumulated by past
-      // expansions have nothing left to cancel. That is what makes `tidy` the repair
-      // for incremental drift, and not merely a reframing.
-      const next = await eng.layout(g, visible, metrics);
-      // A concurrent operation published its own arrangement during the wait:
-      // applying this one would overwrite it. No rollback to do, unlike `expand` —
-      // nothing was mutated before the `await`.
-      //
-      // AN ACCEPTED APPROXIMATION: the delta purge already happened inside
-      // `layout()`, synchronously with the call — a collapse from here to the next
-      // tidy-up will undo too little. Same family of approximation as `reveal`'s
-      // rollback above: Tidy repairs it.
-      if (stale()) return null;
-      layoutResult = next;
-      return { prevPositions, revealed: [] };
-    },
-  };
 
   /** The controller of a view by name — the ONE switch on the view left in this
    * file, and the reason no other place has to test `view` at all. */
@@ -2033,8 +1685,8 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
    * One frame of a card move with the mouse: the card's position in the current
    * layout follows the pointer, and everything depending on it is repainted.
    *
-   * The positions are mutated IN PLACE in the current layout — `layoutResult`'s or
-   * the graph view controller's — with no persistence at all: the next re-layout
+   * The positions are mutated IN PLACE in the current layout — whichever view
+   * controller published it — with no persistence at all: the next re-layout
    * (expand, collapse, `setData`, view switch) takes over and overwrites these
    * coordinates. That is a choice, not an oversight — a move here is a reading
    * gesture ("get this card out of my way"), not an edit of the layout.
@@ -2149,8 +1801,8 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     const policy = viewPolicy();
 
     // The expanded arrays, to orient each token's chevron. Built once per rebuild:
-    // asking `collapseState` row by row would redo the same work once per drawn
-    // token.
+    // asking the view's collapse state row by row would redo the same work once
+    // per drawn token.
     const expandedArrays = new Set<NodeId>();
     for (const id of visible) {
       const arrayNode = graph.nodes.get(id);
@@ -2257,7 +1909,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     const { policy, refFieldsByNode, danglingFieldsByNode, expandedArrays } = ctx;
     // Elided children are excluded from the chevron (`cardChildCount`): they are not
     // what it reveals. With no collapsing, everything is expanded outright — we do
-    // not even read `collapseState`, which then describes another view.
+    // not even read a collapse state, which then describes another view.
     const hasChevron = policy.chevrons && node.cardChildCount > 0;
     const expanded = policy.foldable ? activeView().isExpanded(id) : true;
     const nodeView = drawNode(
@@ -2589,7 +2241,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   /**
    * Brings content that just appeared into frame — and only when NONE of it is
    * already there. `revealPan` carries the whole decision; this function only
-   * gathers the rectangles, which it can do because `layoutResult` is already
+   * gathers the rectangles, which it can do because the view's layout is already
    * published by the time it runs.
    */
   function followRevealed(newIds: Iterable<NodeId>): void {
@@ -2603,13 +2255,6 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     }
     const pan = revealPan(camera.worldViewport(viewport()), targets, REVEAL_MARGIN);
     if (pan) camera.panByWorld(pan.dx, pan.dy, REVEAL_PAN_MS);
-  }
-
-  /** The ids in `next` that `prev` did not carry. */
-  function difference(next: ReadonlySet<NodeId>, prev: ReadonlySet<NodeId>): NodeId[] {
-    const out: NodeId[] = [];
-    for (const id of next) if (!prev.has(id)) out.push(id);
-    return out;
   }
 
   /**
@@ -3102,19 +2747,16 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     if (destroyed) return;
     metrics = measureFontMetrics(theme, DEFAULT_METRICS);
     refreshEntityAccents(currentConfig);
-    // Published BEFORE awaiting layout, and not on return as in `doSetData`:
-    // `search()` and `doExpand`/`doCollapse`'s guards read these two without going
-    // through `ready`, and delaying them by a whole ELK layout would change what they
-    // answer. That difference in publication discipline — as we go here, in a single
-    // gesture after the generation guard there — is what keeps the two sites
-    // distinct.
-    collapseState = new CollapseState(sourceGraph);
-    searchIndex = buildSearchIndex(sourceGraph);
-
-    const structure = await layoutStructure(sourceGraph, collapseState.visibleNodeIds());
-    engine = structure.engine;
-    layoutResult = structure.layout;
+    // Computed then published, the same discipline as the two other controllers
+    // (ADR-0024): the collapse state, the search index and the first layout appear
+    // together or not at all. They used to be published as they came — the collapse
+    // state and the index before awaiting the layout — so that `search()` and the
+    // fold guards could read them during the initial ELK round trip; nothing can
+    // be drawn in that window anyway (no positions, no `rebuild()` yet), and one
+    // publication point per view is what the seam is for.
+    const structureState = await structureView.compute(sourceGraph, currentConfig, metrics);
     if (destroyed) return;
+    structureView.publish(structureState);
 
     // The structure view is ALWAYS laid out, even if the host starts in another
     // view: it is the fallback, it owns the search index the graph view borrows,
@@ -3191,13 +2833,13 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     });
   })();
 
-  /** Re-runs the full pipeline (buildGraph → CollapseState → SearchIndex →
-   * initial layout → rebuild → fit) against new `data`, reusing
+  /** Re-runs the full pipeline (buildGraph → `structureView.compute` → publish →
+   * rebuild → fit) against new `data`, reusing
    * `currentConfig` when `configOverride` is omitted. Search/selection state
-   * is reset. Uses a fresh StructureLayoutEngine (rather than reusing
-   * `engine`) so the new graph never inherits the old one's `expansionDeltas`,
-   * which is keyed by NodeId (a JSON pointer) and could otherwise collide
-   * with an unrelated node at the same path in the new dataset.
+   * is reset. `structureView.compute` builds a fresh layout engine (rather than
+   * reusing the published state's) so the new graph never inherits the old one's
+   * `expansionDeltas`, which is keyed by NodeId (a JSON pointer) and could
+   * otherwise collide with an unrelated node at the same path in the new dataset.
    *
    * Awaits `ready` first so a setData() called before initial init has
    * finished (camera/app not yet available) queues behind it instead of
@@ -3218,10 +2860,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
 
     const config = configOverride ?? currentConfig;
     const newSource = buildGraph(data, config);
-    const newCollapseState = new CollapseState(newSource);
-    const newSearchIndex = buildSearchIndex(newSource);
-
-    const structure = await layoutStructure(newSource, newCollapseState.visibleNodeIds());
+    const structureState = await structureView.compute(newSource, config, metrics);
 
     // The CURRENT view is recomputed on the NEW graph, before publication and
     // without reusing anything indexed by node id, which describes the old one. A
@@ -3248,10 +2887,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     if (destroyed || gen !== opGen) return;
 
     sourceGraph = newSource;
-    collapseState = newCollapseState;
-    searchIndex = newSearchIndex;
-    engine = structure.engine;
-    layoutResult = structure.layout;
+    structureView.publish(structureState);
     currentConfig = config;
     refreshEntityAccents(config);
     // Node as well as aggregate: both are indexed by a key of the replaced graph.
