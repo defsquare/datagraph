@@ -1,7 +1,7 @@
 ---
 title: Documentation
 type: docs
-description: "Install datagraph, write an ids/refs/groups config, check it, and read the two views."
+description: "Install datagraph, write an ids/refs/groups config, check it, and read the three views."
 ---
 
 `datagraph` renders a JSON document as a navigable graph: records become cards, declared foreign keys become reference edges, and declared aggregate roots become envelopes around their members. The [landing page](/) says why; these pages say how.
@@ -11,7 +11,7 @@ description: "Install datagraph, write an ids/refs/groups config, check it, and 
   {{< card link="/docs/getting-started/" title="Getting started" icon="academic-cap" subtitle="Open a file, read the canvas, work a document too large to draw in full." >}}
   {{< card link="/docs/config/" title="Config reference" icon="adjustments" subtitle="ids, refs, groups, maxNodes, rootLabel, and the selector grammar." >}}
   {{< card link="/docs/check/" title="Checking a config" icon="badge-check" subtitle="--check, the report, --json, and what each exit code means." >}}
-  {{< card link="/docs/views/" title="The two views" icon="view-grid" subtitle="Structure and graph: what each one draws, and when to use which." >}}
+  {{< card link="/docs/views/" title="The three views" icon="view-grid" subtitle="Structure, tree and graph: what each one draws, and when to use which." >}}
   {{< card link="/docs/plugin/" title="Claude Code plugin" icon="puzzle" subtitle="The skill that teaches an agent the whole protocol, and how to install it." >}}
   {{< card link="/docs/api/" title="JS API" icon="code" subtitle="The embeddable packages — in the repository, not yet on npm." >}}
 {{< /cards >}}

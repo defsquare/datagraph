@@ -48,7 +48,7 @@ An array of joins, `{ from, to }`.
 
 ## `groups`
 
-Names from `ids` that are DDD aggregate roots, **in declaration order**. They drive the [graph view](/docs/views/#graph-view): each aggregate is painted as a circular envelope around its members.
+Names from `ids` that are DDD aggregate roots, **in declaration order**. They drive the [graph view](/docs/views/#graph-view), where each aggregate is painted as a circular envelope around its members, and the [tree view](/docs/views/#tree-view), where they are the roots every record hangs from.
 
 An entity `E` belongs to the aggregate rooted at `R` when `R` is the winner among the roots at the minimal distance from `E`, where distance is the number of outgoing references leading from `E` to a root. A root is at distance `0` from itself, so it always wins its own aggregate.
 
@@ -102,5 +102,5 @@ So whatever you want to read inside a card must be a direct scalar field of that
 ## Related
 
 - [Checking a config without opening it](/docs/check/)
-- [The two views](/docs/views/)
+- [The three views](/docs/views/)
 - [Getting started](/docs/getting-started/)

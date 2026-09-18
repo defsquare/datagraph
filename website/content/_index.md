@@ -24,6 +24,6 @@ trailer:
   width: 1280
   height: 802
   caption: >-
-    **The two views, in one take** — the containment tree of the structure
-    view, then the same document as a graph of records and joins.
+    **Two of the three views, in one take** — the containment tree of the
+    structure view, then the same document as a graph of records and joins.
 ---

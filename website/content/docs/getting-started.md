@@ -35,7 +35,7 @@ Argument and file errors are reported on stderr, with a non-zero exit code, **be
 | Two-finger swipe, or drag the background | Pan |
 | Pinch, mouse wheel, <kbd>Ctrl</kbd> + wheel | Zoom at the cursor |
 | Click a card | Select it |
-| <kbd>Enter</kbd> on a selected card | Expand or collapse it (structure view) |
+| <kbd>Enter</kbd> on a selected card | Expand or collapse it (structure and tree views) |
 | Drag a card | Move it out of the way |
 | Drag an aggregate envelope | Move the whole aggregate (graph view) |
 | Arrow keys | Move the selection to the nearest visible neighbour |
@@ -63,4 +63,4 @@ None of this touches the graph itself: `buildGraph` still builds every node, so 
 
 - [Config: ids, refs, groups](/docs/config/)
 - [Checking a config without opening it](/docs/check/)
-- [The two views](/docs/views/)
+- [The three views](/docs/views/)

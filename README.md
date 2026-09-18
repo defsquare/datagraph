@@ -18,11 +18,15 @@ Only what is expanded gets rendered, so a 10,000-node dataset stays smooth.
 You can pan, zoom, expand and collapse, drag a card out of the way, click a
 reference to jump to its target, and search across every field.
 
-Two views are built in. The default structure view lays out the containment
-tree (ELK layered). The optional graph view switches to records-as-vertices
-and joins-as-edges, grouped into DDD aggregates drawn as circular envelopes;
-see [`config.groups`](https://datagraph.defsquare.com/docs/config/#groups) and
-[`docs/graph-view.md`](./docs/graph-view.md).
+Three views are built in. The default structure view lays out the containment
+tree (ELK layered), left to right. The tree view lays out a containment
+re-derived from the references, top to bottom: a record hangs under the target
+of the foreign key that claimed it, which turns a normalised document — flat
+tables joined by keys — into the hierarchy it describes. The graph view
+switches to records-as-vertices and joins-as-edges, grouped into DDD
+aggregates drawn as circular envelopes. The tree and the graph both hang from
+[`config.groups`](https://datagraph.defsquare.com/docs/config/#groups); the
+graph's engine is described in [`docs/graph-view.md`](./docs/graph-view.md).
 
 <!-- A still that links out, not an inline player. GitHub strips every <video>
      tag from Markdown, and injects a player only for URLs on its own attachment
@@ -35,7 +39,7 @@ see [`config.groups`](https://datagraph.defsquare.com/docs/config/#groups) and
 *Thirty seconds, from `datagraph demo.json -c demo.config.json` to the graph
 view: the structure view expands records and follows a foreign key to its
 target, then the same sixty records are redrawn as vertices and joins, clustered
-into aggregates. The clip plays on
+into aggregates. The tree view is not in the clip. It plays on
 [datagraph.defsquare.com](https://datagraph.defsquare.com/).*
 
 You use it as a **standalone desktop app**: the `datagraph` binary opens a
@@ -79,7 +83,7 @@ Full docs live at [datagraph.defsquare.com](https://datagraph.defsquare.com).
 - [Getting started](https://datagraph.defsquare.com/docs/getting-started/): the canvas, the gestures, and [how a large file opens on a preview](https://datagraph.defsquare.com/docs/getting-started/#a-large-file-opens-on-a-preview).
 - [Config reference](https://datagraph.defsquare.com/docs/config/): `ids`, `refs`, `groups`, and the [selector grammar](https://datagraph.defsquare.com/docs/config/#selector-grammar).
 - [Checking a config](https://datagraph.defsquare.com/docs/check/): `--check`, the exit codes, `--json`.
-- [The two views](https://datagraph.defsquare.com/docs/views/): structure and graph.
+- [The three views](https://datagraph.defsquare.com/docs/views/): structure, tree and graph.
 - [The Claude Code plugin](https://datagraph.defsquare.com/docs/plugin/): the skill that teaches an agent the protocol, installed from [`defsquare/claude-marketplace`](https://github.com/defsquare/claude-marketplace).
 
 What stays here documents the code rather than the product:

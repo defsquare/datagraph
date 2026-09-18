@@ -32,4 +32,4 @@ The [desktop binary](/docs/install/) is the supported way to use `datagraph`.
 
 - [Install](/docs/install/)
 - [Config: ids, refs, groups](/docs/config/)
-- [The two views](/docs/views/)
+- [The three views](/docs/views/)
