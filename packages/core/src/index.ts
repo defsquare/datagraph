@@ -71,8 +71,10 @@ export {
   type StructureLayoutEngine,
   // In the options of `createStructureLayoutEngine`.
   type ElkFactory,
-  type LayoutDirection,
 } from "./structure-layout.js"
+// The tree view's own layout: GLOBAL, stateless, and deliberately not the
+// structure engine parametrised — see `tree-layout.ts` and ADR-0043.
+export { createTreeLayout, type TreeLayout } from "./tree-layout.js"
 // `nearestDrawn` and `VALUE_ONLY_KEY` stay internal: the first is a detail of
 // the layout computation, the second the conventional key of a "value only"
 // row, which `isValueOnlyRow` already exposes as a predicate.

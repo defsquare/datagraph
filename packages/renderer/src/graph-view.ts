@@ -31,6 +31,8 @@ import type {
   TwoLevelLayoutOptions,
 } from "@defsquare/datagraph-core/graph-layout";
 import { clusterDimmed } from "./focus.js";
+import type { FoldStep, RemainderToken, View, ViewPolicy } from "./view.js";
+import type { Lod } from "./draw.js";
 
 /**
  * THE LAYOUT WORKER'S PROTOCOL, declared here because this is where it is spoken: the
@@ -1085,4 +1087,69 @@ export function createGraphViewController(hooks: GraphViewHooks): GraphViewContr
       ),
     };
   }
+}
+
+/**
+ * The graph view seen through the HOST's seam (`View`, ADR-0043).
+ *
+ * A thin adapter beside the controller rather than a second implementation: the
+ * controller keeps its rich, graph-specific surface — envelopes, semantic
+ * layers, hit areas, the worker protocol — which the host still reads directly
+ * for everything that only exists in this view. What goes through the seam is
+ * only what the host does GENERICALLY, in the same words, for all three views.
+ *
+ * Everything folding-related is inert here, and that is the view's definition:
+ * it shows every entity at once, so nothing is collapsed, nothing is paginated,
+ * and no gesture has anything to open. The gestures resolve to `null` WITHOUT
+ * touching anything — a `null` step is precisely how the host learns there is
+ * nothing to animate or frame.
+ *
+ * `source` is an accessor and not a value: the graph is replaced by `setData`,
+ * long after this adapter is built.
+ */
+export function graphViewAsView(
+  controller: GraphViewController,
+  source: () => Graph | undefined,
+): View {
+  return {
+    kind: "graph",
+    graph: source,
+    positions: () => controller.positions(),
+    visible: () => {
+      const target = source();
+      return target ? controller.entityIds(target) : new Set();
+    },
+    policy: (lod: Lod): ViewPolicy => ({
+      edgeMode: "ref",
+      chevrons: false,
+      foldable: false,
+      tokenHover: false,
+      expandedArrays: false,
+      // LOD 2 is the SEMANTIC regime: at that scale a card is nothing but a
+      // solid rectangle, so it says nothing any more, and the named aggregates
+      // replacing it say the architecture. The threshold is `lodForScale`'s and
+      // not a third setting — see the note at the head of `draw.ts`'s semantic
+      // section.
+      cards: lod === 2 ? "unclustered" : "all",
+      aggregates: lod === 2 ? "disc" : "hull",
+      // Moot here: this view draws no containment and pages nothing.
+      flow: "right",
+    }),
+    // The whole document's references: this view exists to show them, and it
+    // consumes none into a hierarchy the way the tree does.
+    refEdgesToDraw: () => source()?.refEdges ?? [],
+    isExpanded: () => true,
+    remainderTokens: (): RemainderToken[] => [],
+    // No index of its own: the host falls back to the structure view's, which
+    // covers the same source document — and this view shows every entity, so a
+    // result never needs revealing.
+    searchIndex: () => undefined,
+    expand: async (): Promise<FoldStep | null> => null,
+    collapse: async (): Promise<FoldStep | null> => null,
+    reveal: async (): Promise<FoldStep | null> => null,
+    revealPathTo: async (): Promise<FoldStep | null> => null,
+    // Its two-level engine rearranges everything on each computation, so it does
+    // not drift: a tidy-up would have nothing to repair.
+    tidy: async (): Promise<FoldStep | null> => null,
+  };
 }

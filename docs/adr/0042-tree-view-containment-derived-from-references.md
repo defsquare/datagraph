@@ -41,6 +41,12 @@ is fully determined by `refs` and `groups`.
   reveal and search reveal, untouched. `setView` swaps the folded state between
   the source graph and its tree; `ViewPolicy` gives `"tree"` the structure
   policy, as ADR-0024 anticipated for a third mode.
+  **AMENDED by [ADR-0043](./0043-one-controller-per-view.md)**: this sharing is
+  what did not hold. The tree now has a controller and a layout of its own
+  (`tree-view.ts`, `core/tree-layout.ts`), reached — like the other two views —
+  through the `View` seam. It keeps `CollapseState`, pagination and the search
+  index, which are core primitives; it no longer runs the structure view's
+  incremental engine.
 
 Shared targets of a many-to-many join (a sanction type referenced by many
 relations) cannot hang under every parent without duplication: they sit under
@@ -48,22 +54,26 @@ the root as leaves, and the reference stays an overlay edge.
 
 **The tree view flows TOP-TO-BOTTOM** — levels are rows, siblings side by side —
 while the structure view keeps its left-to-right layout. Not an option: a tree of
-a normalised document is read the way an org chart is. `createStructureLayoutEngine`
-therefore takes a `direction` (`"RIGHT"` by default, `"DOWN"` for the tree),
-implemented by TRANSPOSITION at the engine's boundary: the boxes handed to ELK
-have their width and height swapped, every `positions` map is transposed on entry
-and transposed back on exit, and the whole engine keeps working in a flow space
-where the layout always runs along x. A layered RIGHT layout over transposed boxes
-IS a layered DOWN layout over the real ones, so the three incremental paths —
-expand, reveal, collapse — stay a SINGLE implementation instead of two copies of
-the arithmetic that took the longest to get right. The one rule that does not
-transpose is the elided-array anchor: a row band is a horizontal reading, so in
-`"DOWN"` an elided node anchors on its nearest drawn card (its parent's) and the
-expansion opens below that card. On the renderer's side a `ViewPolicy.flow`
-(`"down"` for the tree, `"right"` elsewhere) carries the same decision to the
-containment edges — which leave the bottom centre of the source for the top centre
-of the target, from that same nearest drawn card — and to the remainder tokens,
-which sit beside their anchor rather than under it.
+a normalised document is read the way an org chart is.
+
+*This paragraph's MECHANISM was replaced by
+[ADR-0043](./0043-one-controller-per-view.md); the vertical decision above
+stands.* The direction was first obtained by giving `createStructureLayoutEngine`
+a `direction` option implemented by TRANSPOSITION at the engine's boundary — boxes
+handed to ELK with width and height swapped, every `positions` map transposed in
+and out, one non-commuting exception for the elided-array anchor. It kept the
+incremental paths a single implementation, and that is exactly what made it wrong:
+the arithmetic that took the longest to get right now had to be re-reasoned in
+flow space every time either view changed. The tree view has its own layout
+instead — `core/tree-layout.ts`, one GLOBAL ELK layered pass with
+`elk.direction: "DOWN"`, recomputed on every fold gesture, which its bounded
+visible set affords — and `structure-layout.ts` went back to having no direction
+at all. On the renderer's side `ViewPolicy.flow` (`"down"` for the tree,
+`"right"` elsewhere) stays: it is pure geometry, read by `drawEdges` and
+`drawSelectionOverlay` for containment edges — which leave the bottom centre of
+the source for the top centre of the target, from the nearest drawn card — and by
+the tree controller for its remainder tokens, which sit beside their anchor rather
+than under it.
 
 One layout change, shared with the structure view: the ELK engine now gets
 `considerModelOrder.strategy = NODES_AND_EDGES`, so a column of siblings keeps
@@ -108,3 +118,9 @@ order was decided and then not shown.
   (`CollapseState`'s `expandEntities`): every node below a tree graph's root is
   an entity, so the default entity boundary would show nothing but the roots —
   and the hierarchy is exactly what the reader picked this view to see.
+  *Amended by [ADR-0043](./0043-one-controller-per-view.md)*: the flag is
+  unchanged and still a core primitive, but the `CollapseState` carrying it now
+  belongs to `tree-view.ts` rather than being swapped into the structure view's
+  slot by `setView`. The synthetic root that state starts from is also no longer
+  DRAWN — the tree's layout gives ELK a 1×1 box for it and then drops it from
+  the positions — so the sanctions fixture opens on 206 cards, not 207.

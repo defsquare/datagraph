@@ -44,6 +44,10 @@ describe("api surface", () => {
       "buildSearchIndex",
       "buildTreeGraph",
       "createStructureLayoutEngine",
+      // DELIBERATE addition: the tree view has its own GLOBAL layout, which
+      // the renderer instantiates directly — it is not a mode of
+      // `createStructureLayoutEngine` (ADR-0043).
+      "createTreeLayout",
       "enclosingCircle",
       "headerTextFor",
       "isValueOnlyRow",

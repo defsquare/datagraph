@@ -10,22 +10,6 @@ export interface Rect {
   height: number
 }
 
-/** The direction the layout flows in: `"RIGHT"` lays levels out as columns (the
- * structure view), `"DOWN"` as rows (the tree view). */
-export type LayoutDirection = "RIGHT" | "DOWN"
-
-/** Swaps a rect's axes. Its own inverse. */
-function transposeRect(r: Rect): Rect {
-  return { x: r.y, y: r.x, width: r.height, height: r.width }
-}
-
-/** Swaps every rect's axes — the engine's boundary in `"DOWN"` mode. */
-function transposePositions(positions: Map<NodeId, Rect>): Map<NodeId, Rect> {
-  const out = new Map<NodeId, Rect>()
-  for (const [id, rect] of positions) out.set(id, transposeRect(rect))
-  return out
-}
-
 /** The band occupied by the row at index `rowIndex` in card `card`. */
 export function rowRectFor(card: Rect, rowIndex: number, metrics: NodeMetrics): Rect {
   return {
@@ -112,31 +96,6 @@ export function nearestCardRectFor(
 }
 
 /**
- * The rect an incremental path anchors on, expressed in the engine's FLOW SPACE.
- *
- * This is the one place where transposition does not commute. `anchorRectFor`
- * builds an elided array's anchor as a ROW BAND, using `headerHeight`/`rowHeight`
- * along y — real y. In flow space for `"DOWN"` that y is the flow's x, so the band
- * would be a slice of the layout's direction rather than a row: nonsense.
- *
- * So `"DOWN"` anchors an elided node on its nearest DRAWN card (its parent's) and
- * the expansion opens BELOW that card. "Coming out of the token" is a horizontal
- * reading; it does not translate to a vertical layout, and the same rule governs
- * the containment edges on the renderer's side.
- */
-function anchorInFlowSpace(
-  graph: Graph,
-  positions: Map<NodeId, Rect>,
-  id: NodeId,
-  metrics: NodeMetrics,
-  direction: LayoutDirection,
-): Rect | undefined {
-  if (direction === "RIGHT") return anchorRectFor(graph, positions, id, metrics)
-  const drawn = nearestDrawn(graph, id)
-  return drawn === null ? undefined : positions.get(drawn)
-}
-
-/**
  * The containment edges as ELK sees them: every elided endpoint is resolved to
  * its nearest DRAWN ancestor. The edge `#p1 → tags` becomes a self-loop on `#p1`
  * and disappears; the edge `tags → tags[0]` becomes `#p1 → tags[0]`, which lays
@@ -154,29 +113,14 @@ function drawnContainEdges(graph: Graph, visible: Set<NodeId>): ElkExtendedEdge[
   return edges
 }
 
-/**
- * The ELK boxes of the visible nodes, an elided node having none.
- *
- * In `"DOWN"` mode the boxes are handed over TRANSPOSED: the engine works in a
- * flow space where the layout always runs along x (see
- * `createStructureLayoutEngine`).
- */
-function drawnBoxes(
-  graph: Graph,
-  ids: Iterable<NodeId>,
-  metrics: NodeMetrics,
-  direction: LayoutDirection,
-): ElkNode[] {
+/** The ELK boxes of the visible nodes, an elided node having none. */
+function drawnBoxes(graph: Graph, ids: Iterable<NodeId>, metrics: NodeMetrics): ElkNode[] {
   const children: ElkNode[] = []
   for (const id of ids) {
     const node = graph.nodes.get(id)
     if (!node || node.elided) continue
     const size = measureNode(node, metrics)
-    children.push(
-      direction === "DOWN"
-        ? { id, width: size.height, height: size.width }
-        : { id, width: size.width, height: size.height },
-    )
+    children.push({ id, width: size.width, height: size.height })
   }
   return children
 }
@@ -229,7 +173,6 @@ async function layoutIsolatedBlock(
   newlyVisible: NodeId[],
   visible: Set<NodeId>,
   metrics: NodeMetrics,
-  direction: LayoutDirection,
   options: Record<string, string> = LAYOUT_OPTIONS,
 ): Promise<IsolatedBlock> {
   const elk = elkFactory()
@@ -247,7 +190,7 @@ async function layoutIsolatedBlock(
   const elkGraph: ElkNode = {
     id: "root",
     layoutOptions: options,
-    children: drawnBoxes(graph, newlyVisible, metrics, direction),
+    children: drawnBoxes(graph, newlyVisible, metrics),
     edges: drawnContainEdges(graph, scope).filter(
       (e) => scope.has(e.sources[0]!) && scope.has(e.targets[0]!),
     ),
@@ -335,7 +278,6 @@ function insertionPointFor(
   parentId: NodeId,
   newlyVisible: Set<NodeId>,
   metrics: NodeMetrics,
-  direction: LayoutDirection,
 ): Insertion | undefined {
   const cards = cardChildrenOf(graph, parentId)
   const firstNew = cards.findIndex((id) => newlyVisible.has(id))
@@ -358,7 +300,7 @@ function insertionPointFor(
     }
   }
 
-  const anchor = anchorInFlowSpace(graph, positions, parentId, metrics, direction)
+  const anchor = anchorRectFor(graph, positions, parentId, metrics)
   if (!anchor) return undefined
   // No sibling laid out: lateral placement, like an expansion. The threshold
   // stays the anchor's midline — `layoutAfterExpand`'s — or the anchor itself,
@@ -433,36 +375,9 @@ const COLUMN_BLOCK_OPTIONS = {
  * (contain edges only, refEdges never participate) using elkjs.
  * By default it runs the bundled elk in-process (Node/tests); a renderer
  * can inject a worker-backed factory instead.
- *
- * `direction` (default `"RIGHT"`, bit-identical to the structure view) is
- * implemented by TRANSPOSITION at the engine's boundary, not by a second set of
- * incremental paths. The whole engine keeps working in a FLOW SPACE where the
- * layout always runs along x: `"DOWN"` hands ELK boxes with width and height
- * swapped, transposes every `positions` map coming in and transposes every map
- * going out. A layered RIGHT layout over transposed boxes IS a layered DOWN
- * layout over the real boxes, so the three incremental rules — place the block
- * beside the anchor, push what lies below the anchor's midline, undo that push on
- * collapse — become "place the block below the anchor, push what lies to the
- * right of its vertical midline" for free, and `expansionDeltas` stays coherent
- * because it too lives in flow space.
- *
- * Writing the three incremental paths twice, once per axis, would have doubled
- * exactly the arithmetic that took the longest to get right — and the second copy
- * would have drifted the first time one of them was fixed.
- *
- * The single non-commuting point is the elided-array anchor: see
- * `anchorInFlowSpace`.
  */
-export function createStructureLayoutEngine(opts?: {
-  elkFactory?: ElkFactory
-  direction?: LayoutDirection
-}): StructureLayoutEngine {
+export function createStructureLayoutEngine(opts?: { elkFactory?: ElkFactory }): StructureLayoutEngine {
   const elkFactory: ElkFactory = opts?.elkFactory ?? (() => new ELK())
-  const direction: LayoutDirection = opts?.direction ?? "RIGHT"
-
-  /** Real space ↔ flow space. The identity in `"RIGHT"` mode. */
-  const flip = (positions: Map<NodeId, Rect>): Map<NodeId, Rect> =>
-    direction === "DOWN" ? transposePositions(positions) : positions
 
   // Private engine state: for each node expanded via layoutAfterExpand, the
   // vertical shift (delta) applied to nodes below its midline (thresholdY),
@@ -487,7 +402,7 @@ export function createStructureLayoutEngine(opts?: {
       const elkGraph: ElkNode = {
         id: "root",
         layoutOptions: LAYOUT_OPTIONS,
-        children: drawnBoxes(graph, visible, metrics, direction),
+        children: drawnBoxes(graph, visible, metrics),
         edges: drawnContainEdges(graph, visible),
       }
 
@@ -503,7 +418,7 @@ export function createStructureLayoutEngine(opts?: {
         })
       }
 
-      return { positions: flip(positions) }
+      return { positions }
     },
 
     async layoutAfterExpand(
@@ -513,14 +428,11 @@ export function createStructureLayoutEngine(opts?: {
       visible: Set<NodeId>,
       metrics: NodeMetrics = DEFAULT_METRICS,
     ): Promise<LayoutResult> {
-      // Everything below runs in FLOW SPACE: transposed on the way in for
-      // `"DOWN"`, transposed back on the way out.
-      const prevFlow = flip(prev.positions)
       const positions = new Map<NodeId, Rect>()
-      for (const [id, rect] of prevFlow) positions.set(id, { ...rect })
+      for (const [id, rect] of prev.positions) positions.set(id, { ...rect })
 
-      const anchor = anchorInFlowSpace(graph, prevFlow, expandedId, metrics, direction)
-      const newlyVisible = newlyVisibleIds(graph, prevFlow, visible)
+      const anchor = anchorRectFor(graph, prev.positions, expandedId, metrics)
+      const newlyVisible = newlyVisibleIds(graph, prev.positions, visible)
 
       if (!anchor || newlyVisible.length === 0) {
         // Repeated/no-op expand of an already-expanded node: do NOT clobber a
@@ -530,14 +442,12 @@ export function createStructureLayoutEngine(opts?: {
           const thresholdY = anchor ? anchor.y + anchor.height / 2 : -Infinity
           expansionDeltas.set(expandedId, { delta: 0, thresholdY })
         }
-        return { positions: flip(positions) }
+        return { positions }
       }
 
       // Step 1: layout the newly visible subgraph under expandedId in isolation,
       // using the same elk config as the main layout.
-      const block = await layoutIsolatedBlock(
-        elkFactory, graph, newlyVisible, visible, metrics, direction,
-      )
+      const block = await layoutIsolatedBlock(elkFactory, graph, newlyVisible, visible, metrics)
       const subtreeBBoxHeight = block.height
 
       // Step 2: offset the subgraph so its top-left lands at
@@ -551,7 +461,7 @@ export function createStructureLayoutEngine(opts?: {
       const delta = Math.max(0, subtreeBBoxHeight - anchor.height)
       const threshold = anchor.y + anchor.height / 2
       if (delta > 0) {
-        for (const [id, rect] of prevFlow) {
+        for (const [id, rect] of prev.positions) {
           if (rect.y > threshold) {
             positions.set(id, { ...rect, y: rect.y + delta })
           }
@@ -562,7 +472,7 @@ export function createStructureLayoutEngine(opts?: {
       // matching collapse can undo the shift.
       expansionDeltas.set(expandedId, { delta, thresholdY: threshold })
 
-      return { positions: flip(positions) }
+      return { positions }
     },
 
     async layoutAfterReveal(
@@ -572,24 +482,23 @@ export function createStructureLayoutEngine(opts?: {
       visible: Set<NodeId>,
       metrics: NodeMetrics = DEFAULT_METRICS,
     ): Promise<LayoutResult> {
-      const prevFlow = flip(prev.positions)
       const positions = new Map<NodeId, Rect>()
-      for (const [id, rect] of prevFlow) positions.set(id, { ...rect })
+      for (const [id, rect] of prev.positions) positions.set(id, { ...rect })
 
-      const newlyVisible = newlyVisibleIds(graph, prevFlow, visible)
+      const newlyVisible = newlyVisibleIds(graph, prev.positions, visible)
       // Revealing a page of a collapsed node, or re-revealing an already laid
       // out page, adds nothing to draw: lay out NOTHING and shift NOTHING, like
       // `layoutAfterExpand`'s no-op branch. Shifting here would dig a hole no
       // collapse could ever close.
-      if (newlyVisible.length === 0) return { positions: flip(positions) }
+      if (newlyVisible.length === 0) return { positions }
 
       const insertion = insertionPointFor(
-        graph, prevFlow, parentId, new Set(newlyVisible), metrics, direction,
+        graph, prev.positions, parentId, new Set(newlyVisible), metrics,
       )
-      if (!insertion) return { positions: flip(positions) }
+      if (!insertion) return { positions }
 
       const block = await layoutIsolatedBlock(
-        elkFactory, graph, newlyVisible, visible, metrics, direction, COLUMN_BLOCK_OPTIONS,
+        elkFactory, graph, newlyVisible, visible, metrics, COLUMN_BLOCK_OPTIONS,
       )
 
       placeBlock(positions, block, insertion.colX, insertion.blockTopY)
@@ -598,7 +507,7 @@ export function createStructureLayoutEngine(opts?: {
       // below makes room for it, by its height plus the inter-card gap. The
       // threshold is inclusive because the next card sits exactly on it.
       const delta = block.height + NODE_GAP
-      for (const [id, rect] of prevFlow) {
+      for (const [id, rect] of prev.positions) {
         if (rect.y >= insertion.thresholdY) {
           positions.set(id, { ...rect, y: rect.y + delta })
         }
@@ -623,7 +532,7 @@ export function createStructureLayoutEngine(opts?: {
           : { delta, thresholdY: insertion.thresholdY },
       )
 
-      return { positions: flip(positions) }
+      return { positions }
     },
 
     layoutAfterCollapse(
@@ -632,10 +541,9 @@ export function createStructureLayoutEngine(opts?: {
       collapsedId: NodeId,
       visible: Set<NodeId>,
     ): LayoutResult {
-      const prevFlow = flip(prev.positions)
       const positions = new Map<NodeId, Rect>()
       const nowInvisible: NodeId[] = []
-      for (const [id, rect] of prevFlow) {
+      for (const [id, rect] of prev.positions) {
         if (!visible.has(id)) {
           nowInvisible.push(id)
           continue
@@ -672,7 +580,7 @@ export function createStructureLayoutEngine(opts?: {
 
       for (const id of idsToUndo) expansionDeltas.delete(id)
 
-      return { positions: flip(positions) }
+      return { positions }
     },
   }
 }

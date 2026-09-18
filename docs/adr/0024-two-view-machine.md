@@ -39,6 +39,11 @@ Three moves, no polymorphism:
   interface would have had ~15 methods, half of them no-ops in one implementation —
   a mirror of the conditionals with one more indirection, not touching the real
   problem, which is **state synchronisation**.
+  *Revisited by [ADR-0043](./0043-one-controller-per-view.md)*: with a THIRD view
+  whose state is entirely its own — its graph, its folding, its layout — the
+  interface stopped being a mirror of conditionals over shared state and became
+  a seam with three real implementations behind it. The reasoning above held for
+  the problem it faced; it is the problem that changed.
 
 ## Consequences
 
@@ -54,4 +59,9 @@ Three moves, no polymorphism:
   was planned by the spec.
 - A future third view mode would be written inside `viewPolicy()`; the graph view's
   semantic zoom (ADR-0026) already went in there, and that is what guarantees by
-  construction that cards and discs never coexist.
+  construction that cards and discs never coexist. The third view did arrive
+  (ADR-0042) and `viewPolicy()` did absorb it — then
+  [ADR-0043](./0043-one-controller-per-view.md) moved the policy behind
+  `View.policy(lod)`, one implementation per view. `ViewPolicy` itself, and the
+  `compute` / `publish` discipline of M2, are unchanged: that record extends this
+  one, it does not replace it.
