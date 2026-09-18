@@ -41,7 +41,8 @@ export interface HiddenGap {
  *
  * Initial state (constructor): BFS from the root, marking every
  * non-entity node encountered as expanded; descent stops at the first
- * entity node on each branch (entities start collapsed).
+ * entity node on each branch (entities start collapsed) — unless
+ * `expandEntities` lifts that boundary.
  *
  * This expansion is further BOUNDED by a card budget (`initialCardBudget`,
  * default `INITIAL_CARD_BUDGET`): with no entities — the CLI-without-config case
@@ -68,9 +69,25 @@ export class CollapseState {
   private readonly revealed: Map<NodeId, Set<number>> = new Map()
   private static readonly DEFAULT_PAGES: ReadonlySet<number> = new Set([0])
 
-  constructor(graph: Graph, opts: { initialCardBudget?: number } = {}) {
+  constructor(
+    graph: Graph,
+    opts: {
+      initialCardBudget?: number
+      /**
+       * Lifts the entity boundary: the BFS descends THROUGH entities instead of
+       * stopping at them. For the tree view, whose every node below the root is an
+       * entity — a tree that opens entirely collapsed shows nothing but its roots.
+       *
+       * The card budget still applies unchanged: "fully expanded" means everything
+       * the budget affords, top levels first. A normalised document with 100k
+       * entities must not enter ELK in one call.
+       */
+      expandEntities?: boolean
+    } = {},
+  ) {
     this.graph = graph
     const budget = opts.initialCardBudget ?? INITIAL_CARD_BUDGET
+    const expandEntities = opts.expandEntities ?? false
 
     // The historical BFS expanded everything down to the entity boundaries —
     // without a config there are no entities, hence no brake, and the whole
@@ -87,7 +104,7 @@ export class CollapseState {
       // The root is always expanded/visible, even in the (unusual) case
       // where it is itself an entity node; its children still respect
       // the entity-boundary rule below.
-      if (node.kind === "entity" && id !== graph.rootId) continue
+      if (!expandEntities && node.kind === "entity" && id !== graph.rootId) continue
 
       // Expanding `id` reveals its first page of card children: that is what it
       // costs the budget. The root is always expanded — a document that opens on
@@ -97,7 +114,7 @@ export class CollapseState {
       cards += cost
 
       this.expanded.add(id)
-      if (node.kind === "entity") continue // do not descend past an entity boundary
+      if (!expandEntities && node.kind === "entity") continue // do not descend past an entity boundary
 
       // Only enqueue what can become visible: the elided ones (always rows) and
       // the FIRST page of card children. Enqueueing beyond that would spend the

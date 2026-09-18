@@ -198,3 +198,44 @@ describe("CollapseState — initial budget", () => {
     expect(cs.visibleNodeIds().has("/items/100")).toBe(false)
   })
 })
+
+/**
+ * `expandEntities` — what the tree view opens with. Every node below a tree
+ * graph's root is an entity, so the default boundary would leave that view on
+ * its roots alone.
+ */
+describe("CollapseState — expandEntities", () => {
+  it("descends THROUGH the entities, revealing their nested objects", () => {
+    const g = buildGraph(shopData, shopConfig)
+    const cs = new CollapseState(g, { expandEntities: true })
+    const visible = cs.visibleNodeIds()
+    expect(cs.isExpanded("/customers/0")).toBe(true)
+    expect(visible).toContain("/customers/0/address")
+    expect(visible).toContain("/orders/0/lines/1")
+  })
+
+  it("without it, the entity boundary still holds", () => {
+    const g = buildGraph(shopData, shopConfig)
+    const cs = new CollapseState(g)
+    expect(cs.isExpanded("/customers/0")).toBe(false)
+    expect(cs.visibleNodeIds()).not.toContain("/customers/0/address")
+  })
+
+  it("the card budget still caps it: 'everything' is everything the budget affords", () => {
+    // 20 entities each carrying a nested `address` card: 42 visible nodes once
+    // fully expanded, against a budget of 25.
+    const g = buildGraph(
+      {
+        customers: Array.from({ length: 20 }, (_, i) => ({ id: `c${i}`, address: { city: "Lyon" } })),
+      },
+      { ids: { Customer: "$.customers[*].id" } },
+    )
+    expect(new CollapseState(g, { expandEntities: true }).visibleNodeIds().size).toBe(42)
+    // 26 and not 25: the `/customers` array is ELIDED — a row of the root's
+    // card, not a card — so it is visible without costing the budget anything.
+    // What the 25 buys is the 20 entity cards plus 4 of their addresses.
+    const capped = new CollapseState(g, { expandEntities: true, initialCardBudget: 25 })
+    expect(capped.visibleNodeIds().size).toBe(26)
+    expect(capped.isExpanded("/customers/19")).toBe(false)
+  })
+})

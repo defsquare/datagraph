@@ -81,3 +81,7 @@ order was decided and then not shown.
   with every infraction declared as a root, groups claimed nothing and no
   hierarchy could emerge. The same change turns its graph view from 14 flat
   shelves into 5 radial clusters.
+- The tree view opens **fully expanded**, within the opening budget of ADR-0025
+  (`CollapseState`'s `expandEntities`): every node below a tree graph's root is
+  an entity, so the default entity boundary would show nothing but the roots —
+  and the hierarchy is exactly what the reader picked this view to see.

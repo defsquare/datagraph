@@ -57,15 +57,18 @@ test("setView('tree') folds the tables into a hierarchy, and back", async ({ pag
 
   await page.evaluate(() => (window as any).__graph.setView("tree"))
   expect(await currentView(page)).toBe("tree")
-  // The synthetic root, the 5 declared roots, and the two tables nothing claims:
-  // 23 sanction types and 14 competitions. Everything else hangs under an entity
-  // and entities start collapsed.
-  expect(await visibleCount(page)).toBe(43)
+  // The tree opens FULLY expanded: the synthetic root, the 5 groups, their 14
+  // infractions, and under those the 98 relations and 52 financial sanctions,
+  // plus the two tables nothing claims — 23 sanction types and 14 competitions.
+  // No nested objects anywhere, so that is EVERY node of the tree graph: 207
+  // cards, under the 300-card opening budget.
+  expect(await visibleCount(page)).toBe(207)
 
-  // The second group's card reveals the 5 infractions the references gave it —
-  // in the structure view those same cards hang off a table, all 14 together.
-  await page.evaluate(() => (window as any).__graph.expand("/groupesInfraction/1"))
-  expect(await visibleCount(page)).toBe(48)
+  // So the gesture worth proving is now the opposite one: collapsing the second
+  // group takes its whole subtree with it — the 5 infractions the references
+  // gave it, and their 28 relations and 20 financial sanctions.
+  await page.evaluate(() => (window as any).__graph.collapse("/groupesInfraction/1"))
+  expect(await visibleCount(page)).toBe(207 - 53)
 
   await page.evaluate(() => (window as any).__graph.setView("structure"))
   expect(await currentView(page)).toBe("structure")
@@ -83,7 +86,7 @@ test("returning from graph view to structure swaps the folded graph back", async
   const structureVisible = await visibleCount(page)
 
   await page.evaluate(() => (window as any).__graph.setView("tree"))
-  expect(await visibleCount(page)).toBe(43)
+  expect(await visibleCount(page)).toBe(207)
 
   // Graph view leaves the folded state alone; coming back to STRUCTURE — not to
   // the tree it was folded into — has to rebuild it from the source document.

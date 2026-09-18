@@ -993,6 +993,14 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     return target === "tree" ? buildTreeGraph(source, validateConfig(config)) : source;
   }
 
+  /** The initial collapse state of a folded view. The tree opens FULLY EXPANDED —
+   * within the opening budget — because every node below its root is an entity:
+   * with the default entity boundary it would show nothing but its roots, and the
+   * reader picked this view precisely to see the hierarchy. */
+  function foldedCollapseStateFor(target: "structure" | "tree", folded: Graph): CollapseState {
+    return new CollapseState(folded, { expandEntities: target === "tree" });
+  }
+
   /**
    * Lays `target` out for structure view, with the ELK engine's fallback:
    * `elkWorkerUrl` designates a worker that may be unrunnable (missing chunk,
@@ -2935,7 +2943,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     // answer. That difference in publication discipline — as we go here, in a single
     // gesture after the generation guard there — is what keeps the two sites
     // distinct.
-    collapseState = new CollapseState(graph);
+    collapseState = foldedCollapseStateFor(foldedView, graph);
     searchIndex = buildSearchIndex(graph);
 
     const structure = await layoutStructure(graph, collapseState.visibleNodeIds());
@@ -3047,7 +3055,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     const config = configOverride ?? currentConfig;
     const newSource = buildGraph(data, config);
     const newGraph = foldedGraphFor(foldedView, newSource, config);
-    const newCollapseState = new CollapseState(newGraph);
+    const newCollapseState = foldedCollapseStateFor(foldedView, newGraph);
     const newSearchIndex = buildSearchIndex(newGraph);
 
     const structure = await layoutStructure(newGraph, newCollapseState.visibleNodeIds());
@@ -3267,7 +3275,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
         if (!source) return;
         const gen = ++opGen;
         const nextGraph = foldedGraphFor(next, source, currentConfig);
-        const nextCollapseState = new CollapseState(nextGraph);
+        const nextCollapseState = foldedCollapseStateFor(next, nextGraph);
         const nextSearchIndex = buildSearchIndex(nextGraph);
         const structure = await layoutStructure(nextGraph, nextCollapseState.visibleNodeIds());
         if (destroyed || gen !== opGen) return;
