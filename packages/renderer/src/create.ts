@@ -52,6 +52,7 @@ import { Camera, revealPan, type Size } from "./camera.js";
 import {
   cardLabelStepForScale,
   drawEdgeHitAreas,
+  overRefValue,
   drawEdgeLabels,
   drawEdges,
   drawClusterHitAreas,
@@ -1970,7 +1971,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
       });
     }
 
-    // A referencing value's underline, revealed on hovering ITS row: the hyperlink
+    // A referencing value's underline, revealed on hovering THE VALUE: the hyperlink
     // affordance, which the tint alone does not give — a color says "this one is
     // special", an underline following the pointer says "this one answers a click".
     // `drawNode` has prepared a hidden Graphics per row concerned; all that is left
@@ -2012,8 +2013,13 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
         // no Graphics for it: without this filter, the row would be remembered as
         // "underlined" and the next change of row would go and turn off an underline
         // that does not exist.
+        // Same zone as the tap: the underline must promise exactly what the click
+        // will do, and the key column of a referencing row selects, never follows.
         const underlinable =
-          row !== undefined && refFields.has(row.key) && !(danglingFields?.has(row.key) ?? false);
+          row !== undefined &&
+          refFields.has(row.key) &&
+          !(danglingFields?.has(row.key) ?? false) &&
+          overRefValue(nodeView, index!, nodeView.toLocal(event.global).x);
         underline(underlinable ? index : null);
       });
       nodeView.on("pointerout", () => underline(null));
@@ -2281,8 +2287,9 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
 
   /** Header click on a node with children toggles expand/collapse; a header
    * click on a childless node, or a body click that isn't a ref-field row,
-   * selects the node; a click on a row backed by an outgoing ref edge
-   * follows that reference. Only meaningful at LOD 0 (the only LOD that
+   * selects the node; a click on the VALUE of a row backed by an outgoing ref
+   * edge follows that reference — on its key, it selects the card like any other
+   * row (`overRefValue`). Only meaningful at LOD 0 (the only LOD that
    * renders a header/rows distinction) — anywhere else, tapping the node
    * just selects it.
    *
@@ -2313,7 +2320,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
             return;
           }
           const edge = graph.refEdges.find((e) => e.from === node.id && e.field === row.key);
-          if (edge) {
+          if (edge && overRefValue(nodeView, rowIndex!, local.x)) {
             followRef(edge);
             return;
           }

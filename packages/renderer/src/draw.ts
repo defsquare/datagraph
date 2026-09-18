@@ -894,6 +894,9 @@ export function drawNode(
       Math.round(contentRight - iconSpace - valueText.width),
       Math.round(y - valueText.height / 2),
     );
+    // Labelled so `overRefValue` can find it: the value is the row's CLICK ZONE,
+    // and the zone is read from the text rather than recomputed from the budgets.
+    if (isRef) valueText.label = `ref-value:${index}`;
     container.addChild(valueText);
 
     // No underline on a broken row: it would promise a navigation `followRef` will
@@ -923,6 +926,19 @@ export function drawNode(
   });
 
   return container;
+}
+
+/**
+ * Is a card-local abscissa over row `index`'s referencing VALUE — the tinted,
+ * right-aligned text `drawNode` labelled `ref-value:<index>`? Everything to its
+ * right counts (the padding, a dangling row's cross), nothing to its left: the key
+ * column belongs to the card, and a click there selects it. Before this zone
+ * existed the whole row answered, and a card whose rows are mostly references
+ * could hardly be selected without navigating away.
+ */
+export function overRefValue(card: Container, index: number, localX: number): boolean {
+  const value = card.getChildByLabel(`ref-value:${index}`);
+  return value !== null && localX >= value.x;
 }
 
 const DASH_LENGTH = 6;

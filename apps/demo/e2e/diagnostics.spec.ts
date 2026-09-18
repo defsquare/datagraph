@@ -157,9 +157,19 @@ test("the GHOST row on the card opens the diagnostics panel with its entry marke
   // 58.5 — 36px above the card's (and so the canvas's) centre. Row index 3
   // (`quantity`, centred at 94.5) is what a plain centre click lands on instead,
   // which is exactly what `culling.spec.ts` relies on to land on a non-ref row.
+  //
+  // Horizontally, only the row's VALUE answers (`overRefValue`): the key column
+  // selects the card. "GHOST" is right-aligned against the cross, and no public
+  // API exposes the card's width, so we sweep rightwards from the centre and stop
+  // at the first click that opens the panel. A miss selects the card, which moves
+  // nothing.
   const box = (await page.locator("canvas").boundingBox())!
-  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2 - 36)
+  const label = page.locator("#selection-label")
+  for (let dx = 0; dx <= 170; dx += 6) {
+    await page.mouse.click(box.x + box.width / 2 + dx, box.y + box.height / 2 - 36)
+    if ((await label.textContent()) === "Diagnostics") break
+  }
 
-  await expect(page.locator("#selection-label")).toHaveText("Diagnostics")
+  await expect(label).toHaveText("Diagnostics")
   await expect(page.locator("#selection-rows .diag-current")).toHaveCount(1)
 })

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { Color, DOMAdapter, Graphics, Text } from "pixi.js";
 import { buildGraph, DEFAULT_METRICS, type DataGraphConfig } from "@defsquare/datagraph-core";
-import { drawNode } from "../src/draw.js";
+import { drawNode, overRefValue } from "../src/draw.js";
 import { resolveTheme } from "../src/theme.js";
 
 /**
@@ -371,5 +371,31 @@ describe("drawNode — dangling reference", () => {
       expect(signature(broken)).toEqual(signature(plain));
       expect(crosses(broken)).toHaveLength(0);
     }
+  });
+});
+
+describe("overRefValue — the click zone of a referencing row", () => {
+  const refFields = new Set(["customerId"]);
+
+  it("answers over the value and its right padding, never over the key column", () => {
+    const view = render(refFields);
+    const value = refValueText(view);
+    expect(overRefValue(view, REF_ROW, value.x - 1)).toBe(false);
+    expect(overRefValue(view, REF_ROW, value.x)).toBe(true);
+    expect(overRefValue(view, REF_ROW, rect.width - 1)).toBe(true);
+    // The key's abscissa: a click there selects the card.
+    expect(overRefValue(view, REF_ROW, metrics.railWidth + metrics.paddingX + 1)).toBe(false);
+  });
+
+  it("answers nowhere on a non-referencing row", () => {
+    const view = render(refFields);
+    expect(overRefValue(view, PLAIN_ROW, rect.width - 1)).toBe(false);
+  });
+
+  it("still answers on a dangling row: its click is what opens the diagnostics", () => {
+    const view = render(refFields, rect, refFields);
+    const value = refValueText(view);
+    expect(overRefValue(view, REF_ROW, value.x)).toBe(true);
+    expect(overRefValue(view, REF_ROW, value.x - 1)).toBe(false);
   });
 });
