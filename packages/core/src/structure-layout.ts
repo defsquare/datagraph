@@ -348,6 +348,10 @@ const LAYOUT_OPTIONS = {
   "elk.direction": "RIGHT",
   "elk.spacing.nodeNode": "24",
   "elk.layered.spacing.nodeNodeBetweenLayers": "48",
+  // Siblings keep their `childIds` order — the document's. Without it the layer
+  // sweep reorders a column by the barycenter of the children it happens to
+  // have, and a table's rows come out shuffled once a few of them are expanded.
+  "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
 }
 
 /**

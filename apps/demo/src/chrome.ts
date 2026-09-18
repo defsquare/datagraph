@@ -95,8 +95,17 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
     id: "toggle-dataset",
     label: "Extended dataset (4000)",
   });
+  // The tree view has no icon of its own in the toolbar (see `syncViewButton`):
+  // it is reached from the menu, whose label names the view a click WOULD
+  // activate, like the theme item just below it.
+  const treeItem = createMenuItem({ id: "toggle-tree", label: "Tree view" });
   const themeBtn = createMenuItem({ id: "toggle-theme", label: "Dark theme" });
-  const menuEl = createMenu({ id: "menu", labelledBy: "menu-toggle" }, datasetItem, themeBtn);
+  const menuEl = createMenu(
+    { id: "menu", labelledBy: "menu-toggle" },
+    datasetItem,
+    treeItem,
+    themeBtn,
+  );
 
   document
     .getElementById("toolbar")
@@ -284,15 +293,24 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
 
   // --- Structure / Graph toggle.
 
-  /** Aligns the button's icon and accessible label on the view the next click
-   * would activate. Reads the view that is ACTUALLY active, never the one that
-   * was requested (see the handler's comment). */
+  /** The folded view the toggle returns to. There are two of them now, and always
+   * coming back to structure would silently undo a switch to tree: the toggle is
+   * graph ↔ THE LAST FOLDED VIEW. */
+  let folded: "structure" | "tree" = "structure";
+
+  /** Aligns the button's icon and accessible label, and the menu item's label, on
+   * the view the next click would activate. Reads the view that is ACTUALLY
+   * active, never the one that was requested (see the handler's comment). */
   function syncViewButton(): void {
-    const target = graph.currentView() === "graph" ? "structure" : "graph";
-    const label = target === "graph" ? "Graph view" : "Structure view";
+    const current = graph.currentView();
+    if (current !== "graph") folded = current;
+    const target = current === "graph" ? folded : "graph";
+    const label =
+      target === "graph" ? "Graph view" : target === "tree" ? "Tree view" : "Structure view";
     toggleViewBtn.dataset.target = target;
     toggleViewBtn.title = label;
     toggleViewBtn.setAttribute("aria-label", label);
+    treeItem.textContent = current === "tree" ? "Structure view" : "Tree view";
   }
 
   /**
@@ -322,7 +340,7 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
       // because a concurrent `setData` took over.
       setViewBusy(true);
       try {
-        const next = graph.currentView() === "graph" ? "structure" : "graph";
+        const next = graph.currentView() === "graph" ? folded : "graph";
         await graph.setView(next);
         // Icon and label are derived from the view that is ACTUALLY active, never
         // from the one requested: `setView` swallows two failures without
@@ -331,6 +349,22 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
         // already took over. In both the promise resolves while the view has not
         // moved, and an icon set from `next` would announce a view that is not on
         // screen.
+        syncViewButton();
+      } finally {
+        setViewBusy(false);
+        toggleViewBtn.disabled = false;
+      }
+    })();
+  });
+
+  // Same busy discipline as the toggle, and on the SAME button: both commands
+  // drive the same switch, so acting on one must not leave the other live.
+  treeItem.addEventListener("click", () => {
+    void (async () => {
+      toggleViewBtn.disabled = true;
+      setViewBusy(true);
+      try {
+        await graph.setView(graph.currentView() === "tree" ? "structure" : "tree");
         syncViewButton();
       } finally {
         setViewBusy(false);

@@ -32,6 +32,12 @@ export interface AggregateIndex {
    * rather than closing it.
    */
   byNode: Map<NodeId, string[]>
+  /** For every claimed NON-ROOT entity, the entity it was claimed through: the
+   * target of the reference that put it one hop closer to its root. Roots are
+   * absent. This is the parent pointer of the BFS forest, and it follows the same
+   * tie-break as `byNode`: when a better claim replaces an equal-distance one, the
+   * predecessor is replaced with it. */
+  parents: Map<NodeId, NodeId>
 }
 
 /**
@@ -60,9 +66,10 @@ export interface AggregateIndex {
 export function buildAggregates(graph: Graph, config: ValidatedConfig): AggregateIndex {
   const aggregates = new Map<string, Aggregate>()
   const byNode = new Map<NodeId, string[]>()
+  const parents = new Map<NodeId, NodeId>()
 
   const rootTypes = new Set(config.aggregates)
-  if (rootTypes.size === 0) return { aggregates, byNode }
+  if (rootTypes.size === 0) return { aggregates, byNode, parents }
 
   // Declaration rank: this is what breaks distance ties.
   const typeRank = new Map<string, number>()
@@ -81,7 +88,7 @@ export function buildAggregates(graph: Graph, config: ValidatedConfig): Aggregat
     })
     roots.push({ id: node.id, aggId })
   }
-  if (roots.length === 0) return { aggregates, byNode }
+  if (roots.length === 0) return { aggregates, byNode, parents }
 
   /** Total order over the aggregates: type rank, then id. Negative if `a`
    * wins. */
@@ -130,13 +137,17 @@ export function buildAggregates(graph: Graph, config: ValidatedConfig): Aggregat
       if (known === undefined) {
         dist.set(source, nextDist)
         claim.set(source, currentClaim)
+        parents.set(source, current)
         queue.push(source)
       } else if (known === nextDist) {
         // Equal distance: only one of the two roots keeps the entity. Since the
         // minimum is taken at every encounter, the result does not depend on
         // discovery order.
         const held = claim.get(source)!
-        if (compare(currentClaim, held) < 0) claim.set(source, currentClaim)
+        if (compare(currentClaim, held) < 0) {
+          claim.set(source, currentClaim)
+          parents.set(source, current)
+        }
       }
       // known < nextDist: a closer root already claimed this entity.
     }
@@ -148,5 +159,5 @@ export function buildAggregates(graph: Graph, config: ValidatedConfig): Aggregat
     aggregates.get(aggId)!.memberIds.add(nodeId)
   }
 
-  return { aggregates, byNode }
+  return { aggregates, byNode, parents }
 }

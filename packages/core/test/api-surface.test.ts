@@ -42,6 +42,7 @@ describe("api surface", () => {
       "buildAggregates",
       "buildGraph",
       "buildSearchIndex",
+      "buildTreeGraph",
       "createStructureLayoutEngine",
       "enclosingCircle",
       "headerTextFor",

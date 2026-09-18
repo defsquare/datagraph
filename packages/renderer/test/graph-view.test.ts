@@ -253,7 +253,7 @@ describe("graph view controller — clustersFor", () => {
     // A truncated index under an intact layout: we no longer know anything about
     // the members, so we do not dim rather than dimming by default.
     controller.publish({
-      index: { aggregates: new Map(), byNode: new Map() },
+      index: { aggregates: new Map(), byNode: new Map(), parents: new Map() },
       layout: state.layout,
       // A truncated index has no membership left, hence no aggregated edge: the
       // field follows its index, it is not carried over from the intact state.

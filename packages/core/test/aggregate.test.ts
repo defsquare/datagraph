@@ -131,4 +131,22 @@ describe("buildAggregates", () => {
     const idx = index(shopData, shopConfig)
     expect(idx.aggregates.size).toBe(0)
   })
+
+  it("records the BFS predecessor of every claimed entity, and only of those", () => {
+    // The order was claimed THROUGH its customer: that is the hop the tree view
+    // turns into containment. The root itself was claimed by nobody.
+    const idx = index(shopData, { ...shopConfig, groups: ["Customer"] })
+    expect(idx.parents.get("/orders/0")).toBe("/customers/0")
+    expect(idx.parents.has("/customers/0")).toBe(false)
+    expect(idx.parents.has("/orders/1")).toBe(false) // dangling reference: unclaimed
+  })
+
+  it("moves the predecessor with the tie-break, not with the discovery order", () => {
+    // Same graph, same tie, opposite declaration order: the predecessor follows
+    // the winner. Without that, the tree would hang the order under a parent its
+    // aggregate disowns.
+    expect(index(twoRootsData, twoRootsConfig).parents.get("/orders/0")).toBe("/customers/0")
+    const reversed = { ...twoRootsConfig, groups: ["Product", "Customer"] }
+    expect(index(twoRootsData, reversed).parents.get("/orders/0")).toBe("/products/0")
+  })
 })

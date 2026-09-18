@@ -112,6 +112,9 @@ if (launch.mode === "file") {
   if (Object.keys(launch.config.ids ?? {}).length === 0) {
     // Without entities the graph view has nothing to show: structure only.
     document.getElementById("toggle-view")?.remove();
+    // Same reason for the tree: no entities, hence no references to derive a
+    // containment from.
+    document.getElementById("toggle-tree")?.remove();
   }
 }
 

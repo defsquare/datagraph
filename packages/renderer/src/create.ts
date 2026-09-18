@@ -12,6 +12,7 @@ import ELK from "elkjs/lib/elk.bundled.js";
 import {
   buildGraph,
   buildSearchIndex,
+  buildTreeGraph,
   CollapseState,
   anchorRectFor,
   createStructureLayoutEngine,
@@ -96,9 +97,12 @@ import {
 } from "./graph-view.js";
 import { Emitter } from "./events.js";
 
-/** `"structure"` lays out the containment tree; `"graph"` lays out the entities
- * and their references, grouped by aggregate. */
-export type DataGraphView = "structure" | "graph";
+/** `"structure"` lays out the containment tree; `"tree"` runs the structure
+ * view's machinery over a containment RE-DERIVED from the references — a
+ * top-level entity hangs under the target of the reference it was claimed through
+ * (`buildAggregates`' BFS forest, roots = `groups`); `"graph"` lays out the
+ * entities and their references, grouped by aggregate. */
+export type DataGraphView = "structure" | "tree" | "graph";
 
 /** What the current view allows cards and edges to do. Pure data, derived from
  * `view` and the current LOD: computing it in one block replaces the ternaries
@@ -188,7 +192,10 @@ export interface DataGraphOptions {
   theme?: ThemeOverride;
   elkWorkerUrl?: string | URL;
   /** Initial view. `"structure"` (the default) lays out the containment tree;
-   * `"graph"` lays out the entities and their references, grouped by aggregate. */
+   * `"tree"` runs the same machinery over a containment re-derived from the
+   * references — a top-level entity hangs under the target of the reference it was
+   * claimed through (`buildAggregates`' BFS forest, roots = `groups`); `"graph"`
+   * lays out the entities and their references, grouped by aggregate. */
   view?: DataGraphView;
   /**
    * Graph view layout settings, passed as is to `createTwoLevelLayoutEngine`. The
@@ -271,12 +278,15 @@ export interface DataGraph {
    * host's "Tidy" — to be offered to the user rather than triggered on its own: the
    * arrangement changes before their eyes, it must be their gesture.
    *
-   * No effect in graph view, which has its own engine and does not drift.
+   * Tree view drifts and is repaired the same way: it is the same machinery over
+   * another containment. No effect in graph view, which has its own engine and
+   * does not drift.
    */
   tidy(): Promise<void>;
-  /** Expands a node of the containment tree — a STRUCTURE VIEW operation. In graph
+  /** Expands a node of the containment tree — a STRUCTURE or TREE VIEW operation,
+   * the two being the same machinery over two different containments. In graph
    * view it has no visible effect: the state is indeed updated, and will show on
-   * returning to structure view, but graph view does not show containment. Graph
+   * returning to a folded view, but graph view does not show containment. Graph
    * view, for its part, collapses nothing: every entity is always visible there. */
   expand(id: NodeId): Promise<void>;
   /** Collapses a node of the containment tree. Same remark as `expand`. */
@@ -305,7 +315,12 @@ export interface DataGraph {
   setTheme(theme: Theme | ThemeOverride): void;
   /** View switch. The first switch to `"graph"` loads the organic engine on demand
    * (dynamic import) and computes the aggregates, hence the promise. The selection
-   * is carried over to the nearest entity, since graph view only knows entities. */
+   * is carried over to the nearest entity, since graph view only knows entities.
+   * Switching between the two FOLDED views — `"structure"` and `"tree"` — rebuilds
+   * the graph they render (the source document, or its reference-derived tree)
+   * along with the collapse state, the search index and the layout, hence a promise
+   * there too. A selection on a node the incoming graph does not hold — a
+   * structural node the tree drops — is released. */
   setView(view: DataGraphView): Promise<void>;
   currentView(): DataGraphView;
   destroy(): void;
@@ -843,6 +858,12 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
   // because it belongs to the cross-view orchestration, which this file alone
   // carries.
   let view: DataGraphView = options.view ?? "structure";
+  // What `buildGraph` produced, kept aside because `graph` is what the views
+  // RENDER: the source in structure view, its reference-derived tree in tree view.
+  // `foldedView` says which of the two `graph` currently holds, and is NOT `view`:
+  // graph view leaves the folded state exactly as it found it.
+  let sourceGraph: Graph | undefined;
+  let foldedView: "structure" | "tree" = options.view === "tree" ? "tree" : "structure";
   // True between crossing the threshold and the release, while a card OR an
   // aggregate envelope is being moved — the two gestures are the same from the
   // camera's point of view. One single reader: the camera, whose pan it inhibits
@@ -961,6 +982,17 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     return entityAccents.get(node.entityType) ?? theme.accent.entity;
   }
 
+  /** The graph the folded views render: the source for structure view, its
+   * reference-derived tree for tree view. Rebuilt on demand rather than memoised:
+   * linear in the graph, and a switch is a user gesture. */
+  function foldedGraphFor(
+    target: "structure" | "tree",
+    source: Graph,
+    config: DataGraphConfig,
+  ): Graph {
+    return target === "tree" ? buildTreeGraph(source, validateConfig(config)) : source;
+  }
+
   /**
    * Lays `target` out for structure view, with the ELK engine's fallback:
    * `elkWorkerUrl` designates a worker that may be unrunnable (missing chunk,
@@ -997,6 +1029,10 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
    * The two views are symmetric here, but the asymmetry is in the values: graph view
    * shows everything and collapses nothing, so everything about collapsing is false
    * there.
+   *
+   * `"tree"` takes the structure branch unchanged: it IS the structure view, run
+   * over a containment re-derived from the references. What separates the two is
+   * the graph handed to them, not what the view lets cards and edges do.
    */
   function viewPolicy(): ViewPolicy {
     if (view === "graph") {
@@ -2883,7 +2919,8 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     camera = new Camera(world, app.canvas, { isBlocked: () => contentDragging });
 
     currentConfig = options.config;
-    graph = buildGraph(options.data, currentConfig);
+    sourceGraph = buildGraph(options.data, currentConfig);
+    graph = foldedGraphFor(foldedView, sourceGraph, currentConfig);
     // The advances are measured only once. Measuring before the web font is ready
     // would freeze the fallback stack's for the whole session, and card widths would
     // vary from one load to the next. The timeout bounds the wait: a slow font
@@ -3008,7 +3045,8 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     const gen = ++opGen;
 
     const config = configOverride ?? currentConfig;
-    const newGraph = buildGraph(data, config);
+    const newSource = buildGraph(data, config);
+    const newGraph = foldedGraphFor(foldedView, newSource, config);
     const newCollapseState = new CollapseState(newGraph);
     const newSearchIndex = buildSearchIndex(newGraph);
 
@@ -3035,6 +3073,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
     // state — applying this stale one now would silently revert it. Bail.
     if (destroyed || gen !== opGen) return;
 
+    sourceGraph = newSource;
     graph = newGraph;
     collapseState = newCollapseState;
     searchIndex = newSearchIndex;
@@ -3215,6 +3254,45 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
         if (state === null) return;
         if (destroyed || gen !== opGen) return;
         graphView.publish(state);
+      } else if (next !== foldedView) {
+        // The two folded views render two DIFFERENT graphs of the same document, so
+        // the whole folded quintuple — graph, collapse state, search index, engine,
+        // layout — has to be rebuilt. Everything is computed BEFORE anything is
+        // published, under the same generation discipline as `doSetData`: the ELK
+        // layout is awaited, and a `setData` landing meanwhile must win.
+        //
+        // Also the path back from graph view when the last folded view was the other
+        // one: `next !== foldedView` is what notices it.
+        const source = sourceGraph;
+        if (!source) return;
+        const gen = ++opGen;
+        const nextGraph = foldedGraphFor(next, source, currentConfig);
+        const nextCollapseState = new CollapseState(nextGraph);
+        const nextSearchIndex = buildSearchIndex(nextGraph);
+        const structure = await layoutStructure(nextGraph, nextCollapseState.visibleNodeIds());
+        if (destroyed || gen !== opGen) return;
+
+        graph = nextGraph;
+        collapseState = nextCollapseState;
+        searchIndex = nextSearchIndex;
+        engine = structure.engine;
+        layoutResult = structure.layout;
+        foldedView = next;
+        // The results in place point at nodes of the graph we are leaving — and the
+        // tree drops some of them outright. No repaint here: the `rebuild()` that
+        // closes this method takes care of it.
+        searchController.reset();
+        // Graph view's state is keyed by entity id and the entities are identical in
+        // both graphs, but recomputing it on the next switch is cheaper to reason
+        // about than proving the reuse is safe.
+        graphView.invalidate();
+        // A selection the incoming graph does not hold — a structural node the tree
+        // drops — is GONE, not carried: same event as a background click, so the
+        // host's panel stops describing a card that no longer exists.
+        if (selection?.kind === "node" && !nextGraph.nodes.has(selection.id)) {
+          selection = null;
+          emitter.emit("deselect", undefined);
+        }
       }
 
       // `graph` may have been replaced during the wait; the generation guard above

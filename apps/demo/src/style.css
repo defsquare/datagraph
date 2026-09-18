@@ -71,7 +71,10 @@ html, body {
    put in the button by `createIconButton`, which classes them; which one is
    visible is a demo decision, so this rule stays here. */
 #toggle-view[data-target="graph"] .icon-structure,
-#toggle-view[data-target="structure"] .icon-graph { display: none; }
+#toggle-view[data-target="structure"] .icon-graph,
+/* No tree glyph in the icon set yet: the tree view borrows the structure one —
+   the two ARE the same machinery, and a blank button would be worse. */
+#toggle-view[data-target="tree"] .icon-graph { display: none; }
 
 /* ---------- Floating detail panel (right) ---------- */
 

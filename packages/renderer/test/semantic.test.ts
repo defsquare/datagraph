@@ -352,7 +352,7 @@ function publishSynthetic(
 ): void {
   const layout: GraphLayoutResult = { positions: new Map(), clusters };
   controller.publish({
-    index: { aggregates: new Map(), byNode: new Map() },
+    index: { aggregates: new Map(), byNode: new Map(), parents: new Map() },
     layout,
     semanticEdges,
     // No labels: these discs exist only for their geometry, and falling back to

@@ -39,6 +39,8 @@ export {
   type HiddenGap,
 } from "./collapse.js"
 export { buildAggregates, type Aggregate, type AggregateIndex } from "./aggregate.js"
+// The tree view's graph: the same document, folded along its references.
+export { buildTreeGraph } from "./tree.js"
 export { enclosingCircle, type Circle } from "./hull.js"
 // `SearchIndex` is relayed as a TYPE only: an index is only ever obtained from
 // `buildSearchIndex`, and its constructor takes a denormalized input
