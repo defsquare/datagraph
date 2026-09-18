@@ -104,8 +104,9 @@ order was decided and then not shown.
 - `AggregateIndex` gains `parents`; `buildTreeGraph` joins the core's public
   surface; `DataGraphView` gains `"tree"`. No change to `validate.ts` and its
   embedded `--check` bundle (ADR-0032).
-- The demo's view toggle now returns to the **last folded view** rather than
-  always to structure, and a ⋮ menu item switches structure ↔ tree.
+- The demo's toolbar carries **one button per view**, always visible, with
+  `aria-pressed` on the active one: no toggle to remember a previous state, and
+  no menu item.
 - Scalar rows carried by dropped structural nodes are not shown, nor searchable,
   in tree view. Accepted: on a normalised document those nodes carry nothing.
 - Only top-level entities move. A nested entity referencing something outside

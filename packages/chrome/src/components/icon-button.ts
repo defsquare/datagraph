@@ -10,15 +10,18 @@ import { icon, type IconName } from "../icons.js";
  * construction time.
  */
 export interface IconButtonOptions {
-  /** An array renders one icon per name, classed `icon-<name>`: this is how a
-   * button carries both the current state AND the target one, the application's
-   * stylesheet hiding one of them (see `#toggle-view` in the demo). */
-  icon: IconName | readonly IconName[];
+  icon: IconName;
   label: string;
   id?: string;
   small?: boolean;
   controls?: string;
   expanded?: boolean;
+  /** Renders `aria-pressed`, for a button that is one option of a group — the
+   * pressed one being the active option. Unlike `disabled` and `aria-busy`, the
+   * INITIAL pressed state is a construction-time fact: a group is built with one
+   * of its buttons already active, and a button announcing none would be wrong
+   * from the first paint. The application moves it afterwards. */
+  pressed?: boolean;
 }
 
 export function createIconButton(o: IconButtonOptions): HTMLButtonElement {
@@ -30,12 +33,8 @@ export function createIconButton(o: IconButtonOptions): HTMLButtonElement {
   button.setAttribute("aria-label", o.label);
   if (o.controls) button.setAttribute("aria-controls", o.controls);
   if (o.expanded !== undefined) button.setAttribute("aria-expanded", String(o.expanded));
+  if (o.pressed !== undefined) button.setAttribute("aria-pressed", String(o.pressed));
 
-  const names = typeof o.icon === "string" ? [o.icon] : o.icon;
-  for (const name of names) {
-    // The class is only set when there are several icons: it is what allows one
-    // to be hidden, and a single-icon button has nothing to hide.
-    button.append(icon(name, names.length > 1 ? `icon-${name}` : undefined));
-  }
+  button.append(icon(o.icon));
   return button;
 }

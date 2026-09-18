@@ -110,11 +110,12 @@ if (launch.mode === "file") {
   document.getElementById("toggle-dataset")?.remove();
   // `?? {}`: a config read from disk may carry no `ids` key at all.
   if (Object.keys(launch.config.ids ?? {}).length === 0) {
-    // Without entities the graph view has nothing to show: structure only.
-    document.getElementById("toggle-view")?.remove();
-    // Same reason for the tree: no entities, hence no references to derive a
-    // containment from.
-    document.getElementById("toggle-tree")?.remove();
+    // Without entities neither the graph view nor the tree has anything to
+    // show — no aggregates, and no references to derive a containment from.
+    // Structure is left alone in the toolbar, and a single pressed button is a
+    // perfectly honest statement of where we are.
+    document.getElementById("view-tree")?.remove();
+    document.getElementById("view-graph")?.remove();
   }
 }
 

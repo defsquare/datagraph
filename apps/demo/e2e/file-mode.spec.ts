@@ -74,8 +74,10 @@ test("file mode: the fixture and its config load, the demo chrome disappears", a
   // The dataset button makes no sense once the user supplied their own data:
   // `main.ts` removes it from the DOM, not merely from view.
   await expect(page.locator("#toggle-dataset")).toHaveCount(0)
-  // The config declares `ids`, so the graph view stays on offer.
-  await expect(page.locator("#toggle-view")).toHaveCount(1)
+  // The config declares `ids`, so the graph and tree views stay on offer.
+  await expect(page.locator("#view-structure")).toHaveCount(1)
+  await expect(page.locator("#view-tree")).toHaveCount(1)
+  await expect(page.locator("#view-graph")).toHaveCount(1)
 
   // The fixture's entities are indeed there, with the type and id the config
   // derives: what is proven here is `ids`, not merely that loading worked.
@@ -104,9 +106,12 @@ test("file mode without a config: structure view only", async ({ page }) => {
 
   await expect(page.locator("canvas")).toBeVisible()
   await expect(page.locator("#toggle-dataset")).toHaveCount(0)
-  // Without `ids`, no entity, hence no aggregate: the graph view would have
-  // nothing to show and `main.ts` removes its button.
-  await expect(page.locator("#toggle-view")).toHaveCount(0)
+  // Without `ids`, no entity, hence no aggregate and no reference to derive a
+  // containment from: neither the graph view nor the tree would have anything to
+  // show, and `main.ts` removes both buttons. Structure stays, alone and pressed.
+  await expect(page.locator("#view-structure")).toHaveCount(1)
+  await expect(page.locator("#view-tree")).toHaveCount(0)
+  await expect(page.locator("#view-graph")).toHaveCount(0)
   expect(await page.evaluate(() => (window as any).__graph.currentView())).toBe("structure")
 
   // The document is explored all the same, as bare objects and arrays.

@@ -50,8 +50,8 @@ async function gotoInstrumented(page: Page): Promise<string[]> {
 test("the graph view lays out in a real Web Worker, with no fallback", async ({ page }) => {
   const warnings = await gotoInstrumented(page)
 
-  await page.locator("#toggle-view").click()
-  await expect(page.locator("#toggle-view")).toHaveAttribute("data-target", "structure")
+  await page.locator("#view-graph").click()
+  await expect(page.locator("#view-graph")).toHaveAttribute("aria-pressed", "true")
   expect(await page.evaluate(() => (window as any).__graph.currentView())).toBe("graph")
 
   // The worker really was constructed, on the URL `main.ts` passed.
@@ -69,15 +69,17 @@ test("the graph view lays out in a real Web Worker, with no fallback", async ({ 
 
   // Round trip: the worker is reused, not reopened, and going back to structure
   // view still works.
-  await page.locator("#toggle-view").click()
+  await page.locator("#view-structure").click()
+  await expect(page.locator("#view-structure")).toHaveAttribute("aria-pressed", "true")
   expect(await page.evaluate(() => (window as any).__graph.currentView())).toBe("structure")
-  await page.locator("#toggle-view").click()
+  await page.locator("#view-graph").click()
+  await expect(page.locator("#view-graph")).toHaveAttribute("aria-pressed", "true")
   expect(await page.evaluate(() => (window as any).__graph.currentView())).toBe("graph")
   const after: string[] = await page.evaluate(() => (window as any).__workerUrls)
   expect(after.filter((u) => u.includes("graph-layout-worker"))).toHaveLength(1)
 })
 
-test("the toggle button enters the busy state, then leaves it", async ({ page }) => {
+test("the clicked view button enters the busy state, then leaves it", async ({ page }) => {
   await gotoInstrumented(page)
 
   // An OBSERVER set up before the click, not an assertion after it: on the
@@ -86,22 +88,22 @@ test("the toggle button enters the busy state, then leaves it", async ({ page })
   // What we want to prove is not the state's DURATION anyway but its appearance
   // and its lifting — it holds exactly as long as `setView`, by construction.
   await page.evaluate(() => {
-    const button = document.getElementById("toggle-view")!
+    const button = document.getElementById("view-graph")!
     ;(window as any).__busyLog = [] as boolean[]
     new MutationObserver(() => {
       ;(window as any).__busyLog.push(button.getAttribute("aria-busy") === "true")
     }).observe(button, { attributes: true, attributeFilter: ["aria-busy"] })
   })
 
-  await page.locator("#toggle-view").click()
-  await expect(page.locator("#toggle-view")).toHaveAttribute("data-target", "structure")
+  await page.locator("#view-graph").click()
+  await expect(page.locator("#view-graph")).toHaveAttribute("aria-pressed", "true")
 
   const log: boolean[] = await page.evaluate(() => (window as any).__busyLog)
   // Set then removed, in that order.
   expect(log).toEqual([true, false])
-  await expect(page.locator("#toggle-view")).not.toHaveAttribute("aria-busy", "true")
+  await expect(page.locator("#view-graph")).not.toHaveAttribute("aria-busy", "true")
   // And the button is usable again.
-  await expect(page.locator("#toggle-view")).toBeEnabled()
+  await expect(page.locator("#view-graph")).toBeEnabled()
 })
 
 test("the structure view stays interactive while the graph view computes", async ({ page }) => {

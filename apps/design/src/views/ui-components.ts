@@ -129,7 +129,9 @@ function floatSection(): HTMLElement {
       createCluster(
         createIconButton({ icon: "search", label: "Search" }),
         createIconButton({ icon: "fit", label: "Fit to view" }),
-        createIconButton({ icon: "graph", label: "Graph view" }),
+        createIconButton({ icon: "structure", label: "Structure view", pressed: true }),
+        createIconButton({ icon: "tree", label: "Tree view", pressed: false }),
+        createIconButton({ icon: "graph", label: "Graph view", pressed: false }),
         createClusterSeparator(),
         createIconButton({ icon: "dots", label: "Menu" }),
       ),
@@ -224,9 +226,11 @@ function iconButtonSection(): HTMLElement {
       loneButton({ icon: "close", label: "Close panel", small: true }),
     ),
     cell(
-      "two icons in one button — this is how the view toggle carries the current state AND the target state, the demo's stylesheet hiding one according to <code>data-target</code>. Outside the demo no rule separates them: both show, which is the bare structure.",
+      "a group of toggle buttons — <code>aria-pressed</code> marks the active view, and the demo moves it as the view changes. The pressed one is lit like an open panel's trigger: both say « this is the current state ».",
       createCluster(
-        createIconButton({ icon: ["graph", "structure"], label: "Graph view" }),
+        createIconButton({ icon: "structure", label: "Structure view", pressed: false }),
+        createIconButton({ icon: "tree", label: "Tree view", pressed: true }),
+        createIconButton({ icon: "graph", label: "Graph view", pressed: false }),
       ),
     ),
     cell(

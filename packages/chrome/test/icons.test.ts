@@ -17,13 +17,14 @@ describe("icon", () => {
     expect(icon("graph").hasAttribute("class")).toBe(false);
   });
 
-  it("knows the chrome's nine icons, all of them non-empty", () => {
+  it("knows the chrome's ten icons, all of them non-empty", () => {
     expect([...ICON_NAMES]).toEqual([
       "search",
       "fit",
       "tidy",
       "graph",
       "structure",
+      "tree",
       "dots",
       "close",
       "up",

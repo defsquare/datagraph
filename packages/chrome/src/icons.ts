@@ -18,6 +18,7 @@ export const ICON_NAMES = [
   "tidy",
   "graph",
   "structure",
+  "tree",
   "dots",
   "close",
   "up",
@@ -53,7 +54,18 @@ const PATHS: Record<IconName, string> = {
     <circle cx="4.2" cy="4.2" r="2" fill="currentColor" />
     <circle cx="11.8" cy="6" r="2" fill="currentColor" />
     <circle cx="7" cy="12.2" r="2" fill="currentColor" />`,
+  // `structure` and `tree` are the same drawing at a quarter turn, because the
+  // two views are the same idea in two flows (ADR-0042): the tree runs
+  // vertically, parent above children; the structure runs horizontally, the
+  // container at the left and what it holds at the right. Same 16-unit square,
+  // same stroke width, same boxes — only the axis differs, which is exactly what
+  // the glyph has to say.
   structure: `
+    <path d="M5.2 8h2.9M8.1 4v8M8.1 4h2.4M8.1 12h2.4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+    <rect x="1.6" y="5.4" width="3.6" height="5.2" rx="1.1" fill="currentColor" />
+    <rect x="10.8" y="1.4" width="3.6" height="5.2" rx="1.1" fill="currentColor" />
+    <rect x="10.8" y="9.4" width="3.6" height="5.2" rx="1.1" fill="currentColor" />`,
+  tree: `
     <path d="M8 5.2v2.9M4 8.1h8M4 8.1v2.4M12 8.1v2.4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
     <rect x="5.4" y="1.6" width="5.2" height="3.6" rx="1.1" fill="currentColor" />
     <rect x="1.4" y="10.8" width="5.2" height="3.6" rx="1.1" fill="currentColor" />

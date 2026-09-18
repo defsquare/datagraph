@@ -4,7 +4,7 @@ The reference application for [`datagraph`](../../README.md). It is two things
 in one package:
 
 - a **Vite web app** that exercises the renderer's public API end to end — small
-  and large fixtures, search, theme swap, structure/graph view toggle, a detail
+  and large fixtures, search, theme swap, the three view buttons, a detail
   panel built entirely from the `select` event — and hosts the Playwright e2e
   suite;
 - a **Tauri v2 desktop shell** around that same app, whose binary doubles as the
@@ -205,7 +205,7 @@ src/
 ├── launch.ts        the Tauri seam: what the CLI asked for (a file, or the demo)
 ├── detail-panel.ts  the `#detail` panel, built from the public `select` event and `refEdges`
 ├── search-ui.ts     the findbar's input: debounce, `N/total` counter, next/prev navigation
-├── chrome.ts        viewer chrome: search/menu disclosures, Escape, click-outside, status bar, theme, view toggle, the "Ranger" (tidy) button
+├── chrome.ts        viewer chrome: search/menu disclosures, Escape, click-outside, status bar, theme, the three view buttons, the "Ranger" (tidy) button
 ├── demo-mode.ts     demo-only tooling: the starting dataset and the small/large dataset toggle
 ├── sample-data.ts   the e-commerce fixture and its `bigShop(n)` generator
 ├── fonts.css        the @font-face block for the vendored fonts, imported by style.css

@@ -31,8 +31,11 @@
   outline-offset: 1px;
 }
 
-/* An open panel stays signalled by its trigger. */
-.ibtn[aria-expanded="true"] {
+/* Two ways of being "on", one look: an open panel stays signalled by its
+   trigger, and in a group of toggle buttons the active option stays lit. Both
+   say "this one is the current state", so both get the same treatment. */
+.ibtn[aria-expanded="true"],
+.ibtn[aria-pressed="true"] {
   color: var(--ds-primary);
   background: color-mix(in srgb, var(--ds-primary) 14%, transparent);
 }

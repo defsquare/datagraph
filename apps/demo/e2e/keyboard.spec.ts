@@ -58,7 +58,7 @@ test("Escape closes the menu first, the findbar next, and only then deselects", 
  * The renderer listens for Enter on `window` and calls `preventDefault()`, which
  * is what turns Enter on a focused button into a dead key: the browser's
  * Enter→click activation is exactly what that cancels. Every control of the
- * chrome is concerned — `#fit`, `#tidy`, `#toggle-view`, the menu and its items,
+ * chrome is concerned — `#fit`, `#tidy`, the three `#view-*` buttons, the menu and its items,
  * `#detail-close`, the panel's reference buttons, the diagnostics entries — and
  * `#tidy` is the one whose activation is observable without moving anything else.
  *

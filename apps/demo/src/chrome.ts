@@ -16,13 +16,13 @@ declare global {
 }
 
 /** The viewer chrome: floating surfaces (unfolding search bar, ⋮ menu), status
- * bar, theme and view toggle. Everything here exists whatever the launch mode —
- * the demo-only tooling lives in `demo-mode.ts`. */
+ * bar, theme switch and the three view buttons. Everything here exists whatever
+ * the launch mode — the demo-only tooling lives in `demo-mode.ts`. */
 export interface Chrome {
   /** Recomputes the status bar counters and diagnostics link. */
   updateStatus(): void;
   applyTheme(): void;
-  /** Aligns the toggle button on the view that is ACTUALLY active. */
+  /** Moves the pressed state onto the view that is ACTUALLY active. */
   syncViewButton(): void;
   /** Marks the magnifier as carrying a live query. Folding the findbar cancels
    * nothing — the highlights stay on the canvas — so the button has to say that
@@ -62,15 +62,25 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
   // accumulated by successive expansions and reveals. No effect in graph view,
   // per `tidy()`'s contract.
   const tidyBtn = createIconButton({ id: "tidy", icon: "tidy", label: "Tidy" });
-  // `data-target` carries the view a click WOULD activate: the icon shown is
-  // therefore the target view's. `syncViewButton()` sets it from the real
-  // `graph.currentView()`, never from what was requested.
-  const toggleViewBtn = createIconButton({
-    id: "toggle-view",
-    icon: ["graph", "structure"],
-    label: "Graph view",
-  });
-  toggleViewBtn.dataset.target = "graph";
+  // One button per view rather than a toggle: with three views a toggle has no
+  // honest icon left to show, while a group of `aria-pressed` buttons says in
+  // one glance where we are AND where we can go. The icon name is the view name:
+  // the chrome's icon set carries one glyph per view.
+  const viewButtons = (
+    [
+      ["structure", "Structure view"],
+      ["tree", "Tree view"],
+      ["graph", "Graph view"],
+    ] as const
+  ).map(([kind, label]) => ({
+    kind,
+    button: createIconButton({
+      id: `view-${kind}`,
+      icon: kind,
+      label,
+      pressed: kind === graph.currentView(),
+    }),
+  }));
   const menuToggleBtn = createIconButton({
     id: "menu-toggle",
     icon: "dots",
@@ -95,17 +105,8 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
     id: "toggle-dataset",
     label: "Extended dataset (4000)",
   });
-  // The tree view has no icon of its own in the toolbar (see `syncViewButton`):
-  // it is reached from the menu, whose label names the view a click WOULD
-  // activate, like the theme item just below it.
-  const treeItem = createMenuItem({ id: "toggle-tree", label: "Tree view" });
   const themeBtn = createMenuItem({ id: "toggle-theme", label: "Dark theme" });
-  const menuEl = createMenu(
-    { id: "menu", labelledBy: "menu-toggle" },
-    datasetItem,
-    treeItem,
-    themeBtn,
-  );
+  const menuEl = createMenu({ id: "menu", labelledBy: "menu-toggle" }, datasetItem, themeBtn);
 
   document
     .getElementById("toolbar")
@@ -114,7 +115,7 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
         searchToggleBtn,
         fitBtn,
         tidyBtn,
-        toggleViewBtn,
+        ...viewButtons.map((v) => v.button),
         createClusterSeparator(),
         menuToggleBtn,
       ),
@@ -291,87 +292,61 @@ export function createChrome(graph: DataGraph, hooks: ChromeHooks): Chrome {
     applyTheme();
   });
 
-  // --- Structure / Graph toggle.
+  // --- The three view buttons.
 
-  /** The folded view the toggle returns to. There are two of them now, and always
-   * coming back to structure would silently undo a switch to tree: the toggle is
-   * graph ↔ THE LAST FOLDED VIEW. */
-  let folded: "structure" | "tree" = "structure";
-
-  /** Aligns the button's icon and accessible label, and the menu item's label, on
-   * the view the next click would activate. Reads the view that is ACTUALLY
-   * active, never the one that was requested (see the handler's comment). */
+  /** Moves `aria-pressed` onto the button of the view that is ACTUALLY active,
+   * never the one that was requested (see the handler's comment). */
   function syncViewButton(): void {
     const current = graph.currentView();
-    if (current !== "graph") folded = current;
-    const target = current === "graph" ? folded : "graph";
-    const label =
-      target === "graph" ? "Graph view" : target === "tree" ? "Tree view" : "Structure view";
-    toggleViewBtn.dataset.target = target;
-    toggleViewBtn.title = label;
-    toggleViewBtn.setAttribute("aria-label", label);
-    treeItem.textContent = current === "tree" ? "Structure view" : "Tree view";
+    for (const v of viewButtons) v.button.setAttribute("aria-pressed", String(v.kind === current));
   }
 
   /**
-   * Marks the toggle button as BUSY while the view is being computed.
+   * Marks the clicked button as BUSY while the view is being computed.
    *
-   * There is now something to signal: the graph view layout has moved into a Web
+   * There is something to signal: the graph view layout has moved into a Web
    * Worker, so the page stays alive during the seconds the computation takes on
    * a large dataset — the structure view can still be panned and zoomed. That is
    * exactly what makes the indication necessary: without it, a perfectly
    * responsive interface that does not switch reads as a lost click.
    *
-   * `aria-busy` carries the information and the class carries the style: the
-   * attribute is what assistive technology reads, and it doubles as the CSS
-   * selector, so the two cannot fall out of sync. `disabled` is still set
-   * elsewhere — two simultaneous toggles would make no sense.
+   * `aria-busy` carries the information and the style at once: the attribute is
+   * what assistive technology reads, and it doubles as the CSS selector, so the
+   * two cannot fall out of sync. `disabled` is set on all three — two
+   * simultaneous switches would make no sense.
    */
-  function setViewBusy(busy: boolean): void {
-    if (busy) toggleViewBtn.setAttribute("aria-busy", "true");
-    else toggleViewBtn.removeAttribute("aria-busy");
+  function setViewBusy(button: HTMLButtonElement, busy: boolean): void {
+    if (busy) button.setAttribute("aria-busy", "true");
+    else button.removeAttribute("aria-busy");
   }
 
-  toggleViewBtn.addEventListener("click", () => {
-    void (async () => {
-      toggleViewBtn.disabled = true;
-      // Inside the `try`/`finally` alongside `disabled`: both are lifted on ALL
-      // paths — successful toggle, failure swallowed by `setView`, or bail-out
-      // because a concurrent `setData` took over.
-      setViewBusy(true);
-      try {
-        const next = graph.currentView() === "graph" ? folded : "graph";
-        await graph.setView(next);
-        // Icon and label are derived from the view that is ACTUALLY active, never
-        // from the one requested: `setView` swallows two failures without
-        // rejecting — the dynamic import of the graph view engine failing
-        // (network, missing chunk), and the case where a concurrent `setData`
-        // already took over. In both the promise resolves while the view has not
-        // moved, and an icon set from `next` would announce a view that is not on
-        // screen.
-        syncViewButton();
-      } finally {
-        setViewBusy(false);
-        toggleViewBtn.disabled = false;
-      }
-    })();
-  });
-
-  // Same busy discipline as the toggle, and on the SAME button: both commands
-  // drive the same switch, so acting on one must not leave the other live.
-  treeItem.addEventListener("click", () => {
-    void (async () => {
-      toggleViewBtn.disabled = true;
-      setViewBusy(true);
-      try {
-        await graph.setView(graph.currentView() === "tree" ? "structure" : "tree");
-        syncViewButton();
-      } finally {
-        setViewBusy(false);
-        toggleViewBtn.disabled = false;
-      }
-    })();
-  });
+  for (const { kind, button } of viewButtons) {
+    button.addEventListener("click", () => {
+      // The pressed button is the current view: clicking it asks for nothing.
+      if (graph.currentView() === kind) return;
+      void (async () => {
+        for (const v of viewButtons) v.button.disabled = true;
+        // Inside the `try`/`finally` alongside `disabled`: both are lifted on ALL
+        // paths — successful switch, failure swallowed by `setView`, or bail-out
+        // because a concurrent `setData` took over.
+        setViewBusy(button, true);
+        try {
+          await graph.setView(kind);
+          // The pressed state is derived from the view that is ACTUALLY active,
+          // never from the one requested: `setView` swallows two failures without
+          // rejecting — the dynamic import of the graph view engine failing
+          // (network, missing chunk), and the case where a concurrent `setData`
+          // already took over. In both the promise resolves while the view has not
+          // moved, and a state set from `kind` would announce a view that is not
+          // on screen.
+          syncViewButton();
+        } finally {
+          setViewBusy(button, false);
+          for (const v of viewButtons) v.button.disabled = false;
+        }
+      })();
+    });
+  }
 
   fitBtn.addEventListener("click", () => graph.fit());
 

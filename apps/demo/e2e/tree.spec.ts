@@ -131,26 +131,30 @@ test("returning from graph view to structure swaps the folded graph back", async
   expect(errors).toEqual([])
 })
 
-test("the chrome reaches the tree view and the toggle remembers it", async ({ page }) => {
+test("the toolbar's three buttons switch views and mark the active one", async ({ page }) => {
   const errors = watchErrors(page)
 
   await gotoReady(page)
   await loadSanctions(page)
 
-  await page.locator("#menu-toggle").click()
-  await page.locator("#toggle-tree").click()
-  await expect.poll(() => currentView(page)).toBe("tree")
-  // In a folded view the toggle offers the graph.
-  await expect(page.locator("#toggle-view")).toHaveAttribute("data-target", "graph")
+  const pressed = async () => ({
+    structure: await page.locator("#view-structure").getAttribute("aria-pressed"),
+    tree: await page.locator("#view-tree").getAttribute("aria-pressed"),
+    graph: await page.locator("#view-graph").getAttribute("aria-pressed"),
+  })
 
-  await page.locator("#toggle-view").click()
+  await page.locator("#view-tree").click()
+  await expect.poll(() => currentView(page)).toBe("tree")
+  expect(await pressed()).toEqual({ structure: "false", tree: "true", graph: "false" })
+
+  await page.locator("#view-graph").click()
   await expect.poll(() => currentView(page)).toBe("graph")
-  // THE POINT of this test: the toggle now offers the tree, not structure.
-  await expect(page.locator("#toggle-view")).toHaveAttribute("data-target", "tree")
+  // THE POINT of this test: the pressed state MOVES, it does not accumulate.
+  expect(await pressed()).toEqual({ structure: "false", tree: "false", graph: "true" })
 
-  await page.locator("#toggle-view").click()
+  await page.locator("#view-tree").click()
   await expect.poll(() => currentView(page)).toBe("tree")
-  await expect(page.locator("#toggle-view")).toHaveAttribute("data-target", "graph")
+  expect(await pressed()).toEqual({ structure: "false", tree: "true", graph: "false" })
 
   expect(errors).toEqual([])
 })

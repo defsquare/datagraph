@@ -2547,7 +2547,7 @@ export function createDataGraph(container: HTMLElement, options: DataGraphOption
    * Enter on a focused `<button>` IS the browser's activation gesture: the
    * `preventDefault()` further down cancels it, and with it the keyboard
    * activation of every control of a host's chrome — in the demo `#fit`, `#tidy`,
-   * `#toggle-view`, the menu and its items, `#detail-close`, the panel's reference
+   * the `#view-*` buttons, the menu and its items, `#detail-close`, the panel's reference
    * buttons, the diagnostics rows. That is the regression this predicate exists
    * for. The guard it completes enumerated `INPUT|TEXTAREA|SELECT`, and
    * enumerating tag names is precisely what let `<button>` through: the list can

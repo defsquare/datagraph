@@ -27,10 +27,13 @@ describe("createIconButton", () => {
     expect(b.getAttribute("aria-expanded")).toBe("false");
   });
 
-  it("renders one classed icon per name, for two-state buttons", () => {
-    const b = createIconButton({ icon: ["graph", "structure"], label: "Graph view" });
-    const classes = [...b.querySelectorAll("svg")].map((s) => s.getAttribute("class"));
-    expect(classes).toEqual(["icon-graph", "icon-structure"]);
+  it("renders aria-pressed only when the option is given", () => {
+    const pressed = createIconButton({ icon: "tree", label: "Tree view", pressed: true });
+    expect(pressed.getAttribute("aria-pressed")).toBe("true");
+    const unpressed = createIconButton({ icon: "graph", label: "Graph view", pressed: false });
+    expect(unpressed.getAttribute("aria-pressed")).toBe("false");
+    const plain = createIconButton({ icon: "fit", label: "Fit to view" });
+    expect(plain.hasAttribute("aria-pressed")).toBe(false);
   });
 
   it("sets neither disabled nor aria-busy: those are runtime states", () => {

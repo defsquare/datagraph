@@ -151,15 +151,20 @@ test("setTheme accepts a partial palette override without crashing", async ({ pa
   await expect(page.locator("#selection-label")).toContainText("Customer #c1")
 })
 
-test("the toggle button triggers a real setView and its label follows", async ({ page }) => {
+test("the graph view button triggers a real setView and takes the pressed state", async ({
+  page,
+}) => {
   await gotoReady(page)
 
   await page.getByRole("button", { name: "Graph view" }).click()
 
-  // The click only fires the async handler: waiting for the button to have
-  // swapped its label is what guarantees setView() has finished, before reading
-  // currentView() (otherwise the read short-circuits the wait).
-  await expect(page.getByRole("button", { name: "Structure view" })).toBeVisible()
+  // The click only fires the async handler: waiting for the pressed state to
+  // have moved is what guarantees setView() has finished, before reading
+  // currentView() (otherwise the read short-circuits the wait). The labels no
+  // longer move — three buttons, each naming its own view — so the state is what
+  // there is to wait on.
+  await expect(page.locator("#view-graph")).toHaveAttribute("aria-pressed", "true")
+  await expect(page.locator("#view-structure")).toHaveAttribute("aria-pressed", "false")
 
   const view = await page.evaluate(() => (window as any).__graph.currentView())
   expect(view).toBe("graph")
