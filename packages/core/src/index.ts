@@ -71,6 +71,8 @@ export {
   type StructureLayoutEngine,
   // In the options of `createStructureLayoutEngine`.
   type ElkFactory,
+  // The renderer builds its `elkWorkerUrl` factory on it, keeping ELK lazy.
+  lazyElkFactory,
 } from "./structure-layout.js"
 // The tree view's own layout: GLOBAL, stateless, and deliberately not the
 // structure engine parametrised — see `tree-layout.ts` and ADR-0043.

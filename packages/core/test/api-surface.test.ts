@@ -51,6 +51,9 @@ describe("api surface", () => {
       "enclosingCircle",
       "headerTextFor",
       "isValueOnlyRow",
+      // DELIBERATE addition: the renderer builds its `elkWorkerUrl` factory on
+      // it, so that ELK stays behind a dynamic import (ADR-0046).
+      "lazyElkFactory",
       "measureNode",
       "nearestCardRectFor",
       "pageOf",

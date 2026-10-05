@@ -99,6 +99,13 @@ single target. Vite 7's default works, and so does any single target such as
 export default { build: { target: "es2022" } };
 ```
 
+**ELK is a lazy chunk of its own.** The structure and tree views lay out with
+elkjs, ~1.4 MB minified (~430 kB gzip). It is loaded through a dynamic
+`import()` on the first layout, so it stays out of your main chunk, and an app
+that starts on the graph view never fetches it. Its size still trips Vite's
+500 kB chunk warning. That warning is expected for this chunk: raise
+`build.chunkSizeWarningLimit` if it bothers you.
+
 ## Public API — `DataGraph`
 
 Returned by `createDataGraph(container, options)`.

@@ -55,12 +55,18 @@ describe("bundle purity", () => {
     // serves both as a cycle guard and as memoization.
     const visited = new Set<string>()
     const queue = [entry]
+    let lazyElk = false
     while (queue.length > 0) {
       const file = queue.pop()!
       if (visited.has(file)) continue
       visited.add(file)
 
       const source = readFileSync(file, "utf8")
+      // ELK (~1.4 MB minified) is reached only through `lazyElkFactory`'s
+      // dynamic `import()`: a static import would put it back into every
+      // consumer's main chunk (ADR-0046).
+      expect(source, `${file} imports elkjs statically`).not.toMatch(/from\s+"elkjs/)
+      if (source.includes('import("elkjs/lib/elk.bundled.js")')) lazyElk = true
       // The factory's name, not the module's: tsup renames and moves files, but
       // the exported symbol survives bundling.
       expect(source, `${file} reaches the graph-view engine`).not.toMatch(
@@ -72,6 +78,8 @@ describe("bundle purity", () => {
         queue.push(join(dirname(file), specifier))
       }
     }
+    // Counter-guard: dropping the dynamic import too would pass the line above.
+    expect(lazyElk, "no dynamic import of elkjs left in the closure").toBe(true)
   })
 
   it("still finds the engine on the other entry point", () => {

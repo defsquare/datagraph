@@ -8,12 +8,12 @@ import {
   type Rectangle,
   type Text,
 } from "pixi.js";
-import ELK from "elkjs/lib/elk.bundled.js";
 import {
   buildGraph,
   anchorRectFor,
   DEFAULT_METRICS,
   enclosingCircle,
+  lazyElkFactory,
   validateConfig,
   type Aggregate,
   type DataGraphConfig,
@@ -568,7 +568,9 @@ export function translateCluster(
  */
 function buildElkFactory(elkWorkerUrl: string | URL | undefined): ElkFactory | undefined {
   if (!elkWorkerUrl) return undefined;
-  return () => new ELK({ workerUrl: String(elkWorkerUrl) });
+  // Lazy like the default: a static ELK import here would put ~1.4 MB back
+  // into every consumer's main chunk (ADR-0046).
+  return lazyElkFactory({ workerUrl: String(elkWorkerUrl) });
 }
 
 /**

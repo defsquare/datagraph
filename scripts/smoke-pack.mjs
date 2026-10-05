@@ -96,6 +96,8 @@ try {
   ok = true;
   console.log("\nsmoke-pack: OK — the packed tarballs install, typecheck, build and render the README Quickstart.");
 } finally {
-  if (ok) rmSync(tmp, { recursive: true, force: true });
-  else console.error(`\nsmoke-pack: FAILED — consumer app kept at ${app}`);
+  // SMOKE_KEEP=1 keeps a passing app too, to inspect its dist/ (chunk sizes).
+  if (!ok) console.error(`\nsmoke-pack: FAILED — consumer app kept at ${app}`);
+  else if (process.env.SMOKE_KEEP) console.log(`smoke-pack: consumer app kept at ${app}`);
+  else rmSync(tmp, { recursive: true, force: true });
 }

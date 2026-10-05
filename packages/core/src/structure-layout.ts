@@ -1,5 +1,4 @@
-import ELK from "elkjs/lib/elk.bundled.js"
-import type { ElkExtendedEdge, ElkNode } from "elkjs/lib/elk-api.js"
+import type { ELK, ELKConstructorArguments, ElkExtendedEdge, ElkNode } from "elkjs/lib/elk-api.js"
 import { nearestDrawn, type Graph, type GraphNode, type NodeId } from "./model.js"
 import { measureNode, DEFAULT_METRICS, type NodeMetrics } from "./measure.js"
 
@@ -312,7 +311,33 @@ function insertionPointFor(
   }
 }
 
-export type ElkFactory = () => InstanceType<typeof import("elkjs/lib/elk.bundled.js").default>
+/** The layouts only ever call `layout`: that is all a factory has to provide. */
+export type ElkFactory = () => Pick<ELK, "layout">
+
+/**
+ * An ELK factory whose bundle is fetched on the first `layout` call, through a
+ * dynamic `import()`: the default of both ELK-backed layouts, and what the
+ * renderer builds on.
+ *
+ * Why lazy: `elk.bundled.js` weighs ~1.4 MB minified, about three quarters of a
+ * consumer's main chunk when imported statically. Behind `import()` the bundler
+ * moves it to a chunk of its own, off the initial download, and a host that
+ * starts on the graph view (which does not use ELK) never fetches it. Same
+ * mechanism as the graph engine (ADR-0014); `test/bundle-purity.test.ts` guards
+ * that no static import comes back. See ADR-0046.
+ *
+ * `layout` was already async, so the first call merely waits for the chunk
+ * too: no caller changes. `import()` caches the module, so only the first call
+ * pays the fetch.
+ */
+export function lazyElkFactory(args?: ELKConstructorArguments): ElkFactory {
+  return () => ({
+    layout: async (graph, options) => {
+      const { default: ElkBundled } = await import("elkjs/lib/elk.bundled.js")
+      return new ElkBundled(args).layout(graph, options)
+    },
+  })
+}
 
 export interface StructureLayoutEngine {
   layout(graph: Graph, visible: Set<NodeId>, metrics?: NodeMetrics): Promise<LayoutResult>
@@ -377,7 +402,7 @@ const COLUMN_BLOCK_OPTIONS = {
  * can inject a worker-backed factory instead.
  */
 export function createStructureLayoutEngine(opts?: { elkFactory?: ElkFactory }): StructureLayoutEngine {
-  const elkFactory: ElkFactory = opts?.elkFactory ?? (() => new ELK())
+  const elkFactory: ElkFactory = opts?.elkFactory ?? lazyElkFactory()
 
   // Private engine state: for each node expanded via layoutAfterExpand, the
   // vertical shift (delta) applied to nodes below its midline (thresholdY),

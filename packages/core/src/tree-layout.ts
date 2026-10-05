@@ -1,8 +1,7 @@
-import ELK from "elkjs/lib/elk.bundled.js"
 import type { ElkExtendedEdge, ElkNode } from "elkjs/lib/elk-api.js"
 import { nearestDrawn, type Graph, type NodeId } from "./model.js"
 import { measureNode, DEFAULT_METRICS, type NodeMetrics } from "./measure.js"
-import type { ElkFactory, LayoutResult, Rect } from "./structure-layout.js"
+import { lazyElkFactory, type ElkFactory, type LayoutResult, type Rect } from "./structure-layout.js"
 
 /**
  * The TREE VIEW's layout: one GLOBAL ELK pass over the visible set, top to
@@ -101,7 +100,7 @@ function drawnEdges(graph: Graph, visible: Set<NodeId>): ElkExtendedEdge[] {
  * tests an in-process one.
  */
 export function createTreeLayout(opts?: { elkFactory?: ElkFactory }): TreeLayout {
-  const elkFactory: ElkFactory = opts?.elkFactory ?? (() => new ELK())
+  const elkFactory: ElkFactory = opts?.elkFactory ?? lazyElkFactory()
 
   return {
     async layout(
