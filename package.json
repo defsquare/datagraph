@@ -14,7 +14,8 @@
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
-    "bench": "pnpm --filter @defsquare/datagraph-core bench"
+    "bench": "pnpm --filter @defsquare/datagraph-core bench",
+    "smoke": "node scripts/smoke-pack.mjs"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

@@ -73,10 +73,30 @@ const graph = createDataGraph(container, {
   elkWorkerUrl: new URL("elkjs/lib/elk-worker.min.js", import.meta.url),
 });
 
-await graph.ready;
-graph.fit();
+graph.ready.then(() => graph.fit());
 
 graph.on("select", (node) => console.log("selected:", node.label));
+```
+
+**No top-level `await graph.ready` in your entry module.** In a production
+bundle, Pixi's lazily loaded renderer chunks import the entry chunk back. If that
+module is suspended on a top-level `await`, `ready` waits for those chunks and the
+chunks wait for the module: a deadlock with a blank page and no error. Use
+`.then()` as above, or `await` inside an async function. Development mode serves
+unbundled modules and does not show the problem, so check it in a production build.
+`scripts/smoke-pack.mjs` builds this exact snippet from the packed tarballs to
+keep it honest.
+
+**Vite 6: set `build.target: "es2022"`.** With Vite 6's default target list, the
+production build of an app using this package fails with
+`[vite:build-import-analysis] … Parse error @:1:1`. The minified elkjs bundle
+trips Vite's import scanner, and only for some target combinations, not for any
+single target. Vite 7's default works, and so does any single target such as
+`es2022`, the setting `apps/demo` and the smoke test build with:
+
+```ts
+// vite.config.ts
+export default { build: { target: "es2022" } };
 ```
 
 ## Public API — `DataGraph`
@@ -312,6 +332,8 @@ the view switch. See
 [ADR-0043](../../docs/adr/0043-one-controller-per-view.md).
 
 ```ts
+// Inside an async function, not at the top of the entry module: see the
+// Quickstart's note on top-level await.
 const graph = createDataGraph(container, {
   data: shopData,
   config: { ...shopConfig, groups: ["Customer"] },

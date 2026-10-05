@@ -63,3 +63,4 @@ or spec that introduced the decision.
 | 0042 | [A tree view whose containment is derived from the references](./0042-tree-view-containment-derived-from-references.md) | 2026-09-18 | Accepted |
 | 0043 | [One controller per view, behind a `View` seam](./0043-one-controller-per-view.md) | 2026-09-18 | Accepted |
 | 0044 | [A hand-written CHANGELOG, carried by the annotated tag](./0044-hand-written-changelog-carried-by-the-tag.md) | 2026-09-18 | Accepted |
+| 0045 | [A packaging smoke test runs the README Quickstart from the packed tarballs](./0045-packaging-smoke-test-on-the-packed-tarballs.md) | 2026-10-05 | Accepted |

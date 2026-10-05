@@ -26,6 +26,7 @@ Also remember to update the index `docs/adr/README.md` whenever an ADR is create
 
 - Tests: `pnpm test` (root, all packages — vitest **plus** `cargo test` via `apps/demo`, so the Rust toolchain is required) or `pnpm --filter @defsquare/datagraph test` (the renderer package is named `@defsquare/datagraph`, core is `@defsquare/datagraph-core`)
 - Typecheck: `pnpm typecheck`
+- Packaging smoke test: `pnpm smoke` (`scripts/smoke-pack.mjs`) — builds and `pnpm pack`s tokens/core/renderer, installs the tarballs into a blank app outside the workspace (strict pnpm), typechecks, `vite build`s and renders the renderer README's Quickstart block in Chromium. Not in `pnpm test` (needs a build, a browser, maybe the network): run it before a release or after touching `package.json` exports/builds or that Quickstart.
 - Build: `pnpm build`
 - Design system playground: `pnpm --filter design dev` (port 5174, the demo keeps 5173 — both run side by side)
 - Desktop: `pnpm --filter demo tauri dev` / `tauri build` (Tauri v2, Rust toolchain required) — the build produces a raw binary `apps/demo/src-tauri/target/release/datagraph` (`bundle.active: false`, no `.app`/`.dmg`: the app launches from the shell) — this binary is also the end-user CLI: `datagraph <data.json> [-c <config.json>]`; with no argument it opens the demo
