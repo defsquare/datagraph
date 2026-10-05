@@ -35,6 +35,7 @@ checked by falsification.
   leaves `layout` pending forever, so the existing in-process fallback never
   fires. It needs an error/timeout wrapper, one long-lived worker instead of one
   per layout (each would re-parse 1.6 MB), and termination on `destroy()`.
+  Tracked in [issue #2](https://github.com/defsquare/datagraph/issues/2).
 - **Status quo, telling consumers to raise `chunkSizeWarningLimit`** — rejected:
   it hides the warning without shrinking the initial download.
 
