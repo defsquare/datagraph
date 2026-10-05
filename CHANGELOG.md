@@ -8,6 +8,24 @@ into the tag's annotation.
 
 ## [Unreleased]
 
+### Changed
+
+- ELK, the structure and tree views' layout engine, is loaded on the first
+  layout instead of at startup. A consumer's main chunk drops from 1.8 MB to
+  378 kB minified, and an app that starts on the graph view never fetches ELK.
+- `@defsquare/datagraph` no longer depends on `elkjs` directly; it comes
+  through `@defsquare/datagraph-core`.
+- The renderer README tells Vite 6 users to set `build.target: "es2022"`, and
+  explains that ELK's own chunk still trips Vite's 500 kB warning.
+
+### Fixed
+
+- The renderer README's Quickstart no longer deadlocks in a production build.
+  It awaited `graph.ready` at the top level of the entry module, which left a
+  blank page with no error.
+- The published core and tokens packages no longer ship stale files from
+  earlier builds.
+
 ## [0.2.0] - 2026-09-18
 
 ### Added
